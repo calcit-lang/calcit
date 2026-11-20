@@ -1002,35 +1002,65 @@ pub(crate) fn resolve_generic_return_type<'a>(
   )
 }
 
-/// Keep absent payloads out of call constraints while retaining actual open
-/// values. Inference and checking must prepare the same input evidence.
-pub(super) fn generic_input_evidence<'a>(
-  argument: &Calcit,
-  actual: &'a CalcitTypeAnnotation,
-  expected: &'a CalcitTypeAnnotation,
-) -> Option<(&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)> {
-  if matches!(expected, CalcitTypeAnnotation::Dynamic)
-    || super::empty_container_has_no_type_evidence(argument, expected)
-    || core_option_none_without_payload(argument, actual, expected)
-  {
-    None
-  } else if matches!(
-    (actual, expected),
-    (
-      CalcitTypeAnnotation::Fn(actual),
-      CalcitTypeAnnotation::Fn(expected)
-    ) if actual.arg_types.is_empty()
-      && actual.rest_type.is_none()
-      && expected.arg_types.is_empty()
-      && expected.rest_type.is_none()
-      && expected.return_type.contains_type_var()
-  ) {
-    // A zero-argument callback has no input from which to infer an output-only
-    // generic. Its concrete body must not specialize the enclosing call before
-    // other arguments provide evidence for that variable.
-    None
-  } else {
-    Some(core_result_err_payload_types(argument, actual, expected).unwrap_or((actual, expected)))
+/// Replace deferred output-only variables in a callback's expected return type
+/// with Dynamic so primary input preparation ignores them without discarding
+/// constraints from the callback's inputs or non-deferred output slots.
+fn mask_deferred_callback_return(expected: &CalcitTypeAnnotation, deferred: &HashSet<Arc<str>>) -> Option<CalcitTypeAnnotation> {
+  if deferred.is_empty() {
+    return None;
+  }
+  let expected_fn = expected.resolve_to_nonoptional_fn()?;
+  let mut input_types = expected_fn.arg_types.clone();
+  input_types.extend(expected_fn.rest_type.iter().cloned());
+  let input_vars = crate::calcit::type_annotation::free_type_variable_names(&input_types);
+  let return_vars = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&expected_fn.return_type));
+  let masked_vars = return_vars
+    .into_iter()
+    .filter(|name| deferred.contains(name) && !input_vars.contains(name))
+    .map(|name| (name, calcit::DYNAMIC_TYPE.clone()))
+    .collect::<HashMap<_, _>>();
+  if masked_vars.is_empty() {
+    return None;
+  }
+  let mut masked_fn = expected_fn.as_ref().clone();
+  masked_fn.return_type = expected_fn.return_type.substitute_free_type_vars(&masked_vars);
+  Some(CalcitTypeAnnotation::Fn(Arc::new(masked_fn)))
+}
+
+/// Prepare one call proof in two phases: primary evidence (ordinary arguments,
+/// callback inputs, and non-deferred callback returns) runs first so separate
+/// ordinary arguments fix shared variables; output-only callback returns are
+/// prepared only as deferred fallback evidence for variables left unbound.
+pub(super) fn prepare_generic_call_inputs<'a>(
+  proof: &mut crate::calcit::type_annotation::CallTypeProof,
+  generics: &[Arc<str>],
+  arg_types: &[Arc<CalcitTypeAnnotation>],
+  rest_type: Option<&Arc<CalcitTypeAnnotation>>,
+  arguments: impl IntoIterator<Item = (&'a Calcit, &'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>,
+) {
+  let deferred = super::output_only_callback_generics(generics, arg_types, rest_type);
+  let mut primary: Vec<(&'a CalcitTypeAnnotation, std::borrow::Cow<'a, CalcitTypeAnnotation>)> = Vec::new();
+  let mut deferred_inputs: Vec<(&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)> = Vec::new();
+
+  for (argument, actual, expected) in arguments {
+    if matches!(expected, CalcitTypeAnnotation::Dynamic)
+      || super::empty_container_has_no_type_evidence(argument, expected)
+      || core_option_none_without_payload(argument, actual, expected)
+    {
+      continue;
+    }
+    let (actual, expected) = core_result_err_payload_types(argument, actual, expected).unwrap_or((actual, expected));
+    if let Some(masked) = mask_deferred_callback_return(expected, &deferred) {
+      primary.push((actual, std::borrow::Cow::Owned(masked)));
+      deferred_inputs.push((actual, expected));
+    } else {
+      primary.push((actual, std::borrow::Cow::Borrowed(expected)));
+    }
+  }
+
+  proof.prepare_inputs(primary.iter().map(|(actual, expected)| (*actual, expected.as_ref())));
+  if !deferred_inputs.is_empty() {
+    proof.prepare_deferred_inputs(deferred_inputs);
   }
 }
 
@@ -1056,7 +1086,7 @@ fn resolve_generic_return_type_parts<'a>(
   expected_types.extend(rest_type.cloned());
   expected_types.push(return_type.clone());
   let mut call_proof = scope_types.call_type_proof(generics, &expected_types, &actual_types);
-  let mut inputs = Vec::with_capacity(call_args.len());
+  let mut resolved_args = Vec::with_capacity(call_args.len());
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
@@ -1080,12 +1110,23 @@ fn resolve_generic_return_type_parts<'a>(
       }
       _ => None,
     })?;
-    if let Some((actual, expected)) = generic_input_evidence(arg, &actual_type, expected_type) {
-      inputs.push((actual.clone(), expected.clone()));
+    if core_option_none_without_payload(arg, &actual_type, expected_type) {
+      continue;
     }
+    resolved_args.push((arg, actual_type, expected_type));
   }
-  call_proof.prepare_inputs(inputs.iter().map(|(actual, expected)| (actual, expected)));
-  for (actual, expected) in &inputs {
+  prepare_generic_call_inputs(
+    &mut call_proof,
+    generics,
+    arg_types,
+    rest_type,
+    resolved_args
+      .iter()
+      .map(|(arg, actual, expected)| (*arg, actual.as_ref(), expected.as_ref())),
+  );
+  for (arg, actual, expected) in &resolved_args {
+    let (actual, expected) =
+      core_result_err_payload_types(arg, actual.as_ref(), expected.as_ref()).unwrap_or_else(|| (actual.as_ref(), expected.as_ref()));
     if call_proof.prove(actual, expected).is_mismatch() {
       return None;
     }
@@ -2048,12 +2089,16 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           let mut expected_types = contract.arg_types.clone();
           expected_types.push(contract.return_type.clone());
           let mut call_proof = scope_types.call_type_proof(&contract.generics, &expected_types, &actual_types);
-          call_proof.prepare_inputs(
+          prepare_generic_call_inputs(
+            &mut call_proof,
+            &contract.generics,
+            &contract.arg_types,
+            contract.rest_type.as_ref(),
             projected
               .iter()
               .zip(&actual_types)
               .zip(&contract.arg_types)
-              .filter_map(|((argument, actual), expected)| generic_input_evidence(argument, actual, expected)),
+              .map(|((argument, actual), expected)| (argument, actual.as_ref(), expected.as_ref())),
           );
           for (argument, expected) in projected.iter().zip(&contract.arg_types) {
             if !call_proof
@@ -3061,16 +3106,20 @@ fn infer_typed_method_result<'a>(
   expected_types.extend(signature.rest_type.iter().cloned());
   expected_types.push(signature.return_type.clone());
   let mut proof = scope_types.call_type_proof(&generics, &expected_types, &actual_types);
-  let inputs = arguments
-    .iter()
-    .zip(&actual_types)
-    .enumerate()
-    .filter_map(|(index, (argument, actual))| {
-      let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-      generic_input_evidence(argument, actual, expected)
-    })
-    .collect::<Vec<_>>();
-  proof.prepare_inputs(inputs.iter().copied());
+  prepare_generic_call_inputs(
+    &mut proof,
+    &generics,
+    &signature.arg_types,
+    signature.rest_type.as_ref(),
+    arguments
+      .iter()
+      .zip(&actual_types)
+      .enumerate()
+      .filter_map(|(index, (argument, actual))| {
+        let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+        Some((*argument, actual.as_ref(), expected.as_ref()))
+      }),
+  );
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
     let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
@@ -5165,6 +5214,99 @@ mod tests {
       inferred.as_ref(),
       CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
     ));
+  }
+
+  #[test]
+  fn generic_return_preserves_zero_arg_callback_output_and_ordinary_precedence() {
+    let value_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Value")));
+    let callback_param = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], value_var.clone()));
+    let concrete_map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let build = local(
+      "build",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], concrete_map.clone())),
+    );
+
+    // 1. Sole zero-arg callback evidence resolves the return generic cleanly.
+    let inferred = resolve_generic_return_type_parts(
+      &[Arc::from("Value")],
+      std::slice::from_ref(&callback_param),
+      None,
+      &value_var,
+      std::iter::once(&build),
+      &ScopeTypes::new(),
+    )
+    .expect("zero-arg callback without competing ordinary parameter should instantiate Value");
+    assert_eq!(inferred, concrete_map);
+
+    // 2. Ordinary argument takes precedence over a deferred callback return.
+    let t_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let deferred_cb = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], t_var.clone()));
+    let bad_cb = local(
+      "bad",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![],
+        Arc::new(CalcitTypeAnnotation::String),
+      )),
+    );
+    let num_arg = Calcit::Number(17.0);
+    let conflict = resolve_generic_return_type_parts(
+      &[Arc::from("T")],
+      &[deferred_cb.clone(), t_var.clone()],
+      None,
+      &t_var,
+      [&bad_cb, &num_arg].into_iter(),
+      &ScopeTypes::new(),
+    );
+    assert!(conflict.is_none(), "conflicting callback vs ordinary arg must not resolve");
+
+    // 3. Empty ordinary container has no primary evidence, so deferred callback binds T.
+    let list_t = Arc::new(CalcitTypeAnnotation::List(t_var.clone()));
+    let list_cb_param = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], list_t.clone()));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let list_number = Arc::new(CalcitTypeAnnotation::List(number.clone()));
+    let num_list_cb = local(
+      "build_list",
+      Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], list_number.clone())),
+    );
+    let empty_list = proc_call(CalcitProc::List, vec![]);
+    let fallback = resolve_generic_return_type_parts(
+      &[Arc::from("T")],
+      &[list_cb_param, list_t.clone()],
+      None,
+      &list_t,
+      [&num_list_cb, &empty_list].into_iter(),
+      &ScopeTypes::new(),
+    )
+    .expect("empty list ordinary arg should fall back to deferred callback return");
+    assert_eq!(fallback, list_number);
+
+    // 4. Payloadless `Option :none` ordinary arg falls back to deferred callback return.
+    let option_t = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![t_var.clone()]),
+    ));
+    let option_open = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
+    ));
+    let good_num_cb_ty = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![], number.clone()));
+    let none_expr = option_none_construction("calcit.core");
+    let params = [deferred_cb.clone(), option_t.clone()];
+    let mut proof = ScopeTypes::new().call_type_proof(&[Arc::from("T")], &params, &[good_num_cb_ty.clone(), option_open.clone()]);
+    prepare_generic_call_inputs(
+      &mut proof,
+      &[Arc::from("T")],
+      &params,
+      None,
+      [
+        (&build, good_num_cb_ty.as_ref(), deferred_cb.as_ref()),
+        (&none_expr, option_open.as_ref(), option_t.as_ref()),
+      ],
+    );
+    assert_eq!(proof.result(&t_var), Some(number));
   }
 
   #[test]

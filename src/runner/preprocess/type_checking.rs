@@ -122,7 +122,11 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
       .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
       .collect::<Vec<_>>();
     let mut proof = ctx.scope_types.call_type_proof(&signature.generics, &parameters, &actual_types);
-    proof.prepare_inputs(
+    super::type_inference::prepare_generic_call_inputs(
+      &mut proof,
+      &signature.generics,
+      &signature.arg_types,
+      signature.rest_type.as_ref(),
       ctx
         .args
         .iter()
@@ -130,7 +134,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
         .enumerate()
         .filter_map(|(index, (argument, actual))| {
           let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-          super::type_inference::generic_input_evidence(argument, actual, expected)
+          Some((argument, actual.as_ref(), expected.as_ref()))
         }),
     );
     for (index, parameter) in parameters.iter().enumerate() {
@@ -753,7 +757,11 @@ where
   let actual_context = actual_types.iter().flatten().cloned().collect::<Vec<_>>();
   let mut proof = ctx.scope_types.call_type_proof(ctx.generics, ctx.expected_types, &actual_context);
   if !ctx.generics.is_empty() {
-    proof.prepare_inputs(
+    super::type_inference::prepare_generic_call_inputs(
+      &mut proof,
+      ctx.generics,
+      ctx.expected_types,
+      None,
       ctx
         .args
         .iter()
@@ -770,11 +778,11 @@ where
             CalcitTypeAnnotation::Variadic(inner) => inner.as_ref(),
             _ => expected.as_ref(),
           };
-          super::type_inference::generic_input_evidence(argument, actual.as_deref()?, expected)
+          Some((argument, actual.as_deref()?, expected))
         }),
     );
   }
-  let output_only_callback_generics = super::output_only_callback_generics(ctx.generics, ctx.expected_types);
+  let output_only_callback_generics = super::output_only_callback_generics(ctx.generics, ctx.expected_types, None);
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = output_only_callback_generics
     .iter()
     .filter_map(|name| {
@@ -840,20 +848,29 @@ where
       };
       let actual_type = callback_tail_tuple_evidence(arg, &actual_type, expected_type, ctx.scope_types).unwrap_or(actual_type);
       super::broad_type_evidence::record_argument(broad_slot_owner.as_ref(), idx, expected_type, &actual_type);
-      let deferred_callback_generics = super::all_output_only_callback_generics(ctx.generics, ctx.expected_types);
-      let mask_unbound_callback_result = expected_type.resolve_to_nonoptional_fn().is_some()
-        && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
-          if crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&signature.return_type))
-            .iter()
-            .any(|name| deferred_callback_generics.contains(name))
-            && proof.result(&signature.return_type).is_none());
-      let expected_for_proof = if mask_unbound_callback_result && let CalcitTypeAnnotation::Fn(signature) = expected_type.as_ref() {
-        let mut signature = signature.as_ref().clone();
-        // Preserve the return shape and every binding already established by
-        // ordinary arguments. Only unresolved slots become Dynamic, so a
-        // known `Map<Number, _>` constraint cannot be erased wholesale.
-        signature.return_type = proof.result_or_open(&signature.return_type);
-        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+      let expected_for_proof = if let Some(signature) = expected_type.resolve_to_nonoptional_fn() {
+        let mut input_types = signature.arg_types.clone();
+        input_types.extend(signature.rest_type.iter().cloned());
+        let input_vars = crate::calcit::type_annotation::free_type_variable_names(&input_types);
+        let return_vars = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&signature.return_type));
+        let unbound_deferred = return_vars
+          .into_iter()
+          .filter(|name| {
+            output_only_callback_generics.contains(name)
+              && !input_vars.contains(name)
+              && proof.result(&CalcitTypeAnnotation::TypeVar(name.clone())).is_none()
+          })
+          .map(|name| (name, calcit::DYNAMIC_TYPE.clone()))
+          .collect::<HashMap<_, _>>();
+        if unbound_deferred.is_empty() {
+          expected_type.clone()
+        } else {
+          let mut signature = signature.as_ref().clone();
+          // Preserve the return shape and already-established bindings while
+          // masking only individually unbound ordinary-argument-owned output slots (#2282).
+          signature.return_type = signature.return_type.substitute_free_type_vars(&unbound_deferred);
+          Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+        }
       } else {
         expected_type.clone()
       };
@@ -1317,10 +1334,14 @@ fn proc_widened_peer_bindings(
   }
   let actual_context = pairs.iter().map(|(_, actual, _)| actual.clone()).collect::<Vec<_>>();
   let mut proof = scope_types.call_type_proof(&generics, expected_types, &actual_context);
-  proof.prepare_inputs(
+  super::type_inference::prepare_generic_call_inputs(
+    &mut proof,
+    &generics,
+    expected_types,
+    None,
     pairs
       .iter()
-      .filter_map(|(arg, actual, expected)| super::type_inference::generic_input_evidence(arg, actual, expected)),
+      .map(|(arg, actual, expected)| (*arg, actual.as_ref(), expected.as_ref())),
   );
   generics
     .iter()
@@ -2176,14 +2197,18 @@ pub(super) fn expression_is_proven_for(
       let mut context = actual_types.clone();
       context.push(Arc::new(expected.clone()));
       let mut proof = scope.call_type_proof(&signature.generics, &parameters, &context);
-      proof.prepare_inputs(
+      super::type_inference::prepare_generic_call_inputs(
+        &mut proof,
+        &signature.generics,
+        &signature.arg_types,
+        signature.rest_type.as_ref(),
         arguments
           .iter()
           .zip(&actual_types)
           .enumerate()
           .filter_map(|(index, (argument, actual))| {
             let parameter = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-            super::type_inference::generic_input_evidence(argument, actual, parameter)
+            Some((argument, actual.as_ref(), parameter.as_ref()))
           }),
       );
       if !proof.prove(expected, &signature.return_type).is_proven() {

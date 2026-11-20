@@ -520,6 +520,7 @@ pub(crate) struct CallTypeProof {
   renaming: TypeBindings,
   bindings: TypeBindings,
   fresh_names: HashSet<Arc<str>>,
+  prepared_input_names: HashSet<Arc<str>>,
   unresolved_inputs: HashSet<Arc<str>>,
   /// Fresh variables whose prepared binding is a peer upper bound strictly
   /// wider than some contributor, such as `Scalar` from `Number` and `Scalar`.
@@ -673,6 +674,7 @@ impl CallTypeProof {
       renaming,
       bindings: TypeBindings::new(),
       fresh_names,
+      prepared_input_names: HashSet::new(),
       unresolved_inputs: HashSet::new(),
       widened_inputs: HashSet::new(),
       caller_capabilities: None,
@@ -684,14 +686,10 @@ impl CallTypeProof {
     self
   }
 
-  /// Prepare one invocation from independent input evidence before checking it.
-  /// A common bound must be one of the actual annotations and accept every
-  /// contributor under rigid proof; incompatible peers never invent Dynamic.
-  /// Argument proof still checks variance, invariant references and bounds.
-  pub(crate) fn prepare_inputs<'a>(&mut self, inputs: impl IntoIterator<Item = (&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>) {
-    if self.fresh_names.is_empty() {
-      return;
-    }
+  fn collect_prepared_constraints<'a>(
+    &self,
+    inputs: impl IntoIterator<Item = (&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>,
+  ) -> HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>> {
     let mut constraints: HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>> = HashMap::new();
     for (actual, expected) in inputs {
       // A polymorphic callback owns its quantifiers. Its existing contextual
@@ -712,6 +710,10 @@ impl CallTypeProof {
         constraints.entry(name).or_default().push(evidence);
       }
     }
+    constraints
+  }
+
+  fn reconcile_prepared_constraints(&mut self, constraints: HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>) {
     let rigidly_proves = |actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation| {
       Self::default()
         .with_caller_capabilities(self.caller_capabilities.clone())
@@ -747,6 +749,35 @@ impl CallTypeProof {
         self.unresolved_inputs.insert(name);
       }
     }
+  }
+
+  /// Prepare one invocation from independent input evidence before checking it.
+  /// A common bound must be one of the actual annotations and accept every
+  /// contributor under rigid proof; incompatible peers never invent Dynamic.
+  /// Argument proof still checks variance, invariant references and bounds.
+  pub(crate) fn prepare_inputs<'a>(&mut self, inputs: impl IntoIterator<Item = (&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>) {
+    if self.fresh_names.is_empty() {
+      return;
+    }
+    let constraints = self.collect_prepared_constraints(inputs);
+    self.prepared_input_names.extend(constraints.keys().cloned());
+    self.reconcile_prepared_constraints(constraints);
+  }
+
+  /// Prepare deferred fallback evidence (such as output-only callback returns)
+  /// only for callee variables that received no primary input evidence.
+  pub(crate) fn prepare_deferred_inputs<'a>(
+    &mut self,
+    inputs: impl IntoIterator<Item = (&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>,
+  ) {
+    if self.fresh_names.is_empty() {
+      return;
+    }
+    let mut constraints = self.collect_prepared_constraints(inputs);
+    constraints.retain(|name, _| {
+      !self.prepared_input_names.contains(name) && !self.bindings.contains_key(name) && !self.unresolved_inputs.contains(name)
+    });
+    self.reconcile_prepared_constraints(constraints);
   }
 
   /// Proves one argument against its expected contract, binding only fresh
@@ -9628,6 +9659,56 @@ mod tests {
       a.prove_available_bindings(&CalcitTypeAnnotation::Number, &mut cyclic),
       TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeVariable)
     ));
+  }
+
+  #[test]
+  fn call_type_proof_deferred_inputs_respect_primary_evidence_conflicts_and_non_reflexive_producers() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let num = Arc::new(CalcitTypeAnnotation::Number);
+    let text = Arc::new(CalcitTypeAnnotation::String);
+    let trait_type = Arc::new(CalcitTypeAnnotation::Trait(Arc::new(CalcitTrait::new_reference(
+      "calcit.core/Countable",
+    ))));
+
+    // 1. Binds a variable that received no primary constraints.
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), std::slice::from_ref(&num));
+    proof.prepare_inputs(std::iter::empty());
+    proof.prepare_deferred_inputs([(&*num, &*t)]);
+    assert_eq!(proof.result(&t), Some(num.clone()));
+
+    // 2. Does not override an already-bound variable.
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), std::slice::from_ref(&num));
+    proof.prepare_inputs([(&*num, &*t)]);
+    proof.prepare_deferred_inputs([(&*text, &*t)]);
+    assert_eq!(proof.result(&t), Some(num.clone()));
+
+    // 3. Does not override a conflicted variable in `unresolved_inputs`.
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &[num.clone(), text.clone()]);
+    proof.prepare_inputs([(&*num, &*t), (&*text, &*t)]);
+    proof.prepare_deferred_inputs([(&*num, &*t)]);
+    assert!(proof.result(&t).is_none());
+
+    // 4. Does not override a variable seen as a single non-reflexive primary producer.
+    let unresolved_slot = Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("tests/missing-slot")));
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &[unresolved_slot.clone(), num.clone()]);
+    proof.prepare_inputs([(&*unresolved_slot, &*t)]);
+    assert!(
+      proof.result(&t).is_none(),
+      "single non-reflexive producer must be deferred from prepare_inputs"
+    );
+    proof.prepare_deferred_inputs([(&*num, &*t)]);
+    assert!(
+      proof.result(&t).is_none(),
+      "primary non-reflexive producer must block deferred overwrite"
+    );
+    assert!(proof.prove(&unresolved_slot, &t).is_proven());
+    assert_eq!(proof.result(&t), Some(unresolved_slot));
+
+    // 5. Existing reflexive trait values remain bound by primary evidence and are not overwritten.
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &[trait_type.clone(), num.clone()]);
+    proof.prepare_inputs([(&*trait_type, &*t)]);
+    proof.prepare_deferred_inputs([(&*num, &*t)]);
+    assert_eq!(proof.result(&t), Some(trait_type));
   }
 
   #[test]

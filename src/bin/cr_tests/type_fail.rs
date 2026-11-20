@@ -1062,64 +1062,85 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     builtins::effects::init_effects_states();
-    let mut snapshot = snapshot::Snapshot::default();
-    let mut file = snapshot::create_file_from_snippet(
-      "defn invoke (callback) $ callback\n\ndefn main! () $ invoke $ fn () 1\n\ndefn reload! () &unit",
-    )
-    .expect("generic callback snippet should parse");
-    let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
-      open_reason: Default::default(),
-      guard: None,
-      runtime_arity: None,
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types: vec![],
-      return_type: output.clone(),
-      fn_kind: SchemaKind::Fn,
-      rest_type: None,
-      features: Arc::new(HashSet::new()),
-    })));
-    file.defs.get_mut("invoke").expect("invoke definition").schema =
-      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    let check_with_main_return = |main_return: CalcitTypeAnnotation| {
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(
+        "defn invoke (callback) $ callback\n\ndefn main! () $ invoke $ fn () 1\n\ndefn reload! () &unit",
+      )
+      .expect("generic callback snippet should parse");
+      let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+      let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
         guard: None,
         runtime_arity: None,
-        generics: Arc::new(vec![Arc::from("T")]),
+        generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
-        arg_types: vec![callback],
-        return_type: output,
+        arg_types: vec![],
+        return_type: output.clone(),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
         features: Arc::new(HashSet::new()),
       })));
-    for name in ["main!", "reload!"] {
-      file.defs.get_mut(name).expect("entry definition").schema =
+      file.defs.get_mut("invoke").expect("invoke definition").schema =
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
           open_reason: Default::default(),
           guard: None,
           runtime_arity: None,
-          generics: Arc::new(vec![]),
+          generics: Arc::new(vec![Arc::from("T")]),
           where_bounds: Arc::new(vec![]),
-          arg_types: vec![],
-          return_type: Arc::new(if name == "main!" {
-            CalcitTypeAnnotation::String
-          } else {
-            CalcitTypeAnnotation::Unit
-          }),
+          arg_types: vec![callback],
+          return_type: output,
           fn_kind: SchemaKind::Fn,
           rest_type: None,
           features: Arc::new(HashSet::new()),
         })));
-    }
-    snapshot.files.insert("app.main".to_owned(), file);
-    let entries = prepare_snapshot_entries(snapshot);
-    let warnings = RefCell::new(vec![]);
-    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
-    assert!(result.is_ok(), "an unbound callback result slot must remain open: {result:?}");
+      for name in ["main!", "reload!"] {
+        file.defs.get_mut(name).expect("entry definition").schema =
+          Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+            open_reason: Default::default(),
+            guard: None,
+            runtime_arity: None,
+            generics: Arc::new(vec![]),
+            where_bounds: Arc::new(vec![]),
+            arg_types: vec![],
+            return_type: Arc::new(if name == "main!" {
+              main_return.clone()
+            } else {
+              CalcitTypeAnnotation::Unit
+            }),
+            fn_kind: SchemaKind::Fn,
+            rest_type: None,
+            features: Arc::new(HashSet::new()),
+          })));
+      }
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      (result, warnings.into_inner())
+    };
+
+    let (ok_res, ok_warnings) = check_with_main_return(CalcitTypeAnnotation::Number);
+    assert!(ok_res.is_ok(), "matching return contract should succeed: {ok_res:?}");
     assert!(
-      warnings.borrow().is_empty(),
-      "an unbound output slot must not report a false return mismatch"
+      ok_warnings.is_empty(),
+      "an unbound output slot stays open during callback checking and resolves to Number: {ok_warnings:?}"
+    );
+
+    let (mismatch_res, mismatch_warnings) = check_with_main_return(CalcitTypeAnnotation::String);
+    assert!(
+      mismatch_res.is_ok(),
+      "mismatch should surface as a return warning: {mismatch_res:?}"
+    );
+    assert!(
+      mismatch_warnings.iter().any(|warning| {
+        warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:string`, but body returns `:number`")
+      }),
+      "single zero-arg callback return must not erase T to Dynamic: {mismatch_warnings:?}"
     );
   });
 }
@@ -1221,6 +1242,146 @@ fn contextual_callback_preserves_proven_parts_of_composite_output() {
         .any(|warning| warning.message().contains("map<:number") && warning.message().contains("map<:string")),
       "the proven Number key constraint must reject the callback's String-keyed map: {warnings:?}"
     );
+  });
+}
+
+#[test]
+fn contextual_callback_nested_zero_arg_return_preserves_generic_map_and_diagnostics() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+
+    // 1. Exact #2864 reproduction plus same-function nested call pass cleanly with zero warnings.
+    for (label, snippet) in [
+      (
+        "direct #2864 reproduction",
+        "let\n    frame $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Value) (:generics Value)\n      build\n    build $ fn ()\n      hint-fn $ Fn (-> (Map Tag Number))\n      {} (:a 1)\n    use-map $ fn (x)\n      hint-fn $ Fn (Map Tag V) (-> Unit) (:generics V)\n      , &unit\n  use-map $ frame build",
+      ),
+      (
+        "same-function nested zero-arg generic call",
+        "let\n    frame $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Value) (:generics Value)\n      build\n    build $ fn ()\n      hint-fn $ Fn (-> (Map Tag Number))\n      {} (:a 1)\n    use-map $ fn (x)\n      hint-fn $ Fn (Map Tag V) (-> Unit) (:generics V)\n      , &unit\n  use-map $ frame $ fn () (frame build)",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "{label} should preprocess cleanly: {result:?}");
+      assert!(
+        warnings.borrow().is_empty(),
+        "{label} should produce no warnings: {:?}",
+        warnings.borrow()
+      );
+    }
+
+    // 2. Concrete map assertion still rejects mismatched value type (not widened to Dynamic).
+    {
+      let entries = load_snippet_entries(
+        "let\n    frame $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Value) (:generics Value)\n      build\n    build $ fn ()\n      hint-fn $ Fn (-> (Map Tag Number))\n      {} (:a 1)\n    m $ frame build\n  assert-type m (Map Tag String)\n  , &unit",
+      );
+      let warnings = RefCell::new(vec![]);
+      let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect_err("assert-type mismatch must fail preprocessing with E_ASSERT_TYPE_MISMATCH");
+      assert_eq!(err.code.as_deref(), Some("E_ASSERT_TYPE_MISMATCH"), "{err}");
+      assert!(
+        err.msg.contains("map<:tag,:number>") && err.msg.contains("map<:tag,:string>"),
+        "assert-type must see the preserved Map<Tag, Number>, got: {err}"
+      );
+    }
+
+    // 3. Explicit Fn (-> Dynamic) still reports E_ERASED_GENERIC_RELATION into Map<Tag, V>.
+    {
+      let entries = load_snippet_entries(
+        "let\n    frame $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Value) (:generics Value)\n      build\n    dyn-build $ fn ()\n      hint-fn $ Fn (-> Dynamic)\n      {} (:a 1)\n    use-map $ fn (x)\n      hint-fn $ Fn (Map Tag V) (-> Unit) (:generics V)\n      , &unit\n  use-map $ frame dyn-build",
+      );
+      let warnings = RefCell::new(vec![]);
+      let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect_err("explicit Dynamic callback must still fail E_ERASED_GENERIC_RELATION");
+      assert_eq!(err.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"), "{err}");
+    }
+
+    // 4. Named 1-arg callback contradicting ordinary argument reports arg 1 mismatch, not arg 2.
+    {
+      let entries = load_snippet_entries(
+        "let\n    consume1 $ fn (cb expected)\n      hint-fn $ Fn (Fn Number (-> T)) T (-> T) (:generics T)\n      cb 1\n    bad $ fn (n)\n      hint-fn $ Fn Number (-> String)\n      , |wrong\n  consume1 bad 17",
+      );
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "mismatch should surface cleanly: {result:?}");
+      let warnings = warnings.borrow();
+      assert!(
+        warnings
+          .iter()
+          .any(|w| { w.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH") && w.message().contains("arg 1") }),
+        "expected arg 1 mismatch on bad callback, got: {warnings:?}"
+      );
+      assert!(
+        !warnings.iter().any(|w| w.message().contains("arg 2")),
+        "ordinary argument 2 must win over deferred callback return: {warnings:?}"
+      );
+    }
+
+    // 5. Named conflicting sibling zero-arg callbacks must not mask each other.
+    {
+      let entries = load_snippet_entries(
+        "let\n    pick $ fn (flag a b)\n      hint-fn $ Fn Bool (Fn (-> Value)) (Fn (-> Value)) (-> Value) (:generics Value)\n      if flag (a) (b)\n    a $ fn ()\n      hint-fn $ Fn (-> Number)\n      , 1\n    b $ fn ()\n      hint-fn $ Fn (-> String)\n      , |bad\n  pick true a b",
+      );
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "mismatch should surface cleanly: {result:?}");
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH")),
+        "conflicting sibling zero-arg callbacks must report E_LOCAL_FN_ARG_TYPE_MISMATCH, got: {:?}",
+        warnings.borrow()
+      );
+    }
+
+    // 6. Conflicting sibling callbacks with shared Map<K, V> keep strict V conflict check.
+    {
+      let entries = load_snippet_entries(
+        "let\n    check2 $ fn (key left right)\n      hint-fn $ Fn K (Fn (-> $ Map K V)) (Fn (-> $ Map K V)) (-> Unit) (:generics K V)\n      , &unit\n    good $ fn ()\n      hint-fn $ Fn (-> $ Map Number Bool)\n      {} (1 true)\n    bad $ fn ()\n      hint-fn $ Fn (-> $ Map Number String)\n      {} (1 |bad)\n  check2 1 good bad",
+      );
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "mismatch should surface cleanly: {result:?}");
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_LOCAL_FN_ARG_TYPE_MISMATCH")),
+        "sibling callback map conflict must report E_LOCAL_FN_ARG_TYPE_MISMATCH, got: {:?}",
+        warnings.borrow()
+      );
+    }
+
+    // 7. Zero-arg callback satisfies or fails a :where trait bound on its return generic.
+    {
+      let entries = load_snippet_entries(
+        "let\n    need-countable $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Unit) (:generics Value) (:where $ Value Countable)\n      , &unit\n    make-map $ fn ()\n      hint-fn $ Fn (-> (Map Tag Number))\n      {} (:a 1)\n  need-countable make-map",
+      );
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "valid trait-bounded callback should succeed: {result:?}");
+      assert!(
+        warnings.borrow().is_empty(),
+        "Map<Tag, Number> satisfies Countable without warnings: {:?}",
+        warnings.borrow()
+      );
+    }
+    {
+      let entries = load_snippet_entries(
+        "let\n    need-countable $ fn (build)\n      hint-fn $ Fn (Fn (-> Value)) (-> Unit) (:generics Value) (:where $ Value Countable)\n      , &unit\n    make-number $ fn ()\n      hint-fn $ Fn (-> Number)\n      , 1\n  need-countable make-number",
+      );
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(result.is_ok(), "where bound failure reports as a warning: {result:?}");
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
+        "Number return from zero-arg callback must fail Countable bound: {:?}",
+        warnings.borrow()
+      );
+    }
   });
 }
 

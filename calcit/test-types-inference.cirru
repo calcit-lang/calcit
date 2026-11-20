@@ -427,6 +427,17 @@
                   first-rest-value |prefix & $ supply
                 assert= 1 $ deref calls
               :tags $ #{} :unit
+        'frame-or-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn frame-or-option (build fallback)
+            match fallback
+              (:some value) value
+              (:none) (build)
+          :examples $ []
+          :schema $ quote $ Fn
+            Fn $ -> T
+            Option T
+            -> T
+            :generics T
         'guarded-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn guarded-identity (x)
             if (list? x)
@@ -919,12 +930,14 @@
             [] (first labels) (last labels) (nth labels 1) (get labels 0)
           :examples $ []
           :schema $ quote $ Fn NamedLabels
-            -> $ List (Option String)
+            -> $ List $ Option String
           :tests $ [] $ %{} 'TestEntry (:name |list-alias-keeps-optional-access)
             :code $ quote $ do
-              assert= ([] (Some |a) (Some |b) (Some |b) (Some |a))
+              assert=
+                [] (Some |a) (Some |b) (Some |b) (Some |a)
                 lookup-named-labels $ [] |a |b
-              assert= ([] None None None None) (lookup-named-labels $ [])
+              assert= ([] None None None None)
+                lookup-named-labels $ []
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
@@ -1125,6 +1138,10 @@
                     [] $ key
                 assert= 2 @calls
               :tags $ #{} :generic-metadata-path :unit
+        'read-tag-number-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-tag-number-map (m) (count m)
+          :examples $ []
+          :schema $ quote $ Fn (Map Tag V) (-> Number) (:generics V)
         'recur-types-safe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-types-safe (person index)
             if (>= index 2) index $ recur person $ inc index
@@ -1247,6 +1264,78 @@
             %{} 'TestEntry (:name |preserves-nested-absence)
               :code $ quote $ assert= (Some None) (renamed-option-payload None)
               :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'run-frame $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn run-frame (build) (build)
+          :examples $ []
+          :schema $ quote $ Fn
+            Fn $ -> Value
+            -> Value
+            :generics Value
+          :tests $ []
+            %{} 'TestEntry (:name |named-zero-arg-callback-preserves-generic-map)
+              :code $ quote $ let
+                  build $ fn ()
+                    hint-fn $ Fn $ -> (Map Tag Number)
+                    {} $ :a 7
+                  result $ run-frame build
+                assert-type result $ Map Tag Number
+                assert= 1 $ read-tag-number-map result
+                assert= (Some 7) (get result :a)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |inline-unhinted-callback-preserves-generic-map)
+              :code $ quote $ let
+                  result $ run-frame $ fn ()
+                    {} $ :a 42
+                assert-type result $ Map Tag Number
+                assert= 1 $ read-tag-number-map result
+                assert= (Some 42) (get result :a)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |nested-run-frame-preserves-generic-map)
+              :code $ quote $ let
+                  build $ fn ()
+                    hint-fn $ Fn $ -> (Map Tag Number)
+                    {} $ :a 9
+                  nested $ frame-or-option
+                    fn () $ run-frame build
+                    , None
+                assert-type nested $ Map Tag Number
+                assert= 1 $ read-tag-number-map nested
+                assert= (Some 9) (get nested :a)
+              :tags $ #{} :unit
+            %{} 'TestEntry
+              :name |ordinary-option-none-falls-back-to-callback-return
+              :code $ quote $ let
+                  result $ frame-or-option
+                    fn () $ {} $ :a 11
+                    , None
+                assert-type result $ Map Tag Number
+                assert= 1 $ read-tag-number-map result
+                assert= (Some 11) (get result :a)
+              :tags $ #{} :unit
+            %{} 'TestEntry
+              :name |caller-generic-binder-survives-zero-arg-callback
+              :code $ quote $ let
+                  wrapped $ wrap-via-frame 13
+                assert-type wrapped $ Map Tag Number
+                assert= 1 $ read-tag-number-map wrapped
+                assert= (Some 13) (get wrapped :a)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |exact-repro-local-closures-preserve-generic-map)
+              :code $ quote $ let
+                  frame $ fn (build)
+                    hint-fn $ Fn
+                      Fn $ -> Value
+                      -> Value
+                      :generics Value
+                    build
+                  build $ fn ()
+                    hint-fn $ Fn $ -> (Map Tag Number)
+                    {} $ :a 1
+                  use-map $ fn (x)
+                    hint-fn $ Fn (Map Tag V) (-> Number) (:generics V)
+                    count x
+                assert= 1 $ use-map $ frame build
+              :tags $ #{} :unit
         'same-named-inherited-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-named-inherited-count (value)
             hint-fn $ {}
@@ -1931,6 +2020,13 @@
           :tests $ [] $ %{} 'TestEntry (:name |unit-value-annotation-proves-unit)
             :code $ quote $ assert= &unit (unit-value-as-annotation)
             :tags $ #{} :unit
+        'wrap-via-frame $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-via-frame (value)
+            run-frame $ fn () $ {} (:a value)
+          :examples $ []
+          :schema $ quote $ Fn T
+            -> $ Map Tag T
+            :generics T
         'write-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-nominal-absence-fields (fields number text result)
             -> fields

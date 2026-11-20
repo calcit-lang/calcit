@@ -484,7 +484,7 @@ try {
         const output = join(project, `factory-${name}-js`);
         const marker = name === "caller-binder" ? "return-as-caller" : probe;
         const code = name === "caller-binder" ? "E_ERASED_GENERIC_RELATION"
-          : ["known-store", "existing-alias"].includes(name) ? "E_ASSERT_TYPE_MISMATCH" : "E_ASSERT_TYPE_UNPROVEN";
+          : ["known-store", "callback-result", "existing-alias"].includes(name) ? "E_ASSERT_TYPE_MISMATCH" : "E_ASSERT_TYPE_UNPROVEN";
         const expected = name === "caller-binder" ? "" : `EmptyFieldBox<:${
           name === "existing-alias" ? "string" : name === "callback-result" ? "bool" : "number"
         }, :${name === "known-store" ? "number" : "string"}>`;
