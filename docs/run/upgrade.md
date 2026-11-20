@@ -35,6 +35,19 @@ related:
 - **WASM 边界拒绝 `Dynamic`（`E_WASM_BOUNDARY_DYNAMIC`）**：`defwasm-export` 与 `defwasm-import` 的参数、rest 或返回 schema 中不得包含 `Dynamic`（无 schema 的零参入口仍保留兼容）。请改为具体标量、容器或名义 `Struct`/`Enum`/`Option`/`Result`。
 - **非局部 `Fn ... (-> Dynamic)` 返回值消费收紧（`E_CALL_ARGUMENT_UNPROVEN`）**：调用非局部声明返回 `Dynamic` 的函数（带 `(:open :intrinsic)` 标记的底层内建除外）得到的开放值，在直接或经 `let` 绑定传入具体类型参数（含 `&+`、`not` 等有具体类型契约的调用）时，即使在 `CALCIT_PROOF_AUDIT=0` 下也必须先通过 `decode-map-as` / `try-decode-map-as`、`assert-type` 或类型谓词（如 `number?`、`bool?`）提供证明。
 
+## 0.46.0 业务错误流收敛至 `Result` 与 WASI 下 `try` 退役（#2882）
+
+本版本将可恢复错误处理进一步收敛为名义 `Result<T, E>` 契约，并明确将 `try` 从 WASM/WASI server 目标退役：
+
+- **WASM / WASI 显式拒绝 `try`（`E_WASM_UNSUPPORTED_TRY`）**：`calcit wasm` 与 `calcit wasi` 遇到可达的 `try` 时不再只输出无编号语法错误，而是报告 `E_WASM_UNSUPPORTED_TRY`，明确指引将可恢复失败改为 `Result :ok` / `Result :err` + `match`（或 `.map` / `.and-then` / `.or-else` / `.unwrap-or`），并将真正不可恢复的不变量缺陷留给 `raise` / `unreachable!` trap。`try` 仅继续支持于 native 与 JavaScript 目标上的兼容/测试边界。
+- **`calcit.core` 移除隐藏 `try` 依赖**：`try-parse-json`（`String .parse-json`）、`try-parse-cirru`、`try-parse-cirru-edn`、`try-parse-cirru-list`、`try-read-dir` 与 `fs-path:walk-dir` 均改为直接基于底层 `Result` 原语实现，不再通过 `try` 包裹内部异常；文档规范见 [错误处理与 Result 契约](../features/error-handling.md)。
+
+| 旧写法 | 新契约（WASI/全端通用） | 说明 |
+| --- | --- | --- |
+| `try (risky-op) (fn (msg) fallback)` | 函数返回 `Result T E`，调用方 `match` 或 `.unwrap-or` | 可恢复业务/解码失败显式体现在类型与签名中 |
+| `try (json-parse s) ...` / `try (parse-cirru-edn s) ...` | `try-parse-json`（`.parse-json`）+ `try-decode-map-as` / `try-parse-cirru-edn-as` | WASM/WASI 上直接走闭合类型边界解码 |
+| `try (assert ...) ...` 等不变量故障测试 | 不在 WASI 中捕获 trap；将“正常返回”与“trap 验证”拆为独立 `:tests` | trap 验证留在 native / JS，常规与 `Result` 契约可在 WASI 回放 |
+
 ## 0.43.0 List 插入检查元素类型（#2735）
 
 `append`、`prepend` 及其 List 方法和底层原语会检查已知的元素类型。例如，向 `List<Number>` 插入 String 会在编译时报错。空列表可以从插入项推断元素类型。确实需要存放混合元素时，给列表声明 `List<Dynamic>`；读取后在具体使用处按实际类型检查。

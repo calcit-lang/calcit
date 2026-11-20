@@ -295,6 +295,60 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Internal helper building Result<T, String> for recoverable parser procs.
+fn result_from_parse(result_type: &Calcit, parsed: Result<Calcit, String>) -> Result<Calcit, CalcitErr> {
+  match parsed {
+    Ok(value) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), value]),
+    Err(message) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("err"), Calcit::new_str(message)]),
+  }
+}
+
+/// Extract `(ResultEnumDef, String)` operands for `&try-parse-*` primitives.
+fn extract_result_and_source<'a>(xs: &'a [Calcit], proc_name: &str) -> Result<(&'a Calcit, &'a str), CalcitErr> {
+  if xs.len() != 2 {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Arity,
+      format!("{proc_name} expected 2 arguments, got {}", xs.len()),
+    ));
+  }
+  let [result_type @ Calcit::EnumDef(_), Calcit::Str(source)] = xs else {
+    let msg = format!(
+      "{proc_name} expected the Result enum definition and a string, but received: {} and {}",
+      type_of(std::slice::from_ref(&xs[0]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[1]))?.lisp_str()
+    );
+    return Err(CalcitErr::use_str(CalcitErrKind::Type, msg));
+  };
+  Ok((result_type, source))
+}
+
+/// Parse Cirru text into an expression list wrapped as `Result<List<CirruNode>, String>`.
+pub fn try_parse_cirru_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let (result_type, s) = extract_result_and_source(xs, "&try-parse-cirru-list")?;
+  let parsed = cirru_parser::parse(s)
+    .map(|nodes| cirru::cirru_to_calcit(&Cirru::List(nodes)))
+    .map_err(|e| format!("parse-cirru-list failed:\n{}", e.format_detailed(Some(s))));
+  result_from_parse(result_type, parsed)
+}
+
+/// Parse Cirru text into a `CirruQuote` wrapped as `Result<CirruQuote, String>`.
+pub fn try_parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let (result_type, s) = extract_result_and_source(xs, "&try-parse-cirru")?;
+  let parsed = cirru_parser::parse(s)
+    .map(|nodes| Calcit::CirruQuote(Cirru::List(nodes)))
+    .map_err(|e| format!("parse-cirru failed:\n{}", e.format_detailed(Some(s))));
+  result_from_parse(result_type, parsed)
+}
+
+/// Parse Cirru EDN text into an open value wrapped as `Result<Dynamic, String>`.
+pub fn try_parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let (result_type, s) = extract_result_and_source(xs, "&try-parse-cirru-edn")?;
+  let parsed = cirru_edn::parse(s)
+    .map(|nodes| edn::edn_to_calcit(&nodes, &Calcit::Nil))
+    .map_err(|e| format!("parse-cirru-edn failed:\n{e}"));
+  result_from_parse(result_type, parsed)
+}
+
 pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let use_inline = match xs.get(1) {
     None => false,

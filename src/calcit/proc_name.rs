@@ -173,18 +173,26 @@ pub enum CalcitProc {
   // external format
   #[strum(serialize = "parse-cirru")]
   ParseCirru,
+  #[strum(serialize = "&try-parse-cirru")]
+  NativeTryParseCirru,
   #[strum(serialize = "parse-cirru-list")]
   ParseCirruList,
+  #[strum(serialize = "&try-parse-cirru-list")]
+  NativeTryParseCirruList,
   #[strum(serialize = "format-cirru")]
   FormatCirru,
   #[strum(serialize = "format-cirru-one-liner")]
   FormatCirruOneLiner,
   #[strum(serialize = "parse-cirru-edn")]
   ParseCirruEdn,
+  #[strum(serialize = "&try-parse-cirru-edn")]
+  NativeTryParseCirruEdn,
   #[strum(serialize = "format-cirru-edn")]
   FormatCirruEdn,
   #[strum(serialize = "json-parse")]
   JsonParse,
+  #[strum(serialize = "&try-parse-json")]
+  NativeTryParseJson,
   #[strum(serialize = "json-stringify")]
   JsonStringify,
   #[strum(serialize = "json-pretty")]
@@ -676,7 +684,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Raise | Todo | Unreachable | NativeTraitNew => 1,
+      | NativeFsReadDir | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Raise | Todo | Unreachable | NativeTraitNew => 1,
       _ => 0,
     }
   }
@@ -740,6 +748,7 @@ mod tests {
       CalcitProc::NativeListSort,
       CalcitProc::NativeListSlice,
       CalcitProc::NativeStructNth,
+      CalcitProc::NativeFsReadDir,
       CalcitProc::ReadDir,
       CalcitProc::ParseCirruEdn,
       CalcitProc::FormatCirru,
@@ -782,6 +791,7 @@ mod tests {
       (CalcitProc::NativeListSort, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::NativeListSlice, ProcArity { min: 2, max: Some(3) }),
       (CalcitProc::NativeStructNth, ProcArity { min: 2, max: Some(3) }),
+      (CalcitProc::NativeFsReadDir, ProcArity { min: 4, max: Some(5) }),
       (CalcitProc::ReadDir, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::ParseCirruEdn, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::FormatCirru, ProcArity { min: 1, max: Some(2) }),

@@ -10024,6 +10024,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         ctx.emit(Instruction::LocalGet(tmp));
         Ok(())
       }
+      CalcitSyntax::Try => Err(
+        "E_WASM_UNSUPPORTED_TRY: `try` is not supported on WASM/WASI; return nominal `Result` (`Result :ok` / `Result :err` with `match`) for recoverable errors and reserve `raise` for unrecoverable traps".into(),
+      ),
       _ => Err(format!("unsupported syntax in WASM: {syn}")),
     },
     Calcit::Proc(proc) => emit_proc_call(ctx, proc, &args_list),
@@ -11444,6 +11447,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::JsonStringify => edn::emit_json_stringify(ctx, args, false),
     CalcitProc::JsonPretty => edn::emit_json_stringify(ctx, args, true),
     CalcitProc::JsonParse => edn_parse::emit_json_parse(ctx, args),
+    CalcitProc::NativeTryParseJson => {
+      expect_arity(2, args, "&try-parse-json")?;
+      edn_parse::emit_try_parse_json(ctx, &args[1..2])
+    }
     CalcitProc::Split => emit_split(ctx, args),
     CalcitProc::SplitLines => emit_split_lines(ctx, args),
 
@@ -12227,9 +12234,14 @@ fn emit_wasi_read_text(ctx: &mut WasmGenCtx, args: &[Calcit], stdin: bool) -> Re
 
 /// Lower the typed filesystem directory boundary through `__rt_wasi_read_dir`.
 fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(4, args, "&fs-read-dir")?;
+  if !(4..=5).contains(&args.len()) {
+    return Err(format!("&fs-read-dir expected 4 or 5 arguments, got {}", args.len()));
+  }
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
+  }
+  if args.len() == 5 && !matches!(args[4], Calcit::Bool(false)) {
+    return Err("E_WASM_CAPABILITY: recursive `&fs-read-dir` (`FsPath .walk-dir`) is not yet supported on WASI".into());
   }
   if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_read_dir") {
     return Err("E_WASI_COMMAND_CAPABILITY: `&fs-read-dir` needs a reachable WASI 0.3 filesystem effect".into());

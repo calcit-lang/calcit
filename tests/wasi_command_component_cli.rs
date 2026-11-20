@@ -588,3 +588,134 @@ fn generic_component_exports_do_not_silently_disappear() {
   );
   assert!(!output.path().join("program.wasm").exists());
 }
+
+#[test]
+fn wasi_and_wasm_retire_try_with_structured_diagnostic() {
+  let directory = tempfile::tempdir().expect("temp directory");
+  let output = directory.path().join("emit");
+  fs::create_dir_all(&output).expect("emit directory");
+
+  let edit = |snapshot: &Path, target: &str, code: &str, schema: &str| {
+    let mut def_cmd = Command::new(env!("CARGO_BIN_EXE_calcit"));
+    def_cmd.env("NO_COLOR", "1").args([
+      "--tips-level",
+      "none",
+      snapshot.to_str().expect("utf8 snapshot"),
+      "edit",
+      "def",
+      target,
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      code,
+    ]);
+    let def_res = def_cmd.output().expect("edit def");
+    assert!(def_res.status.success(), "{}", String::from_utf8_lossy(&def_res.stderr));
+
+    let mut schema_cmd = Command::new(env!("CARGO_BIN_EXE_calcit"));
+    schema_cmd.env("NO_COLOR", "1").args([
+      "--tips-level",
+      "none",
+      snapshot.to_str().expect("utf8 snapshot"),
+      "edit",
+      "schema",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      schema,
+    ]);
+    let schema_res = schema_cmd.output().expect("edit schema");
+    assert!(schema_res.status.success(), "{}", String::from_utf8_lossy(&schema_res.stderr));
+  };
+
+  let direct_wasi = directory.path().join("direct-wasi.cirru");
+  fs::copy("tests/fixtures/wasi-command-03.cirru", &direct_wasi).expect("copy wasi fixture");
+  edit(
+    &direct_wasi,
+    "app.main/main!",
+    "quote $ defn main! () (try (raise |boom) (fn (_err) &unit))",
+    "quote $ Fn (-> Unit) (:features :io)",
+  );
+  let wasi_direct_out = calcit(
+    &[
+      direct_wasi.to_str().expect("utf8 path"),
+      "wasi",
+      "--boundary",
+      "component",
+      "--check-only",
+    ],
+    &output,
+  );
+  assert!(!wasi_direct_out.status.success(), "WASI must reject direct `try`");
+  let wasi_direct_stderr = String::from_utf8_lossy(&wasi_direct_out.stderr);
+  assert!(wasi_direct_stderr.contains("E_WASM_UNSUPPORTED_TRY"), "{wasi_direct_stderr}");
+  assert!(wasi_direct_stderr.contains("Result"), "{wasi_direct_stderr}");
+  assert!(!output.join("program.wasm").exists());
+
+  let helper_wasi = directory.path().join("helper-wasi.cirru");
+  fs::copy("tests/fixtures/wasi-command-03.cirru", &helper_wasi).expect("copy wasi fixture");
+  for extra_args in [
+    vec!["edit", "add-ns", "app.dep"],
+    vec![
+      "edit",
+      "add-import",
+      "app.main",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ app.dep :refer $ legacy-recover",
+    ],
+  ] {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_calcit"));
+    cmd
+      .env("NO_COLOR", "1")
+      .args(["--tips-level", "none", helper_wasi.to_str().expect("utf8 snapshot")])
+      .args(&extra_args);
+    let res = cmd.output().expect("setup dep namespace");
+    assert!(res.status.success(), "{}", String::from_utf8_lossy(&res.stderr));
+  }
+  edit(
+    &helper_wasi,
+    "app.dep/legacy-recover",
+    "quote $ defn legacy-recover () (try (raise |boom) (fn (err) (Result :err err)))",
+    "quote $ Fn (-> (Result Unit String))",
+  );
+  edit(
+    &helper_wasi,
+    "app.main/main!",
+    "quote $ defn main! () (let ((_ignored (legacy-recover))) &unit)",
+    "quote $ Fn (-> Unit) (:features :io)",
+  );
+  let wasi_helper_out = calcit(
+    &[
+      helper_wasi.to_str().expect("utf8 path"),
+      "wasi",
+      "--boundary",
+      "component",
+      "--check-only",
+    ],
+    &output,
+  );
+  assert!(!wasi_helper_out.status.success(), "WASI must reject reachable `try` helper");
+  let wasi_helper_stderr = String::from_utf8_lossy(&wasi_helper_out.stderr);
+  assert!(wasi_helper_stderr.contains("E_WASI_COMMAND_DEPENDENCY"), "{wasi_helper_stderr}");
+  assert!(wasi_helper_stderr.contains("E_WASM_UNSUPPORTED_TRY"), "{wasi_helper_stderr}");
+  assert!(!output.join("program.wasm").exists());
+
+  let core_wasm = directory.path().join("core-wasm.cirru");
+  fs::copy("calcit/add.cirru", &core_wasm).expect("copy minimal fixture");
+  edit(
+    &core_wasm,
+    "app.main/main!",
+    "quote $ defn main! () (try (raise |boom) (fn (_err) 1))",
+    "quote $ Fn (-> Number)",
+  );
+  let wasm_out = calcit(&[core_wasm.to_str().expect("utf8 path"), "wasm"], &output);
+  assert!(!wasm_out.status.success(), "core WASM must reject `try`");
+  let wasm_stderr = String::from_utf8_lossy(&wasm_out.stderr);
+  assert!(wasm_stderr.contains("E_WASM_UNSUPPORTED_TRY"), "{wasm_stderr}");
+  assert!(wasm_stderr.contains("Result"), "{wasm_stderr}");
+  assert!(!output.join("program.wasm").exists());
+}

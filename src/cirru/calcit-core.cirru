@@ -1310,10 +1310,10 @@
                     fn (message) message
               :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
-          :doc "|内部目录枚举原语。根据传入的 enum 定义包装结果，用传入的 struct 定义构造每个子路径。已知构造器时，检查器从定义推断返回类型；否则结果保持开放。公开的 FsPath .read-dir 返回 Result<List<FsPath>, String>。"
+          :doc "|内部目录枚举原语。根据传入的 enum 定义包装结果，用传入的 struct 定义构造每个子路径，可选第 5 个 Bool 参数控制是否递归（默认 false）。已知构造器时，检查器从定义推断返回类型；否则结果保持开放。公开的 FsPath .read-dir / .walk-dir 返回 Result<List<FsPath>, String>。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn EnumDef StructDef String String (-> Dynamic) (:open :intrinsic)
+          :schema $ quote $ Fn EnumDef StructDef String String Bool (-> Dynamic) (:open :intrinsic)
           :tags $ #{} :builtin :file :internal :io
         '&fs-read-text $ %{} 'CodeEntry
           :doc "|内部 UTF-8 文件读取边界；显式接收 Result 原型和宿主错误前缀，供 FsPath wrapper 与 backend lowering 使用。"
@@ -3749,6 +3749,36 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic List List (-> Trait)
           :tags $ #{} :builtin :internal
+        '&try-parse-cirru $ %{} 'CodeEntry
+          :doc "|内部 Cirru 解析边界；显式接收 Result 原型，将语法失败收敛为 Result :err，供 try-parse-cirru 使用。"
+          :code $ quote $ def &try-parse-cirru &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef String
+            -> $ Result CirruQuote String
+          :tags $ #{} :builtin :internal
+        '&try-parse-cirru-edn $ %{} 'CodeEntry
+          :doc "|内部 Cirru EDN 解析边界；显式接收 Result 原型，将语法失败收敛为 Result :err，供 try-parse-cirru-edn 使用。"
+          :code $ quote $ def &try-parse-cirru-edn &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef String
+            -> $ Result Dynamic String
+            :open :decode
+          :tags $ #{} :builtin :internal
+        '&try-parse-cirru-list $ %{} 'CodeEntry
+          :doc "|内部 Cirru 列表解析边界；显式接收 Result 原型，将语法失败收敛为 Result :err，供 try-parse-cirru-list 使用。"
+          :code $ quote $ def &try-parse-cirru-list &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef String
+            -> $ Result (List CirruNode) String
+          :tags $ #{} :builtin :internal
+        '&try-parse-json $ %{} 'CodeEntry
+          :doc "|内部 JSON 解析边界；显式接收 Result 原型，将语法失败收敛为 Result :err，供 try-parse-json 与 backend lowering 使用。"
+          :code $ quote $ def &try-parse-json &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef String
+            -> $ Result Dynamic String
+            :open :decode
+          :tags $ #{} :builtin :internal
         '&turn-string $ %{} 'CodeEntry
           :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
           :code $ quote &runtime-implementation
@@ -4396,6 +4426,13 @@
                   Some $ raise |boom
                   fn (message) (= message |boom)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |direct-construction-preserves-value)
+              :code $ quote $ do
+                assert= (Some 3) (Some 3)
+                assert= None None
+                assert= 3 $ .unwrap $ Some 3
+                assert= 0 $ .unwrap-or None 0
+              :tags $ #{} :core :unit
         'OptionMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Option")
           :code $ quote $ defimpl OptionMappableImpl Mappable (.map option:map)
           :examples $ []
@@ -4484,6 +4521,30 @@
                 assert= (Result :ok 1) (choose true)
                 assert= (Result :err |failed) (choose false)
               :tags $ #{} :nominal-branch-proof :unit
+            %{} 'TestEntry (:name |combinators-and-error-pipeline)
+              :code $ quote $ let
+                  ok $ assert-type (Result :ok 3) (Result Number String)
+                  err $ assert-type (Result :err |bad) (Result Number String)
+                  parse-positive $ fn (raw)
+                    hint-fn $ Fn String $ -> (Result Number String)
+                    -> (parse-float raw)
+                      .and-then $ fn (n)
+                        if (> n 0) (Result :ok n) (Result :err |non-positive)
+                      .map $ fn (n) (* n 10)
+                      .map-err $ fn (msg) (str "|invalid: " msg)
+                assert= true $ .ok? ok
+                assert= false $ .err? ok
+                assert= false $ .ok? err
+                assert= true $ .err? err
+                assert= 3 $ .unwrap-or ok 0
+                assert= 0 $ .unwrap-or err 0
+                assert= (Result :ok 25) (parse-positive |2.5)
+                assert= (Result :err "|invalid: non-positive") (parse-positive |-1)
+                assert= true $ .err? $ parse-positive |bad
+                assert= (Result :ok 99)
+                  .or-else (parse-positive |bad)
+                    fn () $ Result :ok 99
+              :tags $ #{} :core :unit
         'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
           :examples $ []
@@ -4892,15 +4953,21 @@
           :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic)
             -> $ Expr Unit
           :tags $ #{} :control :log :macro
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-unit-and-original-failure-text)
-            :code $ quote $ do
-              assert= &unit $ assert |unchanged true
-              assert= &unit $ assert true |unchanged
-              assert= "|unchanged false" $ try (assert |unchanged false)
-                fn (message) message
-              assert= "|unchanged false" $ try (assert false |unchanged)
-                fn (message) message
-            :tags $ #{} :core :struct-match-guard :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-unit-and-original-failure-text)
+              :code $ quote $ do
+                assert= &unit $ assert |unchanged true
+                assert= &unit $ assert true |unchanged
+                assert= "|unchanged false" $ try (assert |unchanged false)
+                  fn (message) message
+                assert= "|unchanged false" $ try (assert false |unchanged)
+                  fn (message) message
+              :tags $ #{} :core :struct-match-guard :unit
+            %{} 'TestEntry (:name |returns-unit-on-true)
+              :code $ quote $ do
+                assert= &unit $ assert |unchanged true
+                assert= &unit $ assert true |unchanged
+              :tags $ #{} :core :unit
         'assert-detect $ %{} 'CodeEntry
           :doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success."
           :code $ quote $ defmacro assert-detect (f code)
@@ -7718,6 +7785,10 @@
                       {} $ |b 2
                       , & $ [] $ {} (|c 3)
               :tags $ #{} :core :method-spread :unit
+            %{} 'TestEntry (:name |removes-list-index)
+              :code $ quote $ assert= ([] 1 3)
+                dissoc ([] 1 2 3) 1
+              :tags $ #{} :core :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
@@ -8522,6 +8593,11 @@
                   {} $ :shared $ -> values (.last) (.unwrap)
                   , result
               :tags $ #{} :core :map-kv-proof :unit
+            %{} 'TestEntry (:name |skips-empty-map-without-calling-callback)
+              :code $ quote $ assert= (&{})
+                filter-map-kv (&{})
+                  fn (_k _v) (raise |empty-map-callback-must-not-run)
+              :tags $ #{} :core :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filter-not (xs f)
             filter xs $ defn %filter-not (x)
@@ -9126,9 +9202,7 @@
         'fs-path:walk-dir $ %{} 'CodeEntry
           :doc "|Recursively list descendants as Result<List<FsPath>,String>."
           :code $ quote $ defn fs-path:walk-dir (self)
-            result:map
-              try-read-dir (:value self) (Some true)
-              fn (paths) (map paths fs:path)
+            &fs-read-dir Result FsPath (:value self) "|fs-path:walk-dir failed" true
           :examples $ []
           :schema $ quote $ Fn FsPath
             -> $ Result (List FsPath) String
@@ -9192,6 +9266,11 @@
                 (:err message)
                   assert= true $ string? message
               :tags $ #{} :file :native
+            %{} 'TestEntry (:name |constructs-and-formats-path)
+              :code $ quote $ do
+                assert= |Cargo.toml $ .to-string $ fs:path |Cargo.toml
+                assert= |assets/data.cirru $ :value $ fs:path |assets/data.cirru
+              :tags $ #{} :core :unit
         'generate-id! $ %{} 'CodeEntry
           :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation
@@ -12414,6 +12493,11 @@
                   do (range 0 3 0) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |handles-negative-and-fractional-steps)
+              :code $ quote $ do
+                assert= ([] -2 -1 0 1) (range -2 2)
+                assert= ([] 1 1.25 1.5 1.75) (range 1 2 0.25)
+              :tags $ #{} :core :unit
         'read-dir $ %{} 'CodeEntry
           :doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings"
           :code $ quote &read-dir
@@ -13752,10 +13836,7 @@
               :tags $ #{} :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
-          :code $ quote $ defn try-parse-cirru (source)
-            try
-              Result :ok $ parse-cirru source
-              fn (message) (Result :err message)
+          :code $ quote $ defn try-parse-cirru (source) (&try-parse-cirru Result source)
           :examples $ []
             quote $ |a .parse-cirru
             quote $
@@ -13772,10 +13853,7 @@
               assert-type (|a .parse-cirru) (Result CirruQuote String)
         'try-parse-cirru-edn $ %{} 'CodeEntry
           :doc "|Parse Cirru EDN as Result<Dynamic,String>; the payload stays Dynamic because EDN is open data. Prefer the .parse-cirru-edn String method in user code."
-          :code $ quote $ defn try-parse-cirru-edn (source)
-            try
-              Result :ok $ parse-cirru-edn source
-              fn (message) (Result :err message)
+          :code $ quote $ defn try-parse-cirru-edn (source) (&try-parse-cirru-edn Result source)
           :examples $ []
             quote $ |[] .parse-cirru-edn
             quote $
@@ -13881,10 +13959,7 @@
               :tags $ #{} :core :unit
         'try-parse-cirru-list $ %{} 'CodeEntry
           :doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code."
-          :code $ quote $ defn try-parse-cirru-list (source)
-            try
-              Result :ok $ parse-cirru-list source
-              fn (message) (Result :err message)
+          :code $ quote $ defn try-parse-cirru-list (source) (&try-parse-cirru-list Result source)
           :examples $ []
             quote $ |a .parse-cirru-list
             quote $
@@ -13923,35 +13998,74 @@
               :tags $ #{} :core :parse-boundary :unit
         'try-parse-json $ %{} 'CodeEntry
           :doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code."
-          :code $ quote $ defn try-parse-json (source)
-            try
-              Result :ok $ json-parse source
-              fn (message) (Result :err message)
+          :code $ quote $ defn try-parse-json (source) (&try-parse-json Result source)
           :examples $ []
             quote $ |1 .parse-json
             quote $ |{ .parse-json
           :schema $ quote $ Fn String
             -> $ Result Dynamic String
             :open :decode
-          :tests $ [] $ %{} 'TestEntry (:name |result-method-contract)
-            :code $ quote $ do
-              assert= true $ result:ok? $ |1 .parse-json
-              assert= true $ result:err? $ |{ .parse-json
-              assert-type (|1 .parse-json) (Result Dynamic String)
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote $ do
+                assert= true $ result:ok? $ |1 .parse-json
+                assert= true $ result:err? $ |{ .parse-json
+                assert-type (|1 .parse-json) (Result Dynamic String)
+            %{} 'TestEntry (:name |decodes-json-payload-via-result-pipeline)
+              :code $ quote $ let
+                  decode-numbers $ fn (text)
+                    hint-fn $ Fn String $ ->
+                      Result (List Number) String
+                    ->
+                      match (.parse-json text)
+                        (:ok raw)
+                          try-decode-map-as raw $ List Number
+                        (:err msg) (Result :err msg)
+                      .and-then $ fn (xs)
+                        if (empty? xs) (Result :err |empty-list) (Result :ok xs)
+                assert=
+                  Result :ok $ [] 1 2
+                  decode-numbers |[1,2]
+                assert= true $ .err? $ decode-numbers |[
+                assert= true $ .err? $ decode-numbers |[]
+                assert= true $ .err? $ decode-numbers |[1,false]
+              :tags $ #{} :core :unit
         'try-read-dir $ %{} 'CodeEntry
           :doc "|Compatibility function that lists a directory String as Result<List<String>,String>. Omit the trailing Option<Bool> for non-recursive listing, or pass `Option :some true` for recursion. New code should use FsPath .read-dir or .walk-dir. Native is supported; JavaScript requires a host read_dir injection, and WASM file effects are not yet supported."
           :code $ quote $ defn try-read-dir (path recursive?)
-            try
-              Result :ok $ match recursive?
-                (:some recursive?) (read-dir path recursive?)
-                (:none) (read-dir path)
-              fn (message) (Result :err message)
+            result:map
+              &fs-read-dir Result FsPath path "|try-read-dir failed" $ match recursive?
+                (:some flag) flag
+                (:none) false
+              fn (entries)
+                map entries $ fn (entry) (:value entry)
           :examples $ []
             quote $ try-read-dir |src
             quote $ try-read-dir |src $ Some true
           :schema $ quote $ Fn String (Option Bool)
             -> $ Result (List String) String
           :tags $ #{} :file :io
+          :tests $ [] $ %{} 'TestEntry (:name |lists-directory-and-reports-missing-as-result)
+            :code $ quote $ do
+              assert=
+                Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                try-read-dir |tests/fixtures/read-dir
+              assert=
+                Result :ok $ [] |tests/fixtures/read-dir/child.txt
+                try-read-dir |tests/fixtures/read-dir $ Some true
+              assert=
+                Result :ok $ [] $ fs:path |tests/fixtures/read-dir/child.txt
+                .walk-dir $ fs:path |tests/fixtures/read-dir
+              match (try-read-dir |tests/fixtures/read-dir/does-not-exist)
+                (:ok _) (assert= true false)
+                (:err message)
+                  assert= true $ string? message
+              match
+                .walk-dir $ fs:path |tests/fixtures/read-dir/does-not-exist
+                (:ok _) (assert= true false)
+                (:err message)
+                  assert= true $ string? message
+            :tags $ #{} :file :native
         'turn-symbol $ %{} 'CodeEntry
           :doc "|内部 String → Symbol 转换。严格类型调用只接受 String，成功返回 Symbol；不支持的输入会报错。native 运行时仍接受 Tag/Symbol 作为历史兼容，但这不是静态类型契约；新代码不应依赖该隐式转换。"
           :code $ quote &runtime-implementation
@@ -14162,6 +14276,13 @@
                 assert= |non-nil $ :value checked
                 assert= |a $ :value path
                 assert= path $ update path :missing $ fn (s) (raise |unexpected-callback)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |skips-missing-map-key-without-calling-callback)
+              :code $ quote $ assert=
+                {} $ :n 1
+                update
+                  {} $ :n 1
+                  , :missing $ fn (x) (raise |unexpected-callback)
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a collection path and update its leaf. An open or unknown path supplies Option<Dynamic>; decode or narrow the payload before concrete use. A proven nonempty homogeneous Map path requires Option<Leaf> input and Leaf output, retaining the Map type. Callback output is independent for open paths and literal empty paths; an empty path supplies the receiver itself. Missing intermediate containers are created as maps."

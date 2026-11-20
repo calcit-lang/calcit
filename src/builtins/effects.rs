@@ -319,44 +319,57 @@ pub fn read_stdin_text(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// List immediate children as nominal filesystem paths and preserve host failures as Result values.
+/// Collect child paths (optionally recursively without following symlinks) as UTF-8 strings.
+fn collect_utf8_dir_paths(dir: &std::path::Path, recursive: bool, paths: &mut Vec<String>) -> Result<(), String> {
+  let entries = fs::read_dir(dir).map_err(|error| error.to_string())?;
+  for entry in entries {
+    let entry = entry.map_err(|error| error.to_string())?;
+    let entry_path = entry.path();
+    let text = entry_path
+      .clone()
+      .into_os_string()
+      .into_string()
+      .map_err(|_| String::from("directory entry is not valid UTF-8"))?;
+    paths.push(text);
+    if recursive && entry.file_type().map_err(|error| error.to_string())?.is_dir() {
+      collect_utf8_dir_paths(&entry_path, true, paths)?;
+    }
+  }
+  Ok(())
+}
+
+/// List immediate or recursive children as nominal filesystem paths and preserve host failures as Result values.
 pub fn fs_read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  let [
-    result_type @ Calcit::EnumDef(_),
-    Calcit::StructDef(path_type),
-    Calcit::Str(path),
-    Calcit::Str(host_error),
-  ] = xs
-  else {
+  if !(4..=5).contains(&xs.len()) {
     return CalcitErr::err_str(
-      CalcitErrKind::Type,
-      "&fs-read-dir expected Result and FsPath definitions, a path string, and a host error prefix",
+      CalcitErrKind::Arity,
+      format!("&fs-read-dir expected 4 or 5 arguments, got {}", xs.len()),
     );
+  }
+  let (result_type, path_type, path, host_error, recursive) = match xs {
+    [
+      result_type @ Calcit::EnumDef(_),
+      Calcit::StructDef(path_type),
+      Calcit::Str(path),
+      Calcit::Str(host_error),
+    ] => (result_type, path_type, path, host_error, false),
+    [
+      result_type @ Calcit::EnumDef(_),
+      Calcit::StructDef(path_type),
+      Calcit::Str(path),
+      Calcit::Str(host_error),
+      Calcit::Bool(recursive),
+    ] => (result_type, path_type, path, host_error, *recursive),
+    _ => {
+      return CalcitErr::err_str(
+        CalcitErrKind::Type,
+        "&fs-read-dir expected Result and FsPath definitions, a path string, a host error prefix, and an optional boolean recursive flag",
+      );
+    }
   };
-  let result = match fs::read_dir(&**path) {
-    Ok(entries) => {
-      let mut paths = vec![];
-      for entry in entries {
-        match entry {
-          Ok(entry) => match entry.path().into_os_string().into_string() {
-            Ok(path) => paths.push(path),
-            Err(_) => {
-              return new_named_enum_value(&[
-                result_type.to_owned(),
-                Calcit::tag("err"),
-                Calcit::new_str(format!("{host_error}: directory entry is not valid UTF-8")),
-              ]);
-            }
-          },
-          Err(error) => {
-            return new_named_enum_value(&[
-              result_type.to_owned(),
-              Calcit::tag("err"),
-              Calcit::new_str(format!("{host_error}: {error}")),
-            ]);
-          }
-        }
-      }
+  let mut paths = vec![];
+  let result = match collect_utf8_dir_paths(std::path::Path::new(&**path), recursive, &mut paths) {
+    Ok(()) => {
       paths.sort();
       let values = paths
         .into_iter()
@@ -369,10 +382,10 @@ pub fn fs_read_dir(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         .collect::<Vec<_>>();
       new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::from(values)])
     }
-    Err(error) => new_named_enum_value(&[
+    Err(detail) => new_named_enum_value(&[
       result_type.to_owned(),
       Calcit::tag("err"),
-      Calcit::new_str(format!("{host_error}: {error}")),
+      Calcit::new_str(format!("{host_error}: {detail}")),
     ]),
   }?;
   Ok(result)

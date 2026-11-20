@@ -111,8 +111,11 @@ impl CalcitProc {
 
       // external data formats
       ParseCirru | ParseCirruList => Raises("the text is not valid Cirru"),
+      NativeTryParseCirru | NativeTryParseCirruList => Result("invalid Cirru syntax is returned as Result :err"),
       ParseCirruEdn => Raises("the text is not valid Cirru EDN"),
+      NativeTryParseCirruEdn => Result("invalid Cirru EDN syntax is returned as Result :err"),
       JsonParse => Raises("the text is not valid JSON"),
+      NativeTryParseJson => Result("invalid JSON syntax is returned as Result :err"),
       FormatCirru => Raises("the data is not a Cirru tree of strings and lists, or the inline option is not Bool"),
       FormatCirruOneLiner => Raises("the data is not a Cirru tree of strings and lists"),
       FormatCirruEdn => Raises("the value has no Cirru EDN form"),
