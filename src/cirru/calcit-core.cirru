@@ -5181,6 +5181,21 @@
                   &{} :a $ &{} :b $ &{} :c 10
                   assoc-in nil ([] :a :b :c) 10
                 assert= 9 $ assoc-in (&{}) ([]) 9
+                assert=
+                  &{} 7 $ &{} 0 42
+                  assoc-in
+                    assert-type ({})
+                      Map Number $ List Number
+                    [] 7 0
+                    , 42
+                assert=
+                  &{} 7 $ [] 42 20
+                  assoc-in
+                    assert-type
+                      &{} 7 $ [] 10 20
+                      Map Number $ List Number
+                    [] 7 0
+                    , 42
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |open-map-write-keeps-root-and-siblings)
               :code $ quote $ let
@@ -11336,6 +11351,24 @@
                   [] (Some 1) (Some 2)
                   map numbers nil->option
               :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |lowers-nested-nullable-if-without-wrapping-nil)
+              :code $ quote $ let
+                  from-nested $ fn (flag other)
+                    hint-fn $ Fn Bool Bool $ -> (Option Number)
+                    nil->option $ if flag (if other 1 nil) nil
+                  from-let-nil $ fn ()
+                    hint-fn $ Fn $ -> (Option Number)
+                    nil->option $ do 1 nil
+                  from-if-let-nil $ fn (flag)
+                    hint-fn $ Fn Bool $ -> (Option Number)
+                    nil->option $ if flag 1 $ do 2 nil
+                assert= (Some 1) (from-nested true true)
+                assert= None $ from-nested true false
+                assert= None $ from-nested false true
+                assert= None $ from-let-nil
+                assert= (Some 1) (from-if-let-nil true)
+                assert= None $ from-if-let-nil false
+              :tags $ #{} :core :types :unit
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -14215,6 +14248,23 @@
                   update-in (&{}) ([] :a :b)
                     fn (value)
                       if (option:none? value) 1 $ raise |expected-missing-value
+                assert= ([] nil)
+                  update-in ([] nil) ([] 0)
+                    fn (value)
+                      assert= (Some nil) value
+                      , nil
+                assert= (&{} :a nil)
+                  update-in (&{} :a nil) ([] :a)
+                    fn (value)
+                      assert= (Some nil) value
+                      , nil
+                assert=
+                  &{} 7 $ &{} 0 42
+                  update-in
+                    assert-type ({})
+                      Map Number $ List Number
+                    [] 7 0
+                    fn (value) (assert= None value) 42
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |checked-open-path-keeps-numeric-boundary)
               :code $ quote $ let

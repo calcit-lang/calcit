@@ -8562,39 +8562,46 @@ fn expr_is_definitely_nil_in_ctx(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
       .is_some_and(|ty| matches!(CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(), CalcitTypeAnnotation::Nil))
 }
 
+fn wrap_nil_expr_as_none(expr: &Calcit) -> Result<Calcit, String> {
+  let none = nominal_option_none_expression()?;
+  if matches!(expr, Calcit::Nil) {
+    return Ok(none);
+  }
+  // Preserve side effects or runtime failures inside definitely-nil forms
+  // (e.g. `(&let () (println ...) nil)`) before returning `Option :none`.
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+    Calcit::from(Vec::<Calcit>::new()),
+    expr.clone(),
+    none,
+  ]))
+}
+
 fn lower_nil_to_option_target(ctx: &WasmGenCtx, arg: &Calcit) -> Result<Option<Calcit>, String> {
   if expr_is_definitely_nil_in_ctx(ctx, arg) {
-    return nominal_option_none_expression().map(Some);
+    return wrap_nil_expr_as_none(arg).map(Some);
   }
   if let Calcit::List(items) = arg
     && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _)))
     && matches!(items.len(), 3 | 4)
   {
     let cond = items[1].clone();
-    let then_branch = &items[2];
-    let else_branch = items.get(3);
-    if else_branch.is_none_or(|branch| expr_is_definitely_nil_in_ctx(ctx, branch)) {
-      let some_branch = nominal_option_some_expression(then_branch.clone())?;
-      let none_branch = nominal_option_none_expression()?;
-      return Ok(Some(Calcit::from(vec![
-        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
-        cond,
-        some_branch,
-        none_branch,
-      ])));
-    }
-    if expr_is_definitely_nil_in_ctx(ctx, then_branch)
-      && let Some(else_expr) = else_branch
-    {
-      let none_branch = nominal_option_none_expression()?;
-      let some_branch = nominal_option_some_expression(else_expr.clone())?;
-      return Ok(Some(Calcit::from(vec![
-        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
-        cond,
-        none_branch,
-        some_branch,
-      ])));
-    }
+    let Some(then_lowered) = lower_nil_to_option_target(ctx, &items[2])? else {
+      return Ok(None);
+    };
+    let else_lowered = match items.get(3) {
+      Some(branch) => match lower_nil_to_option_target(ctx, branch)? {
+        Some(lowered) => lowered,
+        None => return Ok(None),
+      },
+      None => nominal_option_none_expression()?,
+    };
+    return Ok(Some(Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+      cond,
+      then_lowered,
+      else_lowered,
+    ])));
   }
   if let Some(ty) = infer_wasm_static_type(ctx, arg) {
     let expanded = expand_wasm_value_type(&ty);
@@ -19498,5 +19505,139 @@ mod tests {
         super::validate_wasm_equality_operands(&mut ctx, lhs, rhs, "=").expect_err("colliding or open list equality must be rejected");
       assert!(err.contains("E_WASM_NIL_TYPE_EVIDENCE"), "{err}");
     }
+  }
+
+  #[test]
+  fn lower_nil_to_option_target_preserves_effects_and_nested_nullable_if() {
+    std::thread::Builder::new()
+      .stack_size(64 * 1024 * 1024)
+      .spawn(|| {
+        let _guard = crate::wasm::host::program::lock_program_test_state();
+        let core = crate::wasm::host::load_core_snapshot().expect("embedded core");
+        crate::wasm::host::program::PROGRAM_CODE_DATA
+          .write()
+          .unwrap()
+          .extend(crate::wasm::host::program::extract_program_data(&core).expect("core source"));
+
+        let env = WasmCompileEnv {
+          function_value_dependencies: Default::default(),
+          fn_index: HashMap::new(),
+          fn_arity: HashMap::new(),
+          fn_has_rest: HashMap::new(),
+          runtime_fn_index: HashMap::new(),
+          tag_index: HashMap::new(),
+          struct_layouts: Default::default(),
+          string_pool: HashMap::new(),
+          atom_globals: HashMap::new(),
+          value_imports: HashMap::new(),
+          static_fn_defs: HashMap::new(),
+          fn_table_index: HashMap::new(),
+          host_imports: HashMap::new(),
+          target: WasmTarget::Core,
+          boundary: WasmBoundary::Native,
+        };
+        let info = Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.wasm"),
+          at_def: Arc::from("lower-nil-option"),
+        });
+        let mk_local = |idx, name, ty| {
+          Calcit::Local(CalcitLocal {
+            idx,
+            sym: Arc::from(name),
+            info: info.clone(),
+            location: None,
+            type_info: ty,
+          })
+        };
+
+        let ctx = WasmGenCtx::new(2, env);
+        let flag = mk_local(0, "flag", Arc::new(CalcitTypeAnnotation::Bool));
+        let other = mk_local(1, "other", Arc::new(CalcitTypeAnnotation::Bool));
+        let maybe_num = mk_local(
+          2,
+          "maybe-num",
+          Arc::new(CalcitTypeAnnotation::Nullable(
+            Arc::new(CalcitTypeAnnotation::Number),
+            crate::wasm::host::calcit::NullableOrigin::Inferred,
+          )),
+        );
+
+        // 1. Literal nil lowers directly to (Option :none).
+        let lowered_lit = super::lower_nil_to_option_target(&ctx, &Calcit::Nil)
+          .expect("literal nil lowering should not error")
+          .expect("literal nil should lower");
+        assert_eq!(lowered_lit, super::nominal_option_none_expression().unwrap());
+
+        // 2. Non-literal definitely-nil expression keeps its evaluation inside (&let () expr (Option :none)).
+        let println_call = Calcit::from(vec![
+          Calcit::Symbol {
+            sym: Arc::from("println"),
+            info: info.clone(),
+            location: None,
+          },
+          Calcit::Str(Arc::from("seen")),
+        ]);
+        let effectful_nil = Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.wasm")),
+          Calcit::from(Vec::<Calcit>::new()),
+          println_call,
+          Calcit::Nil,
+        ]);
+        let lowered_effect = super::lower_nil_to_option_target(&ctx, &effectful_nil)
+          .expect("effectful nil lowering should not error")
+          .expect("effectful definitely-nil expression should lower");
+        let Calcit::List(items) = lowered_effect else {
+          panic!("expected CoreLet wrapper around effectful nil");
+        };
+        assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))));
+        assert_eq!(items.get(2), Some(&effectful_nil));
+        assert_eq!(items.get(3), Some(&super::nominal_option_none_expression().unwrap()));
+
+        // 3. Nested nullable `if` lowers recursively rather than wrapping the inner `if` in Some.
+        let nested_if = Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+          flag.clone(),
+          Calcit::from(vec![
+            Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+            other,
+            Calcit::Number(1.0),
+            Calcit::Nil,
+          ]),
+          Calcit::Nil,
+        ]);
+        let lowered_nested = super::lower_nil_to_option_target(&ctx, &nested_if)
+          .expect("nested nullable if lowering should not error")
+          .expect("nested nullable if should lower recursively");
+        let Calcit::List(outer_items) = lowered_nested else {
+          panic!("expected outer if");
+        };
+        assert!(matches!(outer_items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))));
+        let Calcit::List(inner_items) = outer_items.get(2).expect("lowered then branch") else {
+          panic!("expected recursive inner if rather than Option :some wrapper");
+        };
+        assert!(matches!(inner_items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))));
+        assert_eq!(
+          inner_items.get(2),
+          Some(&super::nominal_option_some_expression(Calcit::Number(1.0)).unwrap())
+        );
+        assert_eq!(inner_items.get(3), Some(&super::nominal_option_none_expression().unwrap()));
+        assert_eq!(outer_items.get(3), Some(&super::nominal_option_none_expression().unwrap()));
+
+        // 4. An `if` whose branch is a non-lowerable Nullable local refuses partial lowering.
+        let unlowerable_if = Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+          flag,
+          maybe_num,
+          Calcit::Nil,
+        ]);
+        assert!(
+          super::lower_nil_to_option_target(&ctx, &unlowerable_if)
+            .expect("nullable branch check should not error")
+            .is_none()
+        );
+      })
+      .expect("spawn test thread")
+      .join()
+      .expect("test thread panicked");
   }
 }

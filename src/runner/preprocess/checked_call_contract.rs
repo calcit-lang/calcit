@@ -430,9 +430,12 @@ fn resolve_checked_call_contract_inner(
     // Reuse the same bounded Map/List-path proof as reconstruction. Struct
     // boundaries, unknown paths, and open/mixed containers keep the public contract.
     let mut leaf_type = CalcitTypeAnnotation::expand_schema_alias(&receiver_type);
+    let mut seen_map = false;
+    let mut map_before_list = false;
     for key in &path {
       match leaf_type.as_ref() {
         T::Map(key_ty, member) => {
+          seen_map = true;
           let expanded_key = CalcitTypeAnnotation::expand_schema_alias(key_ty);
           if !matches!(expanded_key.as_ref(), T::Dynamic | T::TypeVar(_)) {
             let segment_ty = resolve_type_value(key, scope_types)?;
@@ -443,6 +446,9 @@ fn resolve_checked_call_contract_inner(
           leaf_type = CalcitTypeAnnotation::expand_schema_alias(member);
         }
         T::List(member) => {
+          if seen_map {
+            map_before_list = true;
+          }
           let segment_ty = resolve_type_value(key, scope_types)?;
           if !segment_ty.is_proven_for(&T::Number) {
             return None;
@@ -455,13 +461,19 @@ fn resolve_checked_call_contract_inner(
     if matches!(leaf_type.as_ref(), T::Dynamic | T::DynFn) {
       return None;
     }
+    // Missing Map keys ahead of a List hop construct nested Maps instead of Lists.
+    let return_type = if map_before_list {
+      calcit::DYNAMIC_TYPE.clone()
+    } else {
+      receiver_type.clone()
+    };
     return Some(CheckedCallContract {
       expected_types: Some(vec![
-        receiver_type.clone(),
+        receiver_type,
         path_type,
         fn_type(vec![core_type_ref("Option", vec![leaf_type.clone()])], leaf_type),
       ]),
-      return_type: receiver_type,
+      return_type,
       lowering: None,
     });
   }

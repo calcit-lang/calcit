@@ -1746,14 +1746,25 @@ pub(super) fn fully_typed_literal_lookup_path(
 
   let mut current_type = Arc::new(base_type.to_owned());
   for key in &path_items {
-    if is_struct_lookup_boundary(current_type.as_ref())
-      || matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+    let expanded_current = CalcitTypeAnnotation::expand_schema_alias(&current_type);
+    if is_struct_lookup_boundary(expanded_current.as_ref())
+      || matches!(
+        expanded_current.as_ref(),
+        CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn
+      )
     {
       return None;
     }
-    let expected_key = match current_type.as_ref() {
+    let expected_key = match expanded_current.as_ref() {
       CalcitTypeAnnotation::Map(key_type, _) if matches!(key_type.as_ref(), CalcitTypeAnnotation::Never) => None,
       CalcitTypeAnnotation::Map(key_type, _) => Some(key_type.clone()),
+      CalcitTypeAnnotation::String
+      | CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
+      | CalcitTypeAnnotation::Enum(..)
+      | CalcitTypeAnnotation::EnumValue(_)
+      | CalcitTypeAnnotation::AnonymousEnum => Some(Arc::new(CalcitTypeAnnotation::Number)),
+      other if other.resolve_to_enum().is_some() => Some(Arc::new(CalcitTypeAnnotation::Number)),
       _ => None,
     };
     if let Some(expected_key) = expected_key {
@@ -1763,7 +1774,7 @@ pub(super) fn fully_typed_literal_lookup_path(
         return None;
       }
     }
-    current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
+    current_type = infer_lookup_payload_type_from_type(expanded_current.as_ref(), Some(key))?;
   }
 
   Some(path_items.into_iter().cloned().collect())

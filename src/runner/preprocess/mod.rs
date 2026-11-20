@@ -3153,24 +3153,26 @@ fn generated_path_symbol(prefix: &str, file_ns: &str, call_stack: &CallStackList
 
 /// How a generated path traversal reports its outcome. Public `get-in`
 /// returns `Result<T, PathError>`, while `update-in` hands its updater the
-/// `Option` of the current leaf.
+/// `Option` of the current leaf (retaining `Some nil` when an existing leaf
+/// holds `nil`).
 #[derive(Clone, Copy)]
 enum GeneratedPathOutcome {
   Option,
+  UpdateOption,
   Result,
 }
 
 impl GeneratedPathOutcome {
   fn found(self, value: Calcit, file_ns: &str) -> Calcit {
     match self {
-      Self::Option => generated_core_call("Option", vec![Calcit::tag("some"), value], file_ns),
+      Self::Option | Self::UpdateOption => generated_core_call("Option", vec![Calcit::tag("some"), value], file_ns),
       Self::Result => generated_core_call("Result", vec![Calcit::tag("ok"), value], file_ns),
     }
   }
 
   fn missing(self, file_ns: &str) -> Calcit {
     match self {
-      Self::Option => generated_core_call("Option", vec![Calcit::tag("none")], file_ns),
+      Self::Option | Self::UpdateOption => generated_core_call("Option", vec![Calcit::tag("none")], file_ns),
       Self::Result => generated_core_call(
         "Result",
         vec![
@@ -3194,28 +3196,34 @@ fn generated_get_in_step(
 ) -> Result<Calcit, CalcitErr> {
   let none = outcome.missing(file_ns);
   let present = if let Some((key, rest)) = path.split_first() {
-    let payload = generated_path_symbol("typed_path_value", file_ns, call_stack)?;
-    let some_pattern = generated_call(vec![Calcit::tag("some"), payload.to_owned()]);
-    let none_pattern = generated_call(vec![Calcit::tag("none")]);
-    let some_branch = generated_call(vec![
-      some_pattern,
-      generated_get_in_step(payload, rest, outcome, file_ns, call_stack)?,
-    ]);
-    let none_branch = generated_call(vec![none_pattern, none.to_owned()]);
-    let matched = generated_call(vec![
-      Calcit::Syntax(CalcitSyntax::Match, Arc::from(file_ns)),
-      generated_core_call("get", vec![current.to_owned(), key.to_owned()], file_ns),
-      some_branch,
-      none_branch,
-    ]);
+    let matched = if matches!(outcome, GeneratedPathOutcome::UpdateOption) && rest.is_empty() {
+      // `update-in` forwards `get` directly on the final hop so an existing `nil`
+      // leaf reaches the callback as `Some nil`, matching public `update-in`.
+      generated_core_call("get", vec![current.to_owned(), key.to_owned()], file_ns)
+    } else {
+      let payload = generated_path_symbol("typed_path_value", file_ns, call_stack)?;
+      let some_pattern = generated_call(vec![Calcit::tag("some"), payload.to_owned()]);
+      let none_pattern = generated_call(vec![Calcit::tag("none")]);
+      let some_branch = generated_call(vec![
+        some_pattern,
+        generated_get_in_step(payload, rest, outcome, file_ns, call_stack)?,
+      ]);
+      let none_branch = generated_call(vec![none_pattern, none.to_owned()]);
+      generated_call(vec![
+        Calcit::Syntax(CalcitSyntax::Match, Arc::from(file_ns)),
+        generated_core_call("get", vec![current.to_owned(), key.to_owned()], file_ns),
+        some_branch,
+        none_branch,
+      ])
+    };
+    let struct_message = if matches!(outcome, GeneratedPathOutcome::UpdateOption) {
+      "update-in does not traverse Struct fields; use update with a direct field key"
+    } else {
+      "get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
+    };
     generated_if(
       generated_call(vec![Calcit::Proc(CalcitProc::StructQuestion), current.to_owned()]),
-      generated_call(vec![
-        Calcit::Proc(CalcitProc::Raise),
-        Calcit::Str(Arc::from(
-          "get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type",
-        )),
-      ]),
+      generated_call(vec![Calcit::Proc(CalcitProc::Raise), Calcit::Str(Arc::from(struct_message))]),
       matched,
       file_ns,
     )
@@ -3369,20 +3377,31 @@ fn generated_mixed_assoc_in_step(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  let remaining_list_hops = path.iter().filter(|(_, kind)| matches!(kind, TypedPathContainerKind::List)).count();
+  generated_mixed_assoc_in_step_inner(current, value, path, remaining_list_hops, file_ns, call_stack)
+}
+
+fn generated_mixed_assoc_in_step_inner(
+  current: Calcit,
+  value: &Calcit,
+  path: &[(Calcit, TypedPathContainerKind)],
+  remaining_list_hops: usize,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
   let Some(((key, kind), rest)) = path.split_first() else {
     return Ok(value.to_owned());
   };
   match kind {
     TypedPathContainerKind::Map => {
-      if path.iter().all(|(_, k)| matches!(k, TypedPathContainerKind::Map)) {
+      if remaining_list_hops == 0 {
         let map_keys = path.iter().map(|(k, _)| k.to_owned()).collect::<Vec<_>>();
         return generated_assoc_in_step(current, value, &map_keys, file_ns, call_stack);
       }
       let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
       let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
-      let empty_map = || generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
-      let child_value = generated_if(
-        generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
+      let present_child = generated_let(
+        child.to_owned(),
         generated_core_call(
           "option:unwrap",
           vec![generated_call(vec![
@@ -3392,13 +3411,18 @@ fn generated_mixed_assoc_in_step(
           ])],
           file_ns,
         ),
-        empty_map(),
+        generated_mixed_assoc_in_step_inner(child, value, rest, remaining_list_hops, file_ns, call_stack)?,
         file_ns,
       );
-      let updated_child = generated_let(
-        child.to_owned(),
-        child_value,
-        generated_mixed_assoc_in_step(child, value, rest, file_ns, call_stack)?,
+      // When a Map key is absent ahead of an expected List hop, public
+      // `assoc-in` / `update-in` materializes the remaining path as nested Maps
+      // rather than indexing into an empty Map with NativeListAssoc.
+      let rest_keys = rest.iter().map(|(k, _)| k.to_owned()).collect::<Vec<_>>();
+      let missing_child = generated_typed_nil_assoc_chain(&rest_keys, value.to_owned());
+      let updated_child = generated_if(
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
+        present_child,
+        missing_child,
         file_ns,
       );
       let assoc = generated_call(vec![
@@ -3419,7 +3443,7 @@ fn generated_mixed_assoc_in_step(
         generated_let(
           child.to_owned(),
           elem,
-          generated_mixed_assoc_in_step(child, value, rest, file_ns, call_stack)?,
+          generated_mixed_assoc_in_step_inner(child, value, rest, remaining_list_hops - 1, file_ns, call_stack)?,
           file_ns,
         )
       };
@@ -3722,7 +3746,7 @@ fn try_expand_typed_literal_path_call(
         let current = generated_get_in_step(
           base_binding.to_owned(),
           &path_locals,
-          GeneratedPathOutcome::Option,
+          GeneratedPathOutcome::UpdateOption,
           file_ns,
           call_stack,
         )?;
@@ -3749,7 +3773,7 @@ fn try_expand_typed_literal_path_call(
       let current = generated_get_in_step(
         base_binding.to_owned(),
         &path_locals,
-        GeneratedPathOutcome::Option,
+        GeneratedPathOutcome::UpdateOption,
         file_ns,
         call_stack,
       )?;
@@ -11206,13 +11230,16 @@ fn constant_truthy_type_label(value_type: &CalcitTypeAnnotation) -> Option<&'sta
 
 /// Enforce strict `Bool` conditions in `if` (and macros that expand into it) (#2881).
 fn check_if_condition_is_bool(
+  head_ns: &str,
   raw_cond: &Calcit,
   cond_form: &Calcit,
   source_location: Option<NodeLocation>,
-  scope_types: &ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  ctx: &PreprocessContext,
 ) {
+  let scope_types = &*ctx.scope_types;
+  let file_ns = ctx.file_ns;
+  let call_stack = ctx.call_stack;
+  let check_warnings = ctx.check_warnings;
   let raw_type = resolve_type_value(cond_form, scope_types);
   let expanded_type = raw_type.as_ref().map(CalcitTypeAnnotation::expand_schema_alias);
   if matches!(
@@ -11266,9 +11293,20 @@ fn check_if_condition_is_bool(
       "List" | "Map" | "Set" => "use `empty?`; an empty collection is truthy",
       _ => "test the property you mean explicitly; this value is never nil or false",
     };
-    let message = format!(
-      "[Error] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}"
-    );
+    let message = if head_ns == calcit::CORE_NS
+      && let Some(op) = call_stack
+        .0
+        .iter()
+        .find(|frame| matches!(frame.kind, StackKind::Macro))
+        .filter(|frame| frame.ns.as_ref() == calcit::CORE_NS && matches!(frame.def.as_ref(), "and" | "or"))
+        .map(|frame| frame.def.as_ref())
+    {
+      format!("[Error] `{op}` operand has type {label}, expected `Bool` in {file_ns}; {guidance}")
+    } else {
+      format!(
+        "[Error] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}"
+      )
+    };
     gen_check_warning_code_at(message, "E_CONSTANT_TRUTHY_CONDITION", file_ns, best_location, check_warnings);
     return;
   }
@@ -14388,15 +14426,14 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   )?;
 
   check_if_condition_is_bool(
+    head_ns,
     args.first().unwrap(),
     &cond_form,
     args
       .first()
       .and_then(option_check_location)
       .or_else(|| preferred_source_call_location(None, ctx.call_stack)),
-    ctx.scope_types,
-    ctx.file_ns,
-    ctx.check_warnings,
+    ctx,
   );
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
@@ -16290,14 +16327,16 @@ pub fn preprocess_defn(
           ctx.call_stack,
         )?;
       }
-      if matches!(head, CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport) {
+      if matches!(head, CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport)
+        && !crate::snapshot::schema_annotation_is_missing(&def_schema)
+      {
         reject_wasm_boundary_dynamic(
           head,
           ctx.file_ns,
           def_name.as_ref(),
           &def_schema,
-          body_fn_hint.as_ref(),
-          body_fn_hint_location.clone().or_else(|| Some(definition_location.clone())),
+          None,
+          Some(definition_location.clone()),
           ctx.call_stack,
         )?;
       }
@@ -16543,6 +16582,23 @@ pub fn preprocess_defn(
         }
         function_generic_aliases = aliases;
         effective_fn_schema = Some(Arc::new(merged));
+      }
+      if matches!(head, CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport) {
+        reject_wasm_boundary_dynamic(
+          head,
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          effective_fn_schema.as_ref(),
+          body_fn_hint_location.clone().or_else(|| {
+            Some(NodeLocation::new(
+              info.at_ns.to_owned(),
+              info.at_def.to_owned(),
+              location.to_owned().unwrap_or_default(),
+            ))
+          }),
+          ctx.call_stack,
+        )?;
       }
       if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
         && let Some(signature) = effective_fn_schema.as_ref()
@@ -17614,6 +17670,7 @@ pub fn preprocess_core_let(
   let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
   let mut body_types: ScopeTypes = ctx.scope_types.clone();
   let mut let_lambda = None;
+  let mut initializer_is_open = false;
   // A lambda bound once is compiled where its only use gives a context (#2637).
   let mut deferred: Option<DeferredLetLambdaGuard> = None;
   let binding = match args.first() {
@@ -17721,6 +17778,8 @@ pub fn preprocess_core_let(
           type_info: inferred_type.clone(),
         });
 
+        // Check openness against the outer scope before the shadowing binding is inserted.
+        initializer_is_open = is_explicitly_open_expression(&form, &body_types);
         body_types.insert(sym.to_owned(), inferred_type);
 
         Calcit::from(CalcitList::from(&[name, form]))
@@ -17776,7 +17835,7 @@ pub fn preprocess_core_let(
     // explicitly open value, e.g. an element read from a `List<Dynamic>` input
     // or a call to a declared `Fn ... (-> Dynamic)` helper.
     let open = matches!(local, Calcit::Local(binding) if body_types.get(&binding.sym).is_some_and(|annotation| contains_dynamic_type(annotation.as_ref())))
-      && is_explicitly_open_expression(value, &body_types);
+      && initializer_is_open;
     let callable = if resolve_type_value(value, &body_types).is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
     {
       match value {
@@ -19274,7 +19333,10 @@ fn is_explicitly_open_expression(value: &Calcit, scope_types: &ScopeTypes) -> bo
   let Calcit::List(items) = value else {
     return false;
   };
-  let Some(callee) = items.first() else {
+  let Some(callee) = (match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::CallSpread, _)) => items.get(1),
+    first => first,
+  }) else {
     return false;
   };
   match callee {
@@ -20132,10 +20194,56 @@ fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
   cyclic || body_contains_recur(body)
 }
 
-fn fn_sig_contains_dynamic(sig: &CalcitFnTypeAnnotation) -> bool {
-  sig.arg_types.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
-    || sig.rest_type.as_ref().is_some_and(|rest| contains_dynamic_type(rest.as_ref()))
-    || contains_dynamic_type(sig.return_type.as_ref())
+fn fn_sig_contains_dynamic(sig: &CalcitFnTypeAnnotation, visited: &mut Vec<CalcitTypeAnnotation>) -> bool {
+  sig
+    .arg_types
+    .iter()
+    .any(|arg| type_contains_dynamic_resolving_aliases(arg, visited))
+    || sig
+      .rest_type
+      .as_ref()
+      .is_some_and(|rest| type_contains_dynamic_resolving_aliases(rest, visited))
+    || type_contains_dynamic_resolving_aliases(&sig.return_type, visited)
+}
+
+fn type_contains_dynamic_resolving_aliases(annotation: &Arc<CalcitTypeAnnotation>, visited: &mut Vec<CalcitTypeAnnotation>) -> bool {
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::Dynamic => true,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _)
+    | CalcitTypeAnnotation::Variadic(inner) => type_contains_dynamic_resolving_aliases(inner, visited),
+    CalcitTypeAnnotation::Map(key, value) => {
+      type_contains_dynamic_resolving_aliases(key, visited) || type_contains_dynamic_resolving_aliases(value, visited)
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::Tuple(args) => {
+      args.iter().any(|arg| type_contains_dynamic_resolving_aliases(arg, visited))
+    }
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if args.iter().any(|arg| type_contains_dynamic_resolving_aliases(arg, visited)) {
+        return true;
+      }
+      if visited.len() >= 64 || visited.contains(annotation.as_ref()) {
+        return false;
+      }
+      let Some(expanded) = annotation.resolve_schema_alias() else {
+        return false;
+      };
+      if matches!(
+        expanded.as_ref(),
+        CalcitTypeAnnotation::EnumDef(_) | CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::Custom(_)
+      ) {
+        return false;
+      }
+      visited.push(annotation.as_ref().clone());
+      let result = type_contains_dynamic_resolving_aliases(&expanded, visited);
+      visited.pop();
+      result
+    }
+    CalcitTypeAnnotation::Fn(signature) => fn_sig_contains_dynamic(signature, visited),
+    _ => false,
+  }
 }
 
 fn reject_wasm_boundary_dynamic(
@@ -20147,9 +20255,16 @@ fn reject_wasm_boundary_dynamic(
   location: Option<NodeLocation>,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  let has_dynamic = body_fn_hint.is_some_and(|sig| fn_sig_contains_dynamic(sig.as_ref()))
-    || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(sig) if fn_sig_contains_dynamic(sig))
-    || (!crate::snapshot::schema_annotation_is_missing(def_schema) && contains_dynamic_type(def_schema.as_ref()));
+  let mut visited = Vec::new();
+  let hint_has_dynamic = body_fn_hint.is_some_and(|sig| {
+    let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(Arc::clone(sig))), ns);
+    type_contains_dynamic_resolving_aliases(&qualified, &mut visited)
+  });
+  let schema_has_dynamic = !crate::snapshot::schema_annotation_is_missing(def_schema) && {
+    let qualified = resolve_namespace_type_refs_for_body(def_schema.clone(), ns);
+    type_contains_dynamic_resolving_aliases(&qualified, &mut visited)
+  };
+  let has_dynamic = hint_has_dynamic || schema_has_dynamic;
   if !has_dynamic {
     return Ok(());
   }

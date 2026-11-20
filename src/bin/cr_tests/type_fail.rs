@@ -5321,8 +5321,25 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
       4,
       "{truthy:?}"
     );
-    assert!(
-      truthy.iter().all(|warning| warning.message().contains("always taken")),
+    assert_eq!(
+      truthy.iter().filter(|warning| warning.message().contains("always taken")).count(),
+      4,
+      "{truthy:?}"
+    );
+    assert_eq!(
+      truthy
+        .iter()
+        .filter(|warning| warning.message().contains("`and` operand has type"))
+        .count(),
+      2,
+      "{truthy:?}"
+    );
+    assert_eq!(
+      truthy
+        .iter()
+        .filter(|warning| warning.message().contains("`or` operand has type"))
+        .count(),
+      2,
       "{truthy:?}"
     );
   });
@@ -6260,9 +6277,9 @@ fn strict_bool_conditions_reject_non_bool_statically_and_at_runtime() {
       ("runtime if nil", "if (as-bool nil) |yes |no", "if condition expects a Bool"),
       ("runtime if 0", "if (as-bool 0) |yes |no", "if condition expects a Bool"),
       ("runtime if unit", "if (as-bool &unit) |yes |no", "if condition expects a Bool"),
-      ("runtime not nil", "not (as-bool nil)", "not"),
-      ("runtime not 0", "not (as-bool 0)", "not"),
-      ("runtime not unit", "not (as-bool &unit)", "not"),
+      ("runtime not nil", "not (as-bool nil)", "not requires a Bool argument"),
+      ("runtime not 0", "not (as-bool 0)", "not requires a Bool argument"),
+      ("runtime not unit", "not (as-bool &unit)", "not requires a Bool argument"),
     ] {
       let snippet = format!(
         "defn main! ()\n  let\n      as-bool $ fn (v)\n        hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)\n        unsafe-coerce v Bool\n    {expr}"
@@ -6280,6 +6297,26 @@ fn strict_bool_conditions_reject_non_bool_statically_and_at_runtime() {
         runtime_err.msg
       );
     }
+  });
+}
+
+#[test]
+fn strict_typed_get_in_string_non_number_key_keeps_runtime_error() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let snippet = "defn main! ()\n  do\n    &get-in |abc ([] :missing)\n    , &unit";
+    let entries = load_snippet_entries(snippet);
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .unwrap_or_else(|err| panic!("&get-in string tag key should preprocess cleanly: {err}"));
+    assert!(warnings.borrow().is_empty(), "unexpected warnings: {:?}", warnings.borrow());
+    let runtime_err =
+      calcit::run_program(entries.init_ns, entries.init_def, &[]).expect_err("&get-in |abc ([] :missing) must fail at runtime");
+    assert!(
+      runtime_err.msg.contains("&get-raw expected a Number index for string"),
+      "expected runtime error containing `&get-raw expected a Number index for string`, got `{}`",
+      runtime_err.msg
+    );
   });
 }
 
@@ -6303,12 +6340,20 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
     };
 
     let mut file = snapshot::create_file_from_snippet(concat!(
+      "deftype OpenItems (List Dynamic)\n\n",
+      "deftype ConcreteItems (List Number)\n\n",
       "defwasm-export export-hint-param (x)\n  hint-fn $ Fn Dynamic (-> Number)\n  1\n\n",
       "defwasm-export export-hint-ret (x)\n  hint-fn $ Fn Number (-> Dynamic)\n  x\n\n",
       "defwasm-export export-schema-param (x) 1\n\n",
       "defwasm-import import-schema-param (x) |host |read\n\n",
       "defwasm-import import-schema-ret (x) |host |get\n\n",
+      "defwasm-export export-partial-hint (x)\n  hint-fn $ {} (:args ([] Number))\n  , x\n\n",
+      "defwasm-export export-partial-hint-dyn-arg (x)\n  hint-fn $ {} (:args ([] Dynamic))\n  , 1\n\n",
+      "defwasm-export export-alias-dyn (xs) 1\n\n",
+      "defwasm-import import-alias-dyn (xs) |host |read\n\n",
+      "defwasm-export export-alias-ok (xs) 1\n\n",
       "defwasm-export zero-typed ()\n  hint-fn $ Fn (-> Number)\n  , 42\n\n",
+      "defwasm-export zero-unhinted-project () 42\n\n",
       "defn main! () &unit",
     ))
     .expect("wasm boundary snippet should parse");
@@ -6318,6 +6363,28 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
       fn_schema(vec![calcit::calcit::DYNAMIC_TYPE.clone()], CalcitTypeAnnotation::Number);
     file.defs.get_mut("import-schema-ret").expect("import-schema-ret").schema =
       fn_schema(vec![Arc::new(CalcitTypeAnnotation::Number)], CalcitTypeAnnotation::Dynamic);
+    file.defs.get_mut("export-partial-hint").expect("export-partial-hint").schema =
+      fn_schema(vec![Arc::new(CalcitTypeAnnotation::Number)], CalcitTypeAnnotation::Number);
+    file
+      .defs
+      .get_mut("export-partial-hint-dyn-arg")
+      .expect("export-partial-hint-dyn-arg")
+      .schema = fn_schema(vec![Arc::new(CalcitTypeAnnotation::Number)], CalcitTypeAnnotation::Number);
+    file.defs.get_mut("export-alias-dyn").expect("export-alias-dyn").schema = fn_schema(
+      vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("OpenItems"), Arc::new(vec![])))],
+      CalcitTypeAnnotation::Number,
+    );
+    file.defs.get_mut("import-alias-dyn").expect("import-alias-dyn").schema = fn_schema(
+      vec![Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("OpenItems"), Arc::new(vec![])))],
+      CalcitTypeAnnotation::Number,
+    );
+    file.defs.get_mut("export-alias-ok").expect("export-alias-ok").schema = fn_schema(
+      vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("ConcreteItems"),
+        Arc::new(vec![]),
+      ))],
+      CalcitTypeAnnotation::Number,
+    );
 
     let mut lib_wasm =
       snapshot::create_file_from_snippet("ns lib.wasm\n\ndefwasm-export zero-unhinted () 42").expect("lib.wasm snippet should parse");
@@ -6333,6 +6400,9 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
       "export-schema-param",
       "import-schema-param",
       "import-schema-ret",
+      "export-partial-hint-dyn-arg",
+      "export-alias-dyn",
+      "import-alias-dyn",
     ] {
       let warnings = RefCell::new(vec![]);
       let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, bad_def, &warnings, &CallStackList::default())
@@ -6344,10 +6414,30 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
       );
     }
 
-    let ok_warnings = RefCell::new(vec![]);
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "zero-typed", &ok_warnings, &CallStackList::default())
-      .expect("zero-arg typed defwasm-export must be allowed");
-    assert!(ok_warnings.borrow().is_empty(), "unexpected warnings: {:?}", ok_warnings.borrow());
+    let project_zero_warnings = RefCell::new(vec![]);
+    let project_zero_err = runner::preprocess::ensure_ns_def_compiled(
+      &entries.init_ns,
+      "zero-unhinted-project",
+      &project_zero_warnings,
+      &CallStackList::default(),
+    )
+    .expect_err("schema-less zero-arg defwasm-export in project ns must still require a schema");
+    assert_eq!(
+      project_zero_err.code.as_deref(),
+      Some("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"),
+      "expected E_WHOLE_DYNAMIC_PUBLIC_SCHEMA for zero-unhinted-project, got {project_zero_err}"
+    );
+
+    for ok_def in ["zero-typed", "export-partial-hint", "export-alias-ok"] {
+      let ok_warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, ok_def, &ok_warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{ok_def} must be allowed: {err}"));
+      assert!(
+        ok_warnings.borrow().is_empty(),
+        "{ok_def} unexpected warnings: {:?}",
+        ok_warnings.borrow()
+      );
+    }
 
     let lib_warnings = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled("lib.wasm", "zero-unhinted", &lib_warnings, &CallStackList::default())
@@ -6356,11 +6446,6 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
       lib_warnings.borrow().iter().all(|w| w.code() != Some("E_WASM_BOUNDARY_DYNAMIC")),
       "unexpected E_WASM_BOUNDARY_DYNAMIC warning: {:?}",
       lib_warnings.borrow()
-    );
-    assert!(
-      ok_warnings.borrow().iter().all(|w| w.code() != Some("E_WASM_BOUNDARY_DYNAMIC")),
-      "unexpected E_WASM_BOUNDARY_DYNAMIC warning: {:?}",
-      ok_warnings.borrow()
     );
   });
 }
@@ -6389,12 +6474,21 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
 
     let build_entries = |main_body: &str| {
       builtins::effects::init_effects_states();
-      let mut library =
-        snapshot::create_file_from_snippet(concat!("ns lib.dynamic\n", "defn make-open () 1\n\n", "defn make-intrinsic () 1",))
-          .expect("library snippet should parse");
+      let mut library = snapshot::create_file_from_snippet(concat!(
+        "ns lib.dynamic\n",
+        "defn make-open () 1\n\n",
+        "defn make-open-arg (x) x\n\n",
+        "defn make-intrinsic () 1",
+      ))
+      .expect("library snippet should parse");
       library.ns.code = vec!["ns", "lib.dynamic"].into();
       library.defs.get_mut("make-open").expect("make-open").schema =
         fn_schema(vec![], CalcitTypeAnnotation::Dynamic, Default::default());
+      library.defs.get_mut("make-open-arg").expect("make-open-arg").schema = fn_schema(
+        vec![Arc::new(CalcitTypeAnnotation::Number)],
+        CalcitTypeAnnotation::Dynamic,
+        Default::default(),
+      );
       library.defs.get_mut("make-intrinsic").expect("make-intrinsic").schema = fn_schema(
         vec![],
         CalcitTypeAnnotation::Dynamic,
@@ -6402,7 +6496,7 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       );
 
       let app_snippet = format!(
-        "ns app.main\n  :require\n    lib.dynamic :refer $ make-open make-intrinsic\n\ndefn take-num (x) x\n\ndefn main! ()\n  {main_body}\n\ndefn reload! () &unit"
+        "ns app.main\n  :require\n    lib.dynamic :refer $ make-open make-open-arg make-intrinsic\n\ndefn take-num (x) x\n\ndefn main! ()\n  {main_body}\n\ndefn reload! () &unit"
       );
       let mut app = snapshot::create_file_from_snippet(&app_snippet).expect("app snippet should parse");
       app.defs.get_mut("take-num").expect("take-num").schema = fn_schema(
@@ -6420,13 +6514,19 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
     for (label, body) in [
       ("direct defn arg", "take-num (make-open)"),
       ("let-bound defn arg", "let ((v (make-open))) (take-num v)"),
+      (
+        "shadowing let-bound call",
+        "let ((fetch (fn () (hint-fn $ Fn (-> Dynamic)) (make-open)))) (let ((fetch (fetch))) (&+ fetch 1))",
+      ),
+      ("direct spread call", "&+ (make-open-arg & ([] 1)) 1"),
+      ("let-bound spread call", "let ((v (make-open-arg & ([] 1)))) (&+ v 1)"),
       ("direct proc &+ arg", "&+ (make-open) 1"),
       ("let-bound proc &+ arg", "let ((v (make-open))) (&+ v 1)"),
       ("direct not arg", "not (make-open)"),
       ("let-bound not arg", "let ((v (make-open))) (not v)"),
     ] {
       let entries = build_entries(body);
-      let err = run_check_only_without_proof(&entries, false)
+      let err = run_check_only_with_output(&entries, false)
         .expect_err(&format!("{label} must fail E_CALL_ARGUMENT_UNPROVEN even without proof audit"));
       assert!(
         err.contains("E_CALL_ARGUMENT_UNPROVEN"),
@@ -6442,7 +6542,7 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       ("narrowed bool?", "let ((v (make-open))) (if (bool? v) (not v) false)"),
     ] {
       let entries = build_entries(body);
-      run_check_only_without_proof(&entries, false)
+      run_check_only_with_output(&entries, false)
         .unwrap_or_else(|err| panic!("{label} should pass when proof audit is disabled: {err}"));
     }
   });
