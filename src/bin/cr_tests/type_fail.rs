@@ -6482,6 +6482,13 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       ))
       .expect("library snippet should parse");
       library.ns.code = vec!["ns", "lib.dynamic"].into();
+      let mut fn_head_entry = library.defs.get("make-open").expect("make-open").clone();
+      fn_head_entry.code = cirru_parser::parse("fn ()\n  hint-fn $ Fn (-> Dynamic)\n  , 1")
+        .expect("fn-headed helper should parse")
+        .into_iter()
+        .next()
+        .expect("single fn expression");
+      library.defs.insert("make-open-fn-head".to_owned(), fn_head_entry);
       library.defs.get_mut("make-open").expect("make-open").schema =
         fn_schema(vec![], CalcitTypeAnnotation::Dynamic, Default::default());
       library.defs.get_mut("make-open-arg").expect("make-open-arg").schema = fn_schema(
@@ -6496,7 +6503,7 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       );
 
       let app_snippet = format!(
-        "ns app.main\n  :require\n    lib.dynamic :refer $ make-open make-open-arg make-intrinsic\n\ndefn take-num (x) x\n\ndefn main! ()\n  {main_body}\n\ndefn reload! () &unit"
+        "ns app.main\n  :require\n    lib.dynamic :refer $ make-open make-open-arg make-open-fn-head make-intrinsic\n\ndefn take-num (x) x\n\ndefn main! ()\n  {main_body}\n\ndefn reload! () &unit"
       );
       let mut app = snapshot::create_file_from_snippet(&app_snippet).expect("app snippet should parse");
       app.defs.get_mut("take-num").expect("take-num").schema = fn_schema(
@@ -6520,6 +6527,12 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       ),
       ("direct spread call", "&+ (make-open-arg & ([] 1)) 1"),
       ("let-bound spread call", "let ((v (make-open-arg & ([] 1)))) (&+ v 1)"),
+      ("if branch open call", "&+ (if true (make-open) (make-open)) 1"),
+      ("if mixed branch open call", "&+ (if false 1 (make-open)) 1"),
+      ("do tail open call", "&+ (do 1 (make-open)) 1"),
+      ("let tail open call", "&+ (let ((x 1)) (make-open)) 1"),
+      ("let bound open tail", "&+ (let ((v (make-open))) v) 1"),
+      ("fn-headed hinted open call", "&+ (make-open-fn-head) 1"),
       ("direct proc &+ arg", "&+ (make-open) 1"),
       ("let-bound proc &+ arg", "let ((v (make-open))) (&+ v 1)"),
       ("direct not arg", "not (make-open)"),
@@ -6534,10 +6547,13 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       );
     }
 
-    // `:open :intrinsic` results and predicate-narrowed values pass when proof audit is disabled.
+    // `:open :intrinsic` results, decoded results, and discarded open side-effects pass when proof audit is disabled.
     for (label, body) in [
       ("intrinsic into defn", "take-num (make-intrinsic)"),
       ("intrinsic into proc &+", "&+ (make-intrinsic) 1"),
+      ("if decoded concrete result", "&+ (if true (decode-map-as (make-open) 'Number) 1) 1"),
+      ("do discarded open before concrete", "&+ (do (make-open) 1) 1"),
+      ("do discarded open before intrinsic", "&+ (do (make-open) (make-intrinsic)) 1"),
       ("narrowed number?", "let ((v (make-open))) (if (number? v) (&+ v 1) 0)"),
       ("narrowed bool?", "let ((v (make-open))) (if (bool? v) (not v) false)"),
     ] {

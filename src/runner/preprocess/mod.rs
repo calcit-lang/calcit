@@ -19310,29 +19310,125 @@ fn generic_param_accepts_any_value(
   !used_elsewhere
 }
 
+fn code_has_explicit_hint_fn(code: &Calcit) -> bool {
+  match code {
+    Calcit::Thunk(thunk) => code_has_explicit_hint_fn(thunk.get_code()),
+    Calcit::List(items) => match items.first().and_then(source_callable_name) {
+      Some("quote") => items.get(1).is_some_and(code_has_explicit_hint_fn),
+      Some("def") => items.get(2).is_some_and(code_has_explicit_hint_fn),
+      Some("fn") => items.iter().skip(2).any(is_source_hint_form),
+      _ => items.iter().skip(3).any(is_source_hint_form),
+    },
+    _ => false,
+  }
+}
+
 fn def_code_has_explicit_hint_fn(ns: &str, def: &str) -> bool {
-  let Some(Calcit::List(items)) = program::lookup_def_code(ns, def) else {
-    return false;
-  };
-  items.iter().skip(3).any(is_source_hint_form)
+  program::lookup_def_code(ns, def).is_some_and(|code| code_has_explicit_hint_fn(&code))
 }
 
 fn fn_signature_declares_open_dynamic_return(signature: &CalcitFnTypeAnnotation) -> bool {
   signature.open_reason.0 != Some(calcit::FnOpenReason::Intrinsic) && contains_dynamic_type(signature.return_type.as_ref())
 }
 
+fn reads_explicitly_open_local_in_scope(value: &Calcit, bound_open: &HashMap<Arc<str>, bool>) -> bool {
+  if bound_open.is_empty() {
+    return explicit_open::reads_explicitly_open_local(value);
+  }
+  match value {
+    Calcit::Local(local) => match bound_open.get(&local.sym) {
+      Some(is_open) => *is_open,
+      None => explicit_open::reads_explicitly_open_local(value),
+    },
+    Calcit::List(items) => {
+      if matches!(
+        items.first(),
+        Some(Calcit::Syntax(
+          CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::Quote | CalcitSyntax::Quasiquote | CalcitSyntax::HintFn,
+          _
+        ))
+      ) {
+        return false;
+      }
+      if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)))
+        && let Some(Calcit::List(pair)) = items.get(1)
+        && pair.len() == 2
+        && let (Some(Calcit::Local(local)), Some(init)) = (pair.first(), pair.get(1))
+      {
+        if reads_explicitly_open_local_in_scope(init, bound_open) {
+          return true;
+        }
+        let mut inner = bound_open.clone();
+        inner.insert(local.sym.clone(), false);
+        return items.iter().skip(2).any(|expr| reads_explicitly_open_local_in_scope(expr, &inner));
+      }
+      items.iter().any(|item| reads_explicitly_open_local_in_scope(item, bound_open))
+    }
+    _ => false,
+  }
+}
+
 /// Whether `value` is an explicitly open value whose Dynamic payload must be
 /// proved/decoded before entering a concrete parameter or proc slot:
 /// - reads an explicitly open local or alias bound from one;
-/// - calls a non-local `defn` or local `Fn` variable declaring an explicit
+/// - propagates through `if` branches and `CoreLet` / `do` / `let` result tails;
+/// - calls a non-local `defn`/`fn` or local `Fn` variable declaring an explicit
 ///   `Fn ... (-> Dynamic)` return type (excluding `:open :intrinsic` adapters).
 fn is_explicitly_open_expression(value: &Calcit, scope_types: &ScopeTypes) -> bool {
-  if explicit_open::reads_explicitly_open_local(value) {
-    return true;
+  is_explicitly_open_expression_inner(value, scope_types, &HashMap::new())
+}
+
+fn is_explicitly_open_expression_inner(value: &Calcit, scope_types: &ScopeTypes, bound_open: &HashMap<Arc<str>, bool>) -> bool {
+  if let Calcit::Local(_) = value {
+    return reads_explicitly_open_local_in_scope(value, bound_open);
   }
   let Calcit::List(items) = value else {
     return false;
   };
+  match items.first() {
+    Some(Calcit::Syntax(
+      CalcitSyntax::Defn | CalcitSyntax::Defmacro | CalcitSyntax::Quote | CalcitSyntax::Quasiquote | CalcitSyntax::HintFn,
+      _,
+    )) => return false,
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+      return items
+        .get(2)
+        .is_some_and(|branch| is_explicitly_open_expression_inner(branch, scope_types, bound_open))
+        || items
+          .get(3)
+          .is_some_and(|branch| is_explicitly_open_expression_inner(branch, scope_types, bound_open));
+    }
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+      if items.len() < 3 {
+        return false;
+      }
+      if let Some(Calcit::List(pair)) = items.get(1)
+        && pair.len() == 2
+        && let (Some(Calcit::Local(local)), Some(init)) = (pair.first(), pair.get(1))
+      {
+        let init_open =
+          contains_dynamic_type(local.type_info.as_ref()) && is_explicitly_open_expression_inner(init, scope_types, bound_open);
+        let mut inner_bound = bound_open.clone();
+        inner_bound.insert(local.sym.clone(), init_open);
+        return items
+          .get(items.len() - 1)
+          .is_some_and(|tail| is_explicitly_open_expression_inner(tail, scope_types, &inner_bound));
+      }
+      return items
+        .get(items.len() - 1)
+        .is_some_and(|tail| is_explicitly_open_expression_inner(tail, scope_types, bound_open));
+    }
+    Some(Calcit::Import(import)) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "do" => {
+      return items.len() >= 2
+        && items
+          .get(items.len() - 1)
+          .is_some_and(|tail| is_explicitly_open_expression_inner(tail, scope_types, bound_open));
+    }
+    _ => {}
+  }
+  if reads_explicitly_open_local_in_scope(value, bound_open) {
+    return true;
+  }
   let Some(callee) = (match items.first() {
     Some(Calcit::Syntax(CalcitSyntax::CallSpread, _)) => items.get(1),
     first => first,
@@ -19354,10 +19450,15 @@ fn is_explicitly_open_expression(value: &Calcit, scope_types: &ScopeTypes) -> bo
       false
     }
     Calcit::Local(local) => {
-      if explicit_open::let_lambda(local, scope_types).is_some() {
+      let shadowed = bound_open.contains_key(&local.sym);
+      if !shadowed && explicit_open::let_lambda(local, scope_types).is_some() {
         return false;
       }
-      let fn_type = scope_types.get(&local.sym).cloned().unwrap_or_else(|| local.type_info.clone());
+      let fn_type = if shadowed {
+        local.type_info.clone()
+      } else {
+        scope_types.get(&local.sym).cloned().unwrap_or_else(|| local.type_info.clone())
+      };
       matches!(fn_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if fn_signature_declares_open_dynamic_return(signature))
     }
     _ => false,
