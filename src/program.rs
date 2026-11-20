@@ -1626,6 +1626,15 @@ pub fn clone_reachable_compiled_program_snapshot() -> Result<CompiledProgram, St
       }
     }
     pending = compiled.keys().filter(|ns| !scope.contains(*ns)).cloned().collect();
+    // Filling a sibling definition can introduce a typed codec's nominal
+    // dependency without compiling that type. Follow these new edges too;
+    // otherwise JS emits an import whose namespace never enters the snapshot.
+    pending.extend(
+      collect_snapshot_fill_tasks(&compiled)
+        .into_iter()
+        .filter(|task| task.referenced_by_compiled && !scope.contains(&task.ns))
+        .map(|task| task.ns),
+    );
   }
   Ok(compiled)
 }

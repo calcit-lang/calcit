@@ -233,3 +233,30 @@ fn nominal_decoder_and_source_alias_share_one_js_namespace_binding() {
     assert_generated_js_runs(directory.path(), &emit_path);
   }
 }
+
+#[test]
+fn sibling_codec_dependencies_are_emitted_without_unrelated_namespaces() {
+  // Artifact closure and Node module loading are JS host boundaries. Decoder
+  // semantics are asserted by the fixture's definition-attached tests.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/js-codec-dependency.cirru", &snapshot).unwrap();
+  let emit_path = directory.path().join("js-out");
+  assert_success(
+    &run_calcit(&snapshot, &["--emit-path", emit_path.to_str().unwrap(), "js"]),
+    "emit the entry and its sibling codec",
+  );
+  assert!(
+    emit_path.join("app.model.mjs").is_file(),
+    "the sibling codec imports this nominal type"
+  );
+  assert!(
+    emit_path.join("app.leaf.mjs").is_file(),
+    "newly filled namespaces contribute transitive codec dependencies"
+  );
+  assert!(
+    !emit_path.join("app.unrelated.mjs").exists(),
+    "unreachable namespaces stay excluded"
+  );
+  assert_generated_js_runs(directory.path(), &emit_path);
+}
