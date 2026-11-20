@@ -3071,8 +3071,9 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
         "quote $ defwasm-export check-not-zero-and-boxed ()\n",
         "  let\n",
         "      bf $ assert-type (json-parse \"|false\") Bool\n",
+        "      bt $ assert-type (json-parse \"|true\") Bool\n",
         "      nz $ assert-type (json-parse \"|0\") Number\n",
-        "    if (and (= (not 0) false) (= (not 1) false) (= (not nil) true) (= (not false) true) (= (not true) false) (= (not bf) true) (= (not nz) false)) 1 0",
+        "    if (and (= (not false) true) (= (not true) false) (= (not bf) true) (= (not bt) false) (not (if bf true false)) (if bt true false) (= nz 0) (number? nz)) 1 0",
       ),
     ),
     (

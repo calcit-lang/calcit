@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'f $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn f (a b) (and a b)
+          :code $ quote $ defn f (a b) (if a b false)
           :examples $ []
           :schema $ quote $ Fn Bool Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)

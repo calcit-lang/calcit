@@ -8352,57 +8352,27 @@ fn wasm_non_nil_value_is_nonzero(annotation: &CalcitTypeAnnotation) -> bool {
 
 /// A scalar condition is either statically decided or has an unambiguous
 /// nonzero representation. Numeric zero is never a false Calcit value.
-fn scalar_truthiness_constant(annotation: &CalcitTypeAnnotation) -> Result<Option<bool>, String> {
+fn wasm_type_has_ambiguous_nil_join(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
-    CalcitTypeAnnotation::Bool => Ok(None),
-    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never => Ok(Some(false)),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => match scalar_truthiness_constant(inner)? {
-      Some(false) => Ok(Some(false)),
-      None => Ok(None),
-      Some(true) if wasm_non_nil_value_is_nonzero(inner) => Ok(None),
-      _ => Err(format!(
-        "E_WASM_NIL_TYPE_EVIDENCE: if cannot distinguish nil from a zero-valued nil-join {} payload in the current scalar ABI",
-        inner.to_brief_string()
-      )),
-    },
-    CalcitTypeAnnotation::Number
-    | CalcitTypeAnnotation::Numeric(_)
-    | CalcitTypeAnnotation::String
-    | CalcitTypeAnnotation::Symbol
-    | CalcitTypeAnnotation::Tag
-    | CalcitTypeAnnotation::List(_)
-    | CalcitTypeAnnotation::Map(_, _)
-    | CalcitTypeAnnotation::Set(_)
-    | CalcitTypeAnnotation::Buffer
-    | CalcitTypeAnnotation::BufList
-    | CalcitTypeAnnotation::Ref(_)
-    | CalcitTypeAnnotation::StructValue(_)
-    | CalcitTypeAnnotation::EnumValue(_)
-    | CalcitTypeAnnotation::AnonymousEnum
-    | CalcitTypeAnnotation::Struct(_, _)
-    | CalcitTypeAnnotation::Enum(_, _)
-    | CalcitTypeAnnotation::StructDef(_)
-    | CalcitTypeAnnotation::EnumDef(_)
-    | CalcitTypeAnnotation::Fn(_)
-    | CalcitTypeAnnotation::DynFn
-    | CalcitTypeAnnotation::CirruQuote => Ok(Some(true)),
-    CalcitTypeAnnotation::TypeRef(_, _)
-      if annotation.resolve_to_struct().is_some()
-        || annotation.resolve_to_enum().is_some()
-        || annotation.resolve_to_nonoptional_fn().is_some() =>
-    {
-      Ok(Some(true))
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
+      let expanded = CalcitTypeAnnotation::expand_schema_alias(inner);
+      matches!(
+        expanded.as_ref(),
+        CalcitTypeAnnotation::Bool
+          | CalcitTypeAnnotation::Number
+          | CalcitTypeAnnotation::Numeric(_)
+          | CalcitTypeAnnotation::Dynamic
+          | CalcitTypeAnnotation::TypeVar(_)
+      ) || wasm_type_has_ambiguous_nil_join(expanded.as_ref())
     }
-    _ => Err(format!(
-      "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven value type to distinguish nil, false and Unit from numeric zero for `{}`",
-      annotation.to_brief_string()
-    )),
+    CalcitTypeAnnotation::Nullable(_, _) => true,
+    _ => false,
   }
 }
 
 fn wasm_type_requires_scalar_specialization(annotation: &CalcitTypeAnnotation) -> bool {
   let expanded = CalcitTypeAnnotation::expand_schema_alias(&Arc::new(annotation.clone()));
-  if nil_type_evidence_is_open(expanded.as_ref()) || scalar_truthiness_constant(&expanded).is_err() {
+  if nil_type_evidence_is_open(expanded.as_ref()) || wasm_type_has_ambiguous_nil_join(expanded.as_ref()) {
     return true;
   }
   match expanded.as_ref() {
@@ -8571,6 +8541,92 @@ fn nominal_option_none_expression() -> Result<Calcit, String> {
     Calcit::EnumDef(definition),
     Calcit::tag("none"),
   ]))
+}
+
+fn nominal_option_some_expression(payload: Calcit) -> Result<Calcit, String> {
+  let Calcit::Enum(none) = crate::wasm::host::builtins::option_value::none().map_err(|error| error.to_string())? else {
+    unreachable!("the core Option helper returns a nominal enum value")
+  };
+  let definition = none.sum_type.expect("the core Option value retains its definition");
+  Ok(Calcit::from(vec![
+    Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+    Calcit::EnumDef(definition),
+    Calcit::tag("some"),
+    payload,
+  ]))
+}
+
+fn expr_is_definitely_nil_in_ctx(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  matches!(expr, Calcit::Nil)
+    || infer_wasm_static_type(ctx, expr)
+      .is_some_and(|ty| matches!(CalcitTypeAnnotation::expand_schema_alias(&ty).as_ref(), CalcitTypeAnnotation::Nil))
+}
+
+fn lower_nil_to_option_target(ctx: &WasmGenCtx, arg: &Calcit) -> Result<Option<Calcit>, String> {
+  if expr_is_definitely_nil_in_ctx(ctx, arg) {
+    return nominal_option_none_expression().map(Some);
+  }
+  if let Calcit::List(items) = arg
+    && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _)))
+    && matches!(items.len(), 3 | 4)
+  {
+    let cond = items[1].clone();
+    let then_branch = &items[2];
+    let else_branch = items.get(3);
+    if else_branch.is_none_or(|branch| expr_is_definitely_nil_in_ctx(ctx, branch)) {
+      let some_branch = nominal_option_some_expression(then_branch.clone())?;
+      let none_branch = nominal_option_none_expression()?;
+      return Ok(Some(Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+        cond,
+        some_branch,
+        none_branch,
+      ])));
+    }
+    if expr_is_definitely_nil_in_ctx(ctx, then_branch)
+      && let Some(else_expr) = else_branch
+    {
+      let none_branch = nominal_option_none_expression()?;
+      let some_branch = nominal_option_some_expression(else_expr.clone())?;
+      return Ok(Some(Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+        cond,
+        none_branch,
+        some_branch,
+      ])));
+    }
+  }
+  if let Some(ty) = infer_wasm_static_type(ctx, arg) {
+    let expanded = expand_wasm_value_type(&ty);
+    if !nil_type_evidence_is_open(expanded.as_ref())
+      && !matches!(expanded.as_ref(), CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(..))
+    {
+      return nominal_option_some_expression(arg.clone()).map(Some);
+    }
+  }
+  Ok(None)
+}
+
+fn is_direct_nil_to_option_call_on_var(expr: &Calcit, var_name: &str) -> bool {
+  let Calcit::List(items) = expr else {
+    return false;
+  };
+  if items.len() != 2 {
+    return false;
+  }
+  let is_nil_to_option = match &items[0] {
+    Calcit::Import(import) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "nil->option",
+    Calcit::Symbol { sym, info, .. } => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == "nil->option",
+    _ => false,
+  };
+  if !is_nil_to_option {
+    return false;
+  }
+  match &items[1] {
+    Calcit::Local(local) => local.sym.as_ref() == var_name,
+    Calcit::Symbol { sym, .. } => sym.as_ref() == var_name,
+    _ => false,
+  }
 }
 
 fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[Calcit]) -> Result<bool, String> {
@@ -8924,7 +8980,7 @@ fn direct_scalar_type_test(expr: &Calcit) -> bool {
         Some(Calcit::Syntax(CalcitSyntax::If, _)) => items
           .get(1)
           .and_then(infer_static_type_from_expr)
-          .is_none_or(|annotation| scalar_truthiness_constant(&annotation).is_err()),
+          .is_none_or(|annotation| wasm_type_requires_scalar_specialization(&annotation)),
         Some(Calcit::Import(import)) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => match import.def.as_ref() {
           "nil?" => true,
           "=" | "not=" | "union" | "difference" | "intersection" | "include" | "exclude" | "pairs-map" | "merge" | "zipmap"
@@ -10056,6 +10112,11 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
           "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           "try-parse-json" if args_list.len() == 1 => return edn_parse::emit_try_parse_json(ctx, &args_list),
+          "nil->option" if args_list.len() == 1 => {
+            if let Some(lowered) = lower_nil_to_option_target(ctx, &args_list[0])? {
+              return emit_expr(ctx, &lowered);
+            }
+          }
           // `'` — list literal constructor (calcit.core/'), same as ([] a b c).
           "'" => return emit_list_new(ctx, &args_list),
           _ => {}
@@ -10179,6 +10240,16 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
             && !ctx.locals.contains_key(name) =>
         {
           return edn_parse::emit_try_parse_json(ctx, &args_list);
+        }
+        "nil->option"
+          if args_list.len() == 1
+            && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+            && !ctx.lambda_locals.contains_key(name)
+            && !ctx.locals.contains_key(name) =>
+        {
+          if let Some(lowered) = lower_nil_to_option_target(ctx, &args_list[0])? {
+            return emit_expr(ctx, &lowered);
+          }
         }
         _ => {}
       }
@@ -10983,19 +11054,22 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       expect_arity(1, args, "not")?;
       let ev = infer_wasm_evidence(ctx, &args[0]);
       let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
-      let constant = scalar_truthiness_constant(&ty).ok().flatten();
-      emit_expr(ctx, &args[0])?;
-      if let Some(truthy) = constant {
-        ctx.emit(Instruction::Drop);
-        ctx.emit(f64_const(if truthy { 0.0 } else { 1.0 }));
-      } else {
-        let v = ctx.alloc_local();
-        ctx.emit(Instruction::LocalSet(v));
-        emit_value_is_truthy_i32(ctx, v);
-        ctx.emit(Instruction::I32Eqz);
-        ctx.emit(Instruction::F64ConvertI32U);
+      match ty.as_ref() {
+        CalcitTypeAnnotation::Never => emit_expr(ctx, &args[0]),
+        CalcitTypeAnnotation::Bool => {
+          emit_expr(ctx, &args[0])?;
+          let v = ctx.alloc_local();
+          ctx.emit(Instruction::LocalSet(v));
+          emit_value_is_truthy_i32(ctx, v);
+          ctx.emit(Instruction::I32Eqz);
+          ctx.emit(Instruction::F64ConvertI32U);
+          Ok(())
+        }
+        _ => Err(format!(
+          "E_NON_BOOL_CONDITION: not expects Bool in WASM, got `{}`",
+          ty.to_brief_string()
+        )),
       }
-      Ok(())
     }
 
     // Math (unary)
@@ -13850,12 +13924,6 @@ fn static_predicate_condition_outcome_in_scope(
     }
   }
   let Calcit::List(items) = condition else {
-    if let Some(ev) = infer_wasm_evidence_in_scope(ctx, condition, local_types, closures, &mut HashSet::new()) {
-      let expanded = CalcitTypeAnnotation::expand_schema_alias(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
-      if let Ok(Some(truthy)) = scalar_truthiness_constant(&expanded) {
-        return Some(truthy);
-      }
-    }
     return None;
   };
   let head = items.first()?;
@@ -14036,21 +14104,27 @@ fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 /// Leave an `if` condition's truthiness on the stack as i32.
 fn emit_if_condition(ctx: &mut WasmGenCtx, condition: &Calcit) -> Result<(), String> {
   let annotation = infer_wasm_static_type(ctx, condition)
-    .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven condition type in the current scalar ABI".to_owned())?;
-  let constant = scalar_truthiness_constant(&annotation)?;
-  // Always evaluate once, including effects and errors in a statically
-  // decided condition. Bool and supported nullable values check both raw
-  // scalars and heap-boxed nil/bool values.
-  emit_expr(ctx, condition)?;
-  if let Some(truthy) = constant {
-    ctx.emit(Instruction::Drop);
-    ctx.emit(Instruction::I32Const(i32::from(truthy)));
-  } else {
-    let v = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(v));
-    emit_value_is_truthy_i32(ctx, v);
+    .ok_or_else(|| "E_NON_BOOL_CONDITION: if requires a proven Bool condition type in WASM".to_owned())?;
+  let expanded = expand_wasm_value_type(&annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Never => {
+      emit_expr(ctx, condition)?;
+      ctx.emit(Instruction::Drop);
+      ctx.emit(Instruction::I32Const(0));
+      Ok(())
+    }
+    CalcitTypeAnnotation::Bool => {
+      emit_expr(ctx, condition)?;
+      let v = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(v));
+      emit_value_is_truthy_i32(ctx, v);
+      Ok(())
+    }
+    other => Err(format!(
+      "E_NON_BOOL_CONDITION: if condition expects Bool in WASM, got `{}`",
+      other.to_brief_string()
+    )),
   }
-  Ok(())
 }
 
 /// A local argument whose attached impls are chosen at runtime.
@@ -14363,6 +14437,12 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("let binding expected symbol, got: {other}")),
       };
+      if rest.len() == 1
+        && is_direct_nil_to_option_call_on_var(&rest[0], &var_name)
+        && let Some(lowered) = lower_nil_to_option_target(ctx, &xs[1])?
+      {
+        return emit_expr(ctx, &lowered);
+      }
       emit_scoped_let(ctx, &var_name, &xs[1], |ctx| {
         // Flatten nested lets while retaining each binding's lexical scope.
         if rest.len() == 1
@@ -18833,11 +18913,6 @@ mod tests {
         crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
       ),
       compile_fn(
-        "not_assert_nil",
-        Calcit::from(vec![Calcit::Proc(CalcitProc::Not), assert_nil]),
-        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
-      ),
-      compile_fn(
         "if_assert_bool",
         Calcit::from(vec![
           Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
@@ -18850,9 +18925,54 @@ mod tests {
       compile_fn(
         "nil_q_nullable",
         Calcit::from(vec![Calcit::Proc(CalcitProc::NilQuestion), local_x(nullable_str_ty.clone())]),
-        nullable_str_ty,
+        nullable_str_ty.clone(),
       ),
     ];
+
+    // Strict Bool enforcement rejects `not` and `if` on Nil, Nullable, and Dynamic inputs (#2881).
+    for (label, expr, local_ty) in [
+      (
+        "not on assert-type Nil",
+        Calcit::from(vec![Calcit::Proc(CalcitProc::Not), assert_nil.clone()]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+      (
+        "if on assert-type Nil",
+        Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+          assert_nil,
+          Calcit::Number(1.0),
+          Calcit::Number(2.0),
+        ]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+      (
+        "if on Nullable(String)",
+        Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+          local_x(nullable_str_ty.clone()),
+          Calcit::Number(1.0),
+          Calcit::Number(2.0),
+        ]),
+        nullable_str_ty,
+      ),
+      (
+        "if on Dynamic",
+        Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from(crate::wasm::host::calcit::CORE_NS)),
+          local_x(crate::wasm::host::calcit::DYNAMIC_TYPE.clone()),
+          Calcit::Number(1.0),
+          Calcit::Number(2.0),
+        ]),
+        crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      ),
+    ] {
+      let mut bad_ctx = WasmGenCtx::new(1, env.clone());
+      bad_ctx.locals.insert("x".into(), 0);
+      bad_ctx.local_types.insert("x".into(), WasmTypeEvidence::contract(local_ty));
+      let err = emit_expr(&mut bad_ctx, &expr).expect_err(label);
+      assert!(err.contains("E_NON_BOOL_CONDITION"), "{label}: {err}");
+    }
 
     let bytes = build_wasm_module(
       &fns,
@@ -18868,7 +18988,7 @@ mod tests {
         rest_adapters: HashMap::new(),
       },
     )
-    .expect("valid truthiness module");
+    .expect("valid strict bool module");
 
     let engine = Engine::default();
     let module = Module::new(&engine, &bytes).expect("valid wasm");
@@ -18890,9 +19010,6 @@ mod tests {
     let not_bool = instance
       .get_typed_func::<f64, f64>(&mut store, "not_assert_bool")
       .expect("not_assert_bool");
-    let not_nil = instance
-      .get_typed_func::<f64, f64>(&mut store, "not_assert_nil")
-      .expect("not_assert_nil");
     let if_bool = instance
       .get_typed_func::<f64, f64>(&mut store, "if_assert_bool")
       .expect("if_assert_bool");
@@ -18904,9 +19021,6 @@ mod tests {
     assert_eq!(not_bool.call(&mut store, boxed_true).unwrap(), 0.0);
     assert_eq!(not_bool.call(&mut store, 0.0).unwrap(), 1.0);
     assert_eq!(not_bool.call(&mut store, 1.0).unwrap(), 0.0);
-
-    assert_eq!(not_nil.call(&mut store, boxed_nil).unwrap(), 1.0);
-    assert_eq!(not_nil.call(&mut store, 0.0).unwrap(), 1.0);
 
     assert_eq!(if_bool.call(&mut store, boxed_false).unwrap(), 2.0);
     assert_eq!(if_bool.call(&mut store, boxed_true).unwrap(), 1.0);

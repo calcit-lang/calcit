@@ -340,7 +340,9 @@ let
 
 ```cirru
 let
-    pick $ fn (flag n) (if flag (Some n) None)
+    pick $ fn (flag n)
+      hint-fn $ Fn Bool Number (-> $ Option Number)
+      if flag (Some n) None
   assert= (Option :some 2) (pick true 2)
   assert= (Option :none) (pick false 2)
   assert= 5 $ match (Some 5)

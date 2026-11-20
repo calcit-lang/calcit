@@ -779,7 +779,7 @@ if (!invalidMapAssocArity.stderr.includes("E_PROC_ARITY")) {
 const noneBottomCheck = run(["eval", "assert-type None (Option Number)"]);
 expectStatus(noneBottomCheck, 0, "None carries Option Never and satisfies concrete Option<T> contracts");
 
-const validRaiseForms = run(["eval", "fn (flag) (if flag (raise |boom ([] :extra 1)) (raise :tag-error))"]);
+const validRaiseForms = run(["eval", "fn (flag) (hint-fn $ Fn Bool (-> Never)) (if flag (raise |boom ([] :extra 1)) (raise :tag-error))"]);
 expectStatus(validRaiseForms, 0, "raise accepts 1~2 arguments and returns Never");
 
 const invalidEmptyRaise = run(["eval", "fn () (raise)"]);

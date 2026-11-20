@@ -185,7 +185,7 @@
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-or-linear-expansion $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-or-linear-expansion ()
-            assert= |done $ or false false false false false false false false false false false false false false false false false false false false |done
+            assert= true $ or false false false false false false false false false false false false false false false false false false false false true
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-thread-macros $ %{} 'CodeEntry (:doc |)

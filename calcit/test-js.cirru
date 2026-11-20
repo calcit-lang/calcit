@@ -131,7 +131,7 @@
                     assert= true a
               f2
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'test-async-in-data $ %{} 'CodeEntry
           :doc "|async fn inside data. if wrong, it will be a syntax error from await outside async"
           :code $ quote $ fn () (hint-fn Async)
@@ -204,7 +204,7 @@
               assert= nil $ .?!2 f
               assert= 2 $ .?!0 e
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'test-data-gen $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code gen from Cirru Edn")
             assert=
@@ -296,7 +296,7 @@
               &{} |a 1 :b 2 |c $ [] 3 4
               to-calcit-data $ &js-object |a 1 |:b 2 :c $ [] 3 4
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'test-let-example $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing code emitting of using let")
             let
@@ -391,6 +391,7 @@
             let
                 a $ unsafe-coerce (js-array 1 2) test-js.main/TestArray
                 f $ fn (t)
+                  hint-fn $ Fn Bool $ -> Dynamic
                   if t (.-0 a) (&raw-code |a[1])
               assert= (f true) 1
               assert= (f false) 2

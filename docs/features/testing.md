@@ -154,7 +154,7 @@ Normal `calcit` execution does not run tests implicitly. CI and coding agents sh
 
 The `calcit.test` namespace is embedded in `calcit-core.cirru` and requires no external module:
 
-- `is` asserts a truthy expression.
+- `is` asserts a `Bool` expression.
 - `is=` and `is-not=` compare values.
 - `throws?` reports whether an expression raises.
 - `is-throws` requires an expression to raise.

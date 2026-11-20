@@ -22,17 +22,19 @@ try {
     ["safe-tag", "quote $ defn safe-tag () $ turn-tag |ready", "quote $ Fn (-> Tag)"],
     ["safe-symbol", "quote $ defn safe-symbol () $ turn-symbol |ready", "quote $ Fn (-> Symbol)"],
     ["dynamic-tag", "quote $ defn dynamic-tag (value) $ turn-tag value", "quote $ Fn Dynamic (-> Tag)"],
-    ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ Fn Dynamic (-> Symbol)"],
+    ["open-symbol", "quote $ defn open-symbol (value) $ turn-symbol value", "quote $ Fn T (-> Symbol) (:generics T)"],
     ["dynamic-string", "quote $ defn dynamic-string (value) $ to-string value", "quote $ Fn Dynamic (-> String)"],
     ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ Fn (-> Tag)"],
-    ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ Fn (-> Tag)"],
+    ["macro-tag", "quote $ defn macro-tag () $ if-not false (turn-tag |ready) :fallback", "quote $ Fn (-> Tag)"],
     ["name-value", "quote $ defn name-value () |ready", "quote $ Fn (-> String)"],
     ["from-fn", "quote $ defn from-fn () $ turn-tag $ name-value", "quote $ Fn (-> Tag)"],
     ["from-macro", "quote $ defn from-macro () $ turn-tag $ macro-name", "quote $ Fn (-> Tag)"],
     ["quoted", "quote $ defn quoted () $ quote $ turn-tag |ready", "quote $ Fn (-> Dynamic)"],
   ]) {
     run(snapshot, "edit", "def", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", code);
-    run(snapshot, "edit", "schema", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", schema);
+    if (schema) {
+      run(snapshot, "edit", "schema", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", schema);
+    }
   }
   run(snapshot, "edit", "def", "test-wasm.conversion/macro-name", "--input-format", "cirru", "--code", "quote $ defmacro macro-name () |ready");
   run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-tag", "preserves-tag", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= :ready $ safe-tag");
@@ -53,6 +55,16 @@ try {
   assert.equal(await readFile(snapshot, "utf8"), invalidSource, "failed validation must not write partial fixes");
   run(snapshot, "query", "def", "test-wasm.conversion/dynamic-string");
   run(snapshot, "edit", "rm-def", "test-wasm.conversion/dynamic-string");
+  run(snapshot, "edit", "def", "test-wasm.conversion/dynamic-symbol", "--input-format", "cirru", "--code", "quote $ defn dynamic-symbol (value) $ turn-symbol value");
+  run(snapshot, "edit", "schema", "test-wasm.conversion/dynamic-symbol", "--input-format", "cirru", "--code", "quote $ Fn Dynamic (-> Symbol)");
+  const beforeDynamicSymbol = await readFile(snapshot, "utf8");
+  const unprovenDynamicSymbol = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"],
+    { encoding: "utf8", timeout: 60000 });
+  assert.equal(unprovenDynamicSymbol.error, undefined);
+  assert.notEqual(unprovenDynamicSymbol.status, 0, "explicit Dynamic passed into concrete turn-symbol must fail staged validation");
+  assert.match(unprovenDynamicSymbol.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+  assert.equal(await readFile(snapshot, "utf8"), beforeDynamicSymbol, "failed validation must not write partial fixes");
+  run(snapshot, "edit", "rm-def", "test-wasm.conversion/dynamic-symbol");
   const before = await readFile(snapshot, "utf8");
   const preview = JSON.parse(run(snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"));
   const applicable = preview.data.suggestions.filter((item) => item.applicability === "machine-applicable");
@@ -62,7 +74,7 @@ try {
   assert.equal(preview.data.suggestions.some((item) => item.definition === "test-wasm.conversion/tag-input"), false,
     "Tag input must not be treated as the new String-only contract");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-tag")?.applicability, "requires-review");
-  assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-symbol")?.applicability, "requires-review");
+  assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/open-symbol")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/macro-tag")?.applicability, "requires-review");
   const macroArgument = preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/from-macro");
   assert.equal(macroArgument?.origin_chain?.[0]?.argument_type, "string", "the macro result must be proven String to exercise the provenance guard");

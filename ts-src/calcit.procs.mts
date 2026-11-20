@@ -1248,7 +1248,17 @@ export let _$n_get_calcit_backend = () => {
 };
 
 export let not = (x: boolean): boolean => {
+  if (typeof x !== "boolean") {
+    throw new Error(`not expects a Bool, got ${x === null || x === undefined ? "nil" : typeof x}`);
+  }
   return !x;
+};
+
+export let assert_bool = (x: unknown): boolean => {
+  if (typeof x !== "boolean") {
+    throw new Error(`if condition expects a Bool, got ${x === null || x === undefined ? "nil" : typeof x}`);
+  }
+  return x;
 };
 
 export let prepend = (xs: CalcitValue, v: CalcitValue): CalcitList => {

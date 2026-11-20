@@ -852,7 +852,7 @@
           :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-nominal-contains? (value key)
-            if (&trait-call ExplicitContainsOps :contains? value key) true false
+            decode-map-as (&trait-call ExplicitContainsOps :contains? value key) 'Bool
           :examples $ []
           :schema $ quote $ Fn OpenContainsBase Number (-> Bool)
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
@@ -1860,7 +1860,8 @@
         'test-qualified-contains-boundary $ %{} 'CodeEntry (:doc "|验证同名 trait 方法在显式调用与 Contains 泛型约束下保持各自来源。")
           :code $ quote $ defn test-qualified-contains-boundary ()
             let
-                CustomContains $ deftrait CustomContains $ .contains? AnyFn
+                CustomContains $ deftrait CustomContains $ .contains?
+                  Fn Self Tag $ -> Bool
                 Box0 $ defstruct Box $ :value Tag
                 CustomContainsImpl $ defimpl Box0 CustomContains $ .contains?
                   fn (self field) (&= field :virtual)

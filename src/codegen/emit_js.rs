@@ -2109,7 +2109,53 @@ fn gen_indexed_match_code(
   }
 }
 
-/// Preserve Calcit truthiness with one evaluation and no runtime ABI dependency.
+fn is_guaranteed_js_bool_expr(condition: &Calcit) -> bool {
+  if matches!(condition, Calcit::Bool(_)) {
+    return true;
+  }
+  let Calcit::List(items) = condition else {
+    return false;
+  };
+  matches!(
+    items.first(),
+    Some(Calcit::Proc(
+      CalcitProc::Not
+        | CalcitProc::NativeEquals
+        | CalcitProc::NativeLessThan
+        | CalcitProc::NativeGreaterThan
+        | CalcitProc::Identical
+        | CalcitProc::NilQuestion
+        | CalcitProc::BoolQuestion
+        | CalcitProc::NumberQuestion
+        | CalcitProc::StringQuestion
+        | CalcitProc::TagQuestion
+        | CalcitProc::SymbolQuestion
+        | CalcitProc::ListQuestion
+        | CalcitProc::MapQuestion
+        | CalcitProc::SetQuestion
+        | CalcitProc::EnumQuestion
+        | CalcitProc::StructQuestion
+        | CalcitProc::FnQuestion
+        | CalcitProc::IsInteger
+        | CalcitProc::IsSpreadingMark
+        | CalcitProc::NativeNumberFits
+        | CalcitProc::NativeListEmpty
+        | CalcitProc::NativeMapEmpty
+        | CalcitProc::NativeSetEmpty
+        | CalcitProc::NativeStrEmpty
+        | CalcitProc::NativeListContains
+        | CalcitProc::NativeMapContains
+        | CalcitProc::NativeStructContains
+        | CalcitProc::NativeListIncludes
+        | CalcitProc::NativeMapIncludes
+        | CalcitProc::NativeSetIncludes
+        | CalcitProc::NativeStrIncludes
+        | CalcitProc::NativeStructMatches
+    ))
+  )
+}
+
+/// Enforce strict Calcit Bool conditions with one evaluation in JS codegen (#2881).
 fn gen_condition_code(
   condition: &Calcit,
   ns: &str,
@@ -2118,9 +2164,11 @@ fn gen_condition_code(
   tags: &RefCell<HashSet<EdnTag>>,
 ) -> Result<String, String> {
   let code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
-  // Nullish coalescing maps only nil/Unit to false. Strict comparison preserves
-  // zero, empty strings and host values, including unchecked Bool annotations.
-  Ok(format!("(({code}) ?? false) !== false"))
+  if is_guaranteed_js_bool_expr(condition) {
+    Ok(code)
+  } else {
+    Ok(format!("{}assert_bool({code})", get_proc_prefix(ns)))
+  }
 }
 
 fn gen_if_code(

@@ -99,6 +99,7 @@ When an error is raised, execution jumps to the handler — intermediate values 
 ```cirru
 let
     might-fail $ fn (flag)
+      hint-fn $ Fn Bool (-> Number)
       if flag (raise |early-exit) 42
     a $ try (might-fail false) $ fn (e) -1
     b $ try (might-fail true) $ fn (e) -1

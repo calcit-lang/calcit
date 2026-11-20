@@ -3297,6 +3297,273 @@ fn generated_assoc_in_step(
   ))
 }
 
+#[derive(Clone, Copy)]
+enum TypedPathContainerKind {
+  Map,
+  List,
+}
+
+fn typed_literal_update_path(
+  base_type: &CalcitTypeAnnotation,
+  path_arg: &Calcit,
+  scope_types: &ScopeTypes,
+  require_same_leaf_for: Option<&Calcit>,
+  allow_list: bool,
+) -> Option<Vec<(Calcit, TypedPathContainerKind)>> {
+  let path_items = extract_literal_list_items(path_arg)?;
+  if path_items.is_empty() {
+    return None;
+  }
+  let mut current_type = CalcitTypeAnnotation::expand_schema_alias(&Arc::new(base_type.to_owned()));
+  let mut hops = Vec::with_capacity(path_items.len());
+  for (index, key) in path_items.iter().enumerate() {
+    let is_last = index + 1 == path_items.len();
+    match current_type.as_ref() {
+      CalcitTypeAnnotation::Map(_, value_type) => {
+        if !allow_list
+          && matches!(value_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+          && require_same_leaf_for.is_some()
+        {
+          return None;
+        }
+        hops.push(((*key).to_owned(), TypedPathContainerKind::Map));
+        current_type = CalcitTypeAnnotation::expand_schema_alias(value_type);
+      }
+      CalcitTypeAnnotation::List(elem_type) if allow_list => {
+        let key_ty = resolve_type_value(key, scope_types)?;
+        if !key_ty.is_proven_for(&CalcitTypeAnnotation::Number) {
+          return None;
+        }
+        hops.push(((*key).to_owned(), TypedPathContainerKind::List));
+        current_type = CalcitTypeAnnotation::expand_schema_alias(elem_type);
+      }
+      _ => return None,
+    }
+    if is_last
+      && let Some(replacement) = require_same_leaf_for
+      && (matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+        || !resolve_type_value(replacement, scope_types).is_some_and(|actual| actual.is_proven_for(&current_type)))
+    {
+      return None;
+    }
+  }
+  if require_same_leaf_for.is_none() && matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+    return None;
+  }
+  Some(hops)
+}
+
+fn generated_typed_nil_assoc_chain(path: &[Calcit], value: Calcit) -> Calcit {
+  let Some((key, rest)) = path.split_first() else {
+    return value;
+  };
+  let empty_map = generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
+  let child = generated_typed_nil_assoc_chain(rest, value);
+  generated_call(vec![Calcit::Proc(CalcitProc::NativeMapAssoc), empty_map, key.to_owned(), child])
+}
+
+fn generated_mixed_assoc_in_step(
+  current: Calcit,
+  value: &Calcit,
+  path: &[(Calcit, TypedPathContainerKind)],
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let Some(((key, kind), rest)) = path.split_first() else {
+    return Ok(value.to_owned());
+  };
+  match kind {
+    TypedPathContainerKind::Map => {
+      if path.iter().all(|(_, k)| matches!(k, TypedPathContainerKind::Map)) {
+        let map_keys = path.iter().map(|(k, _)| k.to_owned()).collect::<Vec<_>>();
+        return generated_assoc_in_step(current, value, &map_keys, file_ns, call_stack);
+      }
+      let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
+      let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
+      let empty_map = || generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
+      let child_value = generated_if(
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
+        generated_core_call(
+          "option:unwrap",
+          vec![generated_call(vec![
+            Calcit::Proc(CalcitProc::NativeMapGet),
+            data.to_owned(),
+            key.to_owned(),
+          ])],
+          file_ns,
+        ),
+        empty_map(),
+        file_ns,
+      );
+      let updated_child = generated_let(
+        child.to_owned(),
+        child_value,
+        generated_mixed_assoc_in_step(child, value, rest, file_ns, call_stack)?,
+        file_ns,
+      );
+      let assoc = generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeMapAssoc),
+        data.to_owned(),
+        key.to_owned(),
+        updated_child,
+      ]);
+      Ok(generated_let(data, current, assoc, file_ns))
+    }
+    TypedPathContainerKind::List => {
+      let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
+      let updated_child = if rest.is_empty() {
+        value.to_owned()
+      } else {
+        let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
+        let elem = generated_call(vec![Calcit::Proc(CalcitProc::NativeListNth), data.to_owned(), key.to_owned()]);
+        generated_let(
+          child.to_owned(),
+          elem,
+          generated_mixed_assoc_in_step(child, value, rest, file_ns, call_stack)?,
+          file_ns,
+        )
+      };
+      let assoc = generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeListAssoc),
+        data.to_owned(),
+        key.to_owned(),
+        updated_child,
+      ]);
+      Ok(generated_let(data, current, assoc, file_ns))
+    }
+  }
+}
+
+fn generated_typed_dissoc_in_step(
+  current: Calcit,
+  path: &[(Calcit, TypedPathContainerKind)],
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let Some(((key, kind), rest)) = path.split_first() else {
+    return Ok(current);
+  };
+  match kind {
+    TypedPathContainerKind::Map => {
+      if rest.is_empty() {
+        return Ok(generated_call(vec![
+          Calcit::Proc(CalcitProc::NativeMapDissoc),
+          current,
+          key.to_owned(),
+        ]));
+      }
+      let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
+      let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
+      let next_child = generated_if(
+        generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
+        generated_core_call(
+          "option:unwrap",
+          vec![generated_call(vec![
+            Calcit::Proc(CalcitProc::NativeMapGet),
+            data.to_owned(),
+            key.to_owned(),
+          ])],
+          file_ns,
+        ),
+        generated_call(vec![
+          Calcit::Proc(CalcitProc::Raise),
+          Calcit::Str(Arc::from("dissoc-in missing intermediate key")),
+        ]),
+        file_ns,
+      );
+      let updated_child = generated_let(
+        child.to_owned(),
+        next_child,
+        generated_typed_dissoc_in_step(child, rest, file_ns, call_stack)?,
+        file_ns,
+      );
+      let assoc = generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeMapAssoc),
+        data.to_owned(),
+        key.to_owned(),
+        updated_child,
+      ]);
+      Ok(generated_let(data, current, assoc, file_ns))
+    }
+    TypedPathContainerKind::List => {
+      if rest.is_empty() {
+        return Ok(generated_call(vec![
+          Calcit::Proc(CalcitProc::NativeListDissoc),
+          current,
+          key.to_owned(),
+        ]));
+      }
+      let data = generated_path_symbol("typed_path_data", file_ns, call_stack)?;
+      let child = generated_path_symbol("typed_path_child", file_ns, call_stack)?;
+      let next_child = generated_call(vec![Calcit::Proc(CalcitProc::NativeListNth), data.to_owned(), key.to_owned()]);
+      let updated_child = generated_let(
+        child.to_owned(),
+        next_child,
+        generated_typed_dissoc_in_step(child, rest, file_ns, call_stack)?,
+        file_ns,
+      );
+      let assoc = generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeListAssoc),
+        data.to_owned(),
+        key.to_owned(),
+        updated_child,
+      ]);
+      Ok(generated_let(data, current, assoc, file_ns))
+    }
+  }
+}
+
+fn expand_typed_lookup_path_call(
+  base: &Calcit,
+  base_type: &CalcitTypeAnnotation,
+  path_arg: &Calcit,
+  outcome: GeneratedPathOutcome,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Option<Calcit>, CalcitErr> {
+  let expanded_base = CalcitTypeAnnotation::expand_schema_alias(&Arc::new(base_type.to_owned()));
+  if let Some(path_items) = extract_literal_list_items(path_arg) {
+    if matches!(expanded_base.as_ref(), CalcitTypeAnnotation::Nil) {
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let mut path_bindings = Vec::with_capacity(path_items.len());
+      for key in path_items {
+        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+        path_bindings.push((binding, key.to_owned()));
+      }
+      let body = generated_lets(path_bindings, outcome.missing(file_ns), file_ns);
+      return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+    }
+    if path_items.is_empty()
+      && !matches!(
+        expanded_base.as_ref(),
+        CalcitTypeAnnotation::Nullable(..)
+          | CalcitTypeAnnotation::Dynamic
+          | CalcitTypeAnnotation::DynFn
+          | CalcitTypeAnnotation::TypeVar(_)
+      )
+    {
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let body = outcome.found(base_binding.to_owned(), file_ns);
+      return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+    }
+  }
+  let Some(path) = fully_typed_literal_lookup_path(expanded_base.as_ref(), path_arg, scope_types) else {
+    return Ok(None);
+  };
+  let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+  let mut path_bindings = Vec::with_capacity(path.len());
+  let mut path_locals = Vec::with_capacity(path.len());
+  for key in path {
+    let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+    path_locals.push(binding.to_owned());
+    path_bindings.push((binding, key));
+  }
+  let body = generated_get_in_step(base_binding.to_owned(), &path_locals, outcome, file_ns, call_stack)?;
+  let body = generated_lets(path_bindings, body, file_ns);
+  Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
+}
+
 /// Expand eligible core path calls and leave every uncertain case untouched.
 fn try_expand_typed_literal_path_call(
   head: &Calcit,
@@ -3319,29 +3586,64 @@ fn try_expand_typed_literal_path_call(
   };
 
   match def.as_ref() {
-    "get-in" if args.len() == 2 => {
-      let Some(path) = fully_typed_literal_lookup_path(base_type.as_ref(), path_arg, scope_types) else {
-        return Ok(None);
-      };
-      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
-      let mut path_bindings = Vec::with_capacity(path.len());
-      let mut path_locals = Vec::with_capacity(path.len());
-      for key in path {
-        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
-        path_locals.push(binding.to_owned());
-        path_bindings.push((binding, key));
-      }
-      let body = generated_get_in_step(
-        base_binding.to_owned(),
-        &path_locals,
-        GeneratedPathOutcome::Result,
-        file_ns,
-        call_stack,
-      )?;
-      let body = generated_lets(path_bindings, body, file_ns);
-      Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
-    }
+    "get-in" if args.len() == 2 => expand_typed_lookup_path_call(
+      base,
+      base_type.as_ref(),
+      path_arg,
+      GeneratedPathOutcome::Result,
+      scope_types,
+      file_ns,
+      call_stack,
+    ),
+    "&get-in" if args.len() == 2 => expand_typed_lookup_path_call(
+      base,
+      base_type.as_ref(),
+      path_arg,
+      GeneratedPathOutcome::Option,
+      scope_types,
+      file_ns,
+      call_stack,
+    ),
     "assoc-in" if args.len() == 3 => {
+      if let Some(path_items) = extract_literal_list_items(path_arg) {
+        if path_items.is_empty() {
+          let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+          let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+          let body = generated_let(value_binding.to_owned(), args[2].to_owned(), value_binding, file_ns);
+          return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+        }
+        let expanded_base = CalcitTypeAnnotation::expand_schema_alias(&base_type);
+        if matches!(expanded_base.as_ref(), CalcitTypeAnnotation::Nil) {
+          let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+          let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+          let mut path_bindings = Vec::with_capacity(path_items.len());
+          let mut path_locals = Vec::with_capacity(path_items.len());
+          for key in path_items {
+            let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+            path_locals.push(binding.to_owned());
+            path_bindings.push((binding, key.to_owned()));
+          }
+          let chain = generated_typed_nil_assoc_chain(&path_locals, value_binding.to_owned());
+          let body = generated_let(value_binding, args[2].to_owned(), chain, file_ns);
+          let body = generated_lets(path_bindings, body, file_ns);
+          return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+        }
+      }
+      if let Some(hops) = typed_literal_update_path(base_type.as_ref(), path_arg, scope_types, Some(&args[2]), true) {
+        let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+        let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+        let mut path_bindings = Vec::with_capacity(hops.len());
+        let mut path_hops = Vec::with_capacity(hops.len());
+        for (key, kind) in hops {
+          let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+          path_hops.push((binding.to_owned(), kind));
+          path_bindings.push((binding, key));
+        }
+        let body = generated_mixed_assoc_in_step(base_binding.to_owned(), &value_binding, &path_hops, file_ns, call_stack)?;
+        let body = generated_let(value_binding, args[2].to_owned(), body, file_ns);
+        let body = generated_lets(path_bindings, body, file_ns);
+        return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+      }
       let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
         return Ok(None);
       };
@@ -3372,6 +3674,25 @@ fn try_expand_typed_literal_path_call(
       let body = generated_lets(path_bindings, body, file_ns);
       Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
     }
+    "dissoc-in" if args.len() == 2 => {
+      if extract_literal_list_items(path_arg).is_some_and(|path| path.is_empty()) {
+        return Ok(Some(base.to_owned()));
+      }
+      let Some(hops) = typed_literal_update_path(base_type.as_ref(), path_arg, scope_types, None, true) else {
+        return Ok(None);
+      };
+      let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+      let mut path_bindings = Vec::with_capacity(hops.len());
+      let mut path_hops = Vec::with_capacity(hops.len());
+      for (key, kind) in hops {
+        let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+        path_hops.push((binding.to_owned(), kind));
+        path_bindings.push((binding, key));
+      }
+      let body = generated_typed_dissoc_in_step(base_binding.to_owned(), &path_hops, file_ns, call_stack)?;
+      let body = generated_lets(path_bindings, body, file_ns);
+      Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
+    }
     "update-in" if args.len() == 3 => {
       if extract_literal_list_items(path_arg).is_some_and(|path| path.is_empty()) {
         // The literal empty list has no effects. Bind the receiver and
@@ -3381,6 +3702,35 @@ fn try_expand_typed_literal_path_call(
         let current = generated_optional_value(base_binding.to_owned(), file_ns);
         let body = generated_call(vec![updater_binding.to_owned(), current]);
         let body = generated_let(updater_binding, args[2].to_owned(), body, file_ns);
+        return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+      }
+      if let Some(hops) = typed_literal_update_path(base_type.as_ref(), path_arg, scope_types, None, true)
+        && hops.iter().any(|(_, kind)| matches!(kind, TypedPathContainerKind::List))
+      {
+        let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+        let updater_binding = generated_path_symbol("typed_path_updater", file_ns, call_stack)?;
+        let replacement_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+        let mut path_bindings = Vec::with_capacity(hops.len());
+        let mut path_hops = Vec::with_capacity(hops.len());
+        let mut path_locals = Vec::with_capacity(hops.len());
+        for (key, kind) in hops {
+          let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
+          path_hops.push((binding.to_owned(), kind));
+          path_locals.push(binding.to_owned());
+          path_bindings.push((binding, key));
+        }
+        let current = generated_get_in_step(
+          base_binding.to_owned(),
+          &path_locals,
+          GeneratedPathOutcome::Option,
+          file_ns,
+          call_stack,
+        )?;
+        let replacement = generated_call(vec![updater_binding.to_owned(), current]);
+        let body = generated_mixed_assoc_in_step(base_binding.to_owned(), &replacement_binding, &path_hops, file_ns, call_stack)?;
+        let body = generated_let(replacement_binding, replacement, body, file_ns);
+        let body = generated_let(updater_binding, args[2].to_owned(), body, file_ns);
+        let body = generated_lets(path_bindings, body, file_ns);
         return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
       }
       let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
@@ -4579,6 +4929,7 @@ fn evaluate_macro_expansion(
       }) => {
         for inputs in &cached_inputs {
           type_bindings = validate_macro_call_inputs(
+            info.def_ns.as_ref(),
             info.name.as_ref(),
             info.signature.as_ref(),
             &CalcitList::from(inputs.as_slice()),
@@ -4616,6 +4967,7 @@ fn evaluate_macro_expansion(
         recur_inputs.push(values.clone());
         current_values = values;
         type_bindings = validate_macro_call_inputs(
+          info.def_ns.as_ref(),
           info.name.as_ref(),
           info.signature.as_ref(),
           &CalcitList::from(current_values.as_slice()),
@@ -4711,6 +5063,7 @@ fn process_macro_source(
     runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
   }
   let mut macro_type_bindings = validate_macro_call_inputs(
+    info.def_ns.as_ref(),
     info.name.as_ref(),
     info.signature.as_ref(),
     args,
@@ -4784,6 +5137,7 @@ fn process_macro_source(
   let expansion = if let Some(retained) = retained {
     for inputs in &retained.recur_inputs {
       macro_type_bindings = validate_macro_call_inputs(
+        info.def_ns.as_ref(),
         info.name.as_ref(),
         info.signature.as_ref(),
         &CalcitList::from(inputs.as_slice()),
@@ -6601,7 +6955,29 @@ fn preprocess_list_call(
               || contract
                 .arg_types
                 .iter()
-                .any(|argument| argument.resolve_to_nonoptional_fn().is_some()))
+                .any(|argument| argument.resolve_to_nonoptional_fn().is_some())
+              || (!calcit::is_bundled_core_ns(file_ns)
+                && !processed_args
+                  .iter()
+                  .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+                && processed_args.iter().enumerate().any(|(idx, arg)| {
+                  let Some(expected_slot) = contract.arg_types.get(idx).or_else(|| {
+                    contract
+                      .arg_types
+                      .last()
+                      .filter(|last| matches!(last.as_ref(), CalcitTypeAnnotation::Variadic(_)))
+                  }) else {
+                    return false;
+                  };
+                  let expected = match expected_slot.as_ref() {
+                    CalcitTypeAnnotation::Variadic(inner) => inner.as_ref(),
+                    other => other,
+                  };
+                  !expected.contains_type_var()
+                    && !matches!(expected, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+                    && is_explicitly_open_expression(arg, scope_types)
+                    && resolve_type_value(arg, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
+                })))
             && let CalcitTypeAnnotation::Fn(mut signature) =
               CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
           {
@@ -6811,7 +7187,7 @@ fn preprocess_list_call(
         if !has_spread
           && let Some(call_head @ Calcit::Import(CalcitImport { ns, def, .. })) = ys.first()
           && ns.as_ref() == calcit::CORE_NS
-          && matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
+          && matches!(def.as_ref(), "get-in" | "&get-in" | "assoc-in" | "dissoc-in" | "update-in")
           && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
           return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
@@ -7441,7 +7817,7 @@ fn preprocess_known_function_call(
     if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
       let current_args = CalcitList::from(ys.drop_left());
       if !call_has_type_warnings
-        && matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
+        && matches!(def.as_ref(), "get-in" | "&get-in" | "assoc-in" | "dissoc-in" | "update-in")
         && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
       {
         return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
@@ -10434,12 +10810,10 @@ fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocatio
 }
 
 /// A rewrite of the consumer of an Option erased to nil that keeps every
-/// result, offered only for consumers that merely test the value: `or`,
-/// `if`, `nil?` and `non-nil?`. `C (.unwrap-or x nil)` becomes
-/// `match x ((:some v) C[v]) ((:none) C[nil])`, where `C[nil]` is simplified
-/// (`or nil d` is `d`, `if nil a b` is `b`). The consumer evaluates the
-/// erased value first, so the order of evaluation is unchanged, and any
-/// fallback stays in a branch that runs only when the original would run it.
+/// result, offered only for consumers that merely test nil directly: `nil?`
+/// and `non-nil?`. `C (.unwrap-or x nil)` becomes
+/// `match x ((:some v) C[v]) ((:none) C[nil])`, where `C[nil]` simplifies to
+/// `true` or `false`.
 fn option_erasure_rewrite(location: &NodeLocation) -> Option<String> {
   let code = program::lookup_def_code(&location.ns, &location.def)?;
   // Forms from the definition root down to the reported node.
@@ -10459,7 +10833,7 @@ fn option_erasure_rewrite(location: &NodeLocation) -> Option<String> {
   if !consumer_items.get(1).is_some_and(|item| same_form(item, erased)) {
     return None;
   }
-  // A local or project function named `or` would compute something else.
+  // A local or project function named `nil?` would compute something else.
   if source_form_head_is_core(consumer) != Some(true) {
     return None;
   }
@@ -10476,15 +10850,6 @@ fn option_erasure_rewrite(location: &NodeLocation) -> Option<String> {
   // What the consumer makes of a payload `v`, and of the nil it got for None.
   let consume = |value: Cirru| -> Option<(Cirru, Cirru)> {
     match (head.as_str(), rest.as_slice()) {
-      ("or", [fallback]) => Some((call("or", vec![value, fallback.to_owned()]), fallback.to_owned())),
-      ("or", fallbacks @ [_, _, ..]) => Some((
-        call("or", std::iter::once(value).chain(fallbacks.iter().cloned()).collect()),
-        call("or", fallbacks.to_vec()),
-      )),
-      ("if", [then_branch, else_branch]) => Some((
-        call("if", vec![value, then_branch.to_owned(), else_branch.to_owned()]),
-        else_branch.to_owned(),
-      )),
       ("nil?", []) => Some((call("nil?", vec![value]), leaf("true"))),
       ("non-nil?", []) => Some((call("non-nil?", vec![value]), leaf("false"))),
       _ => None,
@@ -10780,6 +11145,7 @@ fn report_macro_option_erased_to_nil(shape: &str, origin: MacroErasureOrigin, ca
 
 /// `source_location` is the condition as written, used when the processed
 /// value has no coordinate of its own (for example a lowered `(get m k)`).
+#[cfg(test)]
 fn warn_on_nominal_enum_truthiness(
   value: &Calcit,
   source_location: Option<NodeLocation>,
@@ -10823,7 +11189,7 @@ fn warn_on_nominal_enum_truthiness(
 }
 
 /// Short label for a condition type that can never be nil or false, so an
-/// `if` over it always selects the then branch. Only nil and false are falsy.
+/// `if` over it always selects the then branch under legacy truthiness.
 fn constant_truthy_type_label(value_type: &CalcitTypeAnnotation) -> Option<&'static str> {
   match value_type {
     CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("Number"),
@@ -10838,45 +11204,117 @@ fn constant_truthy_type_label(value_type: &CalcitTypeAnnotation) -> Option<&'sta
   }
 }
 
-fn warn_on_constant_truthy_condition(
+/// Enforce strict `Bool` conditions in `if` (and macros that expand into it) (#2881).
+fn check_if_condition_is_bool(
   raw_cond: &Calcit,
-  value: &Calcit,
+  cond_form: &Calcit,
+  source_location: Option<NodeLocation>,
   scope_types: &ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  // Core and its contract replays (`calcit.core-*`) pin runtime truthiness per
-  // backend on purpose: WASM folds a typed condition to a constant branch.
-  if file_ns.starts_with(calcit::CORE_NS) {
+  let raw_type = resolve_type_value(cond_form, scope_types);
+  let expanded_type = raw_type.as_ref().map(CalcitTypeAnnotation::expand_schema_alias);
+  if matches!(
+    expanded_type.as_deref(),
+    Some(CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Never)
+  ) {
     return;
   }
-  let Some(value_type) = resolve_type_value(value, scope_types) else {
-    return;
-  };
-  let Some(label) = constant_truthy_type_label(value_type.as_ref()) else {
-    return;
-  };
-  let location = match raw_cond {
+
+  let best_location = match raw_cond {
     Calcit::List(items) => derive_list_call_expr_location(items),
     _ => raw_cond.get_location(),
   }
-  .or_else(|| source_location_in_namespace(value, file_ns))
-  .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF);
-  // A condition without a source coordinate in this namespace was produced by
-  // a macro, so the author cannot rewrite it at the reported place.
-  let Some(location) = location else {
-    return;
-  };
+  .or_else(|| source_location_in_namespace(cond_form, file_ns))
+  .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF)
+  .or_else(|| source_location.clone());
 
-  let guidance = match label {
-    "Number" => "compare explicitly, e.g. `(> n 0)` or `(= n 0)`; `0` is truthy",
-    "String" => "use `blank?` or `(= s |)`; an empty string is truthy",
-    "List" | "Map" | "Set" => "use `empty?`; an empty collection is truthy",
-    _ => "test the property you mean explicitly; this value is never nil or false",
+  if let Some(enum_name) = raw_type
+    .as_deref()
+    .and_then(nominal_enum_type_name)
+    .or_else(|| expanded_type.as_deref().and_then(nominal_enum_type_name))
+  {
+    if enum_name == "Option"
+      && should_emit_project_source_lint(file_ns)
+      && let Some(location) = option_check_location(cond_form).or_else(|| best_location.clone())
+    {
+      report_option_nil_check(
+        format!("an Option value is used as a condition (`if` / `when` / `or` / `and`) in {file_ns} and is always truthy"),
+        location,
+      );
+      return;
+    }
+    let guidance = if enum_name == "Option" {
+      "use `.some?`, `.none?`, or native `match`; `None` is a truthy nominal value"
+    } else {
+      "use native `match` to select a nominal enum variant explicitly"
+    };
+    let message = format!(
+      "[Error] nominal enum `{enum_name}` is used directly as an `if` condition in {file_ns}; this can silently select the truthy branch; {guidance}"
+    );
+    gen_check_warning_code_at(message, "E_NOMINAL_ENUM_LEGACY_USE", file_ns, best_location, check_warnings);
+    return;
+  }
+
+  if let Some(expanded) = expanded_type.as_deref()
+    && let Some(label) = constant_truthy_type_label(expanded)
+  {
+    let guidance = match label {
+      "Number" => "compare explicitly, e.g. `(> n 0)` or `(= n 0)`; `0` is truthy",
+      "String" => "use `blank?` or `(= s |)`; an empty string is truthy",
+      "List" | "Map" | "Set" => "use `empty?`; an empty collection is truthy",
+      _ => "test the property you mean explicitly; this value is never nil or false",
+    };
+    let message = format!(
+      "[Error] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}"
+    );
+    gen_check_warning_code_at(message, "E_CONSTANT_TRUTHY_CONDITION", file_ns, best_location, check_warnings);
+    return;
+  }
+
+  let (type_label, guidance) = match expanded_type.as_deref() {
+    Some(CalcitTypeAnnotation::Dynamic) => (
+      "Dynamic".to_owned(),
+      "narrow or decode to `Bool` before branching, e.g. with `(bool? x)` or `(= x true)`",
+    ),
+    Some(CalcitTypeAnnotation::Nil) => (
+      "Nil".to_owned(),
+      "conditions require `Bool`; use `false`, `nil?`, or `non-nil?` instead of bare `nil`",
+    ),
+    Some(CalcitTypeAnnotation::Unit) => (
+      "Unit".to_owned(),
+      "conditions require `Bool`; replace `Unit` with an explicit `Bool` predicate",
+    ),
+    Some(CalcitTypeAnnotation::Nullable(..)) => (
+      expanded_type
+        .as_ref()
+        .map(|ty| ty.to_brief_string())
+        .unwrap_or_else(|| "Nullable".to_owned()),
+      "test explicitly with `non-nil?` / `nil?`, or migrate to `Option` with `match`",
+    ),
+    Some(other) if union_types::union_of_type(other).is_some() => (
+      other.to_brief_string(),
+      "conditions require `Bool`; use `match` on the union variants to compute a `Bool`",
+    ),
+    Some(CalcitTypeAnnotation::TypeVar(_)) => (
+      expanded_type
+        .as_ref()
+        .map(|ty| ty.to_brief_string())
+        .unwrap_or_else(|| "TypeVar".to_owned()),
+      "conditions require `Bool`; pass a `Bool` predicate or constrain the type",
+    ),
+    Some(other) => (
+      other.to_brief_string(),
+      "conditions in `if` / `when` / `when-not` / `if-not` / `and` / `or` must have type `Bool`",
+    ),
+    None => (
+      "unknown type".to_owned(),
+      "conditions in `if` / `when` / `when-not` / `if-not` / `and` / `or` must have proven type `Bool` (for `Dynamic`, narrow with `(bool? x)` or `(= x true)`)",
+    ),
   };
-  let message =
-    format!("[Error] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}");
-  gen_check_warning_with_location_code(message, "E_CONSTANT_TRUTHY_CONDITION", location, check_warnings);
+  let message = format!("[Error] condition has type `{type_label}`, expected `Bool` in {file_ns}; {guidance}");
+  gen_check_warning_code_at(message, "E_NON_BOOL_CONDITION", file_ns, best_location, check_warnings);
 }
 
 /// `cond` with no final `true` pair would fall through to nil; report it at
@@ -12701,7 +13139,15 @@ fn macro_input_contract(signature: &MacroSignature, idx: usize) -> Option<&Macro
   }
 }
 
+/// Core condition macros expand into `if`, where `check_if_condition_is_bool`
+/// produces uniform condition-specific errors without aborting on the first operand.
+fn core_condition_macro_defers_bool_input(def_ns: &str, macro_name: &str) -> bool {
+  (def_ns == calcit::CORE_NS && matches!(macro_name, "and" | "or" | "when" | "when-not" | "if-not"))
+    || (def_ns == "calcit.test" && macro_name == "is")
+}
+
 fn validate_macro_call_inputs(
+  def_ns: &str,
   macro_name: &str,
   signature: &MacroSignature,
   args: &CalcitList,
@@ -12755,6 +13201,7 @@ fn validate_macro_call_inputs(
       ));
     }
     if let MacroSyntaxType::Expr(expected) = contract
+      && !(matches!(expected.as_ref(), CalcitTypeAnnotation::Bool) && core_condition_macro_defers_bool_input(def_ns, macro_name))
       && let Some(actual) = infer_type_from_expr(arg, scope_types)
       && !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
       && !actual.as_ref().compatible_with_bindings(expected.as_ref(), &mut bindings)
@@ -13940,27 +14387,17 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx.call_stack,
   )?;
 
-  // `and` returns its last operand through `if v v false`; that operand is a
-  // value, not a test, so only the operands before it are conditions. The
-  // macro splices one node twice, so both copies share a source location;
-  // equality alone would also skip a hand-written `(if n n false)`.
-  let and_tail = args.len() == 3
-    && args.first() == args.get(1)
-    && args.first().map(Calcit::get_location) == args.get(1).map(Calcit::get_location)
-    && matches!(args.get(2), Some(Calcit::Bool(false)));
-  if !and_tail {
-    warn_on_nominal_enum_truthiness(
-      &cond_form,
-      args
-        .first()
-        .and_then(option_check_location)
-        .or_else(|| preferred_source_call_location(None, ctx.call_stack)),
-      ctx.scope_types,
-      ctx.file_ns,
-      ctx.check_warnings,
-    );
-    warn_on_constant_truthy_condition(args.first().unwrap(), &cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
-  }
+  check_if_condition_is_bool(
+    args.first().unwrap(),
+    &cond_form,
+    args
+      .first()
+      .and_then(option_check_location)
+      .or_else(|| preferred_source_call_location(None, ctx.call_stack)),
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+  );
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let tail_signature = tail_context::take_for_current();
@@ -14001,14 +14438,14 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   } else {
     None
   };
-  if !matches!(cond_form, Calcit::Bool(false) | Calcit::Nil) {
+  if !matches!(cond_form, Calcit::Bool(false)) {
     propagate_scope_widening(ctx.scope_types, &true_scope_types, &narrowing.when_true, None);
   }
 
-  // P7: constant folding — eliminate dead branch when condition is a literal
+  // P7: constant folding — eliminate dead branch only when condition is a Bool literal (#2881)
   match &cond_form {
     Calcit::Bool(true) => return Ok(true_form),
-    Calcit::Bool(false) | Calcit::Nil => return Ok(false_form.unwrap_or(Calcit::Nil)),
+    Calcit::Bool(false) => return Ok(false_form.unwrap_or(Calcit::Nil)),
     _ => {}
   }
 
@@ -15853,6 +16290,17 @@ pub fn preprocess_defn(
           ctx.call_stack,
         )?;
       }
+      if matches!(head, CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport) {
+        reject_wasm_boundary_dynamic(
+          head,
+          ctx.file_ns,
+          def_name.as_ref(),
+          &def_schema,
+          body_fn_hint.as_ref(),
+          body_fn_hint_location.clone().or_else(|| Some(definition_location.clone())),
+          ctx.call_stack,
+        )?;
+      }
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
       let infer_helper_schema = source_top_level_definition
@@ -17325,9 +17773,10 @@ pub fn preprocess_core_let(
   {
     proof_binding.bind(local, Some(value), &body_types);
     // An alias stays explicitly open when its open type is computed from an
-    // explicitly open value, e.g. an element read from a `List<Dynamic>` input.
+    // explicitly open value, e.g. an element read from a `List<Dynamic>` input
+    // or a call to a declared `Fn ... (-> Dynamic)` helper.
     let open = matches!(local, Calcit::Local(binding) if body_types.get(&binding.sym).is_some_and(|annotation| contains_dynamic_type(annotation.as_ref())))
-      && explicit_open::reads_explicitly_open_local(value);
+      && is_explicitly_open_expression(value, &body_types);
     let callable = if resolve_type_value(value, &body_types).is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
     {
       match value {
@@ -18802,6 +19251,57 @@ fn generic_param_accepts_any_value(
   !used_elsewhere
 }
 
+fn def_code_has_explicit_hint_fn(ns: &str, def: &str) -> bool {
+  let Some(Calcit::List(items)) = program::lookup_def_code(ns, def) else {
+    return false;
+  };
+  items.iter().skip(3).any(is_source_hint_form)
+}
+
+fn fn_signature_declares_open_dynamic_return(signature: &CalcitFnTypeAnnotation) -> bool {
+  signature.open_reason.0 != Some(calcit::FnOpenReason::Intrinsic) && contains_dynamic_type(signature.return_type.as_ref())
+}
+
+/// Whether `value` is an explicitly open value whose Dynamic payload must be
+/// proved/decoded before entering a concrete parameter or proc slot:
+/// - reads an explicitly open local or alias bound from one;
+/// - calls a non-local `defn` or local `Fn` variable declaring an explicit
+///   `Fn ... (-> Dynamic)` return type (excluding `:open :intrinsic` adapters).
+fn is_explicitly_open_expression(value: &Calcit, scope_types: &ScopeTypes) -> bool {
+  if explicit_open::reads_explicitly_open_local(value) {
+    return true;
+  }
+  let Calcit::List(items) = value else {
+    return false;
+  };
+  let Some(callee) = items.first() else {
+    return false;
+  };
+  match callee {
+    Calcit::Import(import) => {
+      let source_schema = program::lookup_def_schema(&import.ns, &import.def);
+      if let CalcitTypeAnnotation::Fn(signature) = source_schema.as_ref() {
+        return fn_signature_declares_open_dynamic_return(signature);
+      }
+      if def_code_has_explicit_hint_fn(&import.ns, &import.def)
+        && let Some(hint_schema) = program::lookup_codegen_type_hint(&import.ns, &import.def)
+        && let CalcitTypeAnnotation::Fn(signature) = hint_schema.as_ref()
+      {
+        return fn_signature_declares_open_dynamic_return(signature);
+      }
+      false
+    }
+    Calcit::Local(local) => {
+      if explicit_open::let_lambda(local, scope_types).is_some() {
+        return false;
+      }
+      let fn_type = scope_types.get(&local.sym).cloned().unwrap_or_else(|| local.type_info.clone());
+      matches!(fn_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if fn_signature_declares_open_dynamic_return(signature))
+    }
+    _ => false,
+  }
+}
+
 fn find_unproven_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
@@ -18814,7 +19314,7 @@ fn find_unproven_generic_argument(
   // Concrete parameters only consult explicitly open evidence: an unannotated
   // local is unknown, and inference fallbacks are not a source choice.
   let explicitly_open = |arg: &Calcit| {
-    explicit_open::reads_explicitly_open_local(arg)
+    is_explicitly_open_expression(arg, scope_types)
       && resolve_type_value(arg, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
   };
   if signature.generics.is_empty() && !audit && !args.iter().any(explicitly_open) {
@@ -19122,7 +19622,7 @@ fn reject_strict_unproven_enum_payload(
   // builtin's open transport signature. Ordinary open-value policy is unchanged.
   if !REQUIRE_ASSERTION_PROOF.with(Cell::get)
     && !payloads.iter().any(|payload| {
-      explicit_open::reads_explicitly_open_local(payload)
+      is_explicitly_open_expression(payload, scope_types)
         && resolve_type_value(payload, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
     })
   {
@@ -19630,6 +20130,39 @@ fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
       .any(|(ns, def)| program::lookup_def_id(ns, def).is_some_and(|id| deps.contains(&id)))
   });
   cyclic || body_contains_recur(body)
+}
+
+fn fn_sig_contains_dynamic(sig: &CalcitFnTypeAnnotation) -> bool {
+  sig.arg_types.iter().any(|arg| contains_dynamic_type(arg.as_ref()))
+    || sig.rest_type.as_ref().is_some_and(|rest| contains_dynamic_type(rest.as_ref()))
+    || contains_dynamic_type(sig.return_type.as_ref())
+}
+
+fn reject_wasm_boundary_dynamic(
+  head: &CalcitSyntax,
+  ns: &str,
+  def_name: &str,
+  def_schema: &Arc<CalcitTypeAnnotation>,
+  body_fn_hint: Option<&Arc<CalcitFnTypeAnnotation>>,
+  location: Option<NodeLocation>,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let has_dynamic = body_fn_hint.is_some_and(|sig| fn_sig_contains_dynamic(sig.as_ref()))
+    || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(sig) if fn_sig_contains_dynamic(sig))
+    || (!crate::snapshot::schema_annotation_is_missing(def_schema) && contains_dynamic_type(def_schema.as_ref()));
+  if !has_dynamic {
+    return Ok(());
+  }
+  let boundary = head.as_ref();
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "`{boundary}` boundary `{ns}/{def_name}` cannot contain `Dynamic` in parameter, rest, or return schema; declare concrete ABI-safe types on the WASM boundary"
+    ),
+    "E_WASM_BOUNDARY_DYNAMIC",
+    call_stack,
+    find_preferred_macro_location(call_stack).or(location),
+  ))
 }
 
 fn reject_strict_whole_dynamic_public_schema(
@@ -20208,8 +20741,16 @@ mod tests {
       )),
     };
     for cached in [false, true] {
-      let initial =
-        validate_macro_call_inputs("normalize", &info.signature, &inputs, ctx.scope_types, &stack, None).expect("initial Number input");
+      let initial = validate_macro_call_inputs(
+        "tests.macro-cache-recur",
+        "normalize",
+        &info.signature,
+        &inputs,
+        ctx.scope_types,
+        &stack,
+        None,
+      )
+      .expect("initial Number input");
       assert_eq!(initial.get("T").map(Arc::as_ref), Some(&CalcitTypeAnnotation::Number));
       let expansion = evaluate_macro_expansion(&info, &id, "tests.macro-cache-recur/normalize", &inputs, initial, &ctx)
         .expect("cold and warm macro evaluation");
@@ -20336,6 +20877,7 @@ mod tests {
     ]);
     let args = CalcitList::from(vec![test_symbol("name"), Calcit::Number(1.0), syntax_list, quoted_literal].as_slice());
     let bindings = validate_macro_call_inputs(
+      "tests.macro-signature",
       "typed-macro",
       &signature,
       &args,
@@ -20348,6 +20890,7 @@ mod tests {
 
     let invalid = CalcitList::from(vec![Calcit::from(vec![test_symbol("quoted")]), Calcit::Number(1.0)].as_slice());
     let err = validate_macro_call_inputs(
+      "tests.macro-signature",
       "typed-macro",
       &signature,
       &invalid,

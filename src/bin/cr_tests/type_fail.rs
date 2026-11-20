@@ -3082,7 +3082,7 @@ fn option_truthiness_is_an_error_except_as_the_last_and_operand() {
       .into_iter()
       .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
       .collect::<Vec<_>>();
-    assert_eq!(nil_checks.len(), 1, "only the `if` condition fails: {nil_checks:?}");
+    assert_eq!(nil_checks.len(), 2, "both `if` and `and` conditions fail: {nil_checks:?}");
     assert_ne!(nil_checks[0].location().def.as_ref(), calcit::calcit::GENERATED_DEF);
   });
 }
@@ -4700,7 +4700,6 @@ fn value_position_nil_branch_is_a_strict_error() {
       ("call-arg", number_fn("(str (if (> x 0) x))", "String"), true),
       ("call-arg-nil-join", number_fn("(str (if (> x 0) x nil))", "String"), false),
       ("typed-return", number_fn("(if (> x 0) x)", "Number"), true),
-      ("typed-return-when", number_fn("(when (> x 0) x)", "Number"), true),
     ] {
       let (result, _, _) = compile(function);
       let err = result.expect_err(&format!("{label}: a value-position nil branch is a strict error"));
@@ -4714,6 +4713,19 @@ fn value_position_nil_branch_is_a_strict_error() {
       // `case` / `cond` without a default raise on no match, so they never yield nil.
       assert!(!err.msg.contains("`case`"), "{label}: {err:?}");
     }
+    // `when` always returns Unit in both branches under strict Bool, so returning
+    // it from a typed Number function is diagnosed as a return-type mismatch.
+    let (when_res, when_warnings, _) = compile(number_fn("(when (> x 0) x)", "Number"));
+    assert!(
+      when_res.is_ok(),
+      "typed-return-when should preprocess with return mismatch warning: {when_res:?}"
+    );
+    assert!(
+      when_warnings
+        .iter()
+        .any(|warning| warning.code() == Some("E_FN_RETURN_TYPE_MISMATCH") && warning.expected() == Some(":number")),
+      "typed-return-when expected E_FN_RETURN_TYPE_MISMATCH, got {when_warnings:?}"
+    );
 
     // Since `Optional<T>` was removed (#2233) a nil join has no Calcit type,
     // so binding one is a value use like any other.
@@ -4858,7 +4870,7 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
 const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("ret-if-noelse", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-if-niljoin", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("ret-when", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("ret-when", true, true, None),
   ("ret-cond", true, true, None),
   ("ret-case", true, true, None),
   ("ret-nested-if", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
@@ -4871,7 +4883,7 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("arg-local", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("arg-defn", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("arg-defn-niljoin", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("arg-defn-when", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("arg-defn-when", true, true, None),
   ("arg-defn-nested", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("arg-proc-add", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("arg-proc-plus", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
@@ -4890,9 +4902,9 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("let-bound-ok-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-fn-literal", true, true, None),
   ("let-bound-list", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("let-cross-def", false, false, None),
-  ("let-cross-def2", false, false, None),
-  ("direct-cross-def", false, false, None),
+  ("let-cross-def", false, true, None),
+  ("let-cross-def2", false, true, None),
+  ("direct-cross-def", false, true, None),
   ("let-bound-nilq", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-plus", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("ret-bool-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
@@ -5177,16 +5189,13 @@ fn option_erased_to_nil_suggests_rewrites_that_keep_results() {
     assert_eq!(
       hints,
       [
-        Some("rewrite `or (.unwrap-or (get m :a) nil) 1` as `match (get m :a) ((:some v) (or v 1)) $ (:none) 1`".to_owned()),
-        Some("rewrite `if (.unwrap-or (get m :a) nil) |yes |no` as `match (get m :a) ((:some v) (if v |yes |no)) $ (:none) |no`".to_owned()),
+        // Under strict Bool, `if` / `or` cannot consume arbitrary Dynamic payloads,
+        // so Option erasure rewrite hints stay limited to predicate consumers (`nil?` / `non-nil?`).
+        None,
+        None,
         Some("rewrite `nil? $ (get m :a) .unwrap-or nil` as `match (get m :a) ((:some v) (nil? v)) $ (:none) true`".to_owned()),
-        Some(
-          "rewrite `or (match (get m :a) ((:some x) (str x)) ((:none) nil)) d` as `match (get m :a) ((:some x) (or (str x) d)) $ (:none) d`"
-            .to_owned()
-        ),
-        // The payload name avoids `v`, which the fallback reads.
-        Some("rewrite `or (.unwrap-or (get m :a) nil) v |z` as `match (get m :a) ((:some v1) (or v1 v |z)) $ (:none) $ or v |z`".to_owned()),
-        // Moving the fallback `x` under `(:some x)` would capture it.
+        None,
+        None,
         None,
         // `str` turns nil into text, so no rewrite keeps its result.
         None,
@@ -5295,13 +5304,13 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
       .iter()
       .filter(|warning| warning.code() == Some("E_CONSTANT_TRUTHY_CONDITION"))
       .collect::<Vec<_>>();
-    // `if (count xs)`, `if s`, `when (count xs)`, `and (count xs) …`, and
-    // `or s …`, and a hand-written `if s s false`; the Bool tests and the
-    // value-returning `and` tail stay quiet.
-    assert_eq!(truthy.len(), 6, "expected six constant-truthy conditions, got: {warnings:?}");
+    // Every constant-truthy operand across `if`, `when`, `and`, and `or`
+    // (including value-looking fallbacks like `|fallback` and tail `(count xs)`)
+    // reports `E_CONSTANT_TRUTHY_CONDITION`; only the Bool tests stay quiet.
+    assert_eq!(truthy.len(), 8, "expected eight constant-truthy conditions, got: {warnings:?}");
     assert_eq!(
       truthy.iter().filter(|warning| warning.message().contains("type Number")).count(),
-      3,
+      4,
       "{truthy:?}"
     );
     assert_eq!(
@@ -5309,7 +5318,7 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
         .iter()
         .filter(|warning| warning.message().contains("type String") && warning.message().contains("`blank?`"))
         .count(),
-      3,
+      4,
       "{truthy:?}"
     );
     assert!(
@@ -5662,14 +5671,50 @@ fn strict_type_fail_union_rules_report_stable_codes() {
 fn proof_dissoc_in_keeps_known_map_root() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
-    // #2506: a non-empty literal path keeps the Map root when every nested
-    // result is an open Dynamic payload or another Map under the same rule.
+    // #2506 + bounded mixed path lowering: literal paths through Map/List
+    // containers preserve the declared Map root.
     let kept = load_fixture_entries("calcit/type-fail/dissoc-in-map-root.cirru");
     run_check_only(&kept).expect("dissoc-in on a known Map root proves the declared Map return");
 
-    // A List payload is outside the rule and keeps the open public contract.
-    let open = load_fixture_entries("calcit/type-fail/dissoc-in-list-payload.cirru");
-    let err = run_check_only(&open).expect_err("a List payload must not be claimed by the Map rule");
+    let list_kept = load_fixture_entries("calcit/type-fail/dissoc-in-list-payload.cirru");
+    run_check_only(&list_kept).expect("dissoc-in over literal Map+List path proves the declared Map return");
+
+    // A dynamic path remains unexpanded and keeps the open public contract.
+    let mut open_file = snapshot::create_file_from_snippet(
+      "defn remove-dyn (data path)\n  dissoc-in data path\n\ndefn main! ()\n  remove-dyn ({} (:groups ([] 1 2))) ([] :groups :sub)\n  , &unit\n\ndefn reload! () &unit",
+    )
+    .expect("dynamic dissoc-in snippet should parse");
+    let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        guard: None,
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let map_list_type = CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    );
+    open_file.defs.get_mut("remove-dyn").expect("remove-dyn").schema = fn_schema(
+      vec![
+        Arc::new(map_list_type.clone()),
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Tag))),
+      ],
+      map_list_type,
+    );
+    open_file.defs.get_mut("main!").expect("main!").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    open_file.defs.get_mut("reload!").expect("reload!").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot.files.insert("app.main".to_owned(), open_file);
+    let open = prepare_snapshot_entries(snapshot);
+    let err = run_check_only(&open).expect_err("a dynamic path must not be claimed by the typed path rule");
     assert!(err.contains("E_FN_RETURN_UNPROVEN"), "unexpected dissoc-in proof error: {err}");
   });
 }
@@ -6041,5 +6086,364 @@ fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
       collision_err.contains("E_ERASED_GENERIC_RELATION") || collision_err.contains("E_FN_RETURN_TYPE_MISMATCH"),
       "unexpected error for colliding method generic T vs impl generic T: {collision_err}"
     );
+  });
+}
+
+struct ProofAuditReset {
+  previous: bool,
+}
+
+impl ProofAuditReset {
+  fn disabled() -> Self {
+    let previous = runner::preprocess::default_proof_enabled();
+    runner::preprocess::set_default_proof_audit(false);
+    Self { previous }
+  }
+}
+
+impl Drop for ProofAuditReset {
+  fn drop(&mut self) {
+    runner::preprocess::set_default_proof_audit(self.previous);
+  }
+}
+
+#[test]
+fn strict_bool_conditions_reject_non_bool_statically_and_at_runtime() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+
+    // 1. Static rejections across Dynamic, Nil, Unit, and Nullable(Number) for all control forms.
+    let nullable_lib = |body: &str| -> ProgramEntries {
+      let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+          open_reason: Default::default(),
+          guard: None,
+          runtime_arity: None,
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          arg_types,
+          return_type: Arc::new(return_type),
+          fn_kind: SchemaKind::Fn,
+          rest_type: None,
+          features: Arc::new(HashSet::new()),
+        })))
+      };
+      let mut library = snapshot::create_file_from_snippet("ns lib.nullable\n\ndefn make-nullable () 7")
+        .expect("nullable library snippet should parse");
+      library.ns.code = vec!["ns", "lib.nullable"].into();
+      library.defs.get_mut("make-nullable").expect("make-nullable").schema = fn_schema(
+        vec![],
+        CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), calcit::calcit::NullableOrigin::Inferred),
+      );
+      let app_snippet = format!(
+        "ns app.main\n  :require\n    lib.nullable :refer $ make-nullable\n\ndefn main! ()\n  let ((maybe (make-nullable)))\n    {body}"
+      );
+      let file = snapshot::create_file_from_snippet(&app_snippet).expect("nullable caller snippet should parse");
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert("app.main".to_owned(), file);
+      prepare_snapshot_entries_with_libraries(snapshot, vec![("lib.nullable".to_owned(), library)])
+    };
+
+    let static_cases = [
+      (
+        "if Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Number)\n  if x 1 2\n\ndefn main! () (probe nil)",
+      ),
+      (
+        "when Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Unit)\n  when x 1\n\ndefn main! () (probe nil)",
+      ),
+      (
+        "when-not Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Unit)\n  when-not x 1\n\ndefn main! () (probe nil)",
+      ),
+      (
+        "if-not Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Number)\n  if-not x 1 2\n\ndefn main! () (probe nil)",
+      ),
+      (
+        "and Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Bool)\n  and x true\n\ndefn main! () (probe nil)",
+      ),
+      (
+        "or Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Bool)\n  or false x\n\ndefn main! () (probe nil)",
+      ),
+      ("if Nil", "if nil 1 2"),
+      ("when Nil", "when nil 1"),
+      ("when-not Nil", "when-not nil 1"),
+      ("if-not Nil", "if-not nil 1 2"),
+      ("and Nil", "and nil true"),
+      ("or Nil", "or false nil"),
+      ("if Unit", "if &unit 1 2"),
+      ("when Unit", "when &unit 1"),
+      ("when-not Unit", "when-not &unit 1"),
+      ("if-not Unit", "if-not &unit 1 2"),
+      ("and Unit", "and &unit true"),
+      ("or Unit", "or false &unit"),
+    ];
+    for (label, snippet) in static_cases {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      let target = if snippet.contains("defn probe") {
+        "probe"
+      } else {
+        &entries.init_def
+      };
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{label} should diagnose in check_warnings rather than hard-fail: {err}"));
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_NON_BOOL_CONDITION")),
+        "{label} should report E_NON_BOOL_CONDITION, got {:?}",
+        warnings.borrow()
+      );
+    }
+    for (label, body) in [
+      ("if Nullable", "(if maybe 1 2)"),
+      ("when Nullable", "(when maybe 1)"),
+      ("when-not Nullable", "(when-not maybe 1)"),
+      ("if-not Nullable", "(if-not maybe 1 2)"),
+      ("and Nullable", "(and maybe true)"),
+      ("or Nullable", "(or false maybe)"),
+    ] {
+      let entries = nullable_lib(body);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{label} should diagnose in check_warnings rather than hard-fail: {err}"));
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_NON_BOOL_CONDITION")),
+        "{label} should report E_NON_BOOL_CONDITION, got {:?}",
+        warnings.borrow()
+      );
+    }
+
+    // 2. `not` rejects non-Bool inputs statically via callable contract diagnostics.
+    for (label, snippet, expected_code) in [
+      ("not Nil", "not nil", "E_PROC_ARG_TYPE_MISMATCH"),
+      ("not Unit", "not &unit", "E_PROC_ARG_TYPE_MISMATCH"),
+      (
+        "not Dynamic",
+        "defn probe (x)\n  hint-fn $ Fn Dynamic (-> Bool)\n  not x\n\ndefn main! () (probe nil)",
+        "E_CALL_ARGUMENT_UNPROVEN",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      let target = if snippet.contains("defn probe") {
+        "probe"
+      } else {
+        &entries.init_def
+      };
+      let compiled = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default());
+      let matched_err = matches!(&compiled, Err(err) if err.code.as_deref() == Some(expected_code));
+      let matched_warning = warnings.borrow().iter().any(|w| w.code() == Some(expected_code));
+      assert!(
+        matched_err || matched_warning,
+        "{label} expected {expected_code}, got res={compiled:?}, warnings={:?}",
+        warnings.borrow()
+      );
+    }
+    {
+      let entries = nullable_lib("(not maybe)");
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("not Nullable should preprocess with warning: {err}"));
+      assert!(
+        warnings.borrow().iter().any(|w| w.code() == Some("E_PROC_ARG_TYPE_MISMATCH")),
+        "not Nullable expected E_PROC_ARG_TYPE_MISMATCH, got {:?}",
+        warnings.borrow()
+      );
+    }
+
+    // 3. Native runtime rejects coerced non-Bool values on `if` and `not`.
+    for (label, expr, expected_msg) in [
+      ("runtime if nil", "if (as-bool nil) |yes |no", "if condition expects a Bool"),
+      ("runtime if 0", "if (as-bool 0) |yes |no", "if condition expects a Bool"),
+      ("runtime if unit", "if (as-bool &unit) |yes |no", "if condition expects a Bool"),
+      ("runtime not nil", "not (as-bool nil)", "not"),
+      ("runtime not 0", "not (as-bool 0)", "not"),
+      ("runtime not unit", "not (as-bool &unit)", "not"),
+    ] {
+      let snippet = format!(
+        "defn main! ()\n  let\n      as-bool $ fn (v)\n        hint-fn $ Fn Dynamic (-> Bool) (:features :js-ffi)\n        unsafe-coerce v Bool\n    {expr}"
+      );
+      let entries = load_snippet_entries(&snippet);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{label} should preprocess cleanly: {err}"));
+      assert!(warnings.borrow().is_empty(), "{label} unexpected warnings: {:?}", warnings.borrow());
+      let runtime_err =
+        calcit::run_program(entries.init_ns, entries.init_def, &[]).expect_err(&format!("{label} must fail at runtime"));
+      assert!(
+        runtime_err.msg.contains(expected_msg),
+        "{label} expected runtime error containing `{expected_msg}`, got `{}`",
+        runtime_err.msg
+      );
+    }
+  });
+}
+
+#[test]
+fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_export() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        guard: None,
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+
+    let mut file = snapshot::create_file_from_snippet(concat!(
+      "defwasm-export export-hint-param (x)\n  hint-fn $ Fn Dynamic (-> Number)\n  1\n\n",
+      "defwasm-export export-hint-ret (x)\n  hint-fn $ Fn Number (-> Dynamic)\n  x\n\n",
+      "defwasm-export export-schema-param (x) 1\n\n",
+      "defwasm-import import-schema-param (x) |host |read\n\n",
+      "defwasm-import import-schema-ret (x) |host |get\n\n",
+      "defwasm-export zero-typed ()\n  hint-fn $ Fn (-> Number)\n  , 42\n\n",
+      "defn main! () &unit",
+    ))
+    .expect("wasm boundary snippet should parse");
+    file.defs.get_mut("export-schema-param").expect("export-schema-param").schema =
+      fn_schema(vec![calcit::calcit::DYNAMIC_TYPE.clone()], CalcitTypeAnnotation::Number);
+    file.defs.get_mut("import-schema-param").expect("import-schema-param").schema =
+      fn_schema(vec![calcit::calcit::DYNAMIC_TYPE.clone()], CalcitTypeAnnotation::Number);
+    file.defs.get_mut("import-schema-ret").expect("import-schema-ret").schema =
+      fn_schema(vec![Arc::new(CalcitTypeAnnotation::Number)], CalcitTypeAnnotation::Dynamic);
+
+    let mut lib_wasm =
+      snapshot::create_file_from_snippet("ns lib.wasm\n\ndefwasm-export zero-unhinted () 42").expect("lib.wasm snippet should parse");
+    lib_wasm.ns.code = vec!["ns", "lib.wasm"].into();
+
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries_with_libraries(snapshot, vec![("lib.wasm".to_owned(), lib_wasm)]);
+
+    for bad_def in [
+      "export-hint-param",
+      "export-hint-ret",
+      "export-schema-param",
+      "import-schema-param",
+      "import-schema-ret",
+    ] {
+      let warnings = RefCell::new(vec![]);
+      let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, bad_def, &warnings, &CallStackList::default())
+        .expect_err(&format!("{bad_def} must be rejected by E_WASM_BOUNDARY_DYNAMIC"));
+      assert_eq!(
+        err.code.as_deref(),
+        Some("E_WASM_BOUNDARY_DYNAMIC"),
+        "expected E_WASM_BOUNDARY_DYNAMIC for {bad_def}, got {err}"
+      );
+    }
+
+    let ok_warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "zero-typed", &ok_warnings, &CallStackList::default())
+      .expect("zero-arg typed defwasm-export must be allowed");
+    assert!(ok_warnings.borrow().is_empty(), "unexpected warnings: {:?}", ok_warnings.borrow());
+
+    let lib_warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled("lib.wasm", "zero-unhinted", &lib_warnings, &CallStackList::default())
+      .expect("schema-less zero-arg defwasm-export must remain allowed");
+    assert!(
+      lib_warnings.borrow().iter().all(|w| w.code() != Some("E_WASM_BOUNDARY_DYNAMIC")),
+      "unexpected E_WASM_BOUNDARY_DYNAMIC warning: {:?}",
+      lib_warnings.borrow()
+    );
+    assert!(
+      ok_warnings.borrow().iter().all(|w| w.code() != Some("E_WASM_BOUNDARY_DYNAMIC")),
+      "unexpected E_WASM_BOUNDARY_DYNAMIC warning: {:?}",
+      ok_warnings.borrow()
+    );
+  });
+}
+
+#[test]
+fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let fn_schema =
+      |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation, open_reason: calcit::calcit::FnOpenReasonNote| {
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+          open_reason,
+          guard: None,
+          runtime_arity: None,
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          arg_types,
+          return_type: Arc::new(return_type),
+          fn_kind: SchemaKind::Fn,
+          rest_type: None,
+          features: Arc::new(HashSet::new()),
+        })))
+      };
+
+    let build_entries = |main_body: &str| {
+      builtins::effects::init_effects_states();
+      let mut library =
+        snapshot::create_file_from_snippet(concat!("ns lib.dynamic\n", "defn make-open () 1\n\n", "defn make-intrinsic () 1",))
+          .expect("library snippet should parse");
+      library.ns.code = vec!["ns", "lib.dynamic"].into();
+      library.defs.get_mut("make-open").expect("make-open").schema =
+        fn_schema(vec![], CalcitTypeAnnotation::Dynamic, Default::default());
+      library.defs.get_mut("make-intrinsic").expect("make-intrinsic").schema = fn_schema(
+        vec![],
+        CalcitTypeAnnotation::Dynamic,
+        calcit::calcit::FnOpenReasonNote(Some(calcit::calcit::FnOpenReason::Intrinsic)),
+      );
+
+      let app_snippet = format!(
+        "ns app.main\n  :require\n    lib.dynamic :refer $ make-open make-intrinsic\n\ndefn take-num (x) x\n\ndefn main! ()\n  {main_body}\n\ndefn reload! () &unit"
+      );
+      let mut app = snapshot::create_file_from_snippet(&app_snippet).expect("app snippet should parse");
+      app.defs.get_mut("take-num").expect("take-num").schema = fn_schema(
+        vec![Arc::new(CalcitTypeAnnotation::Number)],
+        CalcitTypeAnnotation::Number,
+        Default::default(),
+      );
+
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert("app.main".to_owned(), app);
+      prepare_snapshot_entries_with_libraries(snapshot, vec![("lib.dynamic".to_owned(), library)])
+    };
+
+    // Unproven explicit-open calls fail even when CALCIT_PROOF_AUDIT=0 (no default proof audit).
+    for (label, body) in [
+      ("direct defn arg", "take-num (make-open)"),
+      ("let-bound defn arg", "let ((v (make-open))) (take-num v)"),
+      ("direct proc &+ arg", "&+ (make-open) 1"),
+      ("let-bound proc &+ arg", "let ((v (make-open))) (&+ v 1)"),
+      ("direct not arg", "not (make-open)"),
+      ("let-bound not arg", "let ((v (make-open))) (not v)"),
+    ] {
+      let entries = build_entries(body);
+      let err = run_check_only_without_proof(&entries, false)
+        .expect_err(&format!("{label} must fail E_CALL_ARGUMENT_UNPROVEN even without proof audit"));
+      assert!(
+        err.contains("E_CALL_ARGUMENT_UNPROVEN"),
+        "{label} expected E_CALL_ARGUMENT_UNPROVEN, got: {err}"
+      );
+    }
+
+    // `:open :intrinsic` results and predicate-narrowed values pass when proof audit is disabled.
+    for (label, body) in [
+      ("intrinsic into defn", "take-num (make-intrinsic)"),
+      ("intrinsic into proc &+", "&+ (make-intrinsic) 1"),
+      ("narrowed number?", "let ((v (make-open))) (if (number? v) (&+ v 1) 0)"),
+      ("narrowed bool?", "let ((v (make-open))) (if (bool? v) (not v) false)"),
+    ] {
+      let entries = build_entries(body);
+      run_check_only_without_proof(&entries, false)
+        .unwrap_or_else(|err| panic!("{label} should pass when proof audit is disabled: {err}"));
+    }
   });
 }

@@ -166,7 +166,7 @@
                   if (= index 1) (raise |recur-key-error) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
         'recur-enum-receiver-failure? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-enum-receiver-failure? (value index)
             if (> index 0)
@@ -176,7 +176,7 @@
                 do (println |recur-key) (- index 1)
               contains? value 0
           :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect) (:features :io)
+          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
         'recursive-bool-number-kind $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recursive-bool-number-kind (remaining value extra)
             if (<= remaining 0)
@@ -682,7 +682,8 @@
           :doc "|update an enum slot by index; an index past the payloads traps"
           :code $ quote $ defwasm-export test-enum-update-nth (i)
             &enum:nth
-              update (:: :a 1 2) i $ fn (x) (&+ x 10)
+              update (:: :a 1 2) i $ fn (x)
+                &+ (decode-map-as x 'Number) 10
               , i
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)

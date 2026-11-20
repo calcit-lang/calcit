@@ -574,13 +574,13 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
   ] {
     define(&snapshot, name, code, schema, false);
   }
-  // #1554: `when` and `case` without a final branch keep their nil-branch
-  // evidence through lowering, both into a declared nullable return and through
-  // the explicit `nil->option` bridge.
+  // #1554: explicit nil branches (`if ... nil`) and `case` without a final
+  // branch keep their nil-branch evidence through lowering, both into a
+  // declared nullable return and through the explicit `nil->option` bridge.
   for (name, code, schema) in [
     (
       "when-nullable",
-      "quote $ defn when-nullable (flag) $ when flag 1",
+      "quote $ defn when-nullable (flag) $ if flag 1 nil",
       "quote $ Fn Bool (-> $ JsNullish Number)",
     ),
     (
@@ -707,7 +707,7 @@ fn open_path_write_proof_does_not_invent_receiver_shapes() {
     assert!(!result.status.success(), "{label} must not acquire a concrete Map result");
     let output = String::from_utf8_lossy(&result.stdout);
     let stderr = String::from_utf8_lossy(&result.stderr);
-    if label == "empty-update" {
+    if matches!(label, "empty" | "empty-update") {
       assert!(
         stderr.contains("E_FN_RETURN_TYPE_MISMATCH") && stderr.contains("body returns `:string`"),
         "{label}: {output}\n{stderr}"

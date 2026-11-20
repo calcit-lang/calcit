@@ -26,10 +26,10 @@ aliases:
 
 | 构造 | 状态 | 证据或说明 | 验证 |
 | --- | --- | --- | --- |
-| `defn`、固定参数、`let`、`if`、`recur` 尾递归 | supported | 参数与返回值为 f64 值 ABI | core `:tests`，如 `calcit.core/recur` |
-| Number、Bool、nil、String、tag 字面量 | supported | nil、false 与 0 共用 f64 表示，见下文类型判断的说明 | core `:tests` |
+| `if`、`when`、`when-not`、`if-not`、`and`、`or`、`not` 与 `defn` / `let` / `recur` 尾递归 | supported | 条件统一严格要求静态与运行时 `Bool`（非 `Bool` 静态报 `E_NON_BOOL_CONDITION` / `E_PROC_ARG_TYPE_MISMATCH`）；参数与返回值为 f64 值 ABI | core `:tests`，如 `calcit.core/recur`、`calcit.core/if` |
+| Number、Bool、nil、Unit、String、tag 字面量 | supported | 仅在开放/擦除类型或 `=` 比较等通用值 ABI 下 nil、false、Unit 与 0 共用 f64 表示，见下文诊断说明；条件分支已限定为 `Bool` | core `:tests` |
 | 具体标量输入的 `type-of`、`number?`、`bool?` | supported | 已证明的 Number（含数值 refinement）、Bool、Nil、Unit 优先使用真实类型证据，实参仍求值一次；不会将 false／nil／Unit 的零值重新解释为 Number，合法 Number 也不会被同值堆地址覆盖 | `calcit.core/number?` 的 `:scalar-kind-evidence` 测试与 WASM 参数失败路径回归 |
-| `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-collection-and-missing-paths` 等开放遍历排除项；静态 Map 与字面量空路径用例已通过 |
+| `nil?`、`nil->option` 与 Option 在可空拼接／开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`）；直连 nil 拼接的 `nil->option`、字面量 `get-in` / `dissoc-in` / `assoc-in` / `update-in` 已按闭合静态路径降低，其余开放遍历仍按 `E_WASM_CALL_SPECIALIZATION` 等诊断拒绝 | `calcit.core/nil->option#collapses-nil-joins-under-declared-option`、`calcit.core/get-in#handles-empty-path-and-nil-base`、`calcit.core/dissoc-in#dissocs-nested-maps-and-list-indexes` |
 | 数值排序比较 `&<`、`&>` 及其表层调用 | supported-with-type-evidence | 操作数需要 Number 证据；已知非 Number 保留实参求值后 trap，开放类型在 scalar 擦除前报告 `E_WASM_NIL_TYPE_EVIDENCE`。具体 Number 的泛型调用复用调用点特化；`identical?` 不受数值限制 | `calcit.core/contains?` 的 `:enum-numeric-evidence` 测试与 WASM 宿主失败路径回归 |
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量与 `&list:to-set` 按静态元素类型去重 | core `:tests` |
 | `foldl` / `&list:foldl` | supported | List 和 Set 逐项传给回调。Map 逐项传入二元 List `[key, value]`，静态已知的 Map 为回调保留 `Tuple K V` 类型，可用 `let[]` 分别取得键和值，也可显式接收 `List Dynamic`。空集合返回初始值；开放接收者按实际容器分派，其他值会 trap | `calcit.core/foldl#folds-map-as-key-value-lists`、`calcit.core/foldl#keeps-map-key-and-value-types`、`calcit.core/&list:foldl#keeps-map-key-and-value-types` |
@@ -61,7 +61,7 @@ aliases:
 | `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
-| `defwasm-import` / `defwasm-export` | supported | 显式 host ABI，Number / String | `scripts/wasm-validation.md` |
+| `defwasm-import` / `defwasm-export` | supported-with-type-evidence | 显式 host ABI 边界（参数、rest 与返回值不得出现 `Dynamic`，否则在预处理期报告 `E_WASM_BOUNDARY_DYNAMIC`） | `scripts/wasm-validation.md`、`src/bin/cr_tests/type_fail.rs` |
 
 完整的逐测试清单是 `scripts/core-tests-exclusions.cirru` 的 `:wasm` 与 `:wasi` 部分，原因以 `unsupported`、`parity`、`host`、`replay` 开头；`node scripts/run-core-tests.mjs --backend wasm --report-unexpected-pass` 列出已经可以移出清单的测试。
 
@@ -112,7 +112,8 @@ write-file
 | `E_WASM_TARGET` | 未知的 `--target`，只接受 `core` 或 `wasi` | 修正命令参数 |
 | `E_WASM_BOUNDARY` | 未知的 `--boundary`，只接受 `native` 或 `component` | 修正命令参数 |
 | `E_WASM_CAPABILITY` | 目标不提供所需宿主能力，或 `wasi` 目标出现未登记的自定义 import | 改用目标提供的能力，或换用 native / JS |
-| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型上无法区分 nil、false、Unit、Tag 与 Number 的标量表示（含 `if`、`nil?`、`=` / `&=` / `not=` 及 `encode-map-as`）；数值排序操作数缺少 Number 证据 | 缺失值与判等边界使用具体闭合类型或 Option；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
+| `E_WASM_BOUNDARY_DYNAMIC` | `defwasm-export` 或 `defwasm-import` 在参数、rest 或返回类型中声明了 `Dynamic` | 改为具体的 WASM ABI 可表达类型（例如 `Number`、`String`、`Bool`、`Option`、`Result` 或名义 `Struct`/`Enum`） |
+| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型或可空拼接上无法区分 nil、false、Unit、Tag 与 Number 的标量表示（含 `nil?`、`=` / `&=` / `not=` 及 `encode-map-as`）；数值排序操作数缺少 Number 证据 | 缺失值与判等边界使用具体闭合类型或 `Option`（可空返回值优先用 `nil->option`）；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |

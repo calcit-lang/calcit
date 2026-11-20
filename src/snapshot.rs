@@ -9251,7 +9251,7 @@ mod tests {
       "js-object should retain its js-ffi backend feature"
     );
 
-    for def_name in ["let", "fn", "and", "cond", "do"] {
+    for def_name in ["let", "fn", "cond", "do"] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
       let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
         panic!("{def_name} should load as MacroSignature");
@@ -9262,6 +9262,27 @@ mod tests {
         matches!(signature.expansion, crate::calcit::MacroExpansionType::Expr(ref inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)),
         "{def_name} should explicitly retain a dynamic expression result"
       );
+    }
+
+    {
+      let entry = core_file.defs.get("and").expect("missing def: and");
+      let CalcitTypeAnnotation::Macro(signature) = entry.schema.as_ref() else {
+        panic!("and should load as MacroSignature");
+      };
+      assert!(signature.is_strict(), "and should use a phase-aware contract");
+      assert!(signature.capabilities.is_empty(), "and should be compile-time pure");
+      assert!(matches!(
+        signature.required_inputs.as_slice(),
+        [crate::calcit::MacroSyntaxType::Expr(inner)] if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+      ));
+      assert!(matches!(
+        signature.rest_input,
+        Some(crate::calcit::MacroSyntaxType::Expr(ref inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+      ));
+      assert!(matches!(
+        signature.expansion,
+        crate::calcit::MacroExpansionType::Expr(ref inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+      ));
     }
 
     let CalcitTypeAnnotation::Macro(def_signature) = core_file.defs["def"].schema.as_ref() else {
@@ -9461,7 +9482,7 @@ mod tests {
       ("either", 0, 0, true),
       ("when", 1, 0, true),
       ("when-not", 1, 0, true),
-      ("if-not", 0, 0, true),
+      ("if-not", 2, 0, true),
       ("if-let", 2, 1, false),
       ("when-let", 1, 0, true),
     ] {
@@ -9474,11 +9495,23 @@ mod tests {
       assert_eq!(signature.optional_inputs.len(), optional, "{def_name} optional inputs");
       assert_eq!(signature.rest_input.is_some(), has_rest, "{def_name} rest input");
       match def_name {
-        "or" | "when" | "when-not" => {
+        "or" => {
           assert!(matches!(
             signature.required_inputs.as_slice(),
             [crate::calcit::MacroSyntaxType::Expr(inner)]
-              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+          ));
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+          ));
+        }
+        "when" | "when-not" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [crate::calcit::MacroSyntaxType::Expr(inner)]
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
           ));
           assert!(matches!(
             signature.rest_input,
@@ -9486,8 +9519,23 @@ mod tests {
               if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
         }
-        "either" | "if-not" => {
+        "either" => {
           assert!(signature.required_inputs.is_empty());
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
+              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
+        }
+        "if-not" => {
+          assert!(matches!(
+            signature.required_inputs.as_slice(),
+            [
+              crate::calcit::MacroSyntaxType::Expr(cond),
+              crate::calcit::MacroSyntaxType::Expr(body)
+            ] if matches!(cond.as_ref(), CalcitTypeAnnotation::Bool)
+              && matches!(body.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
           assert!(matches!(
             signature.rest_input,
             Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
@@ -9532,6 +9580,18 @@ mod tests {
                 if matches!(name.as_ref(), "Option" | "calcit.core/Option")
                   && matches!(args.as_slice(), [item] if matches!(item.as_ref(), CalcitTypeAnnotation::Dynamic))
             )
+        ));
+      } else if def_name == "or" {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
+        ));
+      } else if matches!(def_name, "when" | "when-not") {
+        assert!(matches!(
+          signature.expansion,
+          crate::calcit::MacroExpansionType::Expr(ref inner)
+            if matches!(inner.as_ref(), CalcitTypeAnnotation::Unit)
         ));
       } else {
         assert!(matches!(
@@ -9658,9 +9718,17 @@ mod tests {
         "calcit.test/{def_name} should be compile-time pure"
       );
       assert_eq!(signature.required_inputs.len(), expected_input_count);
-      assert!(signature.required_inputs.iter().all(
-        |input| matches!(input, crate::calcit::MacroSyntaxType::Expr(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
-      ));
+      let expected_input_type = if def_name == "is" {
+        &CalcitTypeAnnotation::Bool
+      } else {
+        &CalcitTypeAnnotation::Dynamic
+      };
+      assert!(
+        signature
+          .required_inputs
+          .iter()
+          .all(|input| matches!(input, crate::calcit::MacroSyntaxType::Expr(inner) if inner.as_ref() == expected_input_type))
+      );
       let expected = if def_name == "throws?" {
         &CalcitTypeAnnotation::Bool
       } else {

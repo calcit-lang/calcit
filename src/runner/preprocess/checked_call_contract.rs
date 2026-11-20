@@ -7,7 +7,7 @@ use crate::calcit::{self, Calcit, CalcitList, CalcitTypeAnnotation};
 
 use super::{
   ScopeTypes, is_nil_bridge_head,
-  type_inference::{extract_literal_list_items, fully_typed_literal_assoc_path, nil_bridge_result_type, resolve_type_value},
+  type_inference::{extract_literal_list_items, nil_bridge_result_type, resolve_type_value},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -427,13 +427,33 @@ fn resolve_checked_call_contract_inner(
         lowering: None,
       });
     }
-    // Reuse the same bounded Map-path proof as reconstruction. An unknown
-    // path or mixed/open intermediate container keeps the public contract.
-    let path = fully_typed_literal_assoc_path(receiver_type.as_ref(), path_arg)?;
-    let mut leaf_type = receiver_type.clone();
-    for _ in path {
-      let T::Map(_, member) = leaf_type.as_ref() else { return None };
-      leaf_type = member.clone();
+    // Reuse the same bounded Map/List-path proof as reconstruction. Struct
+    // boundaries, unknown paths, and open/mixed containers keep the public contract.
+    let mut leaf_type = CalcitTypeAnnotation::expand_schema_alias(&receiver_type);
+    for key in &path {
+      match leaf_type.as_ref() {
+        T::Map(key_ty, member) => {
+          let expanded_key = CalcitTypeAnnotation::expand_schema_alias(key_ty);
+          if !matches!(expanded_key.as_ref(), T::Dynamic | T::TypeVar(_)) {
+            let segment_ty = resolve_type_value(key, scope_types)?;
+            if !segment_ty.is_proven_for(key_ty) {
+              return None;
+            }
+          }
+          leaf_type = CalcitTypeAnnotation::expand_schema_alias(member);
+        }
+        T::List(member) => {
+          let segment_ty = resolve_type_value(key, scope_types)?;
+          if !segment_ty.is_proven_for(&T::Number) {
+            return None;
+          }
+          leaf_type = CalcitTypeAnnotation::expand_schema_alias(member);
+        }
+        _ => return None,
+      }
+    }
+    if matches!(leaf_type.as_ref(), T::Dynamic | T::DynFn) {
+      return None;
     }
     return Some(CheckedCallContract {
       expected_types: Some(vec![
