@@ -5500,7 +5500,8 @@ impl CalcitTypeAnnotation {
   // not an instance of that nominal type.
   fn expand_slot_schema_alias(type_value: &Arc<Self>) -> Arc<Self> {
     let expanded = Self::expand_schema_alias(type_value);
-    if matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
+    // An explicit open family describes instances, not a nominal constructor.
+    if expanded.open_family_name().is_none() && matches!(expanded.as_ref(), Self::EnumDef(_) | Self::StructDef(_) | Self::Custom(_)) {
       type_value.clone()
     } else {
       expanded

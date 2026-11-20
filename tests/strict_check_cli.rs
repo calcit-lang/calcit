@@ -364,6 +364,109 @@ fn deftype_enum_slot_preserves_open_enum_calls() {
 }
 
 #[test]
+fn deftype_struct_slot_preserves_family_and_nominal_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-slot-nominal-argument.cirru", &snapshot).unwrap();
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "demo.main/ViewDispatch",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ deftype ViewDispatch AnyStruct",
+    ],
+    vec!["edit", "schema", "demo.main/ViewDispatch", "--clear"],
+    vec![
+      "edit",
+      "def",
+      "demo.main/RemoteOp",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defstruct RemoteOp (:send String)",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "demo.main/RemoteOp",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote StructDef",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "configure a deftype AnyStruct slot");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "a deftype AnyStruct slot accepts a named struct",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/invoke",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn invoke (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f 42)",
+      ],
+    ),
+    "pass an unrelated number to the open struct slot",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!rejected.status.success(), "AnyStruct must reject Number");
+  assert!(String::from_utf8_lossy(&rejected.stdout).contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/invoke",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn invoke (f) (hint-fn $ Fn (Fn *dispatch-op (-> Unit)) (-> Unit)) (f $ RemoteOp :send |hello)",
+      ],
+    ),
+    "restore the named struct argument",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "demo.main/ViewDispatch",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct ViewDispatch (:send String)",
+      ],
+    ),
+    "bind the slot to a different nominal struct",
+  );
+  let rejected = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(
+    !rejected.status.success(),
+    "a nominal slot must reject a different struct with the same fields"
+  );
+  assert!(String::from_utf8_lossy(&rejected.stdout).contains("E_LOCAL_FN_ARG_TYPE_MISMATCH"));
+}
+
+#[test]
 fn enum_payload_lambdas_take_the_declared_payload_type() {
   // A lambda passed as a variant payload gets the declared `Fn Task (-> String)`
   // like a Struct field does, so a misspelled field on `t` is caught (#2644).
