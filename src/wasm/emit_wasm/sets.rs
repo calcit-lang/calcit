@@ -511,7 +511,8 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::LocalSet(max_count));
 
   let total_slots = ctx.i32_offset(max_count, 1);
-  let dst = emit_alloc_with_count(ctx, max_count, total_slots, "set");
+  // Only the copied prefix from `a` is initialized before scanning `dst` for duplicates from `b`.
+  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
 
   let db = emit_addr_offset(ctx, dst, 8);
   let sb = emit_addr_offset(ctx, a, 8);
@@ -545,6 +546,9 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.begin_block_if();
   emit_list_store_elem(ctx, dst, write_idx, be);
   ctx.i32_inc(write_idx);
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.ptr_to_f64(write_idx);
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   ctx.emit(Instruction::End);
 
   ctx.i32_inc(bi);

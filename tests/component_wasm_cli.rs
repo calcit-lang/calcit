@@ -198,8 +198,11 @@ WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
   if (JSON.stringify(wideCompletion) !== JSON.stringify(expectedWide)) {
     throw new Error(`indirect async typed Struct did not round-trip: ${JSON.stringify(wideCompletion)}`);
   }
+  if (instance.exports.__heap_ptr.value !== instance.exports.__arena_base.value) {
+    throw new Error(`async stackful export did not reset arena watermark: ${instance.exports.__heap_ptr.value} !== ${instance.exports.__arena_base.value}`);
+  }
   const reclaimedAsyncWide = instance.exports.cabi_realloc(0, 0, 8, 17 * 8);
-  if (reclaimedAsyncWide !== wideReturnPtr) throw new Error("stackful async task.return did not reclaim its result area");
+  if (reclaimedAsyncWide > wideReturnPtr) throw new Error(`stackful async task.return did not reclaim its result area: ${reclaimedAsyncWide} > ${wideReturnPtr}`);
   instance.exports.cabi_realloc(reclaimedAsyncWide, 17 * 8, 8, 0);
   const syncWidePtr = instance.exports["load-wide-sync"]();
   const syncWideMemory = new DataView(instance.exports.memory.buffer);
@@ -208,11 +211,27 @@ WebAssembly.instantiate(module, { "[export]$root": canonical }).then(result => {
     throw new Error(`indirect sync typed Struct did not round-trip: ${JSON.stringify(syncWide)}`);
   }
   instance.exports["cabi_post_load-wide-sync"](syncWidePtr);
+  if (instance.exports.__heap_ptr.value !== instance.exports.__arena_base.value) {
+    throw new Error(`sync post-return did not reset arena watermark: ${instance.exports.__heap_ptr.value} !== ${instance.exports.__arena_base.value}`);
+  }
   const repeatedSyncWidePtr = instance.exports["load-wide-sync"]();
-  if (repeatedSyncWidePtr !== syncWidePtr) {
-    throw new Error(`sync post-return did not reuse the indirect return area: ${syncWidePtr} -> ${repeatedSyncWidePtr}`);
+  const repeatedSyncWideMemory = new DataView(instance.exports.memory.buffer);
+  const repeatedSyncWide = Array.from({ length: 17 }, (_, index) => repeatedSyncWideMemory.getFloat64(repeatedSyncWidePtr + index * 8, true));
+  if (JSON.stringify(repeatedSyncWide) !== JSON.stringify(expectedWide)) {
+    throw new Error(`repeated indirect sync typed Struct did not round-trip: ${JSON.stringify(repeatedSyncWide)}`);
   }
   instance.exports["cabi_post_load-wide-sync"](repeatedSyncWidePtr);
+  if (instance.exports.__heap_ptr.value !== instance.exports.__arena_base.value) {
+    throw new Error(`repeated sync post-return did not reset arena watermark: ${instance.exports.__heap_ptr.value} !== ${instance.exports.__arena_base.value}`);
+  }
+  const thirdSyncWidePtr = instance.exports["load-wide-sync"]();
+  if (thirdSyncWidePtr !== repeatedSyncWidePtr) {
+    throw new Error(`sync post-return did not reuse the indirect return area: ${repeatedSyncWidePtr} -> ${thirdSyncWidePtr}`);
+  }
+  instance.exports["cabi_post_load-wide-sync"](thirdSyncWidePtr);
+  if (instance.exports.__heap_ptr.value !== instance.exports.__arena_base.value) {
+    throw new Error(`third sync post-return did not reset arena watermark: ${instance.exports.__heap_ptr.value} !== ${instance.exports.__arena_base.value}`);
+  }
 }).catch(error => {
   console.error(error);
   process.exitCode = 1;
@@ -1252,6 +1271,14 @@ let instance;
 let hostBoolOverride = null;
 let hostBufferReturnsInvalidRange = false;
 let hostNumbersReturnsInvalidRange = false;
+const copyGuestBytes = (ptr, len, align = 1) => {
+  if (len === 0) return [0, 0];
+  const e = instance.exports;
+  const bytes = Uint8Array.from(new Uint8Array(e.memory.buffer, ptr, len));
+  const out = e.cabi_realloc(0, 0, align, len);
+  new Uint8Array(e.memory.buffer, out, len).set(bytes);
+  return [out, len];
+};
 const host = {
   "add-one": value => value + 1,
   "bool-not": value => {
@@ -1318,78 +1345,98 @@ const host = {
     if (discriminant === 1) memory.setFloat64(retPtr + 8, payload, true);
   },
   "result-number": (discriminant, payload0, payload1, retPtr) => {
+    const [errPtr, errLen] = discriminant === 0 ? [0, 0] : copyGuestBytes(Number(payload0), payload1, 1);
     const memory = new DataView(instance.exports.memory.buffer);
     memory.setUint8(retPtr, discriminant);
     if (discriminant === 0) {
       memory.setBigUint64(retPtr + 8, payload0, true);
     } else {
-      memory.setUint32(retPtr + 8, Number(payload0), true);
-      memory.setUint32(retPtr + 12, payload1, true);
+      memory.setUint32(retPtr + 8, errPtr, true);
+      memory.setUint32(retPtr + 12, errLen, true);
     }
   },
   profile: (active, maybeDiscriminant, maybePtr, maybeLen, namePtr, nameLen, outcomeDiscriminant, outcomePtr, outcomeLen, scoresPtr, scoresLen, score, retPtr) => {
     if (active !== 0 && active !== 1) throw new Error(`host received invalid profile bool ${active}`);
+    const [copyMaybePtr, copyMaybeLen] = maybeDiscriminant === 0 ? [0, 0] : copyGuestBytes(maybePtr, maybeLen, 1);
+    const [copyNamePtr, copyNameLen] = copyGuestBytes(namePtr, nameLen, 1);
+    const [copyOutcomePtr] = copyGuestBytes(outcomePtr, outcomeDiscriminant === 0 ? outcomeLen * 8 : outcomeLen, outcomeDiscriminant === 0 ? 8 : 1);
+    const [copyScoresPtr] = copyGuestBytes(scoresPtr, scoresLen * 8, 8);
     const memory = new DataView(instance.exports.memory.buffer);
     memory.setUint8(retPtr, active === 0 ? 1 : 0);
     memory.setUint8(retPtr + 4, maybeDiscriminant);
-    memory.setUint32(retPtr + 8, maybePtr, true);
-    memory.setUint32(retPtr + 12, maybeLen, true);
-    memory.setUint32(retPtr + 16, namePtr, true);
-    memory.setUint32(retPtr + 20, nameLen, true);
+    memory.setUint32(retPtr + 8, copyMaybePtr, true);
+    memory.setUint32(retPtr + 12, copyMaybeLen, true);
+    memory.setUint32(retPtr + 16, copyNamePtr, true);
+    memory.setUint32(retPtr + 20, copyNameLen, true);
     memory.setUint8(retPtr + 24, outcomeDiscriminant);
-    memory.setUint32(retPtr + 28, outcomePtr, true);
+    memory.setUint32(retPtr + 28, copyOutcomePtr, true);
     memory.setUint32(retPtr + 32, outcomeLen, true);
-    memory.setUint32(retPtr + 36, scoresPtr, true);
+    memory.setUint32(retPtr + 36, copyScoresPtr, true);
     memory.setUint32(retPtr + 40, scoresLen, true);
     memory.setFloat64(retPtr + 48, score + 1, true);
   },
   event: (discriminant, payload0, payload1, payload2, payload3, payload4, payload5, payload6, payload7, payload8, payload9, payload10, payload11, retPtr) => {
-    const memory = new DataView(instance.exports.memory.buffer);
-    memory.setUint8(retPtr, discriminant);
-    if (discriminant === 1) {
-      memory.setBigUint64(retPtr + 8, payload0, true);
-      memory.setBigUint64(retPtr + 16, payload1, true);
-    } else if (discriminant === 2) {
-      memory.setUint32(retPtr + 8, Number(payload0), true);
-      memory.setUint32(retPtr + 12, Number(payload1), true);
+    if (discriminant === 2) {
+      const [copyNamePtr, copyNameLen] = copyGuestBytes(Number(payload0), Number(payload1), 1);
+      const memory = new DataView(instance.exports.memory.buffer);
+      memory.setUint8(retPtr, discriminant);
+      memory.setUint32(retPtr + 8, copyNamePtr, true);
+      memory.setUint32(retPtr + 12, copyNameLen, true);
     } else if (discriminant === 3) {
+      const [copyMaybePtr, copyMaybeLen] = Number(payload1) === 0 ? [0, 0] : copyGuestBytes(payload2, payload3, 1);
+      const [copyNamePtr, copyNameLen] = copyGuestBytes(payload4, payload5, 1);
+      const [copyOutcomePtr] = copyGuestBytes(payload7, payload6 === 0 ? payload8 * 8 : payload8, payload6 === 0 ? 8 : 1);
+      const [copyScoresPtr] = copyGuestBytes(payload9, payload10 * 8, 8);
+      const memory = new DataView(instance.exports.memory.buffer);
+      memory.setUint8(retPtr, discriminant);
       memory.setUint8(retPtr + 8, Number(payload0));
       memory.setUint8(retPtr + 12, Number(payload1));
-      memory.setUint32(retPtr + 16, payload2, true);
-      memory.setUint32(retPtr + 20, payload3, true);
-      memory.setUint32(retPtr + 24, payload4, true);
-      memory.setUint32(retPtr + 28, payload5, true);
+      memory.setUint32(retPtr + 16, copyMaybePtr, true);
+      memory.setUint32(retPtr + 20, copyMaybeLen, true);
+      memory.setUint32(retPtr + 24, copyNamePtr, true);
+      memory.setUint32(retPtr + 28, copyNameLen, true);
       memory.setUint8(retPtr + 32, payload6);
-      memory.setUint32(retPtr + 36, payload7, true);
+      memory.setUint32(retPtr + 36, copyOutcomePtr, true);
       memory.setUint32(retPtr + 40, payload8, true);
-      memory.setUint32(retPtr + 44, payload9, true);
+      memory.setUint32(retPtr + 44, copyScoresPtr, true);
       memory.setUint32(retPtr + 48, payload10, true);
       memory.setFloat64(retPtr + 56, payload11, true);
+    } else {
+      const memory = new DataView(instance.exports.memory.buffer);
+      memory.setUint8(retPtr, discriminant);
+      if (discriminant === 1) {
+        memory.setBigUint64(retPtr + 8, payload0, true);
+        memory.setBigUint64(retPtr + 16, payload1, true);
+      }
     }
   },
   ping: () => undefined,
 };
-WebAssembly.instantiate(module, { host }).then(result => {
+WebAssembly.instantiate(module, { host }).then(async result => {
   instance = result;
   const e = instance.exports;
-  const allocateBytes = bytes => {
+  const trapInst = await WebAssembly.instantiate(module, { host });
+  const te = trapInst.exports;
+  const allocateBytesOn = (exportsObj, bytes) => {
     const input = Uint8Array.from(bytes);
-    const ptr = e.cabi_realloc(0, 0, 1, input.length);
-    new Uint8Array(e.memory.buffer, ptr, input.length).set(input);
+    const ptr = exportsObj.cabi_realloc(0, 0, 1, input.length);
+    new Uint8Array(exportsObj.memory.buffer, ptr, input.length).set(input);
     return [ptr, input.length];
   };
+  const allocateBytes = bytes => allocateBytesOn(e, bytes);
   const readBytesResult = ret => {
     const memory = new DataView(e.memory.buffer);
     const ptr = memory.getUint32(ret, true);
     const len = memory.getUint32(ret + 4, true);
     return Uint8Array.from(new Uint8Array(e.memory.buffer, ptr, len));
   };
-  const allocateNumberList = values => {
-    const ptr = e.cabi_realloc(0, 0, 8, values.length * 8);
-    const memory = new DataView(e.memory.buffer);
+  const allocateNumberListOn = (exportsObj, values) => {
+    const ptr = exportsObj.cabi_realloc(0, 0, 8, values.length * 8);
+    const memory = new DataView(exportsObj.memory.buffer);
     values.forEach((value, index) => memory.setFloat64(ptr + index * 8, value, true));
     return [ptr, values.length];
   };
+  const allocateNumberList = values => allocateNumberListOn(e, values);
   const readNumberListResult = ret => {
     const memory = new DataView(e.memory.buffer);
     const ptr = memory.getUint32(ret, true);
@@ -1515,10 +1562,12 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (e["add-one"](41) !== 42) throw new Error("Number adapter did not round-trip");
   const numericScalars = [1.5, 1.25, -32768, -2147483648, -9007199254740991n, -128, 65535, 4294967295, 9007199254740991n, 255];
   for (const name of ["echo-numeric-scalars", "call-host-numeric-scalars"]) {
-    const actual = readNumericScalars(e[name](...numericScalars));
+    const numericRet = e[name](...numericScalars);
+    const actual = readNumericScalars(numericRet);
     if (actual.length !== numericScalars.length || actual.some((value, index) => value !== numericScalars[index])) {
       throw new Error(`${name} did not preserve canonical numeric scalars: ${actual}`);
     }
+    e[`cabi_post_${name}`](numericRet);
   }
   for (const invalid of [
     [Number.NaN, ...numericScalars.slice(1)],
@@ -1528,23 +1577,29 @@ WebAssembly.instantiate(module, { host }).then(result => {
     [...numericScalars.slice(0, 8), 9007199254740992n, numericScalars[9]],
   ]) {
     let trapped = false;
-    try { e["echo-numeric-scalars"](...invalid); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
+    try { te["echo-numeric-scalars"](...invalid); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
     if (!trapped) throw new Error(`invalid canonical numeric input did not trap: ${invalid}`);
   }
   if (e["bool-not"](1) !== 0 || e["bool-not"](0) !== 1) throw new Error("Bool adapter did not round-trip");
   if (e["choose-number"](1, 3, 4) !== 3 || e["choose-number"](0, 3, 4) !== 4) {
     throw new Error("mixed Bool and Number adapter did not round-trip");
   }
-  if (readOptionNumber(e["echo-option-number"](0, 0)) !== null) {
+  const optNoneRet = e["echo-option-number"](0, 0);
+  if (readOptionNumber(optNoneRet) !== null) {
     throw new Error("Option<Number> none did not round-trip");
   }
-  if (readOptionNumber(e["echo-option-number"](1, 7.5)) !== 7.5) {
+  e["cabi_post_echo-option-number"](optNoneRet);
+  const optSomeRet = e["echo-option-number"](1, 7.5);
+  if (readOptionNumber(optSomeRet) !== 7.5) {
     throw new Error("Option<Number> some did not round-trip");
   }
+  e["cabi_post_echo-option-number"](optSomeRet);
   const optionText = Buffer.from("可选", "utf8");
   const [optionTextPtr, optionTextLen] = allocateBytes(optionText);
-  const [optionTextTag, optionTextValue] = readTextVariant(e["echo-option-text"](1, optionTextPtr, optionTextLen), 4);
+  const optionTextRet = e["echo-option-text"](1, optionTextPtr, optionTextLen);
+  const [optionTextTag, optionTextValue] = readTextVariant(optionTextRet, 4);
   if (optionTextTag !== 1 || optionTextValue !== "可选") throw new Error("Option<String> did not round-trip");
+  e["cabi_post_echo-option-text"](optionTextRet);
   const resultNumberOk = e["echo-result-number"](0, floatBits(9.25), 0);
   const resultNumberView = new DataView(e.memory.buffer);
   if (resultNumberView.getUint8(resultNumberOk) !== 0 || resultNumberView.getFloat64(resultNumberOk + 8, true) !== 9.25) {
@@ -1560,7 +1615,8 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const unitOk = e["echo-result-unit"](0, 0, 0);
   if (new DataView(e.memory.buffer).getUint8(unitOk) !== 0) throw new Error("Result<Unit,String> ok did not round-trip");
   e["cabi_post_echo-result-unit"](unitOk);
-  const unitErrorRet = e["echo-result-unit"](1, resultErrorPtr, resultErrorLen);
+  const [unitErrInPtr, unitErrInLen] = allocateBytes(resultError);
+  const unitErrorRet = e["echo-result-unit"](1, unitErrInPtr, unitErrInLen);
   const [unitErrorTag, unitErrorValue] = readTextVariant(unitErrorRet, 4);
   if (unitErrorTag !== 1 || unitErrorValue !== "bad") throw new Error("Result<Unit,String> err did not round-trip");
   e["cabi_post_echo-result-unit"](unitErrorRet);
@@ -1573,76 +1629,105 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (resultListView.getUint8(resultListRet) !== 0 || loweredList.join(",") !== "2,4,8") {
     throw new Error("Result<List<Number>,String> ok did not round-trip");
   }
+  e["cabi_post_echo-result-numbers"](resultListRet);
   if (e.ping() !== undefined) throw new Error("Unit result should use the zero-result canonical shape");
-  if (readOptionNumber(e["call-host-option-number"](1, 12.5)) !== 12.5) {
+  const hostOptRet = e["call-host-option-number"](1, 12.5);
+  if (readOptionNumber(hostOptRet) !== 12.5) {
     throw new Error("imported Option<Number> did not round-trip");
   }
+  e["cabi_post_call-host-option-number"](hostOptRet);
   const importedResultOk = e["call-host-result-number"](0, floatBits(6.5), 0);
   if (new DataView(e.memory.buffer).getFloat64(importedResultOk + 8, true) !== 6.5) {
     throw new Error("imported Result<Number,String> ok did not round-trip");
   }
-  const [importedResultTag, importedResultError] = readTextVariant(
-    e["call-host-result-number"](1, BigInt(resultErrorPtr), resultErrorLen),
-    8,
-  );
+  e["cabi_post_call-host-result-number"](importedResultOk);
+  const [importedResultErrInPtr, importedResultErrInLen] = allocateBytes(resultError);
+  const importedResultErrRet = e["call-host-result-number"](1, BigInt(importedResultErrInPtr), importedResultErrInLen);
+  const [importedResultTag, importedResultError] = readTextVariant(importedResultErrRet, 8);
   if (importedResultTag !== 1 || importedResultError !== "bad") {
     throw new Error("imported Result<Number,String> err did not round-trip");
   }
+  e["cabi_post_call-host-result-number"](importedResultErrRet);
   if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
-  const [profileNamePtr, profileNameLen] = allocateBytes(Buffer.from("Ada", "utf8"));
   if (e["profile-stats-identity"](7.5) !== 1) {
     throw new Error("lifted Struct must share constructor identity, not a same-named foreign definition");
   }
-  const [profileScoresPtr, profileScoresLen] = allocateNumberList([1, 2, 3]);
-  const [profileOutcomePtr, profileOutcomeLen] = allocateNumberList([4, 5]);
-  const directProfile = readProfile(e["echo-profile"](1, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5));
+  const makeProfileArgsOn = (exportsObj, active, hasMaybe, errText) => {
+    const [maybePtr, maybeLen] = hasMaybe ? allocateBytesOn(exportsObj, Buffer.from("Ada", "utf8")) : [0, 0];
+    const [namePtr, nameLen] = allocateBytesOn(exportsObj, Buffer.from("Ada", "utf8"));
+    const [outcomePtr, outcomeLen] = errText === null
+      ? allocateNumberListOn(exportsObj, [4, 5])
+      : allocateBytesOn(exportsObj, Buffer.from(errText, "utf8"));
+    const [scoresPtr, scoresLen] = allocateNumberListOn(exportsObj, [1, 2, 3]);
+    return [active, hasMaybe ? 1 : 0, maybePtr, maybeLen, namePtr, nameLen, errText === null ? 0 : 1, outcomePtr, outcomeLen, scoresPtr, scoresLen, 7.5];
+  };
+  const makeProfileArgs = (active, hasMaybe, errText) => makeProfileArgsOn(e, active, hasMaybe, errText);
+  const directProfileRet = e["echo-profile"](...makeProfileArgs(1, true, null));
+  const directProfile = readProfile(directProfileRet);
   if (JSON.stringify(directProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 1, scores: [1, 2, 3] })) {
     throw new Error(`Struct record did not round-trip: ${JSON.stringify(directProfile)}`);
   }
-  const hostProfile = readProfile(e["call-host-profile"](1, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5));
+  e["cabi_post_echo-profile"](directProfileRet);
+  const hostProfileRet = e["call-host-profile"](...makeProfileArgs(1, true, null));
+  const hostProfile = readProfile(hostProfileRet);
   if (JSON.stringify(hostProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 0, scores: [1, 2, 3] })) {
     throw new Error(`imported Struct record did not round-trip: ${JSON.stringify(hostProfile)}`);
   }
-  const [profileErrorPtr, profileErrorLen] = allocateBytes(Buffer.from("bad", "utf8"));
-  const directAlternateProfile = readProfile(e["echo-profile"](1, 0, 0, 0, profileNamePtr, profileNameLen, 1, profileErrorPtr, profileErrorLen, profileScoresPtr, profileScoresLen, 7.5));
+  e["cabi_post_call-host-profile"](hostProfileRet);
+  const directAltProfileRet = e["echo-profile"](...makeProfileArgs(1, false, "bad"));
+  const directAlternateProfile = readProfile(directAltProfileRet);
   if (JSON.stringify(directAlternateProfile) !== JSON.stringify({ name: "Ada", stats: { score: 7.5 }, maybeName: null, outcome: { err: "bad" }, active: 1, scores: [1, 2, 3] })) {
     throw new Error(`Struct None/Err record did not round-trip: ${JSON.stringify(directAlternateProfile)}`);
   }
-  const hostAlternateProfile = readProfile(e["call-host-profile"](1, 0, 0, 0, profileNamePtr, profileNameLen, 1, profileErrorPtr, profileErrorLen, profileScoresPtr, profileScoresLen, 7.5));
+  e["cabi_post_echo-profile"](directAltProfileRet);
+  const hostAltProfileRet = e["call-host-profile"](...makeProfileArgs(1, false, "bad"));
+  const hostAlternateProfile = readProfile(hostAltProfileRet);
   if (JSON.stringify(hostAlternateProfile) !== JSON.stringify({ name: "Ada", stats: { score: 8.5 }, maybeName: null, outcome: { err: "bad" }, active: 0, scores: [1, 2, 3] })) {
     throw new Error(`imported Struct None/Err record did not round-trip: ${JSON.stringify(hostAlternateProfile)}`);
   }
-  const eventIdle = [0, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const eventNamed = [2, BigInt(profileNamePtr), BigInt(profileNameLen), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const eventMoved = [1, floatBits(3), floatBits(4), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const eventProfile = [3, 1n, 1n, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5];
-  for (const [args, expected] of [
-    [eventIdle, { tag: "idle" }],
-    [eventNamed, { tag: "named", value: "Ada" }],
-    [eventMoved, { tag: "moved", values: [3, 4] }],
-    [eventProfile, { tag: "profile", value: { name: "Ada", stats: { score: 7.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 1, scores: [1, 2, 3] } }],
+  e["cabi_post_call-host-profile"](hostAltProfileRet);
+  const makeEventArgs = kind => {
+    if (kind === "idle") return [0, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    if (kind === "moved") return [1, floatBits(3), floatBits(4), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    if (kind === "named") {
+      const [namePtr, nameLen] = allocateBytes(Buffer.from("Ada", "utf8"));
+      return [2, BigInt(namePtr), BigInt(nameLen), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+    const [active, maybeDisc, maybePtr, maybeLen, namePtr, nameLen, outcomeDisc, outcomePtr, outcomeLen, scoresPtr, scoresLen, score] =
+      makeProfileArgs(1, true, null);
+    return [3, BigInt(active), BigInt(maybeDisc), maybePtr, maybeLen, namePtr, nameLen, outcomeDisc, outcomePtr, outcomeLen, scoresPtr, scoresLen, score];
+  };
+  for (const [kind, expected] of [
+    ["idle", { tag: "idle" }],
+    ["named", { tag: "named", value: "Ada" }],
+    ["moved", { tag: "moved", values: [3, 4] }],
+    ["profile", { tag: "profile", value: { name: "Ada", stats: { score: 7.5 }, maybeName: "Ada", outcome: { ok: [4, 5] }, active: 1, scores: [1, 2, 3] } }],
   ]) {
-    const directEvent = readEvent(e["echo-event"](...args));
+    const directEventRet = e["echo-event"](...makeEventArgs(kind));
+    const directEvent = readEvent(directEventRet);
     if (JSON.stringify(directEvent) !== JSON.stringify(expected)) {
       throw new Error(`Enum variant did not round-trip: ${JSON.stringify(directEvent)}`);
     }
-    const hostEvent = readEvent(e["call-host-event"](...args));
+    e["cabi_post_echo-event"](directEventRet);
+    const hostEventRet = e["call-host-event"](...makeEventArgs(kind));
+    const hostEvent = readEvent(hostEventRet);
     if (JSON.stringify(hostEvent) !== JSON.stringify(expected)) {
       throw new Error(`imported Enum variant did not round-trip: ${JSON.stringify(hostEvent)}`);
     }
+    e["cabi_post_call-host-event"](hostEventRet);
   }
   for (const discriminant of [2, 256]) {
     let invalidVariantTrapped = false;
-    try { e["echo-option-number"](discriminant, 0); } catch (error) {
+    try { te["echo-option-number"](discriminant, 0); } catch (error) {
       invalidVariantTrapped = error instanceof WebAssembly.RuntimeError;
     }
     if (!invalidVariantTrapped) throw new Error(`invalid Option discriminant ${discriminant} did not trap`);
   }
   for (const invoke of [
-    () => e["bool-not"](2),
-    () => e["choose-number"](2, 3, 4),
-    () => e["echo-profile"](2, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5),
-    () => e["echo-event"](4, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    () => te["bool-not"](2),
+    () => te["choose-number"](2, 3, 4),
+    () => te["echo-profile"](...makeProfileArgsOn(te, 2, true, null)),
+    () => te["echo-event"](4, 0n, 0n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
   ]) {
     let trapped = false;
     try { invoke(); } catch (error) { trapped = error instanceof WebAssembly.RuntimeError; }
@@ -1660,7 +1745,9 @@ WebAssembly.instantiate(module, { host }).then(result => {
   e["cabi_post_echo-text"](ret);
   for (const bytes of [[], [0, 255, 17], [128, 0, 254, 1]]) {
     const [bufferPtr, bufferLen] = allocateBytes(bytes);
-    expectBytes(readBytesResult(e["echo-buffer"](bufferPtr, bufferLen)), bytes, "Buffer adapter did not round-trip");
+    const bufferRet = e["echo-buffer"](bufferPtr, bufferLen);
+    expectBytes(readBytesResult(bufferRet), bytes, "Buffer adapter did not round-trip");
+    e["cabi_post_echo-buffer"](bufferRet);
   }
   const [taggedBufferPtr, taggedBufferLen] = allocateBytes([0, 255, 17]);
   if (e["is-buffer"](taggedBufferPtr, taggedBufferLen) !== 1) {
@@ -1668,38 +1755,39 @@ WebAssembly.instantiate(module, { host }).then(result => {
   }
   for (const numbers of [[], [1, -2.5, 3, 3]]) {
     const [listPtr, listLen] = allocateNumberList(numbers);
-    const actual = readNumberListResult(e["echo-numbers"](listPtr, listLen));
+    const numbersRet = e["echo-numbers"](listPtr, listLen);
+    const actual = readNumberListResult(numbersRet);
     if (actual.length !== numbers.length || actual.some((value, index) => !Object.is(value, numbers[index]))) {
       throw new Error(`Number List adapter returned ${actual}`);
     }
+    e["cabi_post_echo-numbers"](numbersRet);
   }
   const [boolListPtr, boolListLen] = allocateBoolList([1, 0, 1]);
-  if (readBoolListResult(e["echo-bools"](boolListPtr, boolListLen)).join(",") !== "1,0,1") {
+  const boolListRet = e["echo-bools"](boolListPtr, boolListLen);
+  if (readBoolListResult(boolListRet).join(",") !== "1,0,1") {
     throw new Error("Bool List adapter did not round-trip");
   }
+  e["cabi_post_echo-bools"](boolListRet);
   const textValues = ["alpha", "", "世界"];
   const textPairs = textValues.map(value => allocateBytes(Buffer.from(value, "utf8")));
   const [textListPtr, textListLen] = allocatePairList(textPairs);
   const textResultRet = e["echo-texts"](textListPtr, textListLen);
-  const textResultView = new DataView(e.memory.buffer);
-  const textResultBacking = textResultView.getUint32(textResultRet, true);
-  const textResultItems = Array.from({ length: textListLen }, (_, index) => textResultView.getUint32(textResultBacking + index * 8, true));
   const textResult = readPairListResult(
     textResultRet,
     (itemPtr, itemLen) => Buffer.from(e.memory.buffer, itemPtr, itemLen).toString("utf8"),
   );
   if (JSON.stringify(textResult) !== JSON.stringify(textValues)) throw new Error(`String List adapter returned ${textResult}`);
+  const heapBeforePostTexts = e.__heap_ptr.value;
   e["cabi_post_echo-texts"](textResultRet);
+  if (e.__heap_ptr.value > e.__arena_base.value || e.__heap_ptr.value >= heapBeforePostTexts) {
+    throw new Error(`recursive List<String> post-return did not reclaim scratch and result buffers: __heap_ptr=${e.__heap_ptr.value}, __arena_base=${e.__arena_base.value}`);
+  }
   const reclaimedRoot = e.cabi_realloc(0, 0, 4, 8);
   const reclaimedBacking = e.cabi_realloc(0, 0, 4, textListLen * 8);
   const reclaimedLongItem = e.cabi_realloc(0, 0, 1, Buffer.byteLength("世界"));
   const reclaimedShortItem = e.cabi_realloc(0, 0, 1, Buffer.byteLength("alpha"));
-  if (
-    reclaimedRoot !== textResultRet
-    || reclaimedBacking !== textResultBacking
-    || JSON.stringify([reclaimedLongItem, reclaimedShortItem].toSorted()) !== JSON.stringify(textResultItems.filter(Boolean).toSorted())
-  ) {
-    throw new Error("recursive List<String> post-return did not reclaim its result area, backing storage, and elements");
+  if (reclaimedRoot >= textResultRet) {
+    throw new Error(`post-return did not reclaim below result pointer: ${reclaimedRoot} >= ${textResultRet}`);
   }
   e.cabi_realloc(reclaimedRoot, 8, 4, 0);
   e.cabi_realloc(reclaimedBacking, textListLen * 8, 4, 0);
@@ -1708,22 +1796,26 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const bufferValues = [[0, 255], [], [17, 0, 128]];
   const bufferPairs = bufferValues.map(allocateBytes);
   const [bufferListPtr, bufferListLen] = allocatePairList(bufferPairs);
+  const bufferListRet = e["echo-buffers"](bufferListPtr, bufferListLen);
   const bufferResult = readPairListResult(
-    e["echo-buffers"](bufferListPtr, bufferListLen),
+    bufferListRet,
     (itemPtr, itemLen) => Array.from(new Uint8Array(e.memory.buffer, itemPtr, itemLen)),
   );
   if (JSON.stringify(bufferResult) !== JSON.stringify(bufferValues)) throw new Error(`Buffer List adapter returned ${bufferResult}`);
+  e["cabi_post_echo-buffers"](bufferListRet);
   const nestedValues = [[1, 2], [], [-3, 4.5, 7]];
   const nestedPairs = nestedValues.map(allocateNumberList);
   const [nestedPtr, nestedLen] = allocatePairList(nestedPairs);
+  const nestedRet = e["echo-number-lists"](nestedPtr, nestedLen);
   const nestedResult = readPairListResult(
-    e["echo-number-lists"](nestedPtr, nestedLen),
+    nestedRet,
     (itemPtr, itemLen) => Array.from(
       { length: itemLen },
       (_, index) => new DataView(e.memory.buffer).getFloat64(itemPtr + index * 8, true),
     ),
   );
   if (JSON.stringify(nestedResult) !== JSON.stringify(nestedValues)) throw new Error(`nested List adapter returned ${nestedResult}`);
+  e["cabi_post_echo-number-lists"](nestedRet);
   const [invalidBoolListPtr, invalidBoolListLen] = allocateBoolList([0, 2]);
   let invalidBoolListTrapped = false;
   try { e["echo-bools"](invalidBoolListPtr, invalidBoolListLen); } catch (error) {
@@ -1746,13 +1838,14 @@ WebAssembly.instantiate(module, { host }).then(result => {
     overflowingNumberListTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!overflowingNumberListTrapped) throw new Error("overflowing Number List length did not trap");
-  const [misalignedNestedPtr, misalignedNestedLen] = allocatePairList([[nestedPairs[0][0] + 4, 1]]);
+  const [misalignedNestedBase] = allocateNumberList([1]);
+  const [misalignedNestedPtr, misalignedNestedLen] = allocatePairList([[misalignedNestedBase + 4, 1]]);
   let misalignedNestedListTrapped = false;
   try { e["echo-number-lists"](misalignedNestedPtr, misalignedNestedLen); } catch (error) {
     misalignedNestedListTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!misalignedNestedListTrapped) throw new Error("misaligned nested Number List input did not trap");
-  const [pairListPtr] = allocatePairList([nestedPairs[0]]);
+  const [pairListPtr] = allocatePairList([allocateNumberList([1])]);
   let misalignedPairListTrapped = false;
   try { e["echo-number-lists"](pairListPtr + 2, 1); } catch (error) {
     misalignedPairListTrapped = error instanceof WebAssembly.RuntimeError;
@@ -1766,32 +1859,41 @@ WebAssembly.instantiate(module, { host }).then(result => {
   if (!invalidNestedListTrapped) throw new Error("out-of-bounds nested Number List input did not trap");
   const growingNumberCount = e.memory.buffer.byteLength / 8 + 257;
   const growingNumbers = Array.from({ length: growingNumberCount }, (_, index) => index % 251);
-  const [growingNumberPtr, growingNumberLen] = allocateNumberList(growingNumbers);
   for (let round = 0; round < 2; round += 1) {
-    const actual = readNumberListResult(e["echo-numbers"](growingNumberPtr, growingNumberLen));
+    const [growingNumberPtr, growingNumberLen] = allocateNumberList(growingNumbers);
+    const growingNumRet = e["echo-numbers"](growingNumberPtr, growingNumberLen);
+    const actual = readNumberListResult(growingNumRet);
     if (actual.length !== growingNumbers.length || actual.some((value, index) => value !== growingNumbers[index])) {
       throw new Error(`growing Number List round ${round} did not preserve values`);
     }
+    e["cabi_post_echo-numbers"](growingNumRet);
   }
   const growingBytes = Uint8Array.from({ length: e.memory.buffer.byteLength + 257 }, (_, index) => index % 251);
-  const [growingPtr, growingLen] = allocateBytes(growingBytes);
   for (let round = 0; round < 2; round += 1) {
+    const [growingPtr, growingLen] = allocateBytes(growingBytes);
+    const growingBufRet = e["echo-buffer"](growingPtr, growingLen);
     expectBytes(
-      readBytesResult(e["echo-buffer"](growingPtr, growingLen)),
+      readBytesResult(growingBufRet),
       growingBytes,
       `growing Buffer round ${round}`,
     );
+    e["cabi_post_echo-buffer"](growingBufRet);
   }
-  const [yesPtr, yesLen] = allocateBytes([0, 255]);
-  const [noPtr, noLen] = allocateBytes([17, 0, 128]);
-  expectBytes(readBytesResult(e["choose-buffer"](1, yesPtr, yesLen, noPtr, noLen)), [0, 255], "Bool+Buffer true branch");
-  expectBytes(readBytesResult(e["choose-buffer"](0, yesPtr, yesLen, noPtr, noLen)), [17, 0, 128], "Bool+Buffer false branch");
+  for (const [flag, expectedChoose] of [[1, [0, 255]], [0, [17, 0, 128]]]) {
+    const [yesPtr, yesLen] = allocateBytes([0, 255]);
+    const [noPtr, noLen] = allocateBytes([17, 0, 128]);
+    const chooseRet = e["choose-buffer"](flag, yesPtr, yesLen, noPtr, noLen);
+    expectBytes(readBytesResult(chooseRet), expectedChoose, `Bool+Buffer branch ${flag}`);
+    e["cabi_post_choose-buffer"](chooseRet);
+  }
   let invalidBufferInputTrapped = false;
   try { e["echo-buffer"](e.memory.buffer.byteLength - 1, 2); } catch (error) {
     invalidBufferInputTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidBufferInputTrapped) throw new Error("out-of-bounds Buffer input did not trap");
-  const moved = e.cabi_realloc(ptr, input.length, 8, input.length + 4);
+  const reallocPtr = e.cabi_realloc(0, 0, 1, input.length);
+  new Uint8Array(e.memory.buffer, reallocPtr, input.length).set(input);
+  const moved = e.cabi_realloc(reallocPtr, input.length, 8, input.length + 4);
   if (moved % 8 !== 0) throw new Error("cabi_realloc ignored alignment");
   const preserved = Buffer.from(e.memory.buffer, moved, input.length).toString("utf8");
   if (preserved !== "你好 Calcit") throw new Error("cabi_realloc did not preserve bytes");
@@ -1810,41 +1912,50 @@ WebAssembly.instantiate(module, { host }).then(result => {
   const hostOutputLen = hostMemory.getUint32(hostRet + 4, true);
   const hostText = Buffer.from(e.memory.buffer, hostOutputPtr, hostOutputLen).toString("utf8");
   if (hostText !== "你好 from host") throw new Error(`String import adapter returned ${hostText}`);
+  e["cabi_post_call-host-echo"](hostRet);
   const [hostBufferPtr, hostBufferLen] = allocateBytes([0, 255, 17]);
+  const hostBufRet = e["call-host-buffer"](hostBufferPtr, hostBufferLen);
   expectBytes(
-    readBytesResult(e["call-host-buffer"](hostBufferPtr, hostBufferLen)),
+    readBytesResult(hostBufRet),
     [17, 255, 0],
     "Buffer import adapter did not round-trip",
   );
+  e["cabi_post_call-host-buffer"](hostBufRet);
   hostBufferReturnsInvalidRange = true;
+  const [hostBufTrapPtr, hostBufTrapLen] = allocateBytes([0, 255, 17]);
   let invalidHostBufferTrapped = false;
-  try { e["call-host-buffer"](hostBufferPtr, hostBufferLen); } catch (error) {
+  try { e["call-host-buffer"](hostBufTrapPtr, hostBufTrapLen); } catch (error) {
     invalidHostBufferTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidHostBufferTrapped) throw new Error("out-of-bounds imported Buffer result did not trap");
   const [hostNumbersPtr, hostNumbersLen] = allocateNumberList([1, -2.5, 7]);
-  const hostNumbersResult = readNumberListResult(e["call-host-numbers"](hostNumbersPtr, hostNumbersLen));
+  const hostNumsRet = e["call-host-numbers"](hostNumbersPtr, hostNumbersLen);
+  const hostNumbersResult = readNumberListResult(hostNumsRet);
   if (JSON.stringify(hostNumbersResult) !== JSON.stringify([7, -2.5, 1])) {
     throw new Error(`Number List import adapter returned ${hostNumbersResult}`);
   }
+  e["cabi_post_call-host-numbers"](hostNumsRet);
   hostNumbersReturnsInvalidRange = true;
+  const [hostNumsTrapPtr, hostNumsTrapLen] = allocateNumberList([1, -2.5, 7]);
   let invalidHostNumbersTrapped = false;
-  try { e["call-host-numbers"](hostNumbersPtr, hostNumbersLen); } catch (error) {
+  try { e["call-host-numbers"](hostNumsTrapPtr, hostNumsTrapLen); } catch (error) {
     invalidHostNumbersTrapped = error instanceof WebAssembly.RuntimeError;
   }
   if (!invalidHostNumbersTrapped) throw new Error("out-of-bounds imported Number List result did not trap");
-  const headerBoundary = e.memory.buffer.byteLength;
-  e.__heap_ptr.value = headerBoundary;
-  const boundaryPtr = e.cabi_realloc(0, 0, 1, 1);
-  if (boundaryPtr !== headerBoundary + 8 || boundaryPtr + 1 > e.memory.buffer.byteLength) {
+  const growthInst = await WebAssembly.instantiate(module, { host });
+  const ge = growthInst.exports;
+  const headerBoundary = ge.memory.buffer.byteLength;
+  ge.__heap_ptr.value = headerBoundary;
+  const boundaryPtr = ge.cabi_realloc(0, 0, 1, 1);
+  if (boundaryPtr !== headerBoundary + 8 || boundaryPtr + 1 > ge.memory.buffer.byteLength) {
     throw new Error(`cabi_realloc did not grow memory before writing a boundary header: ${boundaryPtr}`);
   }
-  const pagesBefore = e.memory.buffer.byteLength / 65536;
-  const largeSize = e.memory.buffer.byteLength + 1;
-  const largePtr = e.cabi_realloc(0, 0, 1, largeSize);
-  const pagesAfter = e.memory.buffer.byteLength / 65536;
+  const pagesBefore = ge.memory.buffer.byteLength / 65536;
+  const largeSize = ge.memory.buffer.byteLength + 1;
+  const largePtr = ge.cabi_realloc(0, 0, 1, largeSize);
+  const pagesAfter = ge.memory.buffer.byteLength / 65536;
   if (pagesAfter <= pagesBefore) throw new Error("cabi_realloc did not grow memory");
-  if (largePtr + largeSize > e.memory.buffer.byteLength) throw new Error("grown allocation is out of bounds");
+  if (largePtr + largeSize > ge.memory.buffer.byteLength) throw new Error("grown allocation is out of bounds");
 }).catch((error) => {
   console.error(error);
   process.exitCode = 1;

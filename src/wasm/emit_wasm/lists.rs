@@ -2028,6 +2028,7 @@ mod sort_tests {
         struct_layouts: Default::default(),
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
+        atom_is_scalar: HashMap::new(),
         value_imports: HashMap::new(),
         static_fn_defs: HashMap::new(),
         fn_table_index: HashMap::new(),

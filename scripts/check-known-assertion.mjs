@@ -4131,14 +4131,36 @@ try {
       const forgedList = forgedInstance.exports["make-list"](forgedMemory.getFloat64(forgedState + 8, true));
       assert.throws(() => forgedInstance.exports["raw-write"](forgedList), WebAssembly.RuntimeError,
         "a List with a matching nominal-layout slot must not become a Struct");
+      const controlInstance = new WebAssembly.Instance(guardedModule, imports);
+      const controlOriginal = controlInstance.exports["make-state"]();
+      const controlHeapAfterMake = controlInstance.exports.__heap_ptr.value;
+      assert.ok(controlHeapAfterMake > controlOriginal, "make-state must allocate a Scratch-backed Struct");
+      const controlUpdated = controlInstance.exports["raw-write"](controlOriginal);
+      assert.notEqual(controlUpdated, controlOriginal, "valid WriteState update allocates a fresh Struct");
+      assert.ok(
+        controlInstance.exports.__heap_ptr.value > controlHeapAfterMake,
+        "valid WriteState update advances __heap_ptr past controlHeapAfterMake",
+      );
+      assert.equal(new DataView(controlInstance.exports.memory.buffer).getFloat64(controlUpdated + 16, true), 2);
       for (const count of [-1, 0, 1, 3, 1.5, NaN, Infinity]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
         const original = instance.exports["make-state"]();
+        const heapAfterMake = instance.exports.__heap_ptr.value;
+        assert.ok(heapAfterMake > original, "make-state must allocate in Scratch before raw-write");
         const memory = new DataView(instance.exports.memory.buffer);
         memory.setFloat64(original, count, true);
         assert.throws(() => instance.exports["raw-write"](original), WebAssembly.RuntimeError, `wrong count: ${count}`);
         assert.equal(memory.getFloat64(original + 16, true), 1, "rejected updates preserve the source field");
-        assert.equal(instance.exports["make-state"](), original + 40, "rejected updates must not allocate a result");
+        assert.equal(
+          instance.exports.__heap_ptr.value,
+          heapAfterMake,
+          "rejected updates must not advance __heap_ptr past make-state",
+        );
+        assert.equal(
+          instance.exports["make-state"](),
+          heapAfterMake + 8,
+          "next allocation starts at heapAfterMake + 8 without clobbering the live receiver",
+        );
       }
       for (const malformed of ["magic", "fractional", "unaligned", "outside", "nan", "negative"]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
@@ -4155,6 +4177,8 @@ try {
       for (const offset of [16, 24]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
         const original = instance.exports["make-state"]();
+        const heapAfterMake = instance.exports.__heap_ptr.value;
+        assert.ok(heapAfterMake > original, "make-state must allocate in Scratch before raw-write");
         const memory = new DataView(instance.exports.memory.buffer);
         const magic = memory.getUint32(original - 8, true);
         const kind = memory.getUint32(original - 4, true);
@@ -4166,7 +4190,16 @@ try {
         memory.setFloat64(receiver + 8, layout, true);
         assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError,
           "a forged prefix or copy span beyond the allocated heap must trap");
-        assert.equal(instance.exports["make-state"](), original + 40, "heap-span rejection must precede result allocation");
+        assert.equal(
+          instance.exports.__heap_ptr.value,
+          heapAfterMake,
+          "heap-span rejection must not advance __heap_ptr past make-state",
+        );
+        assert.equal(
+          instance.exports["make-state"](),
+          heapAfterMake + 8,
+          "next allocation starts at heapAfterMake + 8 after heap-span rejection",
+        );
       }
 
       // Low-level stale metadata must trap instead of overwriting another field.
