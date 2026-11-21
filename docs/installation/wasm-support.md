@@ -45,7 +45,7 @@ aliases:
 | 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。实际经表调用时，N 个实参使用第 N 个函数表（N 不设上限，规范类型 `(f64 x N) -> f64` 按模块实际用到的最大 N 生成）；表中 `&` 函数的入口先打包 rest List，再调用原函数。`calcit wasi`：静态目标的具名别名可复用直接调用，未知的可达间接调用仍以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`、`calcit.core/hint-fn#plain-call-many-args-fn-value`（具名别名已回放 WASI，未知表调用仍受限） |
 | 固定参数特化闭包与 `loop` 中的 `recur`，回边改变名义实现身份 | supported-with-type-evidence | 以调用实参证据开始特化循环；回边带来新的 exact 实现身份时，参数旁的 selector 按实际身份分派（每个参数至多 8 个），`if` 分支汇合同理（`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/foldl-compare#typed-number-exits`、`test-traits.main/closure-recur-switch#two-iterations`、`test-traits.main/loop-switch#two-iterations`、`test-traits.main/branch-open-public#true-impl` |
 | 嵌套 `fn` / `defn` 闭包值、带 `?` / `&` 参数的特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
-| `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
+| `try` | unsupported（WASI/WASM 退役） | `E_WASM_UNSUPPORTED_TRY`：可恢复错误使用 `Result :ok` / `Result :err` 与 `match`、`try-parse-*`、`try-decode-map-as` 等声明接口，不可恢复缺陷使用 `raise` / `unreachable!` / trap；WASI server 目标不编译业务 `try` | `tests/wasi_command_component_cli.rs` 与 `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
 | 日志 Unit 返回与零/单参数 stdout | supported | core 宿主导入 `io.log_line(channel: f64, ptr: f64) -> ()`：channel `1/2` 分别表示 stdout/stderr，ptr 指向 tagged heap string；宿主每次写一行（含换行，空字符串也要输出空行），失败应抛错，不返回成功状态。WASI 使用标准通道 | `calcit.core/dbg#registered-stdout-returns-unit`、`registered-log-callback-returns-unit` |
 | stderr 与多参数单行日志 | supported | core 以 `channel=1/2` 区分 stdout/stderr，每次表层调用只发出一次 host call；WASI 使用标准通道。全部参数先按从左到右顺序求值，再格式化输出 | `calcit.core/dbg#registered-stderr-returns-unit`、`registered-log-arguments-evaluate-once-in-order` |
 | 局部 `ref`、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
@@ -88,6 +88,9 @@ aliases:
 &read-file
 &reset-gensym-index!
 &struct-def:new
+&try-parse-cirru
+&try-parse-cirru-edn
+&try-parse-cirru-list
 deftype-slot
 format-cirru
 format-cirru-one-liner
@@ -123,6 +126,7 @@ write-file
 | `E_WASM_SET_ELEMENT_KIND` | Set 元素或 Map 键操作缺少静态类型证据来排除不同标量种类的数值表示冲突 | 在构造、查询或集合运算前收窄元素与键类型，或使用 native / JS |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
+| `E_WASM_UNSUPPORTED_TRY` | 使用了 `try` 语法；WASM 与 WASI server 目标已退役 `try` 异常恢复流 | 可恢复错误改用 `Result<T, E>`（`Result :ok` / `Result :err` 与 `match`）；不可恢复不变式失败使用 `raise` trap，并将必须验证 trap 的旧测试留在 native / JS |
 | `E_WASM_EDN_TYPE` | `format-cirru-edn`、`json-stringify` 或 `json-pretty` 的输入类型不闭合 | 写出闭合类型 |
 | `E_WASM_EDN_SHAPE` | 解析缺少预处理生成的数据形状 | 使用 `try-parse-cirru-edn-as` 并给出目标类型 |
 | `E_WASM_EDN_FORMAT_MODE` | 容器格式化只支持省略或字面量 `true` 的 inline 参数 | 去掉运行时布局参数 |

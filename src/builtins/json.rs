@@ -1,4 +1,7 @@
-use crate::builtins::{err_arity, err_arity_with_hint, meta::type_of};
+use crate::builtins::{
+  err_arity, err_arity_with_hint,
+  meta::{new_named_enum_value, type_of},
+};
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitProc, CalcitStructValue, format_proc_examples_hint};
 use crate::util::number::is_integer;
 use cirru_parser::Cirru;
@@ -24,6 +27,28 @@ pub fn parse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
     _ => err_arity("json-parse expected 1 argument", xs),
+  }
+}
+
+/// Parse JSON text into a nominal Result enum without throwing exceptions.
+pub fn try_parse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 2 {
+    return err_arity("&try-parse-json expected 2 arguments", xs);
+  }
+  let [result_type @ Calcit::EnumDef(_), Calcit::Str(content)] = xs else {
+    let msg = format!(
+      "&try-parse-json expected the Result enum definition and a string, but received: {} and {}",
+      type_of(std::slice::from_ref(&xs[0]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[1]))?.lisp_str()
+    );
+    return CalcitErr::err_str(CalcitErrKind::Type, msg);
+  };
+  let parsed = serde_json::from_str::<Value>(content)
+    .map_err(|err| format!("json-parse expected valid JSON string, got parse error: {err}"))
+    .and_then(|value| json_to_calcit(value).map_err(|err| err.msg));
+  match parsed {
+    Ok(value) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), value]),
+    Err(message) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("err"), Calcit::new_str(message)]),
   }
 }
 

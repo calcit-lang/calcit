@@ -2106,15 +2106,19 @@ export let _$n_read_stdin_text = (resultType: CalcitEnumDef, hostError: string):
     return new CalcitEnumValue(newTag("err"), [hostError], resultType);
   }
 };
-/** List immediate children as nominal filesystem paths and preserve host failures as Result values. */
+/** List immediate or recursive children as nominal filesystem paths and preserve host failures as Result values. */
 export let _$n_fs_read_dir = (
   resultType: CalcitEnumDef,
   pathType: CalcitStructDef,
   path: string,
   hostError: string,
+  recursive: boolean = false,
 ): CalcitEnumValue => {
+  if (typeof recursive !== "boolean") {
+    throw new TypeError(`&fs-read-dir expected a boolean recursive flag, got ${typeof recursive}`);
+  }
   try {
-    const paths = Array.from(read_dir(path, false).items()).map(
+    const paths = Array.from(read_dir(path, recursive).items()).map(
       (child) => new CalcitStructValue(pathType.name, pathType.fields, [child], pathType),
     );
     return new CalcitEnumValue(newTag("ok"), [new CalcitSliceList(paths)], resultType);
@@ -2162,9 +2166,39 @@ export let parse_cirru = (code: string): CalcitCirruQuote => {
   return new CalcitCirruQuote(parse(code));
 };
 
+let try_parse_with_result = (
+  resultType: CalcitEnumDef,
+  code: CalcitValue,
+  procName: string,
+  parser: (text: string) => CalcitValue,
+): CalcitEnumValue => {
+  if (!(resultType instanceof CalcitEnumDef)) {
+    throw new TypeError(`${procName} expected the Result enum definition`);
+  }
+  if (typeof code !== "string") {
+    throw new TypeError(`${procName} expected a string, got: ${toString(code, true)}`);
+  }
+  try {
+    return new CalcitEnumValue(newTag("ok"), [parser(code)], resultType);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    return new CalcitEnumValue(newTag("err"), [message], resultType);
+  }
+};
+
+/** Parse Cirru text into Result<CirruQuote, String> without throwing syntax errors. */
+export let _$n_try_parse_cirru = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  return try_parse_with_result(resultType, code, "&try-parse-cirru", (text) => parse_cirru(text));
+};
+
 // for JavaScript, it's same as parse_cirru
 export let parse_cirru_list = (code: string): CalcitList => {
   return to_calcit_data(parse(code), true) as CalcitList;
+};
+
+/** Parse Cirru text into Result<List<CirruNode>, String> without throwing syntax errors. */
+export let _$n_try_parse_cirru_list = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  return try_parse_with_result(resultType, code, "&try-parse-cirru-list", (text) => parse_cirru_list(text));
 };
 
 export let parse_cirru_edn = (code: string, options: CalcitValue) => {
@@ -2174,6 +2208,11 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
   } else {
     throw new Error(`Expected EDN in a single node, got ${nodes.length}`);
   }
+};
+
+/** Parse Cirru EDN text into Result<Dynamic, String> without throwing syntax errors. */
+export let _$n_try_parse_cirru_edn = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  return try_parse_with_result(resultType, code, "&try-parse-cirru-edn", (text) => parse_cirru_edn(text, null));
 };
 
 type DataShapeNode =
@@ -2960,6 +2999,11 @@ export let json_parse = function (code: CalcitValue): CalcitValue {
     throw new Error(`json-parse expected a string, got: ${toString(code, true)}`);
   }
   return json_to_calcit(JSON.parse(code));
+};
+
+/** Parse JSON text into Result<Dynamic, String> without throwing syntax errors. */
+export let _$n_try_parse_json = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  return try_parse_with_result(resultType, code, "&try-parse-json", (text) => json_parse(text));
 };
 
 export let json_stringify = function (value: CalcitValue): string {

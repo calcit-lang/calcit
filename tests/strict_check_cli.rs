@@ -3116,6 +3116,25 @@ fn effect_error_policy_blocks_native_runs_without_the_proof_audit() {
 }
 
 #[test]
+fn wasm_try_parse_json_rejects_an_unproven_result_prototype() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_definition(
+    &snapshot,
+    "check-prototype",
+    "quote $ defwasm-export check-prototype () (if (.ok? (&try-parse-json (json-parse |1) |1)) 1 0)",
+    false,
+  );
+  edit_schema(&snapshot, "check-prototype", "Number");
+  let output_dir = directory.0.join("unknown-prototype-wasm");
+  let emitted = run_calcit(&snapshot, &["wasm", "--emit-path", output_dir.to_str().expect("UTF-8 output path")]);
+  assert!(!emitted.status.success(), "an unproven enum prototype must not be ignored");
+  let stderr = String::from_utf8_lossy(&emitted.stderr);
+  assert!(stderr.contains("E_WASM_EDN_TYPE"), "{stderr}");
+}
+
+#[test]
 fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
   use wasmtime::{Engine, Func, Linker, Module, Store, StoreLimitsBuilder, Val};
 
@@ -3188,6 +3207,14 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
   edit_schema(&snapshot, "reload!", "Nil");
 
   let exports: &[(&str, &str)] = &[
+    (
+      "check-json-first-argument-traps",
+      "quote $ defwasm-export check-json-first-argument-traps () (do (&try-parse-json (do (raise |first-arg) Result) |1) 1)",
+    ),
+    (
+      "check-json-non-string-traps",
+      "quote $ defwasm-export check-json-non-string-traps () (if (.err? (&try-parse-json Result (json-parse |1))) 1 0)",
+    ),
     (
       "check-boxed-scalar-eq",
       concat!(
@@ -3372,6 +3399,12 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
   assert_eq!(call_export(&mut store, &instance, "check-boxed-json-numbers"), 1.0);
   assert_eq!(call_export(&mut store, &instance, "check-empty-key-unary-eq-and-list-hints"), 1.0);
   assert_eq!(call_export(&mut store, &instance, "check-not-zero-and-boxed"), 1.0);
+  for name in ["check-json-first-argument-traps", "check-json-non-string-traps"] {
+    let function = instance
+      .get_typed_func::<(), f64>(&mut store, name)
+      .expect("trap regression export");
+    assert!(function.call(&mut store, ()).is_err(), "{name} must trap");
+  }
 
   // Under a capped linear memory limit that rejects growth, `try-parse-json` must
   // return `:err` instead of trapping on OOM/OOB, including exact midpoint scratch.

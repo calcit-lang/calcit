@@ -436,14 +436,18 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeFsWriteText => effects::fs_write_text(args),
     // external data format
     ParseCirru => meta::parse_cirru(args),
+    NativeTryParseCirru => meta::try_parse_cirru(args),
     ParseCirruList => meta::parse_cirru_list(args),
+    NativeTryParseCirruList => meta::try_parse_cirru_list(args),
     FormatCirru => meta::format_cirru(args),
     FormatCirruOneLiner => meta::format_cirru_one_liner(args),
     ParseCirruEdn => meta::parse_cirru_edn(args),
+    NativeTryParseCirruEdn => meta::try_parse_cirru_edn(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),
     NativeCirruQuoteLeafText => meta::cirru_quote_leaf_text(args),
     JsonParse => json::parse(args),
+    NativeTryParseJson => json::try_parse(args),
     JsonStringify => json::stringify(args),
     JsonPretty => json::pretty(args),
     // time

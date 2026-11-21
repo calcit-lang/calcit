@@ -129,6 +129,8 @@ const runtimePolymorphic = new Set([
   "with-type-slot",
 ]);
 const openDataBoundaries = new Set([
+  "&try-parse-cirru-edn",
+  "&try-parse-json",
   "data-definition-clause?",
   "data-definition-clauses",
   "data-definition-form",

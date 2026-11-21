@@ -3414,7 +3414,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
 /// declared return type or the intrinsic's otherwise unbound result variable.
 fn infer_directory_result(xs: &CalcitList, scope: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   use CalcitTypeAnnotation as T;
-  if xs.len() != 5 {
+  if !(5..=6).contains(&xs.len()) {
     return None;
   }
   let result = resolve_type_value(xs.get(1)?, scope)?;
@@ -4444,6 +4444,78 @@ mod tests {
     };
     let inferred = infer_proc_call_return_type(&CalcitProc::NativeFsReadDir, &items, &ScopeTypes::new());
     assert_eq!(inferred.as_deref(), Some(&CalcitTypeAnnotation::Dynamic));
+  }
+
+  #[test]
+  fn directory_read_with_optional_recursive_flag_preserves_result_type() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let e = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E")));
+    let mut result_schema = CalcitStructDef::from_fields(EdnTag::from("Result"), vec![EdnTag::from("ok"), EdnTag::from("err")]);
+    result_schema.generics = Arc::new(vec![Arc::from("T"), Arc::from("E")]);
+    let result_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(result_schema),
+        values: Arc::new(vec![Calcit::from(vec![t.to_calcit()]), Calcit::from(vec![e.to_calcit()])]),
+      })
+      .expect("valid Result enum fixture"),
+    );
+
+    let mut path_schema = CalcitStructDef::from_fields(EdnTag::from("FsPath"), vec![EdnTag::from("value")]);
+    path_schema.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    let path_def = Arc::new(path_schema);
+
+    let expected = CalcitTypeAnnotation::Enum(
+      result_def.clone(),
+      Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Struct(
+          path_def.clone(),
+          Arc::new(vec![]),
+        )))),
+        Arc::new(CalcitTypeAnnotation::String),
+      ]),
+    );
+
+    for args in [
+      vec![
+        Calcit::EnumDef(result_def.clone()),
+        Calcit::StructDef(path_def.clone()),
+        Calcit::Str(Arc::from("directory")),
+        Calcit::Str(Arc::from("read failed")),
+      ],
+      vec![
+        Calcit::EnumDef(result_def.clone()),
+        Calcit::StructDef(path_def.clone()),
+        Calcit::Str(Arc::from("directory")),
+        Calcit::Str(Arc::from("read failed")),
+        Calcit::Bool(true),
+      ],
+    ] {
+      let Calcit::List(items) = proc_call(CalcitProc::NativeFsReadDir, args) else {
+        panic!("expected a proc call");
+      };
+      assert_eq!(
+        infer_proc_call_return_type(&CalcitProc::NativeFsReadDir, &items, &ScopeTypes::new()).as_deref(),
+        Some(&expected)
+      );
+    }
+
+    let Calcit::List(too_many_args) = proc_call(
+      CalcitProc::NativeFsReadDir,
+      vec![
+        Calcit::EnumDef(result_def),
+        Calcit::StructDef(path_def),
+        Calcit::Str(Arc::from("directory")),
+        Calcit::Str(Arc::from("read failed")),
+        Calcit::Bool(true),
+        Calcit::Bool(false),
+      ],
+    ) else {
+      panic!("expected a proc call");
+    };
+    assert_eq!(
+      infer_proc_call_return_type(&CalcitProc::NativeFsReadDir, &too_many_args, &ScopeTypes::new()).as_deref(),
+      Some(&CalcitTypeAnnotation::Dynamic)
+    );
   }
 
   fn option_import(ns: &str) -> Calcit {
