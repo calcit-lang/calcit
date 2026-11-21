@@ -1,13 +1,23 @@
-use std::collections::HashSet;
+#![cfg(feature = "wasm")]
+
+use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll, Waker};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use calcit_bindgen::COMPONENT_FILE;
-use wasmtime::component::{Component, Linker as ComponentLinker, Val as ComponentVal};
-use wasmtime::{Config, Engine, ExternType, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Val as CoreVal};
+use tokio::sync::Notify;
+use wasmtime::component::{
+  Component, Destination, Linker as ComponentLinker, StreamProducer, StreamReader, StreamResult, Val as ComponentVal, VecBuffer,
+};
+use wasmtime::{
+  Config, Engine, ExternType, Instance, Linker, Module, Store, StoreContextMut, StoreLimits, StoreLimitsBuilder, Val as CoreVal,
+};
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
 const SEMI_SPACE_BYTES: i32 = 1024 * 1024;
@@ -203,6 +213,14 @@ fn core_wasm_repeated_exports_reset_arena_within_8mib_limit() {
                 (:Tagged code txt) (&str:concat txt (&str:concat |/ (to-string code)))
           :examples $ []
           :schema $ quote $ Fn Number (-> String)
+        'score-step $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export score-step (n)
+            let
+                s $ &str:pad-right (&str:concat |step- (to-string n)) 256 |S
+                xs $ [] s (&str:concat |tail- (to-string n))
+              &+ n (&str:count (&list:nth xs 0))
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
@@ -241,6 +259,37 @@ fn core_wasm_repeated_exports_reset_arena_within_8mib_limit() {
   let alloc_enum = instance
     .get_typed_func::<f64, f64>(&mut store, "alloc-enum")
     .expect("alloc-enum export");
+  let score_step = instance
+    .get_typed_func::<f64, f64>(&mut store, "score-step")
+    .expect("score-step export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  // Scalar returns auto-rewind __heap_ptr without explicit __arena_reset().
+  for n in 0..10u64 {
+    assert_eq!(score_step.call(&mut store, n as f64).expect("score-step"), n as f64 + 256.0);
+    assert_eq!(
+      get_i32_global(&mut store, &instance, "__heap_ptr"),
+      arena_base,
+      "scalar return must auto-rewind __heap_ptr at iteration {n}"
+    );
+  }
+
+  // Newly allocated Scratch heap results remain live across consecutive calls until __arena_reset().
+  let ptr0 = alloc_string.call(&mut store, 0.0).expect("alloc-string 0 should succeed");
+  let heap_after_0 = get_i32_global(&mut store, &instance, "__heap_ptr");
+  assert!(heap_after_0 > arena_base, "Scratch String return must keep __heap_ptr alive");
+  let ptr1 = alloc_string.call(&mut store, 1.0).expect("alloc-string 1 should succeed");
+  let heap_after_1 = get_i32_global(&mut store, &instance, "__heap_ptr");
+  assert!(heap_after_1 > heap_after_0, "second Scratch return must advance past the first");
+  assert_ne!(ptr1, ptr0, "distinct live Scratch returns must not alias");
+  let s0 = read_wasm_str(&mut store, &instance, ptr0);
+  assert!(s0.starts_with("item-0") && s0.len() == 5 + 128, "first return overwritten: `{s0}`");
+  let s1 = read_wasm_str(&mut store, &instance, ptr1);
+  assert!(s1.starts_with("item-1") && s1.len() == 5 + 128, "second return corrupted: `{s1}`");
+  arena_reset.call(&mut store, ()).expect("__arena_reset should succeed");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 
   for i in 0..5_500u64 {
     let idx = i as f64;
@@ -277,6 +326,11 @@ fn core_wasm_repeated_exports_reset_arena_within_8mib_limit() {
       ptr >= f64::from(arena_base),
       "scratch result pointer {ptr} below arena_base {arena_base}"
     );
+    assert!(
+      get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base,
+      "Scratch result must stay live until host calls __arena_reset at iteration {i}"
+    );
+    arena_reset.call(&mut store, ()).expect("__arena_reset should succeed");
     assert_eq!(
       get_i32_global(&mut store, &instance, "__heap_ptr"),
       arena_base,
@@ -668,6 +722,9 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   let return_old = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "reset-and-return-old")
     .expect("reset-and-return-old export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
 
   // (a) Same-turn `old` vs `@*state` after `reset!`
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
@@ -677,6 +734,9 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   let arg_ptr = str_new.call(&mut store, (arena_base + 16, 8)).expect("__str_new");
   let pair_ptr = same_turn.call(&mut store, arg_ptr).expect("same_turn call");
   assert_eq!(read_wasm_str(&mut store, &instance, pair_ptr), "seed-initial->turn-two");
+  assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after same_turn");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 
   // (b1) Pump persistent heap near 512 KiB compaction threshold, then reset + return `@*state`.
   for i in 1..=25u64 {
@@ -712,18 +772,15 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
       .call(&mut store, (100.0 + i as f64, 20_480.0))
       .expect("bump-large in space B should succeed");
   }
+  let initial_tag = format!("v-{}", 100 + 24);
+  let mut expected_old = format!("{initial_tag}{}", "P".repeat(20_480usize - initial_tag.len()));
   let mut old_survived_compaction = false;
   for k in 25..=35u64 {
-    // Capture expected `old` prefix from the previous `bump_large` / `reset-and-return-old` step.
     let ret_old = return_old
       .call(&mut store, (200.0 + k as f64, 24_576.0))
       .expect("reset-and-return-old should succeed");
     let old_text = read_wasm_str(&mut store, &instance, ret_old);
-    assert!(
-      old_text.starts_with("v-") || old_text.starts_with("next-"),
-      "returned `old` value corrupted: prefix `{}`",
-      &old_text[..old_text.len().min(24)]
-    );
+    assert_eq!(old_text, expected_old, "returned `old` value corrupted at k={k}");
     let ptr_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
     if ptr_now < space_b_base {
       assert!(
@@ -733,6 +790,8 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
       old_survived_compaction = true;
       break;
     }
+    let next_tag = format!("next-{}", 200 + k);
+    expected_old = format!("{next_tag}{}", "M".repeat(24_576usize - next_tag.len()));
   }
   assert!(
     old_survived_compaction,
@@ -991,8 +1050,14 @@ fn core_wasm_static_defref_initializers_and_stale_magic_type_of() {
   assert_eq!(read_wasm_str(&mut store, &instance, new_semi_b_ptr), "dyn-77");
   assert_eq!(inspect_tag.call(&mut store, new_semi_b_ptr).expect("inspect active semi B"), 1.0);
 
-  // Make a Scratch Arena string; after return, __heap_ptr == __arena_base while HEAP_MAGIC remains in linear memory.
+  // Make a Scratch Arena string; it remains live in [arena_base, __heap_ptr) until __arena_reset().
   let stale_scratch_ptr = make_scratch.call(&mut store, 99.0).expect("make-scratch-str");
+  assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+  assert_eq!(inspect_tag.call(&mut store, stale_scratch_ptr).expect("inspect live scratch"), 1.0);
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+  arena_reset.call(&mut store, ()).expect("__arena_reset should succeed");
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
   assert_eq!(read_header_magic(&mut store, &instance, stale_scratch_ptr), HEAP_MAGIC);
   assert_eq!(inspect_tag.call(&mut store, stale_scratch_ptr).expect("inspect stale scratch"), 2.0);
@@ -1025,12 +1090,20 @@ async fn component_wasm_repeated_exports_and_defref_stay_within_8mib_limit() {
               &str:slice @*comp-log 0 12
           :examples $ []
           :schema $ quote $ Fn String (-> String)
+        'peek-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export peek-log ()
+            let
+                scratch $ &str:pad-right @*comp-log 320 |Z
+              &str:slice scratch 0 12
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
         'append-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export append-count (msg)
             let
+                scratch $ &str:pad-right (&str:concat |W- msg) 6144 |W
                 padded $ &str:pad-right (&str:concat |S- msg) 320 |K
               reset! *comp-log padded
-              &str:count @*comp-log
+              &+ (&str:count @*comp-log) (&- (&str:count scratch) 6144)
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
@@ -1100,9 +1173,10 @@ async fn component_wasm_repeated_exports_and_defref_stay_within_8mib_limit() {
     .await
     .expect("Component should instantiate within 8 MiB limit");
   let record_and_read = instance.get_func(&mut store, "record-and-read").expect("record-and-read export");
+  let peek_log = instance.get_func(&mut store, "peek-log").expect("peek-log export");
   let append_count = instance.get_func(&mut store, "append-count").expect("append-count export");
 
-  // 3,200 invocations alternating String (post-return) and Number (no post-return) exports.
+  // 4,800 invocations alternating String (post-return), read-only peek-log, and Number (no post-return) exports.
   for i in 0..1_600u64 {
     let mut str_result = [ComponentVal::Bool(false)];
     record_and_read
@@ -1113,6 +1187,17 @@ async fn component_wasm_repeated_exports_and_defref_stay_within_8mib_limit() {
       str_result,
       [ComponentVal::String(format!("C-m{i:04}RRRRR"))],
       "unexpected record-and-read result at iteration {i}"
+    );
+
+    let mut peek_result = [ComponentVal::Bool(false)];
+    peek_log
+      .call_async(&mut store, &[], &mut peek_result)
+      .await
+      .unwrap_or_else(|err| panic!("peek-log failed at iteration {i}: {err}"));
+    assert_eq!(
+      peek_result,
+      [ComponentVal::String(format!("C-m{i:04}RRRRR"))],
+      "peek-log must read current *comp-log after record-and-read at iteration {i}"
     );
 
     let mut num_result = [ComponentVal::Bool(false)];
@@ -1126,4 +1211,904 @@ async fn component_wasm_repeated_exports_and_defref_stay_within_8mib_limit() {
       "unexpected append-count result at iteration {i}"
     );
   }
+
+  // Also instantiate raw Component core module to assert __heap_ptr == __arena_base and flat memory.size() after turns.
+  let (mut raw_store, raw_instance) = instantiate_core_with_limit(&out_dir.join("program.wasm"), EIGHT_MIB);
+  let raw_memory = raw_instance.get_memory(&mut raw_store, "memory").expect("raw memory export");
+  let raw_initial_pages = raw_memory.size(&raw_store);
+  let raw_arena_base = get_i32_global(&mut raw_store, &raw_instance, "__arena_base");
+  let raw_cabi_realloc = raw_instance
+    .get_typed_func::<(i32, i32, i32, i32), i32>(&mut raw_store, "cabi_realloc")
+    .expect("cabi_realloc export");
+  let raw_record = raw_instance
+    .get_typed_func::<(i32, i32), i32>(&mut raw_store, "record-and-read")
+    .expect("raw record-and-read");
+  let raw_record_post = raw_instance
+    .get_typed_func::<i32, ()>(&mut raw_store, "cabi_post_record-and-read")
+    .expect("raw cabi_post_record-and-read");
+  let raw_peek = raw_instance
+    .get_typed_func::<(), i32>(&mut raw_store, "peek-log")
+    .expect("raw peek-log");
+  let raw_peek_post = raw_instance
+    .get_typed_func::<i32, ()>(&mut raw_store, "cabi_post_peek-log")
+    .expect("raw cabi_post_peek-log");
+  let raw_append = raw_instance
+    .get_typed_func::<(i32, i32), f64>(&mut raw_store, "append-count")
+    .expect("raw append-count");
+
+  for i in 0..100u64 {
+    let msg = format!("m{i:04}");
+    let ptr0 = raw_cabi_realloc
+      .call(&mut raw_store, (0, 0, 1, msg.len() as i32))
+      .expect("alloc msg0");
+    raw_memory.write(&mut raw_store, ptr0 as usize, msg.as_bytes()).expect("write msg0");
+    let ret0 = raw_record.call(&mut raw_store, (ptr0, msg.len() as i32)).expect("raw record");
+    raw_record_post.call(&mut raw_store, ret0).expect("raw record post-return");
+    assert_eq!(get_i32_global(&mut raw_store, &raw_instance, "__heap_ptr"), raw_arena_base);
+    assert_eq!(raw_memory.size(&raw_store), raw_initial_pages);
+
+    let ret_peek = raw_peek.call(&mut raw_store, ()).expect("raw peek");
+    raw_peek_post.call(&mut raw_store, ret_peek).expect("raw peek post-return");
+    assert_eq!(get_i32_global(&mut raw_store, &raw_instance, "__heap_ptr"), raw_arena_base);
+    assert_eq!(raw_memory.size(&raw_store), raw_initial_pages);
+
+    let ptr1 = raw_cabi_realloc
+      .call(&mut raw_store, (0, 0, 1, msg.len() as i32))
+      .expect("alloc msg1");
+    raw_memory.write(&mut raw_store, ptr1 as usize, msg.as_bytes()).expect("write msg1");
+    let count = raw_append.call(&mut raw_store, (ptr1, msg.len() as i32)).expect("raw append");
+    assert_eq!(count, 320.0);
+    assert_eq!(get_i32_global(&mut raw_store, &raw_instance, "__heap_ptr"), raw_arena_base);
+    assert_eq!(raw_memory.size(&raw_store), raw_initial_pages);
+  }
+}
+
+#[test]
+fn core_wasm_proven_scalar_reset_and_compaction_preserve_number() {
+  let dir = TestDirectory::create("wasm-proven-scalar-reset");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for proven-scalar defref reset bypass and compaction skip."
+  :package |scalar-reset
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'scalar-reset.main/main!) (:mode :native) (:reload-fn 'scalar-reset.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'scalar-reset.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*scalar-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *scalar-num 0
+          :examples $ []
+          :schema $ quote $ Ref Number
+        '*box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *box |init
+          :examples $ []
+          :schema $ quote $ Ref String
+        'write-scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export write-scalar (v)
+            reset! *scalar-num v
+            , @*scalar-num
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-scalar () , @*scalar-num
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'pump-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-box (k size)
+            reset! *box $ &str:pad-right (&str:concat |b- (to-string k)) size |B
+            &str:count @*box
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'read-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-box () , @*box
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns scalar-reset.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+
+  let write_scalar = instance
+    .get_typed_func::<f64, f64>(&mut store, "write-scalar")
+    .expect("write-scalar export");
+  let read_scalar = instance
+    .get_typed_func::<(), f64>(&mut store, "read-scalar")
+    .expect("read-scalar export");
+  let pump_box = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "pump-box")
+    .expect("pump-box export");
+  let read_box = instance.get_typed_func::<(), f64>(&mut store, "read-box").expect("read-box export");
+
+  // Capture an active semi-space A pointer numeric value, then store that exact integer in *scalar-num.
+  assert_eq!(pump_box.call(&mut store, (1.0, 256.0)).expect("pump-box 1"), 256.0);
+  let live_ptr_num = read_box.call(&mut store, ()).expect("read-box ptr");
+  assert!(live_ptr_num >= f64::from(space_a_base) && live_ptr_num < f64::from(space_b_base));
+  let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
+
+  assert_eq!(
+    write_scalar.call(&mut store, live_ptr_num).expect("write-scalar ptr_num"),
+    live_ptr_num
+  );
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__persistent_ptr"),
+    pers_before,
+    "scalar reset! must bypass __rt_commit_defref"
+  );
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  // Trigger compaction A -> B; *scalar-num must NOT be rewritten to a space_b address.
+  let mut compacted = false;
+  for k in 2..=32u64 {
+    pump_box.call(&mut store, (k as f64, 24_576.0)).expect("pump-box loop");
+    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+      compacted = true;
+      break;
+    }
+  }
+  assert!(compacted, "expected *box writes to compact semi-space A -> B");
+  assert_eq!(
+    read_scalar.call(&mut store, ()).expect("read-scalar after compaction"),
+    live_ptr_num,
+    "proven-scalar defref must retain its exact numeric value across compaction"
+  );
+
+  // Writing another scalar does not perturb __persistent_ptr or __heap_ptr.
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert_eq!(write_scalar.call(&mut store, 123.5).expect("write-scalar 123.5"), 123.5);
+  assert_eq!(read_scalar.call(&mut store, ()).expect("read-scalar 123.5"), 123.5);
+  assert_eq!(get_i32_global(&mut store, &instance, "__persistent_ptr"), pers_b);
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+}
+
+#[test]
+fn core_wasm_shared_scratch_dag_promotes_once_without_corrupting_scratch() {
+  let dir = TestDirectory::create("wasm-shared-scratch-dag");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for shared Scratch DAG promotion deduplication without header mutation."
+  :package |shared-dag
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'shared-dag.main/main!) (:mode :native) (:reload-fn 'shared-dag.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'shared-dag.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*dag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *dag $ [] |init
+          :examples $ []
+          :schema $ quote $ Ref (List String)
+        'commit-shared-dag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-shared-dag (pad)
+            let
+                shared $ &str:pad-right |shared-dag- pad |D
+                dag $ [] shared shared shared shared
+              reset! *dag dag
+              if (&= (type-of shared) :string) , shared (raise |corrupted-scratch-magic)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> String)
+        'dag-elem-ptr $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export dag-elem-ptr (idx) (&list:nth @*dag idx)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns shared-dag.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+
+  let commit_shared = instance
+    .get_typed_func::<f64, f64>(&mut store, "commit-shared-dag")
+    .expect("commit-shared-dag export");
+  let dag_elem_ptr = instance
+    .get_typed_func::<f64, f64>(&mut store, "dag-elem-ptr")
+    .expect("dag-elem-ptr export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  let scratch_shared = commit_shared.call(&mut store, 32_768.0).expect("commit-shared-dag should succeed");
+  assert!(scratch_shared >= f64::from(arena_base));
+  assert_eq!(read_header_magic(&mut store, &instance, scratch_shared), HEAP_MAGIC);
+  let s = read_wasm_str(&mut store, &instance, scratch_shared);
+  assert_eq!(s.len(), 32_768);
+  assert!(s.starts_with("shared-dag-D"));
+
+  let pers_after = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let pers_used = pers_after - space_a_base;
+  assert!(
+    (32_768..40_960).contains(&pers_used),
+    "4x shared 32 KiB Scratch string should promote only once, got pers_used={pers_used}"
+  );
+
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  let elem0 = dag_elem_ptr.call(&mut store, 0.0).expect("elem 0");
+  let elem1 = dag_elem_ptr.call(&mut store, 1.0).expect("elem 1");
+  let elem3 = dag_elem_ptr.call(&mut store, 3.0).expect("elem 3");
+  assert!(elem0 >= f64::from(space_a_base) && elem0 < f64::from(space_b_base));
+  assert_eq!(
+    elem0, elem1,
+    "shared DAG elements 0 and 1 must deduplicate to the same persistent copy"
+  );
+  assert_eq!(
+    elem0, elem3,
+    "shared DAG elements 0 and 3 must deduplicate to the same persistent copy"
+  );
+  let persisted = read_wasm_str(&mut store, &instance, elem0);
+  assert_eq!(persisted.len(), 32_768);
+  assert!(persisted.starts_with("shared-dag-D"));
+}
+
+#[test]
+fn core_wasm_unchanged_large_live_defref_skips_redundant_compaction() {
+  let dir = TestDirectory::create("wasm-relative-compact-threshold");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for relative compaction threshold and no-alloc commit skip."
+  :package |rel-compact
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'rel-compact.main/main!) (:mode :native) (:reload-fn 'rel-compact.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'rel-compact.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*big $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *big |init
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *alias |init
+          :examples $ []
+          :schema $ quote $ Ref String
+        'set-big $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-big (size)
+            reset! *big $ &str:pad-right |BIG- size |B
+            &str:count @*big
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'alias-big $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alias-big ()
+            reset! *alias @*big
+            &str:count @*alias
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'set-alias-small $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-alias-small (k size)
+            reset! *alias $ &str:pad-right (&str:concat |S- (to-string k)) size |S
+            &str:count @*alias
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns rel-compact.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+
+  let set_big = instance.get_typed_func::<f64, f64>(&mut store, "set-big").expect("set-big export");
+  let alias_big = instance
+    .get_typed_func::<(), f64>(&mut store, "alias-big")
+    .expect("alias-big export");
+  let set_alias_small = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "set-alias-small")
+    .expect("set-alias-small export");
+
+  // Exceed initial 512 KiB threshold so turn end compacts the 600 KiB live string into semi-space B.
+  assert_eq!(set_big.call(&mut store, 600_000.0).expect("set-big"), 600_000.0);
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_b >= space_b_base && pers_b < arena_base);
+
+  // Committing an already-persistent ref (@*big) does not advance pers.ptr and must NOT ping-pong back to A.
+  for _ in 0..5 {
+    assert_eq!(alias_big.call(&mut store, ()).expect("alias-big"), 600_000.0);
+    assert_eq!(get_i32_global(&mut store, &instance, "__persistent_ptr"), pers_b);
+  }
+
+  // Small allocations well below half the remaining semi-space (~212 KiB) must NOT re-trigger compaction.
+  for k in 1..=4u64 {
+    assert_eq!(
+      set_alias_small.call(&mut store, (k as f64, 16_384.0)).expect("set-alias-small"),
+      16_384.0
+    );
+    let pers_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    assert!(
+      pers_now >= space_b_base && pers_now < arena_base,
+      "small commit {k} must stay in semi-space B without redundant compaction (pers_now={pers_now})"
+    );
+  }
+
+  // Pushing past next_compact_ptr (~212 KiB above pers_b) triggers compaction cleanly back to semi-space A.
+  assert_eq!(
+    set_alias_small
+      .call(&mut store, (5.0, 260_000.0))
+      .expect("set-alias-small threshold"),
+    260_000.0
+  );
+  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_a >= space_a_base && pers_a < space_b_base,
+    "expected threshold-crossing commit to compact cleanly back into semi-space A, got pers_a={pers_a}"
+  );
+}
+
+#[test]
+fn core_wasm_compaction_trap_leaves_old_roots_valid_and_recoverable() {
+  let dir = TestDirectory::create("wasm-compact-trap-atomic");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for atomic compaction staging on semi-space overflow trap."
+  :package |compact-trap
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-trap.main/main!) (:mode :native) (:reload-fn 'compact-trap.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-trap.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *a |seed-a
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *b |seed-b
+          :examples $ []
+          :schema $ quote $ Ref String
+        'set-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-a (size)
+            reset! *a $ &str:pad-right |A-LIVE- size |A
+            &str:count @*a
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'set-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-b (size)
+            reset! *b $ &str:pad-right |B-OVERFLOW- size |B
+            &str:count @*b
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'recover-and-read-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export recover-and-read-a ()
+            reset! *b |recovered
+            , @*a
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'read-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-b () , @*b
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-trap.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+
+  let set_a = instance.get_typed_func::<f64, f64>(&mut store, "set-a").expect("set-a export");
+  let set_b = instance.get_typed_func::<f64, f64>(&mut store, "set-b").expect("set-b export");
+  let recover_a = instance
+    .get_typed_func::<(), f64>(&mut store, "recover-and-read-a")
+    .expect("recover-and-read-a export");
+  let read_b = instance.get_typed_func::<(), f64>(&mut store, "read-b").expect("read-b export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  assert_eq!(set_a.call(&mut store, 600_000.0).expect("set-a"), 600_000.0);
+  let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_before >= space_b_base && pers_before < arena_base);
+
+  // Promoting *b (600 KiB) alongside *a (600 KiB) exceeds 1 MiB semi-space during staged compaction and must trap.
+  let trap_err = set_b
+    .call(&mut store, 600_000.0)
+    .expect_err("600K + 600K live defrefs must trap during compaction staging");
+  assert!(
+    format!("{trap_err:?}").contains("unreachable"),
+    "expected wasm unreachable trap on semi-space OOM, got {trap_err:?}"
+  );
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__persistent_ptr"),
+    pers_before,
+    "failed staged compaction must not publish partial persistent metadata"
+  );
+
+  // Shrinking *b back to static string and completing turn-end compaction recovers cleanly with *a intact.
+  let a_ptr = recover_a.call(&mut store, ()).expect("recover-and-read-a must succeed");
+  assert!(a_ptr >= f64::from(space_a_base) && a_ptr < f64::from(space_b_base));
+  let a_text = read_wasm_str(&mut store, &instance, a_ptr);
+  assert_eq!(a_text.len(), 600_000);
+  assert!(a_text.starts_with("A-LIVE-AAA"));
+  let b_ptr = read_b.call(&mut store, ()).expect("read-b");
+  assert_eq!(read_wasm_str(&mut store, &instance, b_ptr), "recovered");
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+}
+
+#[test]
+fn core_wasm_compaction_relocates_old_space_children_of_scratch_return() {
+  let dir = TestDirectory::create("wasm-scratch-child-reloc");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for relocating old-space children referenced by a Scratch return on compaction."
+  :package |scratch-child-reloc
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'scratch-child-reloc.main/main!) (:mode :native) (:reload-fn 'scratch-child-reloc.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'scratch-child-reloc.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *state |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'pump-state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-state (n size)
+            reset! *state $ &str:pad-right (&str:concat |p- (to-string n)) size |P
+            &str:count @*state
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'wrap-old-and-trigger-compact $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export wrap-old-and-trigger-compact (k size)
+            let
+                old @*state
+                tag $ &str:concat |new- (to-string k)
+              reset! *state $ &str:pad-right tag size |N
+              [] old |scratch-tail
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> (List String))
+        'inspect-wrapped $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export inspect-wrapped (wrapped)
+            &str:concat (&list:nth wrapped 0) (&str:concat |:: (&list:nth wrapped 1))
+          :examples $ []
+          :schema $ quote $ Fn (List String) (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns scratch-child-reloc.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+
+  let pump_state = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "pump-state")
+    .expect("pump-state export");
+  let wrap_old = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "wrap-old-and-trigger-compact")
+    .expect("wrap-old-and-trigger-compact export");
+  let inspect_wrapped = instance
+    .get_typed_func::<f64, f64>(&mut store, "inspect-wrapped")
+    .expect("inspect-wrapped export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  for i in 1..=24u64 {
+    pump_state
+      .call(&mut store, (i as f64, 20_480.0))
+      .expect("pump-state should succeed");
+  }
+  let initial_tag = format!("p-{}", 24);
+  let mut expected_old = format!("{initial_tag}{}", "P".repeat(20_480usize - initial_tag.len()));
+
+  let mut compacted = false;
+  for k in 25..=35u64 {
+    let wrapped_ptr = wrap_old
+      .call(&mut store, (k as f64, 24_576.0))
+      .expect("wrap-old-and-trigger-compact should succeed");
+    assert!(wrapped_ptr >= f64::from(arena_base), "wrapped List must live in Scratch Arena");
+    assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+    let combined_ptr = inspect_wrapped
+      .call(&mut store, wrapped_ptr)
+      .expect("inspect-wrapped should read relocated old child inside Scratch list");
+    assert_eq!(
+      read_wasm_str(&mut store, &instance, combined_ptr),
+      format!("{expected_old}::scratch-tail"),
+      "Scratch return child in old semi-space corrupted at k={k}"
+    );
+    let ptr_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    arena_reset.call(&mut store, ()).expect("__arena_reset");
+    assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+    if ptr_now >= space_b_base {
+      compacted = true;
+      break;
+    }
+    let next_tag = format!("new-{k}");
+    expected_old = format!("{next_tag}{}", "N".repeat(24_576usize - next_tag.len()));
+  }
+  assert!(compacted, "expected wrap-old turn to trigger semi-space A -> B compaction");
+}
+
+#[test]
+fn core_wasm_trapped_export_recovers_arena_reset_and_compaction() {
+  let dir = TestDirectory::create("wasm-trap-turn-recovery");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for post-trap Core export active_turns recovery via turn_enter and __arena_reset."
+  :package |trap-recover
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'trap-recover.main/main!) (:mode :native) (:reload-fn 'trap-recover.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'trap-recover.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *log |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'pump-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-log (n size)
+            reset! *log $ &str:pad-right (&str:concat |l- (to-string n)) size |L
+            &str:count @*log
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'write-and-trap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export write-and-trap (n size)
+            let
+                payload $ &str:pad-right (&str:concat |trapped- (to-string n)) size |T
+              reset! *log payload
+              if (&> size 0) (raise |boom) 0
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'scalar-probe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-probe (delta)
+            &+ delta (&str:count @*log)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-log () , @*log
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns trap-recover.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+
+  let pump_log = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "pump-log")
+    .expect("pump-log export");
+  let write_and_trap = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "write-and-trap")
+    .expect("write-and-trap export");
+  let scalar_probe = instance
+    .get_typed_func::<f64, f64>(&mut store, "scalar-probe")
+    .expect("scalar-probe export");
+  let read_log = instance.get_typed_func::<(), f64>(&mut store, "read-log").expect("read-log export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  for n in 1..=24u64 {
+    pump_log.call(&mut store, (n as f64, 20_480.0)).expect("pump-log should succeed");
+  }
+  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
+
+  // Trap mid-export after crossing the 512 KiB threshold and leaving Scratch & active_turns dirty.
+  let err1 = write_and_trap
+    .call(&mut store, (99.0, 40_960.0))
+    .expect_err("write-and-trap should trap");
+  assert!(format!("{err1:?}").contains("unreachable"));
+  assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
+
+  // Next scalar export recovers via __rt_turn_enter: runs pending compaction AND rewinds Scratch Arena.
+  assert_eq!(scalar_probe.call(&mut store, 1.0).expect("scalar-probe"), 40_961.0);
+  let pers_after = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_after >= space_b_base && pers_after < arena_base,
+    "expected turn_enter recovery to compact pending defref data into semi-space B, got {pers_after}"
+  );
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  let log_ptr = read_log.call(&mut store, ()).expect("read-log");
+  let log_str = read_wasm_str(&mut store, &instance, log_ptr);
+  assert_eq!(log_str.len(), 40_960);
+  assert!(log_str.starts_with("trapped-99T"));
+
+  // Second trap followed directly by host __arena_reset recovers cleanly as well.
+  let err2 = write_and_trap
+    .call(&mut store, (100.0, 2048.0))
+    .expect_err("second write-and-trap should trap");
+  assert!(format!("{err2:?}").contains("unreachable"));
+  assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after trap");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  assert_eq!(scalar_probe.call(&mut store, 2.0).expect("scalar-probe 2"), 2050.0);
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+}
+
+struct GatedChunks {
+  first: Option<Vec<u8>>,
+  rest: VecDeque<Vec<u8>>,
+  entered_wait: Arc<Notify>,
+  released: Arc<AtomicBool>,
+  waker: Arc<Mutex<Option<Waker>>>,
+}
+
+impl StreamProducer<StoreLimits> for GatedChunks {
+  type Item = u8;
+  type Buffer = VecBuffer<u8>;
+
+  fn poll_produce<'a>(
+    mut self: Pin<&mut Self>,
+    context: &mut Context<'_>,
+    _store: StoreContextMut<'a, StoreLimits>,
+    mut destination: Destination<'a, Self::Item, Self::Buffer>,
+    finish: bool,
+  ) -> Poll<wasmtime::Result<StreamResult>> {
+    if finish {
+      return Poll::Ready(Ok(StreamResult::Cancelled));
+    }
+    if let Some(chunk) = self.first.take() {
+      destination.set_buffer(chunk.into());
+      return Poll::Ready(Ok(StreamResult::Completed));
+    }
+    if !self.released.load(Ordering::Acquire) {
+      *self.waker.lock().expect("waker mutex") = Some(context.waker().clone());
+      self.entered_wait.notify_one();
+      return Poll::Pending;
+    }
+    let chunk = self.rest.pop_front().expect("gated stream should have remaining chunk");
+    destination.set_buffer(chunk.into());
+    Poll::Ready(Ok(if self.rest.is_empty() {
+      StreamResult::Dropped
+    } else {
+      StreamResult::Completed
+    }))
+  }
+}
+
+#[tokio::test]
+async fn component_wasm_reclaims_scratch_while_stream_remains_pending() {
+  let dir = TestDirectory::create("component-wasm-pending-stream-arena");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying Component Scratch Arena rewinds to turn_mark across calls while a stream WAITs."
+  :package |pending-stream-arena
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'pending-stream-arena.main/main!) (:mode :native) (:reload-fn 'pending-stream-arena.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'pending-stream-arena.main
+    %{} 'FileEntry
+      :defs $ {}
+        'consume $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export consume (stream) (consume-readable-byte-stream stream 6 3 on-chunk)
+          :examples $ []
+          :schema $ quote $ Fn ReadableByteStream
+            -> $ Result Unit StreamConsumeError
+            :async
+        'on-chunk $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn on-chunk (chunk)
+            or
+              &= chunk $ &buffer 1
+              or
+                &= chunk $ &buffer 2 3
+                &= chunk $ &buffer 4 5 6
+          :examples $ []
+          :schema $ quote $ Fn Buffer (-> Bool)
+        'churn-scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-scalar (n)
+            let
+                s $ &str:pad-right (&str:concat |SC- (to-string n)) 16384 |S
+              &str:count s
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'churn-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-string (n)
+            let
+                s $ &str:pad-right (&str:concat |ST- (to-string n)) 16384 |T
+              &str:slice s 0 10
+          :examples $ []
+          :schema $ quote $ Fn Number (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns pending-stream-arena.main
+"#;
+  let snapshot_path = dir.0.join("calcit.cirru");
+  fs::write(&snapshot_path, snapshot).expect("pending stream snapshot should write");
+  let out_dir = dir.0.join("out");
+  fs::create_dir(&out_dir).expect("pending stream out dir should create");
+
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot_path)
+    .args(["wasm", "--boundary", "component", "--emit-path"])
+    .arg(&out_dir)
+    .output()
+    .expect("pending stream Component should compile");
+  assert!(
+    compile.status.success(),
+    "pending stream compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+  let contract_out = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot_path)
+    .args(["ffi", "export", "--boundary", "component"])
+    .output()
+    .expect("pending stream contract should export");
+  assert!(
+    contract_out.status.success(),
+    "pending stream contract failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&contract_out.stdout),
+    String::from_utf8_lossy(&contract_out.stderr)
+  );
+  let contract_path = out_dir.join("interface.cirru");
+  fs::write(&contract_path, contract_out.stdout).expect("contract file should write");
+  let contract = calcit_bindgen::load_contract(&contract_path).expect("contract should load");
+  let generated = out_dir.join("generated");
+  calcit_bindgen::generate_contract_directory(&contract, Some(&out_dir.join("program.wasm")), &generated, &[])
+    .expect("pending stream Component should package");
+
+  let mut config = Config::new();
+  config.wasm_component_model_async(true);
+  config.wasm_component_model_more_async_builtins(true);
+  config.wasm_component_model_async_stackful(true);
+  let engine = Engine::new(&config).expect("Wasmtime engine should create");
+  let component = Component::from_file(&engine, generated.join(COMPONENT_FILE)).expect("Component should load");
+  let linker = ComponentLinker::new(&engine);
+  let limits = StoreLimitsBuilder::new().memory_size(EIGHT_MIB).build();
+  let mut store = Store::new(&engine, limits);
+  store.limiter(|state| state);
+
+  let instance = linker
+    .instantiate_async(&mut store, &component)
+    .await
+    .expect("Component should instantiate within 8 MiB");
+  let consume = instance.get_func(&mut store, "consume").expect("consume export");
+  let churn_scalar = instance.get_func(&mut store, "churn-scalar").expect("churn-scalar export");
+  let churn_string = instance.get_func(&mut store, "churn-string").expect("churn-string export");
+
+  let entered_wait = Arc::new(Notify::new());
+  let released = Arc::new(AtomicBool::new(false));
+  let saved_waker: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(None));
+
+  let reader = StreamReader::new(
+    &mut store,
+    GatedChunks {
+      first: Some(vec![1]),
+      rest: VecDeque::from([vec![2, 3], vec![4, 5, 6]]),
+      entered_wait: Arc::clone(&entered_wait),
+      released: Arc::clone(&released),
+      waker: Arc::clone(&saved_waker),
+    },
+  )
+  .expect("gated stream reader should create");
+  let stream = reader
+    .try_into_stream_any(&mut store)
+    .expect("stream should erase to dynamic value");
+
+  let mut consume_results = [ComponentVal::Bool(false)];
+  tokio::time::timeout(
+    Duration::from_secs(15),
+    store.run_concurrent(async |accessor| {
+      let consume_params = [ComponentVal::Stream(stream)];
+      let consume_fut = consume.call_concurrent(accessor, &consume_params, &mut consume_results);
+      let churn_fut = async {
+        entered_wait.notified().await;
+        // Let the guest stream task finish returning WAIT and releasing active_turns.
+        tokio::task::yield_now().await;
+        // 400 * (16 KiB scalar + 16 KiB string) ~= 12.8 MiB > 8 MiB StoreLimits; succeeds iff turn_mark rewinds while consume holds live state!
+        for i in 0..400u64 {
+          let mut scalar_res = [ComponentVal::Bool(false)];
+          churn_scalar
+            .call_concurrent(accessor, &[ComponentVal::Float64(i as f64)], &mut scalar_res)
+            .await
+            .unwrap_or_else(|err| panic!("churn-scalar failed at {i}: {err}"));
+          assert_eq!(scalar_res, [ComponentVal::Float64(16_384.0)]);
+
+          let mut str_res = [ComponentVal::Bool(false)];
+          churn_string
+            .call_concurrent(accessor, &[ComponentVal::Float64(i as f64)], &mut str_res)
+            .await
+            .unwrap_or_else(|err| panic!("churn-string failed at {i}: {err}"));
+          assert_eq!(str_res, [ComponentVal::String(format!("ST-{i}TTTTTTT")[..10].to_owned())]);
+        }
+        released.store(true, Ordering::Release);
+        if let Some(waker) = saved_waker.lock().expect("waker lock").take() {
+          waker.wake();
+        }
+      };
+      let (consume_outcome, ()) = tokio::join!(consume_fut, churn_fut);
+      consume_outcome.expect("gated stream call should complete cleanly");
+    }),
+  )
+  .await
+  .expect("pending stream concurrency test timed out")
+  .expect("store.run_concurrent should succeed");
+
+  assert!(
+    matches!(&consume_results[0], ComponentVal::Result(Ok(None))),
+    "expected consume to return ok(()), got {consume_results:?}"
+  );
+  store.assert_concurrent_state_empty();
 }

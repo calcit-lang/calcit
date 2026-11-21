@@ -198,10 +198,10 @@ logical_ptr + 8: UTF-8 bytes             — 填充到 8 字节对齐
 
 WASM 模块按双区内存模型组织线性内存（静态常量池 + 存在 `defref` 时的双 1 MiB 持久区半空间 + 请求级 Scratch Arena），导出以下接口供 JS 传递字符串与观测水位线：
 
-- `__heap_ptr`: 可读写的 `i32` global，当前 Scratch Arena 分配顶指针（最外层 Core `defwasm-export` 或 Component 回调退出时自动复位）
+- `__heap_ptr`: 可读写的 `i32` global，当前 Scratch Arena 分配顶指针（Core 标量返回，以及 Component `cabi_post_*`/同步导出/async `WAIT` 与完成态满足回收条件时自动回退或复位；Core 新分配的 Scratch 堆返回值会保活至 `__arena_reset()`）
 - `__arena_base`: 只读 `i32` global，Scratch Arena 起始地址
 - `__persistent_ptr`: 仅当程序含 `defref` 时导出的可读写 `i32` global，指向当前活跃持久区半空间写入位置
-- `__arena_reset()`: Core WASM 导出函数；宿主若在多次直接调用 `__str_new` 后需要主动清空临时区并触发待压缩持久区清理，可显式调用该函数把 `__heap_ptr` 重置回 `__arena_base`
+- `__arena_reset()`: Core WASM 导出函数；宿主可在读取完 Core Scratch 返回值或多次直接调用 `__str_new` 后显式调用该函数，用于恢复可能残留的 turn 状态、执行待定的半空间压缩并将 `__heap_ptr` 重置回 `__arena_base`
 - `__str_new(src_ptr: i32, byte_len: i32) → f64`: 将 `byte_len` 字节从 `src_ptr` 复制到堆中，返回字符串逻辑指针
 
 **零拷贝协议**（JS 向 WASM 传字符串）：

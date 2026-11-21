@@ -4486,8 +4486,32 @@ pub(super) fn build_wasm_module(
     },
     &ConstExpr::i32_const(0),
   );
+  if layout.global_layout.native.is_some() {
+    for init in [0, layout.memory_layout.arena_base] {
+      globals.global(
+        GlobalType {
+          val_type: ValType::I32,
+          mutable: true,
+          shared: false,
+        },
+        &ConstExpr::i32_const(init),
+      );
+    }
+  }
   if layout.global_layout.persistent.is_some() {
-    for init in [0, layout.memory_layout.space_a_base, layout.memory_layout.space_a_end, 0] {
+    for init in [
+      0,
+      layout.memory_layout.space_a_base,
+      layout.memory_layout.space_a_end,
+      0,
+      layout.memory_layout.space_a_base + PERSISTENT_COMPACT_THRESHOLD,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ] {
       globals.global(
         GlobalType {
           val_type: ValType::I32,
@@ -4615,6 +4639,7 @@ pub(super) fn build_runtime_fns(
   global_layout: &WasmGlobalLayout,
   boundary: WasmBoundary,
   tag_index: &HashMap<String, u32>,
+  atom_is_scalar: &[bool],
 ) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
   let require_tag = |name: &str| *tag_index.get(name).unwrap_or_else(|| panic!("{name} tag must exist")) as i32;
   let map_tag = require_tag("map");
@@ -4693,6 +4718,22 @@ pub(super) fn build_runtime_fns(
       bool_tag,
       number: number_tag,
     };
+    let fwd_grow_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_fwd_grow"), fwd_grow_idx);
+    fns.push(build_rt_fwd_grow_fn(pers, arena_alloc_idx));
+
+    let fwd_get_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_fwd_get"), fwd_get_idx);
+    fns.push(build_rt_fwd_get_fn(pers));
+
+    let fwd_put_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_fwd_put"), fwd_put_idx);
+    fns.push(build_rt_fwd_put_fn(pers, fwd_grow_idx));
+
+    let fwd_mark_flag_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_fwd_mark_flag"), fwd_mark_flag_idx);
+    fns.push(build_rt_fwd_mark_flag_fn(pers, fwd_grow_idx));
+
     let promote_value_slot = fns.len();
     let promote_value_idx = base_index + promote_value_slot as u32;
     fn_index.insert(String::from("__rt_promote_value"), promote_value_idx);
@@ -4703,24 +4744,44 @@ pub(super) fn build_runtime_fns(
     fn_index.insert(String::from("__rt_promote_map_node"), promote_map_node_idx);
     fns.push(build_rt_hash_f64());
 
+    let relocate_refs_slot = fns.len();
+    let relocate_refs_idx = base_index + relocate_refs_slot as u32;
+    fn_index.insert(String::from("__rt_relocate_scratch_refs"), relocate_refs_idx);
+    fns.push(build_rt_hash_f64());
+
+    let relocate_map_node_slot = fns.len();
+    let relocate_map_node_idx = base_index + relocate_map_node_slot as u32;
+    fn_index.insert(String::from("__rt_relocate_scratch_map_node"), relocate_map_node_idx);
+    fns.push(build_rt_hash_f64());
+
     let persistent_alloc_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_persistent_alloc"), persistent_alloc_idx);
     fns.push(build_rt_persistent_alloc_fn(pers));
 
-    fns[promote_map_node_slot] =
-      build_rt_promote_map_node_fn(memory_layout, pers, persistent_alloc_idx, promote_value_idx, promote_map_node_idx);
-    fns[promote_value_slot] = build_rt_promote_value_fn(
-      memory_layout,
-      pers,
-      persistent_alloc_idx,
-      promote_value_idx,
-      promote_map_node_idx,
-      &promote_tags,
-    );
+    let promote_fns = PersistentPromoteFns {
+      persistent_alloc: persistent_alloc_idx,
+      promote_value: promote_value_idx,
+      promote_map_node: promote_map_node_idx,
+      fwd_get: fwd_get_idx,
+      fwd_put: fwd_put_idx,
+    };
+    let relocate_fns = RelocateScratchFns {
+      promote_value: promote_value_idx,
+      promote_map_node: promote_map_node_idx,
+      fwd_get: fwd_get_idx,
+      fwd_mark_flag: fwd_mark_flag_idx,
+      relocate_refs: relocate_refs_idx,
+      relocate_map_node: relocate_map_node_idx,
+    };
+
+    fns[promote_map_node_slot] = build_rt_promote_map_node_fn(memory_layout, pers, &promote_fns);
+    fns[promote_value_slot] = build_rt_promote_value_fn(memory_layout, pers, &promote_fns, &promote_tags);
+    fns[relocate_map_node_slot] = build_rt_relocate_scratch_map_node_fn(memory_layout, pers, &relocate_fns);
+    fns[relocate_refs_slot] = build_rt_relocate_scratch_refs_fn(memory_layout, pers, &relocate_fns, &promote_tags);
 
     let commit_defref_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_commit_defref"), commit_defref_idx);
-    fns.push(build_rt_commit_defref_fn(memory_layout, pers, promote_value_idx));
+    fns.push(build_rt_commit_defref_fn(pers, promote_value_idx));
 
     let compact_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_compact_persistent"), compact_idx);
@@ -4729,6 +4790,8 @@ pub(super) fn build_runtime_fns(
       global_layout,
       pers,
       promote_value_idx,
+      relocate_refs_idx,
+      atom_is_scalar,
     ));
     Some(compact_idx)
   } else {
@@ -4736,17 +4799,26 @@ pub(super) fn build_runtime_fns(
   };
 
   if boundary == WasmBoundary::Native {
+    let native = global_layout.native.as_ref().expect("native turn globals must exist");
+    let turn_enter_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_turn_enter"), turn_enter_idx);
+    fns.push(build_rt_turn_enter_fn(memory_layout, global_layout, native, compact_persistent_idx));
+
     let turn_end_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_turn_end"), turn_end_idx);
-    fns.push(build_rt_turn_end_fn(global_layout, compact_persistent_idx));
+    fns.push(build_rt_turn_end_fn(memory_layout, global_layout, compact_persistent_idx));
 
     let arena_reset_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__arena_reset"), arena_reset_idx);
-    fns.push(build_arena_reset_fn(memory_layout, global_layout, compact_persistent_idx));
+    fns.push(build_arena_reset_fn(memory_layout, global_layout, native, compact_persistent_idx));
   } else if let Some(comp) = &global_layout.component {
     let turn_enter_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_turn_enter"), turn_enter_idx);
     fns.push(build_rt_component_turn_enter_fn(global_layout, comp));
+
+    let rewind_to_mark_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_component_rewind_to_mark"), rewind_to_mark_idx);
+    fns.push(build_rt_component_rewind_to_mark_fn(comp));
 
     let turn_exit_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_turn_exit"), turn_exit_idx);
@@ -4754,6 +4826,7 @@ pub(super) fn build_runtime_fns(
       memory_layout,
       global_layout,
       comp,
+      rewind_to_mark_idx,
       compact_persistent_idx,
     ));
   }
