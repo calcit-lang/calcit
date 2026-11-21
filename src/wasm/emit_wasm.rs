@@ -1016,12 +1016,7 @@ fn emit_wasm_impl(
   if boundary == WasmBoundary::Native
     && let Some(native) = global_layout.native
   {
-    let mut wrap_raw_indices: std::collections::BTreeSet<u32> = wasm_import_names.values().copied().collect();
-    for (raw_idx, imp) in host_imports.iter().enumerate() {
-      if imp.module == "io" {
-        wrap_raw_indices.insert(raw_idx as u32);
-      }
-    }
+    let wrap_raw_indices: std::collections::BTreeSet<u32> = wasm_import_names.values().copied().collect();
     let mut raw_to_wrapper: HashMap<u32, u32> = HashMap::new();
     for raw_idx in wrap_raw_indices {
       let imp = &host_imports[raw_idx as usize];
@@ -1404,7 +1399,6 @@ fn emit_wasm_impl(
           component_cabi_free_index.expect("stackless tail export must install cabi_free"),
           cabi_realloc_index,
           &component_drop_indices,
-          arena_alloc_idx,
           turn_enter_idx,
           turn_exit_idx,
         );
@@ -4657,7 +4651,6 @@ fn build_component_stackless_tail_export(
   cabi_free_index: u32,
   cabi_realloc_index: u32,
   drop_indices: &BTreeMap<ComponentAbiType, u32>,
-  arena_alloc_index: u32,
   turn_enter_index: u32,
   turn_exit_index: u32,
 ) -> [CompiledFn; 2] {
@@ -4665,7 +4658,8 @@ fn build_component_stackless_tail_export(
   const STATE_SUBTASK: u64 = 4;
   const STATE_WAITABLE_SET: u64 = 8;
   const STATE_CANCEL_REQUESTED: u64 = 12;
-  const STATE_SIZE: i32 = 16;
+  const STATE_PARAM_RECORD: u64 = 16;
+  const STATE_SIZE: i32 = 20;
 
   let params = adapter.parameters.iter().flat_map(component_flat_types).collect::<Vec<_>>();
   let mut locals = Vec::new();
@@ -4687,13 +4681,16 @@ fn build_component_stackless_tail_export(
     Some(local)
   };
 
-  if component_async_import_uses_indirect_parameters(imported) {
+  let indirect_param_record = if component_async_import_uses_indirect_parameters(imported) {
     let (layout, offsets) = component_fields_layout(imported.parameters.iter());
     let record_ptr = params.len() as u32 + locals.len() as u32;
     locals.push(ValType::I32);
     instructions.extend([
+      Instruction::I32Const(0),
+      Instruction::I32Const(0),
+      Instruction::I32Const(layout.alignment),
       Instruction::I32Const(layout.size),
-      Instruction::Call(arena_alloc_index),
+      Instruction::Call(cabi_realloc_index),
       Instruction::LocalSet(record_ptr),
     ]);
     let mut flat_start = 0;
@@ -4707,11 +4704,13 @@ fn build_component_stackless_tail_export(
       flat_start += width as u32;
     }
     instructions.push(Instruction::LocalGet(record_ptr));
+    Some((record_ptr, layout.size))
   } else {
     for index in 0..params.len() {
       instructions.push(Instruction::LocalGet(index as u32));
     }
-  }
+    None
+  };
   if let Some(ret_ptr) = ret_ptr {
     instructions.push(Instruction::LocalGet(ret_ptr));
   }
@@ -4748,6 +4747,13 @@ fn build_component_stackless_tail_export(
   ));
   if let Some(ret_ptr) = ret_ptr {
     push_component_result_reclaim(&adapter.result, ret_ptr, cabi_free_index, drop_indices, &mut instructions);
+  }
+  if let Some((record_ptr, record_size)) = indirect_param_record {
+    instructions.extend([
+      Instruction::LocalGet(record_ptr),
+      Instruction::I32Const(record_size),
+      Instruction::Call(cabi_free_index),
+    ]);
   }
   instructions.extend([
     Instruction::Call(turn_exit_index),
@@ -4799,6 +4805,26 @@ fn build_component_stackless_tail_export(
     Instruction::I32Const(0),
     Instruction::I32Store(mem_arg_i32(STATE_CANCEL_REQUESTED)),
     Instruction::LocalGet(state),
+    Instruction::I32Const(0),
+    Instruction::I32Store(mem_arg_i32(STATE_PARAM_RECORD)),
+  ]);
+  if let Some((record_ptr, record_size)) = indirect_param_record {
+    instructions.extend([
+      Instruction::LocalGet(status_kind),
+      Instruction::I32Eqz,
+      Instruction::If(wasm_encoder::BlockType::Empty),
+      Instruction::LocalGet(state),
+      Instruction::LocalGet(record_ptr),
+      Instruction::I32Store(mem_arg_i32(STATE_PARAM_RECORD)),
+      Instruction::Else,
+      Instruction::LocalGet(record_ptr),
+      Instruction::I32Const(record_size),
+      Instruction::Call(cabi_free_index),
+      Instruction::End,
+    ]);
+  }
+  instructions.extend([
+    Instruction::LocalGet(state),
     Instruction::Call(stackless.context_set),
     Instruction::Call(turn_exit_index),
     Instruction::LocalGet(waitable_set),
@@ -4831,6 +4857,25 @@ fn build_component_stackless_tail_export(
   callback_locals.push(ValType::I32);
   let cancel_status = callback_params.len() as u32 + callback_locals.len() as u32;
   callback_locals.push(ValType::I32);
+  let callback_param_record = callback_params.len() as u32 + callback_locals.len() as u32;
+  callback_locals.push(ValType::I32);
+  let emit_free_param_record = |insns: &mut Vec<Instruction<'static>>| {
+    if let Some((_, record_size)) = indirect_param_record {
+      insns.extend([
+        Instruction::LocalGet(callback_param_record),
+        Instruction::If(wasm_encoder::BlockType::Empty),
+        Instruction::LocalGet(callback_state),
+        Instruction::I32Const(0),
+        Instruction::I32Store(mem_arg_i32(STATE_PARAM_RECORD)),
+        Instruction::LocalGet(callback_param_record),
+        Instruction::I32Const(record_size),
+        Instruction::Call(cabi_free_index),
+        Instruction::I32Const(0),
+        Instruction::LocalSet(callback_param_record),
+        Instruction::End,
+      ]);
+    }
+  };
   let mut callback_instructions = vec![
     Instruction::Call(turn_enter_index),
     Instruction::Call(stackless.context_get),
@@ -4851,6 +4896,9 @@ fn build_component_stackless_tail_export(
     Instruction::LocalGet(callback_state),
     Instruction::I32Load(mem_arg_i32(STATE_CANCEL_REQUESTED)),
     Instruction::LocalSet(cancel_requested),
+    Instruction::LocalGet(callback_state),
+    Instruction::I32Load(mem_arg_i32(STATE_PARAM_RECORD)),
+    Instruction::LocalSet(callback_param_record),
     Instruction::LocalGet(0),
     Instruction::I32Const(6),
     Instruction::I32Eq,
@@ -4890,9 +4938,9 @@ fn build_component_stackless_tail_export(
     Instruction::End,
   ];
   push_component_stackless_cleanup(canonical, callback_subtask, callback_set, &mut callback_instructions);
+  callback_instructions.extend([Instruction::I32Const(0), Instruction::Call(stackless.context_set)]);
+  emit_free_param_record(&mut callback_instructions);
   callback_instructions.extend([
-    Instruction::I32Const(0),
-    Instruction::Call(stackless.context_set),
     Instruction::LocalGet(callback_state),
     Instruction::I32Const(STATE_SIZE),
     Instruction::Call(cabi_free_index),
@@ -4929,6 +4977,18 @@ fn build_component_stackless_tail_export(
     Instruction::I32Const(1),
     Instruction::I32LeU,
     Instruction::If(wasm_encoder::BlockType::Empty),
+  ]);
+  if indirect_param_record.is_some() {
+    callback_instructions.extend([
+      Instruction::LocalGet(2),
+      Instruction::I32Const(1),
+      Instruction::I32Eq,
+      Instruction::If(wasm_encoder::BlockType::Empty),
+    ]);
+    emit_free_param_record(&mut callback_instructions);
+    callback_instructions.push(Instruction::End);
+  }
+  callback_instructions.extend([
     Instruction::Call(turn_exit_index),
     Instruction::LocalGet(callback_set),
     Instruction::I32Const(4),
@@ -4939,9 +4999,9 @@ fn build_component_stackless_tail_export(
     Instruction::End,
   ]);
   push_component_stackless_cleanup(canonical, callback_subtask, callback_set, &mut callback_instructions);
+  callback_instructions.extend([Instruction::I32Const(0), Instruction::Call(stackless.context_set)]);
+  emit_free_param_record(&mut callback_instructions);
   callback_instructions.extend([
-    Instruction::I32Const(0),
-    Instruction::Call(stackless.context_set),
     Instruction::LocalGet(callback_state),
     Instruction::I32Const(STATE_SIZE),
     Instruction::Call(cabi_free_index),
@@ -18810,7 +18870,7 @@ mod tests {
     };
     let drop_indices = BTreeMap::from([(ComponentAbiType::String, 77u32)]);
     let [entry, callback] =
-      super::build_component_stackless_tail_export(&adapter, &imported, &canonical, &stackless, 29, 30, &drop_indices, 40, 41, 42);
+      super::build_component_stackless_tail_export(&adapter, &imported, &canonical, &stackless, 29, 30, &drop_indices, 41, 42);
 
     assert!(entry.instructions.iter().any(|insn| matches!(insn, Instruction::Call(41))));
     assert!(entry.instructions.iter().any(|insn| matches!(insn, Instruction::Call(42))));
@@ -18850,6 +18910,100 @@ mod tests {
     assert!(
       callback_turn_exit_calls >= 2,
       "callback releases active_turns on both WAIT paths and cancellation"
+    );
+  }
+
+  #[test]
+  fn component_stackless_tail_wide_params_tracks_record_with_cabi_realloc_until_started_or_terminal() {
+    let adapter = ComponentExportAdapter {
+      definition: "app.main/wide".into(),
+      symbol: "wide".into(),
+      target_index: 20,
+      invocation: ComponentAbiInvocation::Async,
+      stackless_tail_import: Some("host/wide".into()),
+      stream_consumer: None,
+      task_return_index: Some(15),
+      parameters: vec![ComponentAbiType::Number; 5],
+      result: ComponentAbiType::String,
+    };
+    let imported = ComponentImportAdapter {
+      definition: "host/wide".into(),
+      module: "host".into(),
+      symbol: "wide".into(),
+      raw_index: 3,
+      source_arity: 5,
+      invocation: ComponentAbiInvocation::Async,
+      parameters: vec![ComponentAbiType::Number; 5],
+      result: ComponentAbiType::String,
+    };
+    let canonical = ComponentAsyncCanonicalImports {
+      waitable_set_new: 10,
+      waitable_set_wait: 11,
+      waitable_set_drop: 12,
+      waitable_join: 13,
+      subtask_drop: 14,
+    };
+    let stackless = super::ComponentStacklessCanonicalImports {
+      context_get: 16,
+      context_set: 17,
+      subtask_cancel: 18,
+      task_cancel: 19,
+    };
+    let drop_indices = BTreeMap::from([(ComponentAbiType::String, 77u32)]);
+    let [entry, callback] =
+      super::build_component_stackless_tail_export(&adapter, &imported, &canonical, &stackless, 29, 30, &drop_indices, 41, 42);
+
+    let entry_realloc_calls = entry
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::Call(30)))
+      .count();
+    let entry_free_calls = entry
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::Call(29)))
+      .count();
+    let entry_stores_param_record = entry
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::I32Store(mem) if mem.offset == 16))
+      .count();
+    assert_eq!(
+      entry_realloc_calls, 3,
+      "entry allocates ret_ptr, indirect param record, and callback state via cabi_realloc (30)"
+    );
+    assert_eq!(
+      entry_free_calls, 3,
+      "entry frees ret_ptr + record on RETURNED and frees record immediately on STARTED"
+    );
+    assert_eq!(
+      entry_stores_param_record, 2,
+      "entry zeroes STATE_PARAM_RECORD (offset 16) then persists record_ptr across STARTING WAIT"
+    );
+
+    let callback_loads_param_record = callback
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::I32Load(mem) if mem.offset == 16))
+      .count();
+    let callback_clears_param_record = callback
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::I32Store(mem) if mem.offset == 16))
+      .count();
+    let callback_free_calls = callback
+      .instructions
+      .iter()
+      .filter(|insn| matches!(insn, Instruction::Call(29)))
+      .count();
+    assert_eq!(callback_loads_param_record, 1);
+    assert_eq!(
+      callback_clears_param_record, 3,
+      "callback clears STATE_PARAM_RECORD on cancel cleanup, STARTED event, and terminal subtask"
+    );
+    assert!(
+      callback_free_calls >= 8,
+      "callback frees param record on STARTED, non-blocked cancel, and completion"
     );
   }
 

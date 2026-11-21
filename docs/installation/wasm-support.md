@@ -173,14 +173,15 @@ WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请�
 - **Copy-on-Commit 与半空间压缩**：
   - `defref` 的静态初始值（`String`、`Tag`、`Number`、`Bool`、`Nil` 与空容器 `[]`/`{}`/`#{}`）留在静态池；编译期已知为 `Ref <Scalar>` 或写入值为静态标量时，`reset!` / `swap!` 绕过 `__rt_commit_defref`，半空间压缩也会跳过静态标量 `Ref`。
   - 非标量写入进入 `__rt_commit_defref`，在 Scratch Arena 之上的临时开放寻址 forwarding table 对共享子图做 DAG 去重晋升而不修改 Scratch 对象的 `HEAP_MAGIC` 头，深拷贝晋升可达子图（`String`、`Buffer`、`List`、`Map`、`Set`、`Struct`、`Enum` 及 HAMT 节点）并复用已在目标半空间的节点。
-  - 当本次 commit 确实增加了活跃半空间分配（`pers.ptr > ptr_before`）且超出相对上次压缩剩余半空间的一半（`next_compact_ptr = new_ptr + ((new_end - new_ptr) >> 1)`）或发生 turn 内临时溢出时标记压缩；压缩通过 `stage_ptr`/`stage_limit` 预演、原子提交 `atom` 全局量与元数据、并通过两遍遍历重定位仍保活的 Scratch 返回值所引用的旧半空间子指针，确保压缩途中 OOM trap 时旧半空间根保持完整可读。
+  - 当本次 commit 确实增加了活跃半空间分配（`pers.ptr > ptr_before`）且超出相对上次压缩剩余半空间的一半（`next_compact_ptr = new_ptr + ((new_end - new_ptr) >> 1)`）或发生 turn 内临时溢出时标记压缩；压缩通过 `stage_ptr`/`stage_limit` 预演、原子提交 `atom` 全局量与元数据、并通过两遍遍历重定位仍保活的 Scratch 返回值链（`scratch_roots_head`）与当前返回值可达的旧半空间子指针，确保之前导出尚未被 `__arena_reset()` 释放的 Scratch 返回图（及其引用的旧半空间子对象）在多次跨 turn 压缩后依然有效；压缩途中若因容量溢出 trap，旧半空间根保持完整可读，且再次进入或调用 `__arena_reset()` 重试前会先通过 `pers.scratch_end` 回收上次失败遗留的临时 forwarding table 工作区（不覆盖已发布根仍引用的 Scratch 对象）并继续正确报错或完成压缩。
 - **O(1) Turn 级水印复位、堆返回值保活与异常恢复**：
-  - Core `defwasm-export` 在最外层 turn 退出时：若返回值为静态标量（或位于持久区/静态池/进入前 Scratch 的既有值），立即将 `__heap_ptr` 复位为进入时的水印（默认 `__arena_base`）；若返回值是本 turn 在 Scratch Arena 新分配的堆对象，则保活至宿主显式调用 `__arena_reset()`（执行待定压缩并重置 `__heap_ptr = __arena_base`）。若上一次 Core 导出在中途 trap 导致 `active_turns` 未清零，下一次从宿主调用 `__rt_turn_enter`（`host_call_depth == 0`）或 `__arena_reset()` 时会自动恢复脏 turn 状态并执行待定压缩。
+  - Core `defwasm-export` 在退出时：若返回值为静态标量（或位于持久区/静态池/进入前 Scratch 的既有值），立即将 `__heap_ptr` 复位为进入时的水印并弹出该水印之上的保留根链表节点；若返回值是本 turn 在 Scratch Arena 新分配的堆对象，则在持久堆模式下压入 `scratch_roots_head` 保持活跃直至宿主显式调用 `__arena_reset()`（直接返回 `defref` 中的裸持久指针应先读取或随 `__arena_reset()` 生命周期管理，跨压缩继续读取则请通过新分配的 Scratch 容器返回或重新读取 `@*ref`）。`__arena_reset()` 会清零 `active_turns` / `host_call_depth` / `scratch_roots_head`、回收遗留转发工作区、执行待定半空间压缩并将 `__heap_ptr` 重置回 `__arena_base`。
+  - Core 仅对可重入的 `defwasm-import` 包裹 `host_call_depth`（内置 `io::*` 叶子导入不包裹）：纯 WASM 代码或内置 `io::*` 导入发生 trap 时，下一次顶层导出通过 `__rt_turn_enter`（`host_call_depth == 0`）直接全量恢复 `active_turns` 与脏 turn 状态；`defwasm-import` 内的重入回调继续走嵌套保护，而即便 `defwasm-import` 自身 trap 且宿主未立即调用 `__arena_reset()`，后续顶层导出的每次调用仍会在 `__rt_turn_end` 执行单调用 Scratch 水印回退，防止 Scratch 无限增长（调用 `__arena_reset()` 后恢复外层释放与待定压缩）。
   - Component 模型根据 `turn_mark`、`live_above_mark` 与 `total_live` 进行精确回收：无 `post-return` 的同步导出、stackless/stream 异步回调在进入 `WAIT` 状态前（此时调用 turn-exit 释放 `active_turns` 并在 `callback` 重新进入）与完成态以及 `cabi_post_*` 在最外层退出（`active_turns == 0` 且执行完待定压缩）后按如下条件判定：
     - 若 `total_live == 0`，清空空闲链表（`free_head = 0`）并将 `__heap_ptr` 重置回 `__arena_base`；
     - 否则若存在 `turn_mark` 且 `live_above_mark == 0`，摘除所有起始地址 `>= turn_mark` 的空闲块并将 `__heap_ptr` 回退到 `turn_mark`；
     - 否则（`live_above_mark > 0`），两种回收都延迟执行，直到后续 turn 退出、`post-return` 或资源释放使上述条件满足。
-  - 此外，当外层 Component 导出处于活跃期（`active_turns > 0`）且未挂起新的 `live_above_mark` 缓冲时，同步无 `post-return` 导出会在返回时将 `__heap_ptr` 与空闲链表回退至本调用的 `call_mark`；被取消的 stackless async 任务在 `RETURNED` 状态会先执行结果析构（`drop`）再回收缓冲，仅取消未返回时只释放结果区。
+  - 此外，当外层 Component 导出处于活跃期（`active_turns > 0`）且未挂起新的 `live_above_mark` 缓冲时，同步无 `post-return` 导出会在返回时将 `__heap_ptr` 与空闲链表回退至本调用的 `call_mark`；stackless 宽参数异步导出使用 `cabi_realloc` 分配间接参数记录并在子任务进入 `STARTED`、立即返回或终态时以 `cabi_free` 释放；被取消的 stackless async 任务在 `RETURNED` 状态会先执行结果析构（`drop`）再回收缓冲，仅取消未返回时只释放结果区。
 
 ## 限制
 

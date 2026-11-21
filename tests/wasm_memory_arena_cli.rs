@@ -5,7 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -16,7 +16,8 @@ use wasmtime::component::{
   Component, Destination, Linker as ComponentLinker, StreamProducer, StreamReader, StreamResult, Val as ComponentVal, VecBuffer,
 };
 use wasmtime::{
-  Config, Engine, ExternType, Instance, Linker, Module, Store, StoreContextMut, StoreLimits, StoreLimitsBuilder, Val as CoreVal,
+  Caller, Config, Engine, Extern, ExternType, Instance, Linker, Module, Store, StoreContextMut, StoreLimits, StoreLimitsBuilder,
+  Val as CoreVal,
 };
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
@@ -2111,4 +2112,434 @@ async fn component_wasm_reclaims_scratch_while_stream_remains_pending() {
     "expected consume to return ok(()), got {consume_results:?}"
   );
   store.assert_concurrent_state_empty();
+}
+
+#[test]
+fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
+  let dir = TestDirectory::create("wasm-host-import-trap");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for Core io::* trap recovery, defwasm-import reentrancy, and per-call rewind after import trap."
+  :package |host-import-trap
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'host-import-trap.main/main!) (:mode :native) (:reload-fn 'host-import-trap.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'host-import-trap.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *state |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'host-hook $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-import host-hook (x) |host |hook
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'call-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export call-host (x)
+            let
+                scratch $ &str:pad-right |host-call- 4096 |H
+              reset! *state scratch
+              host-hook x
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'nested-work $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export nested-work (n)
+            let
+                s $ &str:pad-right (&str:concat |work- (to-string n)) 16384 |W
+              &+ n (&str:count s)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'log-and-fail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export log-and-fail ()
+            println $ &str:pad-right |io-err- 4096 |I
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns host-import-trap.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let engine = Engine::default();
+  let module = Module::from_file(&engine, &wasm).expect("Core WASM module should load");
+  let mut linker = Linker::new(&engine);
+
+  let trap_io = Arc::new(AtomicBool::new(false));
+  let hook_mode = Arc::new(AtomicU32::new(0));
+  let trap_io_cb = Arc::clone(&trap_io);
+  let hook_mode_cb = Arc::clone(&hook_mode);
+
+  linker
+    .func_wrap("io", "log_line", move |_chan: f64, _ptr: f64| -> wasmtime::Result<()> {
+      if trap_io_cb.load(Ordering::Acquire) {
+        return Err(wasmtime::Error::msg("io.log_line trapped"));
+      }
+      Ok(())
+    })
+    .expect("io.log_line import");
+  linker
+    .func_wrap(
+      "host",
+      "hook",
+      move |mut caller: Caller<'_, StoreLimits>, x: f64| -> wasmtime::Result<f64> {
+        match hook_mode_cb.load(Ordering::Acquire) {
+          1 => {
+            let func = caller
+              .get_export("nested-work")
+              .and_then(Extern::into_func)
+              .expect("nested-work export");
+            let typed = func.typed::<f64, f64>(&caller).expect("typed nested-work");
+            let nested = typed.call(&mut caller, 7.0)?;
+            Ok(nested + x)
+          }
+          2 => Err(wasmtime::Error::msg("host import boom")),
+          _ => Ok(x),
+        }
+      },
+    )
+    .expect("host.hook import");
+
+  let mut registered = HashSet::from([
+    (String::from("io"), String::from("log_line")),
+    (String::from("host"), String::from("hook")),
+  ]);
+  for import in module.imports() {
+    let key = (import.module().to_owned(), import.name().to_owned());
+    if !registered.insert(key) {
+      continue;
+    }
+    if let ExternType::Func(func_ty) = import.ty() {
+      let result_tys: Vec<_> = func_ty.results().collect();
+      linker
+        .func_new(import.module(), import.name(), func_ty, move |_caller, _params, results| {
+          for (slot, ty) in results.iter_mut().zip(&result_tys) {
+            *slot = match ty {
+              wasmtime::ValType::I32 => CoreVal::I32(0),
+              wasmtime::ValType::I64 => CoreVal::I64(0),
+              wasmtime::ValType::F32 => CoreVal::F32(0),
+              wasmtime::ValType::F64 => CoreVal::F64(0.0f64.to_bits()),
+              _ => CoreVal::I32(0),
+            };
+          }
+          Ok(())
+        })
+        .expect("stub import should define");
+    }
+  }
+
+  let limits = StoreLimitsBuilder::new().memory_size(EIGHT_MIB).build();
+  let mut store = Store::new(&engine, limits);
+  store.limiter(|state| state);
+  let instance = linker
+    .instantiate(&mut store, &module)
+    .expect("host-import-trap module should instantiate");
+
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let call_host = instance
+    .get_typed_func::<f64, f64>(&mut store, "call-host")
+    .expect("call-host export");
+  let nested_work = instance
+    .get_typed_func::<f64, f64>(&mut store, "nested-work")
+    .expect("nested-work export");
+  let log_and_fail = instance
+    .get_typed_func::<(), f64>(&mut store, "log-and-fail")
+    .expect("log-and-fail export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  // (a) Trap inside built-in io::* leaf import leaves host_call_depth == 0 so next top-level export resets to arena_base.
+  trap_io.store(true, Ordering::Release);
+  let io_err = log_and_fail.call(&mut store, ()).expect_err("io.log_line trap should propagate");
+  assert!(format!("{io_err:?}").contains("io.log_line trapped"));
+  assert!(get_i32_global(&mut store, &instance, "__heap_ptr") > arena_base);
+  trap_io.store(false, Ordering::Release);
+  assert_eq!(nested_work.call(&mut store, 1.0).expect("recover after io trap"), 16_385.0);
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__heap_ptr"),
+    arena_base,
+    "top-level export after io::* trap must fully recover __heap_ptr to arena_base"
+  );
+
+  // (b) Re-entrant defwasm-import keeps nested turn semantics cleanly.
+  hook_mode.store(1, Ordering::Release);
+  assert_eq!(call_host.call(&mut store, 10.0).expect("re-entrant call-host"), 16_401.0);
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  // (c) Trap inside defwasm-import keeps subsequent top-level scalar calls bounded without __arena_reset().
+  hook_mode.store(2, Ordering::Release);
+  let host_err = call_host
+    .call(&mut store, 20.0)
+    .expect_err("trapping defwasm-import should propagate");
+  assert!(format!("{host_err:?}").contains("host import boom"));
+  let mark_after_trap = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let pages_after_trap = memory.size(&store);
+  assert!(mark_after_trap > arena_base);
+
+  // 1,000 * 16 KiB = 16 MiB > 8 MiB limit; per-call rewind must keep __heap_ptr and memory.size() flat.
+  for i in 0..1_000u64 {
+    let val = nested_work
+      .call(&mut store, i as f64)
+      .unwrap_or_else(|err| panic!("nested-work failed at iteration {i}: {err}"));
+    assert_eq!(val, (i as f64) + 16_384.0);
+    assert_eq!(
+      get_i32_global(&mut store, &instance, "__heap_ptr"),
+      mark_after_trap,
+      "per-call Scratch rewind leaked at iteration {i}"
+    );
+    assert_eq!(
+      memory.size(&store),
+      pages_after_trap,
+      "memory pages grew after trapped defwasm-import at iteration {i}"
+    );
+  }
+
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  assert_eq!(nested_work.call(&mut store, 5.0).expect("nested-work after reset"), 16_389.0);
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+}
+
+#[test]
+fn core_wasm_earlier_scratch_return_graph_survives_later_compaction() {
+  let dir = TestDirectory::create("wasm-earlier-scratch-root");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying outstanding Core Scratch return graphs survive later compactions until __arena_reset."
+  :package |earlier-scratch-root
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'earlier-scratch-root.main/main!) (:mode :native) (:reload-fn 'earlier-scratch-root.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'earlier-scratch-root.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *state |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'make-list-with-state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-list-with-state (size)
+            reset! *state $ &str:pad-right |first-300k- size |F
+            [] @*state |kept-tag
+          :examples $ []
+          :schema $ quote $ Fn Number (-> (List String))
+        'replace-state-and-compact $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export replace-state-and-compact (size)
+            reset! *state $ &str:pad-right |second-600k- size |S
+            &str:count @*state
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-list-item $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-list-item (xs)
+            &str:concat (&list:nth xs 0) (&str:concat |:: (&list:nth xs 1))
+          :examples $ []
+          :schema $ quote $ Fn (List String) (-> String)
+        'pump-state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-state (k size)
+            reset! *state $ &str:pad-right (&str:concat |pump- (to-string k)) size |P
+            &str:count @*state
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns earlier-scratch-root.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+
+  let make_list = instance
+    .get_typed_func::<f64, f64>(&mut store, "make-list-with-state")
+    .expect("make-list-with-state export");
+  let replace_compact = instance
+    .get_typed_func::<f64, f64>(&mut store, "replace-state-and-compact")
+    .expect("replace-state-and-compact export");
+  let read_list_item = instance
+    .get_typed_func::<f64, f64>(&mut store, "read-list-item")
+    .expect("read-list-item export");
+  let pump_state = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "pump-state")
+    .expect("pump-state export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  let prefix = "first-300k-";
+  let expected_300k = format!("{prefix}{}", "F".repeat(300_000usize - prefix.len()));
+
+  let list_ptr = make_list.call(&mut store, 300_000.0).expect("make-list-with-state should succeed");
+  assert!(list_ptr >= f64::from(arena_base));
+  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
+
+  // Without reading `list_ptr` or calling `__arena_reset()`, overwrite `*state` with 600 KiB and compact A -> B.
+  assert_eq!(
+    replace_compact.call(&mut store, 600_000.0).expect("replace-state-and-compact"),
+    600_000.0
+  );
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_b >= space_b_base && pers_b < arena_base,
+    "expected A -> B compaction, got pers_b={pers_b}"
+  );
+
+  // Earlier Scratch List must still read intact with its 300 KiB child relocated into space B.
+  let out1_ptr = read_list_item
+    .call(&mut store, list_ptr)
+    .expect("read-list-item after first compaction");
+  assert_eq!(read_wasm_str(&mut store, &instance, out1_ptr), format!("{expected_300k}::kept-tag"));
+
+  // Trigger a second compaction B -> A; earlier Scratch List must remain valid.
+  assert_eq!(pump_state.call(&mut store, (1.0, 120_000.0)).expect("pump-state 1"), 120_000.0);
+  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_a >= space_a_base && pers_a < space_b_base,
+    "expected B -> A compaction, got pers_a={pers_a}"
+  );
+  let out2_ptr = read_list_item
+    .call(&mut store, list_ptr)
+    .expect("read-list-item after second compaction");
+  assert_eq!(read_wasm_str(&mut store, &instance, out2_ptr), format!("{expected_300k}::kept-tag"));
+
+  // Once the host calls __arena_reset(), the old 300 KiB child is no longer traced by later compactions.
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  assert_eq!(pump_state.call(&mut store, (2.0, 350_000.0)).expect("pump-state 2"), 350_000.0);
+  let pers_b_final = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_b_final >= space_b_base && (pers_b_final - space_b_base) < 360_000,
+    "expected discarded 300 KiB Scratch return child to be collected after __arena_reset, got used={}",
+    pers_b_final - space_b_base
+  );
+}
+
+#[test]
+fn core_wasm_repeated_arena_reset_retries_reclaim_failed_compaction_workspace() {
+  let dir = TestDirectory::create("wasm-retry-reclaim-fwd");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying repeated __arena_reset() compaction retries reclaim abandoned forwarding tables."
+  :package |retry-reclaim-fwd
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'retry-reclaim-fwd.main/main!) (:mode :native) (:reload-fn 'retry-reclaim-fwd.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'retry-reclaim-fwd.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *a $ [] |seed
+          :examples $ []
+          :schema $ quote $ Ref (List String)
+        '*b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *b |seed-b
+          :examples $ []
+          :schema $ quote $ Ref String
+        'set-a-many $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-a-many ()
+            let
+                loop-fn $ fn (k acc)
+                  hint-fn $ Fn Number (List String) (-> (List String))
+                  if (&> k 200) , acc
+                    recur (&+ k 1) (&list:append acc (&str:pad-right (&str:concat |A- (to-string k)) 3072 |A))
+              reset! *a $ loop-fn 1 ([] |seed)
+              &list:count @*a
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'set-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-b (size)
+            reset! *b $ &str:pad-right |B-OVERFLOW- size |B
+            &str:count @*b
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'recover-and-read-last-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export recover-and-read-last-a ()
+            reset! *b |recovered
+            &str:slice (&list:nth @*a 200) 0 12
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns retry-reclaim-fwd.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+
+  let set_a_many = instance
+    .get_typed_func::<(), f64>(&mut store, "set-a-many")
+    .expect("set-a-many export");
+  let set_b = instance.get_typed_func::<f64, f64>(&mut store, "set-b").expect("set-b export");
+  let recover_last_a = instance
+    .get_typed_func::<(), f64>(&mut store, "recover-and-read-last-a")
+    .expect("recover-and-read-last-a export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  assert_eq!(set_a_many.call(&mut store, ()).expect("set-a-many"), 201.0);
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_b >= space_b_base && pers_b < arena_base);
+
+  // Promoting *b (600 KiB) alongside *a (~614 KiB across 201 nodes -> triggers fwd_grow) traps during compaction.
+  let err = set_b
+    .call(&mut store, 600_000.0)
+    .expect_err("614K + 600K must trap on semi-space overflow");
+  assert!(format!("{err:?}").contains("unreachable"));
+  let heap_after_trap = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let pages_after_trap = memory.size(&store);
+  assert!(heap_after_trap > arena_base + 600_000);
+
+  // 1,500 failed __arena_reset() retries would grow > 8 MiB if abandoned ~6 KiB forwarding tables were not reclaimed.
+  for retry in 0..1_500u64 {
+    let retry_err = arena_reset
+      .call(&mut store, ())
+      .expect_err("retry with > 1 MiB live defrefs must still trap");
+    assert!(format!("{retry_err:?}").contains("unreachable"));
+    assert_eq!(
+      get_i32_global(&mut store, &instance, "__heap_ptr"),
+      heap_after_trap,
+      "abandoned forwarding table leaked Scratch space on retry {retry}"
+    );
+    assert_eq!(memory.size(&store), pages_after_trap, "memory pages grew on retry {retry}");
+  }
+
+  // Shrinking *b still sees intact *a (published root + Scratch *b survived all retries cleanly) and resets.
+  let s_ptr = recover_last_a.call(&mut store, ()).expect("recover-and-read-last-a");
+  assert_eq!(read_wasm_str(&mut store, &instance, s_ptr), "A-200AAAAAAA");
+  arena_reset.call(&mut store, ()).expect("__arena_reset after recovery");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 }

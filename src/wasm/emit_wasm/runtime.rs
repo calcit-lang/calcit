@@ -4487,7 +4487,7 @@ pub(super) fn build_wasm_module(
     &ConstExpr::i32_const(0),
   );
   if layout.global_layout.native.is_some() {
-    for init in [0, layout.memory_layout.arena_base] {
+    for init in [0, layout.memory_layout.arena_base, 0] {
       globals.global(
         GlobalType {
           val_type: ValType::I32,
@@ -4781,7 +4781,7 @@ pub(super) fn build_runtime_fns(
 
     let commit_defref_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_commit_defref"), commit_defref_idx);
-    fns.push(build_rt_commit_defref_fn(pers, promote_value_idx));
+    fns.push(build_rt_commit_defref_fn(memory_layout, pers, promote_value_idx));
 
     let compact_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_compact_persistent"), compact_idx);
@@ -4806,7 +4806,12 @@ pub(super) fn build_runtime_fns(
 
     let turn_end_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_turn_end"), turn_end_idx);
-    fns.push(build_rt_turn_end_fn(memory_layout, global_layout, compact_persistent_idx));
+    fns.push(build_rt_turn_end_fn(
+      memory_layout,
+      global_layout,
+      compact_persistent_idx,
+      arena_alloc_idx,
+    ));
 
     let arena_reset_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__arena_reset"), arena_reset_idx);
@@ -4814,7 +4819,7 @@ pub(super) fn build_runtime_fns(
   } else if let Some(comp) = &global_layout.component {
     let turn_enter_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_turn_enter"), turn_enter_idx);
-    fns.push(build_rt_component_turn_enter_fn(global_layout, comp));
+    fns.push(build_rt_component_turn_enter_fn(memory_layout, global_layout, comp));
 
     let rewind_to_mark_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_rewind_to_mark"), rewind_to_mark_idx);

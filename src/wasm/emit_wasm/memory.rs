@@ -49,6 +49,7 @@ impl WasmMemoryLayout {
 pub(super) struct NativeTurnGlobals {
   pub host_call_depth: u32,
   pub outer_turn_mark: u32,
+  pub scratch_roots_head: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,8 +100,9 @@ impl WasmGlobalLayout {
       let g = NativeTurnGlobals {
         host_call_depth: next,
         outer_turn_mark: next + 1,
+        scratch_roots_head: next + 2,
       };
-      next += 2;
+      next += 3;
       Some(g)
     } else {
       None
@@ -1829,13 +1831,117 @@ pub(super) fn build_rt_promote_value_fn(
   }
 }
 
+/// Reclaims temporary forwarding-table workspace left above `pers.scratch_end` if an earlier
+/// promotion or compaction trapped before cleanup.
+fn emit_reclaim_abandoned_fwd_workspace(
+  instructions: &mut Vec<Instruction<'static>>,
+  memory: &WasmMemoryLayout,
+  pers: &PersistentHeapGlobals,
+) {
+  instructions.extend([
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::I32Const(memory.arena_base),
+    Instruction::I32GeU,
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32LtU,
+    Instruction::I32And,
+    Instruction::If(BlockType::Empty),
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::End,
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.stage_ptr),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.stage_limit),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.fwd_base),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.fwd_cap),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.fwd_len),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(pers.scratch_end),
+  ]);
+}
+
+/// Pops Core Scratch return root nodes at or above `mark_local` when rewinding `__heap_ptr`.
+fn emit_pop_scratch_roots_above(
+  instructions: &mut Vec<Instruction<'static>>,
+  memory: &WasmMemoryLayout,
+  native: &NativeTurnGlobals,
+  mark_local: u32,
+) {
+  instructions.extend([
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::GlobalGet(native.scratch_roots_head),
+    Instruction::LocalGet(mark_local),
+    Instruction::I32LtU,
+    Instruction::GlobalGet(native.scratch_roots_head),
+    Instruction::I32Const(memory.arena_base),
+    Instruction::I32LtU,
+    Instruction::I32Or,
+    Instruction::BrIf(1),
+    Instruction::GlobalGet(native.scratch_roots_head),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::GlobalSet(native.scratch_roots_head),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+  ]);
+}
+
+struct ScratchRootsPass<'a> {
+  memory: &'a WasmMemoryLayout,
+  native: &'a NativeTurnGlobals,
+  root_node: u32,
+  saved_heap_ptr: u32,
+  old_base: u32,
+  old_end: u32,
+  relocate_scratch_refs_idx: u32,
+  do_patch: i32,
+}
+
+fn emit_relocate_scratch_roots_pass(instructions: &mut Vec<Instruction<'static>>, pass: &ScratchRootsPass<'_>) {
+  instructions.extend([
+    Instruction::GlobalGet(pass.native.scratch_roots_head),
+    Instruction::LocalSet(pass.root_node),
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(pass.root_node),
+    Instruction::I32Const(pass.memory.arena_base),
+    Instruction::I32LtU,
+    Instruction::LocalGet(pass.root_node),
+    Instruction::LocalGet(pass.saved_heap_ptr),
+    Instruction::I32GeU,
+    Instruction::I32Or,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(pass.root_node),
+    Instruction::F64Load(mem_arg_f64(8)),
+    Instruction::LocalGet(pass.old_base),
+    Instruction::LocalGet(pass.old_end),
+    Instruction::I32Const(0),
+    Instruction::I32Const(pass.do_patch),
+    Instruction::Call(pass.relocate_scratch_refs_idx),
+    Instruction::LocalGet(pass.root_node),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(pass.root_node),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+  ]);
+}
+
 /// Copy-on-commit helper invoked by `reset!` before writing a `defref` global.
-pub(super) fn build_rt_commit_defref_fn(pers: &PersistentHeapGlobals, promote_value_idx: u32) -> CompiledFn {
+pub(super) fn build_rt_commit_defref_fn(memory: &WasmMemoryLayout, pers: &PersistentHeapGlobals, promote_value_idx: u32) -> CompiledFn {
   // param: 0 = val (f64)
   let promoted = 1u32;
   let saved_heap_ptr = 2u32;
   let ptr_before = 3u32;
-  let instructions = vec![
+  let mut instructions = Vec::new();
+  emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+  instructions.extend([
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::LocalTee(saved_heap_ptr),
     Instruction::GlobalSet(pers.scratch_end),
@@ -1879,7 +1985,7 @@ pub(super) fn build_rt_commit_defref_fn(pers: &PersistentHeapGlobals, promote_va
     Instruction::GlobalSet(pers.needs_compact),
     Instruction::End,
     Instruction::LocalGet(promoted),
-  ];
+  ]);
   CompiledFn {
     export_name: None,
     params: vec![ValType::F64],
@@ -2464,6 +2570,7 @@ pub(super) fn build_rt_compact_persistent_fn(
   let saved_heap_ptr = 9u32;
   let ret_is_scratch = 10u32;
   let new_ptr = 11u32;
+  let root_node = 12u32;
 
   let mut locals = vec![
     ValType::I32, // old_base
@@ -2476,6 +2583,7 @@ pub(super) fn build_rt_compact_persistent_fn(
     ValType::I32, // saved_heap_ptr
     ValType::I32, // ret_is_scratch
     ValType::I32, // new_ptr
+    ValType::I32, // root_node
   ];
   let mut staged_atoms: Vec<(u32, u32)> = Vec::new();
   for (i, &is_scalar) in atom_is_scalar.iter().enumerate().take(globals.atom_count as usize) {
@@ -2486,7 +2594,9 @@ pub(super) fn build_rt_compact_persistent_fn(
     }
   }
 
-  let mut instructions = vec![
+  let mut instructions = Vec::new();
+  emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+  instructions.extend([
     Instruction::LocalGet(0),
     Instruction::LocalSet(res),
     Instruction::I32Const(0),
@@ -2533,7 +2643,7 @@ pub(super) fn build_rt_compact_persistent_fn(
     Instruction::GlobalSet(pers.fwd_cap),
     Instruction::I32Const(0),
     Instruction::GlobalSet(pers.fwd_len),
-  ];
+  ]);
 
   // Stage all live non-scalar defref globals before flipping active_space or ptr.
   for &(atom_global, stage_local) in &staged_atoms {
@@ -2599,6 +2709,21 @@ pub(super) fn build_rt_compact_persistent_fn(
     Instruction::End,
     Instruction::End,
   ]);
+  if let Some(native) = &globals.native {
+    emit_relocate_scratch_roots_pass(
+      &mut instructions,
+      &ScratchRootsPass {
+        memory,
+        native,
+        root_node,
+        saved_heap_ptr,
+        old_base,
+        old_end,
+        relocate_scratch_refs_idx,
+        do_patch: 0,
+      },
+    );
+  }
 
   // Atomic commit point: every evacuation succeeded, so publish the new roots and allocator state.
   for &(atom_global, stage_local) in &staged_atoms {
@@ -2636,6 +2761,23 @@ pub(super) fn build_rt_compact_persistent_fn(
     Instruction::I32Const(1),
     Instruction::Call(relocate_scratch_refs_idx),
     Instruction::End,
+  ]);
+  if let Some(native) = &globals.native {
+    emit_relocate_scratch_roots_pass(
+      &mut instructions,
+      &ScratchRootsPass {
+        memory,
+        native,
+        root_node,
+        saved_heap_ptr,
+        old_base,
+        old_end,
+        relocate_scratch_refs_idx,
+        do_patch: 1,
+      },
+    );
+  }
+  instructions.extend([
     // Restore Scratch Arena watermark over the temporary forwarding table and wipe old semi-space.
     Instruction::LocalGet(saved_heap_ptr),
     Instruction::GlobalSet(HEAP_PTR_GLOBAL),
@@ -2678,7 +2820,11 @@ pub(super) fn build_rt_turn_enter_fn(
 ) -> CompiledFn {
   // param: 0 = can_rewind_stale (i32)
   let mark = 1u32;
-  let mut instructions = vec![
+  let mut instructions = Vec::new();
+  if let Some(pers) = &globals.persistent {
+    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+  }
+  instructions.extend([
     Instruction::GlobalGet(native.host_call_depth),
     Instruction::I32Eqz,
     Instruction::If(BlockType::Empty),
@@ -2700,7 +2846,10 @@ pub(super) fn build_rt_turn_enter_fn(
     Instruction::End,
     Instruction::LocalGet(0),
     Instruction::If(BlockType::Empty),
-  ];
+  ]);
+  if globals.persistent.is_some() {
+    emit_pop_scratch_roots_above(&mut instructions, memory, native, mark);
+  }
   if let (Some(pers), Some(compact_idx)) = (&globals.persistent, compact_persistent_idx) {
     instructions.extend([
       Instruction::GlobalGet(pers.needs_compact),
@@ -2755,10 +2904,11 @@ pub(super) fn build_rt_turn_end_fn(
   memory: &WasmMemoryLayout,
   globals: &WasmGlobalLayout,
   compact_persistent_idx: Option<u32>,
+  arena_alloc_idx: u32,
 ) -> CompiledFn {
   // params: 0 = mark (i32), 1 = saved_turns (i32), 2 = keep_scratch_result (i32), 3 = ret_val (f64)
   let ptr = 4u32;
-  let _ = memory;
+  let root_node = 5u32;
   let mut instructions = vec![
     Instruction::LocalGet(1),
     Instruction::GlobalSet(globals.active_turns),
@@ -2777,17 +2927,33 @@ pub(super) fn build_rt_turn_end_fn(
       Instruction::End,
     ]);
   }
+  instructions.push(Instruction::End);
+
+  // Per-call Scratch reclamation runs even when active_turns > 0 (e.g., nested callbacks or calls
+  // after a trapped defwasm-import), skipped only when needs_compact == 2 indicates an uncommitted overflow root.
+  if let Some(pers) = &globals.persistent {
+    instructions.extend([
+      Instruction::GlobalGet(pers.needs_compact),
+      Instruction::I32Const(2),
+      Instruction::I32Ne,
+      Instruction::If(BlockType::Empty),
+    ]);
+  }
+  let emit_rewind = |insns: &mut Vec<Instruction<'static>>| {
+    insns.extend([Instruction::LocalGet(0), Instruction::GlobalSet(HEAP_PTR_GLOBAL)]);
+    if globals.persistent.is_some()
+      && let Some(native) = &globals.native
+    {
+      emit_pop_scratch_roots_above(insns, memory, native, 0);
+    }
+  };
   instructions.extend([
     Instruction::LocalGet(2),
-    Instruction::I32Eqz,
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(0),
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    Instruction::Else,
     Instruction::LocalGet(3),
     Instruction::LocalGet(3),
     Instruction::F64Trunc,
     Instruction::F64Eq,
+    Instruction::I32And,
     Instruction::LocalGet(3),
     Instruction::LocalGet(0),
     Instruction::I32Const(8),
@@ -2808,24 +2974,39 @@ pub(super) fn build_rt_turn_end_fn(
     Instruction::I32Sub,
     Instruction::I32Load(mem_arg_i32(0)),
     Instruction::I32Const(HEAP_MAGIC),
-    Instruction::I32Ne,
+    Instruction::I32Eq,
     Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(0),
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    Instruction::End,
-    Instruction::Else,
-    Instruction::LocalGet(0),
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    Instruction::End,
-    Instruction::End,
-    Instruction::End,
-    Instruction::LocalGet(3),
   ]);
+  if globals.persistent.is_some()
+    && let Some(native) = &globals.native
+  {
+    instructions.extend([
+      Instruction::I32Const(16),
+      Instruction::Call(arena_alloc_idx),
+      Instruction::LocalTee(root_node),
+      Instruction::GlobalGet(native.scratch_roots_head),
+      Instruction::I32Store(mem_arg_i32(0)),
+      Instruction::LocalGet(root_node),
+      Instruction::LocalGet(3),
+      Instruction::F64Store(mem_arg_f64(8)),
+      Instruction::LocalGet(root_node),
+      Instruction::GlobalSet(native.scratch_roots_head),
+    ]);
+  }
+  instructions.push(Instruction::Else);
+  emit_rewind(&mut instructions);
+  instructions.extend([Instruction::End, Instruction::Else]);
+  emit_rewind(&mut instructions);
+  instructions.push(Instruction::End);
+  if globals.persistent.is_some() {
+    instructions.push(Instruction::End);
+  }
+  instructions.push(Instruction::LocalGet(3));
   CompiledFn {
     export_name: None,
     params: vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64],
     results: vec![ValType::F64],
-    locals: vec![ValType::I32],
+    locals: vec![ValType::I32, ValType::I32],
     instructions,
   }
 }
@@ -2842,7 +3023,12 @@ pub(super) fn build_arena_reset_fn(
     Instruction::GlobalSet(globals.active_turns),
     Instruction::I32Const(0),
     Instruction::GlobalSet(native.host_call_depth),
+    Instruction::I32Const(0),
+    Instruction::GlobalSet(native.scratch_roots_head),
   ];
+  if let Some(pers) = &globals.persistent {
+    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+  }
   if let (Some(pers), Some(compact_idx)) = (&globals.persistent, compact_persistent_idx) {
     instructions.extend([
       Instruction::GlobalGet(pers.needs_compact),
@@ -2869,8 +3055,16 @@ pub(super) fn build_arena_reset_fn(
   }
 }
 
-pub(super) fn build_rt_component_turn_enter_fn(globals: &WasmGlobalLayout, comp: &ComponentMemoryGlobals) -> CompiledFn {
-  let instructions = vec![
+pub(super) fn build_rt_component_turn_enter_fn(
+  memory: &WasmMemoryLayout,
+  globals: &WasmGlobalLayout,
+  comp: &ComponentMemoryGlobals,
+) -> CompiledFn {
+  let mut instructions = Vec::new();
+  if let Some(pers) = &globals.persistent {
+    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+  }
+  instructions.extend([
     Instruction::GlobalGet(globals.active_turns),
     Instruction::I32Eqz,
     Instruction::If(BlockType::Empty),
@@ -2883,7 +3077,7 @@ pub(super) fn build_rt_component_turn_enter_fn(globals: &WasmGlobalLayout, comp:
     Instruction::I32Const(1),
     Instruction::I32Add,
     Instruction::GlobalSet(globals.active_turns),
-  ];
+  ]);
   CompiledFn {
     export_name: None,
     params: vec![],
