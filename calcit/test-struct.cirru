@@ -51,6 +51,14 @@
           :code $ quote $ defstruct City (:name String) (:province String)
           :examples $ []
           :schema $ quote StructDef
+        'CompactEvent $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum CompactEvent (:Idle) (:Deliver test-struct.main/CompactPacket)
+          :examples $ []
+          :schema $ quote EnumDef
+        'CompactPacket $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CompactPacket (:u Unit) (:flag Bool) (:kind Tag) (:small UInt8) (:delta Int16) (:label String)
+          :examples $ []
+          :schema $ quote StructDef
         'ContextBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ContextBox (:generics T) (:value T)
             :count $ Option Number
@@ -97,7 +105,7 @@
         'Lagopus $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Lagopus (:name String) (:impls BirdTrait)
           :examples $ []
-          :schema $ quote Dynamic
+          :schema $ quote StructDef
         'MapLiteralStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MapLiteralStore
             {} $ :text String
@@ -442,6 +450,81 @@
               assert= (#{} |a |b)
                 collect-unique-proof $ [] |a |b |a
             :tags $ #{} :empty-container-proof
+        'compact-packet-roundtrip $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compact-packet-roundtrip (alt?)
+            let
+                b0 $ if alt? false true
+                t0 $ if alt? :beta :alpha
+                s0 $ assert-type (if alt? 21 9) UInt8
+                d0 $ assert-type (if alt? -7 12) Int16
+                lbl $ if alt? |two |one
+                p1 $ CompactPacket :u &unit :flag b0 :kind t0 :small s0 :delta d0 :label lbl
+                p1-dup $ CompactPacket :u &unit :flag b0 :kind t0 :small s0 :delta d0 :label $ &str:concat lbl |
+                p1-other $ CompactPacket :u &unit :flag (not b0) :kind t0 :small s0 :delta d0 :label lbl
+                p-updated $ update p1 :label $ fn (s) (&str:concat s |-ok)
+                p-assoc $ &struct:assoc-at p1 1 :flag $ not b0
+                p-with $ &struct:with-at p1 0 :delta (assert-type 99 Int16) 4 :small $ assert-type 42 UInt8
+                e0 $ CompactEvent :Idle
+                e1 $ CompactEvent :Deliver p1
+                e1-dup $ CompactEvent :Deliver p1-dup
+                e1-assoc $ &enum:assoc e1 1 p-updated
+                m-pkt $ &{} p1 e1
+                m-ev $ &{} e0 100
+                as-map $ .to-map p1
+                empty-p1? $ .empty? p1
+                matched-e1 $ match e1
+                  (:Idle) false
+                  (:Deliver pkt)
+                    and
+                      = (:label pkt) lbl
+                      = (:u pkt) &unit
+                      = (:flag pkt) b0
+                      = (:kind pkt) t0
+                      = (:small pkt) s0
+                      = (:delta pkt) d0
+                matched-e0 $ match e0
+                  (:Idle) true
+                  (:Deliver _pkt) false
+                eq-ok $ and (= p1 p1-dup) (not= p1 p1-other) (= e1 e1-dup) (not= e1 e0)
+                struct-ops-ok $ and
+                  = (:u p1) &unit
+                  = (:flag p-assoc) (not b0)
+                  = (:delta p-with) (assert-type 99 Int16)
+                  = (:small p-with) (assert-type 42 UInt8)
+                  = (:label p-updated) (&str:concat lbl |-ok)
+                  = (&struct:count p1) 6
+                  not empty-p1?
+                enum-ops-ok $ and matched-e1 matched-e0
+                  =
+                    assert-type (&enum:nth e0 0) Tag
+                    , :Idle
+                  =
+                    assert-type (&enum:nth e1-assoc 1) CompactPacket
+                    , p-updated
+                  = (&enum:count e0) 1
+                  = (&enum:count e1) 2
+                map-ops-ok $ and (&map:contains? m-pkt p1-dup) (&map:contains? m-ev e0)
+                  = (&map:get m-pkt p1-dup) (Some e1-dup)
+                  = (&map:get m-ev e0) (Some 100)
+                  = (&map:count as-map) 6
+                  &map:contains? as-map :kind
+                  &map:contains? as-map :label
+                  match (&map:get as-map :label)
+                    (:some v)
+                      = (assert-type v String) lbl
+                    (:none) false
+                  match (&map:get as-map :kind)
+                    (:some v)
+                      = (assert-type v Tag) t0
+                    (:none) false
+              and eq-ok struct-ops-ok enum-ops-ok map-ops-ok
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Bool)
+          :tests $ [] $ %{} 'TestEntry (:name |compact-struct-enum-roundtrip)
+            :code $ quote $ do
+              assert= true $ compact-packet-roundtrip false
+              assert= true $ compact-packet-roundtrip true
+            :tags $ #{} :wasm-compact-portable
         'default-fields-from-literal $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn default-fields-from-literal (fields) fields
           :examples $ []
@@ -886,7 +969,7 @@
                   [] (Some 20) (Some |Chen) None None
                   read-open p1
           :examples $ []
-          :schema $ quote $ Fn (-> Dynamic) (:features :js-ffi :io)
+          :schema $ quote $ Fn (-> Dynamic) (:features :io :js-ffi)
         'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-complete-construction ()
             let

@@ -71,19 +71,26 @@ fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
 /// arguments after its fixed parameters are packed into the rest list, and a
 /// call without every fixed argument traps like the native arity error (#1964).
 fn emit_static_callee_call(ctx: &mut WasmGenCtx, fn_idx: u32, rest_fixed: Option<u32>, args: &[u32]) {
-  let fixed = match rest_fixed {
-    None => args.len(),
-    Some(fixed) if fixed as usize <= args.len() => fixed as usize,
+  match rest_fixed {
+    None => {
+      for arg in args {
+        ctx.emit(Instruction::LocalGet(*arg));
+      }
+      emit_call_fn_with_f64_stack_args(ctx, fn_idx, args.len() as u32);
+    }
+    Some(fixed) if fixed as usize <= args.len() => {
+      let fixed = fixed as usize;
+      let rest = emit_list_from_locals(ctx, &args[fixed..]);
+      for arg in &args[..fixed] {
+        ctx.emit(Instruction::LocalGet(*arg));
+      }
+      ctx.emit(Instruction::LocalGet(rest));
+      ctx.emit(Instruction::Call(fn_idx));
+    }
     Some(_) => {
       ctx.emit(Instruction::Unreachable);
-      return;
     }
-  };
-  let rest = rest_fixed.map(|_| emit_list_from_locals(ctx, &args[fixed..]));
-  for arg in args[..fixed].iter().chain(rest.as_ref()) {
-    ctx.emit(Instruction::LocalGet(*arg));
   }
-  ctx.emit(Instruction::Call(fn_idx));
 }
 
 /// Try to extract (param_names, body_exprs) from an inline lambda form.
@@ -596,22 +603,21 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(enum_ptr + 8) — bool flag (truthy → early exit)
+  // tag = I32Load(enum_ptr + 4) — bool flag (truthy → early exit)
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  emit_stack_is_truthy_i32(ctx); // → i32
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
 
   ctx.begin_block_if();
-  // Early exit: result = payload at enum_ptr + 16
+  // Early exit: result = payload at enum_ptr + 8
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Br(2)); // break outer block (If=0, Loop=1, Block=2)
   ctx.emit(Instruction::End); // end if
 
   // else: acc = payload, continue
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(acc));
 
   // i += 1; continue loop
@@ -665,21 +671,20 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(enum_ptr));
 
-  // tag = F64Load(enum_ptr + 8) — bool flag
+  // tag = I32Load(enum_ptr + 4) — bool flag
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  emit_stack_is_truthy_i32(ctx);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
 
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Br(2)); // break outer block
   ctx.emit(Instruction::End); // end if
 
   // else: acc = payload, i--
   ctx.emit(Instruction::LocalGet(enum_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(acc));
 
   ctx.i32_dec(i);
@@ -1289,7 +1294,7 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 /// unchanged without calling `f`; the receiver kind is dispatched at runtime.
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "update")?;
-  let receiver_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  let receiver_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
   if let Some(struct_def) = receiver_type.as_ref().and_then(|ty| ty.resolve_to_struct())
     && let Calcit::Tag(field) = &args[1]
   {
@@ -1316,10 +1321,14 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
           ft.clone()
         }
       });
-      let cur_val = ctx.alloc_local();
+      let struct_id = ctx.struct_layouts.id(&struct_def)?;
+      let field_layout = ctx.struct_layouts.layout_by_id(struct_id)?.fields[slot];
+      let recv_ptr = ctx.alloc_local_typed(ValType::I32);
       ctx.emit(Instruction::LocalGet(receiver));
       ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + slot) * 8) as u64)));
+      ctx.emit(Instruction::LocalSet(recv_ptr));
+      let cur_val = ctx.alloc_local();
+      super::emit_load_struct_field_as_repr(ctx, recv_ptr, field_layout, NativeValRepr::F64);
       ctx.emit(Instruction::LocalSet(cur_val));
       let new_val = ctx.alloc_local();
       emit_unary_step_with_type(ctx, &kind, cur_val, field_type)?;
@@ -1489,19 +1498,19 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
   if uses_decision {
     let keep_tag = *ctx.tag_index.get("keep").ok_or("filter-map-kv: :keep tag missing")?;
 
-    // Named enum layout is [payload_count, tag, payload_0, payload_1, ...].
+    // Compact enum layout is `[count:u32 @ 0][tag_id:u32 @ 4][payload_0:f64 @ 8]...`.
     // Only :keep carries the replacement key and value; :drop leaves acc intact.
     ctx.emit(Instruction::LocalGet(result_ptr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-    ctx.emit(f64_const(keep_tag as f64));
-    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+    ctx.emit(Instruction::I32Const(keep_tag as i32));
+    ctx.emit(Instruction::I32Eq);
     ctx.begin_block_if();
 
     ctx.emit(Instruction::LocalGet(result_ptr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
     ctx.emit(Instruction::LocalSet(new_key));
     ctx.emit(Instruction::LocalGet(result_ptr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(24)));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
     ctx.emit(Instruction::LocalSet(new_val));
 
     ctx.emit(Instruction::LocalGet(acc));
@@ -1554,6 +1563,8 @@ mod tests {
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
         runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),
@@ -1647,6 +1658,9 @@ mod tests {
       .ids
       .insert(super::structs::StructIdentity::from(struct_def.as_ref()), 1);
     struct_layouts.field_tags.insert(1, vec![2]);
+    struct_layouts
+      .layouts
+      .insert(1, StructLayout::compute(&[StructFieldKind::BoolU8]).expect("Flagged layout"));
 
     let mut ctx = WasmGenCtx::new(
       0,
@@ -1655,6 +1669,8 @@ mod tests {
         fn_index: HashMap::from([("calcit.core/nil?".into(), 1)]),
         fn_arity: HashMap::from([("calcit.core/nil?".into(), 1)]),
         fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
         runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
         tag_index: HashMap::from([("struct".into(), 1), ("flag".into(), 2), ("number".into(), 3), ("list".into(), 4)]),
         struct_layouts,

@@ -117,7 +117,7 @@ pub(super) enum SetOpKind {
 }
 
 pub(super) fn is_proven_non_scalar_heap_type(annotation: &Arc<CalcitTypeAnnotation>) -> bool {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  let expanded = expand_wasm_value_type(annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::String
     | CalcitTypeAnnotation::Buffer
@@ -135,8 +135,8 @@ pub(super) fn is_proven_non_scalar_heap_type(annotation: &Arc<CalcitTypeAnnotati
 }
 
 pub(super) fn are_disjoint_number_and_heap_types(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>) -> bool {
-  let left = CalcitTypeAnnotation::expand_schema_alias(left);
-  let right = CalcitTypeAnnotation::expand_schema_alias(right);
+  let left = expand_wasm_value_type(left);
+  let right = expand_wasm_value_type(right);
   if set_comparison_can_erase_kind(&left, &left, 0) || set_comparison_can_erase_kind(&right, &right, 0) {
     return false;
   }
@@ -260,8 +260,8 @@ fn check_set_membership_types(ctx: &WasmGenCtx, set: &Calcit, target: &Calcit) -
 pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
   use CalcitTypeAnnotation as T;
 
-  let left = T::expand_schema_alias(left);
-  let right = T::expand_schema_alias(right);
+  let left = expand_wasm_value_type(left);
+  let right = expand_wasm_value_type(right);
   if matches!(left.as_ref(), T::Never) || matches!(right.as_ref(), T::Never) {
     return false;
   }

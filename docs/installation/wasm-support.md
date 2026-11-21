@@ -182,6 +182,10 @@ WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请�
     - 否则若存在 `turn_mark` 且 `live_above_mark == 0`，摘除所有起始地址 `>= turn_mark` 的空闲块并将 `__heap_ptr` 回退到 `turn_mark`；
     - 否则（`live_above_mark > 0`），两种回收都延迟执行，直到后续 turn 退出、`post-return` 或资源释放使上述条件满足。
   - 此外，当外层 Component 导出处于活跃期（`active_turns > 0`）且未挂起新的 `live_above_mark` 缓冲时，同步无 `post-return` 导出会在返回时将 `__heap_ptr` 与空闲链表回退至本调用的 `call_mark`；stackless 宽参数异步导出使用 `cabi_realloc` 分配间接参数记录并在子任务进入 `STARTED`、立即返回或终态时以 `cabi_free` 释放；被取消的 stackless async 任务在 `RETURNED` 状态会先执行结果析构（`drop`）再回收缓冲，仅取消未返回时只释放结果区。
+- **已证明封闭标量与紧凑名义布局**：
+  - 对静态类型已证明为封闭的 `Bool`、`Tag`、`Unit`、整型细化类型（`Int8`..`Int32`、`UInt8`..`UInt32` 用 `i32`；`Int64`、`UInt64` 用 `i64`）以及已知非空堆指针，WASM 代码生成器在内部局部槽位与直调函数签名中采用原生 `i32`/`i64` 表示，并在 `if` / `not` / `=` / `identical?` / `let` / 已知容器方法调用与 `to-string` 等路径上省去运行时 `HEAP_MAGIC` 探测；当带原生签名的函数经由 `funcref` 表 `call_indirect` 调用时，编译器自动插入 `(f64 x N) -> f64` 适配桩完成封箱与拆箱转换（`defwasm-export` 与 `type-of` 对堆值的活跃区间与 `HEAP_MAGIC` 校验保持不变，含 `try-parse-json` 时 JSON 堆封箱标量同样兼容）。
+  - 名义 `Struct` 采用 8 字节紧凑头 `[count:u32 @ 0][layout_id:u32 @ 4]`，各字段按自然对齐降序排列并对齐填充至 8 字节倍数（`Unit` 占 0 字节，`Bool`/`Int8`/`UInt8` 占 1 字节，`Int16`/`UInt16` 占 2 字节，`Tag`/`Int32`/`UInt32` 与已证明堆指针字段占 4 字节，一般 `Number`/开放字段与 `Int64`/`UInt64` 占 8 字节；空结构体最小负载为 8 字节，整体仍维持 `[-8, 0)` 分配头与 8 字节对齐）。只读静态描述符表记录每个 `layout_id` 的负载字节数、字段数与 `[offset:u16, kind:u8]` 元数据，供运行时晋升、重定位、哈希与结构相等精确读写并只追踪 `BoxedF64` 与非零 `HeapPtrI32` 字段。
+  - `Enum`（含 `Option`、`Result` 与匿名 `::`）同样采用 `[count:u32 @ 0][tag_id:u32 @ 4]` 紧凑头，payload 从 `+8` 偏移连续存放，`0` 载荷变体负载为 8 字节。
 
 ## 限制
 

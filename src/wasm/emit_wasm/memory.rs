@@ -1357,6 +1357,7 @@ pub(super) fn build_rt_promote_value_fn(
   pers: &PersistentHeapGlobals,
   fns: &PersistentPromoteFns,
   tags: &PromoteTypeTags,
+  struct_layouts: &StructLayouts,
 ) -> CompiledFn {
   // params: 0 = val (f64), 1 = mode (i32), 2 = old_base (i32), 3 = old_end (i32), 4 = depth (i32)
   let ptr = 5u32;
@@ -1371,6 +1372,9 @@ pub(super) fn build_rt_promote_value_fn(
   let new_end = 14u32;
   let root_ptr = 15u32;
   let fval = 16u32;
+  let desc_ptr = 17u32;
+  let meta_ptr = 18u32;
+  let field_slot = 19u32;
 
   let mut instructions = vec![
     Instruction::LocalGet(4),
@@ -1730,37 +1734,155 @@ pub(super) fn build_rt_promote_value_fn(
   emit_copy_f64_elems(&mut instructions, 16);
   instructions.push(Instruction::End);
 
-  // Struct & Enum
-  for kind_tag in [tags.struct_tag, tags.enum_tag] {
+  // Enum: compact 8-byte header `[count:u32 @ 0][tag_id:u32 @ 4]` + `count` f64 payloads
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.enum_tag),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(ptr),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalTee(count),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::I32Const(8),
+    Instruction::I32Mul,
+    Instruction::LocalSet(payload),
+  ]);
+  emit_persistent_alloc_and_forward(&mut instructions, payload, tags.enum_tag, &value_fwd_ctx);
+  instructions.extend([
+    Instruction::LocalGet(dst),
+    Instruction::LocalGet(ptr),
+    Instruction::I64Load(mem_arg_i64(0)),
+    Instruction::I64Store(mem_arg_i64(0)),
+  ]);
+  emit_copy_f64_elems(&mut instructions, 8);
+  instructions.push(Instruction::End);
+
+  // Struct: compact 8-byte header + descriptor-driven field trace
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.struct_tag),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+  ]);
+  if struct_layouts.max_layout_id > 0 {
     instructions.extend([
-      Instruction::LocalGet(tag),
-      Instruction::I32Const(kind_tag),
+      Instruction::LocalGet(ptr),
+      Instruction::I32Load(mem_arg_i32(4)),
+      Instruction::LocalTee(cap),
+      Instruction::I32Const(1),
+      Instruction::I32LtU,
+      Instruction::LocalGet(cap),
+      Instruction::I32Const(struct_layouts.max_layout_id as i32),
+      Instruction::I32GtU,
+      Instruction::I32Or,
+      Instruction::If(BlockType::Empty),
+      Instruction::Unreachable,
+      Instruction::End,
+      Instruction::I32Const(struct_layouts.desc_table_base),
+      Instruction::LocalGet(cap),
+      Instruction::I32Const(12),
+      Instruction::I32Mul,
+      Instruction::I32Add,
+      Instruction::LocalTee(desc_ptr),
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalSet(payload),
+      Instruction::LocalGet(desc_ptr),
+      Instruction::I32Load(mem_arg_i32(4)),
+      Instruction::LocalSet(count),
+      Instruction::LocalGet(desc_ptr),
+      Instruction::I32Load(mem_arg_i32(8)),
+      Instruction::LocalSet(meta_ptr),
+    ]);
+    emit_persistent_alloc_and_forward(&mut instructions, payload, tags.struct_tag, &value_fwd_ctx);
+    instructions.extend([
+      Instruction::LocalGet(dst),
+      Instruction::LocalGet(ptr),
+      Instruction::LocalGet(payload),
+      Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+      Instruction::I32Const(0),
+      Instruction::LocalSet(i),
+      Instruction::Block(BlockType::Empty),
+      Instruction::Loop(BlockType::Empty),
+      Instruction::LocalGet(i),
+      Instruction::LocalGet(count),
+      Instruction::I32GeU,
+      Instruction::BrIf(1),
+      Instruction::LocalGet(meta_ptr),
+      Instruction::LocalGet(i),
+      Instruction::I32Const(4),
+      Instruction::I32Mul,
+      Instruction::I32Add,
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalTee(field_slot),
+      Instruction::I32Const(0xFFFF),
+      Instruction::I32And,
+      Instruction::LocalSet(root_ptr), // field offset
+      Instruction::LocalGet(field_slot),
+      Instruction::I32Const(16),
+      Instruction::I32ShrU,
+      Instruction::I32Const(0xFF),
+      Instruction::I32And,
+      Instruction::LocalTee(cap), // field kind
+      Instruction::I32Eqz,        // BoxedF64 == 0
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(dst),
+      Instruction::LocalGet(root_ptr),
+      Instruction::I32Add,
+      Instruction::LocalGet(ptr),
+      Instruction::LocalGet(root_ptr),
+      Instruction::I32Add,
+      Instruction::F64Load(mem_arg_f64(0)),
+      Instruction::LocalGet(1),
+      Instruction::LocalGet(2),
+      Instruction::LocalGet(3),
+      Instruction::LocalGet(4),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::Call(fns.promote_value),
+      Instruction::F64Store(mem_arg_f64(0)),
+      Instruction::Else,
+      Instruction::LocalGet(cap),
+      Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32),
       Instruction::I32Eq,
       Instruction::If(BlockType::Empty),
       Instruction::LocalGet(ptr),
-      Instruction::F64Load(mem_arg_f64(0)),
-      Instruction::I32TruncF64U,
-      Instruction::LocalTee(count),
-      Instruction::I32Const(2),
+      Instruction::LocalGet(root_ptr),
       Instruction::I32Add,
-      Instruction::I32Const(8),
-      Instruction::I32Mul,
-      Instruction::LocalSet(payload),
-    ]);
-    emit_persistent_alloc_and_forward(&mut instructions, payload, kind_tag, &value_fwd_ctx);
-    instructions.extend([
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalTee(existing),
+      Instruction::If(BlockType::Empty),
       Instruction::LocalGet(dst),
-      Instruction::LocalGet(count),
+      Instruction::LocalGet(root_ptr),
+      Instruction::I32Add,
+      Instruction::LocalGet(existing),
       Instruction::F64ConvertI32U,
-      Instruction::F64Store(mem_arg_f64(0)),
+      Instruction::LocalGet(1),
+      Instruction::LocalGet(2),
+      Instruction::LocalGet(3),
+      Instruction::LocalGet(4),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::Call(fns.promote_value),
+      Instruction::I32TruncF64U,
+      Instruction::I32Store(mem_arg_i32(0)),
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+      Instruction::LocalGet(i),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::LocalSet(i),
+      Instruction::Br(0),
+      Instruction::End,
+      Instruction::End,
       Instruction::LocalGet(dst),
-      Instruction::LocalGet(ptr),
-      Instruction::F64Load(mem_arg_f64(8)),
-      Instruction::F64Store(mem_arg_f64(8)),
+      Instruction::F64ConvertI32U,
+      Instruction::Return,
     ]);
-    emit_copy_f64_elems(&mut instructions, 16);
-    instructions.push(Instruction::End);
   }
+  instructions.push(Instruction::End);
 
   // Map
   instructions.extend([
@@ -1826,6 +1948,9 @@ pub(super) fn build_rt_promote_value_fn(
       ValType::I32,
       ValType::I32,
       ValType::F64,
+      ValType::I32,
+      ValType::I32,
+      ValType::I32,
     ],
     instructions,
   }
@@ -2324,6 +2449,7 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
   pers: &PersistentHeapGlobals,
   fns: &RelocateScratchFns,
   tags: &PromoteTypeTags,
+  struct_layouts: &StructLayouts,
 ) -> CompiledFn {
   // params: 0 = val (f64), 1 = old_base (i32), 2 = old_end (i32), 3 = depth (i32), 4 = do_patch (i32)
   let ptr = 5u32;
@@ -2334,6 +2460,10 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
   let child_ptr = 10u32;
   let reloc = 11u32;
   let addr = 12u32;
+  let desc_ptr = 13u32;
+  let meta_ptr = 14u32;
+  let field_kind = 15u32;
+  let packed = 16u32;
 
   let mut instructions = vec![
     Instruction::LocalGet(3),
@@ -2462,20 +2592,167 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
   emit_relocate_elem_loop(&mut instructions, 16);
   instructions.push(Instruction::End);
 
-  for kind_tag in [tags.struct_tag, tags.enum_tag] {
+  // Enum: compact `[count:u32 @ 0][tag:u32 @ 4]` + payloads at +8
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.enum_tag),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(ptr),
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(count),
+  ]);
+  emit_relocate_elem_loop(&mut instructions, 8);
+  instructions.push(Instruction::End);
+
+  // Struct: compact `[count:u32 @ 0][layout_id:u32 @ 4]` + descriptor-driven reference trace
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.struct_tag),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+  ]);
+  if struct_layouts.max_layout_id > 0 {
+    let slot_locals = RelocateSlotLocals {
+      addr,
+      old_base: 1,
+      old_end: 2,
+      depth: 3,
+      do_patch: 4,
+      fval,
+      reloc,
+    };
     instructions.extend([
-      Instruction::LocalGet(tag),
-      Instruction::I32Const(kind_tag),
+      Instruction::LocalGet(ptr),
+      Instruction::I32Load(mem_arg_i32(4)),
+      Instruction::LocalTee(packed),
+      Instruction::I32Const(1),
+      Instruction::I32LtU,
+      Instruction::LocalGet(packed),
+      Instruction::I32Const(struct_layouts.max_layout_id as i32),
+      Instruction::I32GtU,
+      Instruction::I32Or,
+      Instruction::If(BlockType::Empty),
+      Instruction::Return,
+      Instruction::End,
+      Instruction::I32Const(struct_layouts.desc_table_base),
+      Instruction::LocalGet(packed),
+      Instruction::I32Const(12),
+      Instruction::I32Mul,
+      Instruction::I32Add,
+      Instruction::LocalTee(desc_ptr),
+      Instruction::I32Load(mem_arg_i32(4)),
+      Instruction::LocalSet(count),
+      Instruction::LocalGet(desc_ptr),
+      Instruction::I32Load(mem_arg_i32(8)),
+      Instruction::LocalSet(meta_ptr),
+      Instruction::I32Const(0),
+      Instruction::LocalSet(i),
+      Instruction::Block(BlockType::Empty),
+      Instruction::Loop(BlockType::Empty),
+      Instruction::LocalGet(i),
+      Instruction::LocalGet(count),
+      Instruction::I32GeU,
+      Instruction::BrIf(1),
+      Instruction::LocalGet(meta_ptr),
+      Instruction::LocalGet(i),
+      Instruction::I32Const(4),
+      Instruction::I32Mul,
+      Instruction::I32Add,
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalTee(packed),
+      Instruction::I32Const(0xFFFF),
+      Instruction::I32And,
+      Instruction::LocalGet(ptr),
+      Instruction::I32Add,
+      Instruction::LocalSet(addr),
+      Instruction::LocalGet(packed),
+      Instruction::I32Const(16),
+      Instruction::I32ShrU,
+      Instruction::I32Const(0xFF),
+      Instruction::I32And,
+      Instruction::LocalTee(field_kind),
+      Instruction::I32Eqz, // BoxedF64 == 0
+      Instruction::If(BlockType::Empty),
+    ]);
+    emit_relocate_f64_slot(&mut instructions, memory, pers, fns, &slot_locals);
+    instructions.extend([
+      Instruction::Else,
+      Instruction::LocalGet(field_kind),
+      Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32),
       Instruction::I32Eq,
       Instruction::If(BlockType::Empty),
-      Instruction::LocalGet(ptr),
-      Instruction::F64Load(mem_arg_f64(0)),
-      Instruction::I32TruncF64U,
-      Instruction::LocalSet(count),
+      Instruction::LocalGet(addr),
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::LocalTee(child_ptr),
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(child_ptr),
+      Instruction::LocalGet(1),
+      Instruction::I32Const(8),
+      Instruction::I32Add,
+      Instruction::I32GeU,
+      Instruction::LocalGet(child_ptr),
+      Instruction::LocalGet(2),
+      Instruction::I32LtU,
+      Instruction::I32And,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(4),
+      Instruction::I32Eqz,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(child_ptr),
+      Instruction::F64ConvertI32U,
+      Instruction::I32Const(1),
+      Instruction::LocalGet(1),
+      Instruction::LocalGet(2),
+      Instruction::LocalGet(3),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::Call(fns.promote_value),
+      Instruction::Drop,
+      Instruction::Else,
+      Instruction::LocalGet(child_ptr),
+      Instruction::Call(fns.fwd_get),
+      Instruction::LocalTee(reloc),
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(addr),
+      Instruction::LocalGet(reloc),
+      Instruction::I32Store(mem_arg_i32(0)),
+      Instruction::End,
+      Instruction::End,
+      Instruction::Else,
+      Instruction::LocalGet(child_ptr),
+      Instruction::I32Const(memory.arena_base + 8),
+      Instruction::I32GeU,
+      Instruction::LocalGet(child_ptr),
+      Instruction::GlobalGet(pers.scratch_end),
+      Instruction::I32LtU,
+      Instruction::I32And,
+      Instruction::If(BlockType::Empty),
+      Instruction::LocalGet(child_ptr),
+      Instruction::F64ConvertI32U,
+      Instruction::LocalGet(1),
+      Instruction::LocalGet(2),
+      Instruction::LocalGet(3),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::LocalGet(4),
+      Instruction::Call(fns.relocate_refs),
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+      Instruction::End,
+      Instruction::LocalGet(i),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::LocalSet(i),
+      Instruction::Br(0),
+      Instruction::End,
+      Instruction::End,
+      Instruction::Return,
     ]);
-    emit_relocate_elem_loop(&mut instructions, 16);
-    instructions.push(Instruction::End);
   }
+  instructions.push(Instruction::End);
 
   instructions.extend([
     Instruction::LocalGet(tag),
@@ -2558,6 +2835,10 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
       ValType::I32,
       ValType::I32,
       ValType::F64,
+      ValType::I32,
+      ValType::I32,
+      ValType::I32,
+      ValType::I32,
       ValType::I32,
       ValType::I32,
       ValType::I32,
