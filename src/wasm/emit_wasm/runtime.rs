@@ -27,7 +27,8 @@ pub(super) struct HostImport {
 pub(super) struct ModuleFunctionLayout {
   pub(super) runtime_fn_count: u32,
   pub(super) table_fn_count: u32,
-  pub(super) component_free_head: bool,
+  pub(super) memory_layout: WasmMemoryLayout,
+  pub(super) global_layout: WasmGlobalLayout,
   /// `(call arity, table slot) -> adapter function index`. A function value
   /// is its table slot; a call with N arguments uses funcref table N (see
   /// `call_indirect`). In table N the slot of a `&` rest-parameter function
@@ -4425,10 +4426,10 @@ pub(super) fn build_wasm_module(
   }
   module.section(&tables);
 
-  // Memory section: 100 pages (6.4MB) for linear memory (structs, enums)
+  // Memory section: baseline pages covering static data, optional persistent semi-spaces, and Scratch Arena.
   let mut memories = MemorySection::new();
   memories.memory(MemoryType {
-    minimum: 100,
+    minimum: layout.memory_layout.initial_pages,
     maximum: None,
     memory64: false,
     shared: false,
@@ -4436,7 +4437,8 @@ pub(super) fn build_wasm_module(
   });
   module.section(&memories);
 
-  // Global section: heap pointer for bump allocator, then atom globals
+  // Global section: heap pointer, atom globals, runtime metadata, optional persistent/component state, and number stack.
+  debug_assert_eq!(atom_initial_values.len() as u32, layout.global_layout.atom_count);
   let mut globals = GlobalSection::new();
   globals.global(
     GlobalType {
@@ -4444,8 +4446,9 @@ pub(super) fn build_wasm_module(
       mutable: true,
       shared: false,
     },
-    &ConstExpr::i32_const(heap_start),
+    &ConstExpr::i32_const(layout.memory_layout.arena_base),
   );
+  let _ = heap_start;
   for &init_val in atom_initial_values {
     globals.global(
       GlobalType {
@@ -4456,7 +4459,7 @@ pub(super) fn build_wasm_module(
       &ConstExpr::f64_const(init_val.into()),
     );
   }
-  let string_tag_global = 1 + atom_initial_values.len() as u32;
+  // string_tag
   globals.global(
     GlobalType {
       val_type: ValType::I32,
@@ -4465,15 +4468,47 @@ pub(super) fn build_wasm_module(
     },
     &ConstExpr::i32_const(string_tag_id),
   );
-  if layout.component_free_head {
-    globals.global(
-      GlobalType {
-        val_type: ValType::I32,
-        mutable: true,
-        shared: false,
-      },
-      &ConstExpr::i32_const(0),
-    );
+  // arena_base
+  globals.global(
+    GlobalType {
+      val_type: ValType::I32,
+      mutable: false,
+      shared: false,
+    },
+    &ConstExpr::i32_const(layout.memory_layout.arena_base),
+  );
+  // active_turns
+  globals.global(
+    GlobalType {
+      val_type: ValType::I32,
+      mutable: true,
+      shared: false,
+    },
+    &ConstExpr::i32_const(0),
+  );
+  if layout.global_layout.persistent.is_some() {
+    for init in [0, layout.memory_layout.space_a_base, layout.memory_layout.space_a_end, 0] {
+      globals.global(
+        GlobalType {
+          val_type: ValType::I32,
+          mutable: true,
+          shared: false,
+        },
+        &ConstExpr::i32_const(init),
+      );
+    }
+  }
+  if layout.global_layout.component.is_some() {
+    for _ in 0..4 {
+      globals.global(
+        GlobalType {
+          val_type: ValType::I32,
+          mutable: true,
+          shared: false,
+        },
+        &ConstExpr::i32_const(0),
+      );
+    }
   }
   globals.global(
     GlobalType {
@@ -4485,11 +4520,15 @@ pub(super) fn build_wasm_module(
   );
   module.section(&globals);
 
-  // Export section: memory, heap pointer global, and named functions
+  // Export section: memory, heap metadata globals, and named functions
   let mut exports = ExportSection::new();
   exports.export("memory", ExportKind::Memory, 0);
   exports.export("__heap_ptr", ExportKind::Global, HEAP_PTR_GLOBAL);
-  exports.export("__string_tag", ExportKind::Global, string_tag_global);
+  exports.export("__string_tag", ExportKind::Global, layout.global_layout.string_tag);
+  exports.export("__arena_base", ExportKind::Global, layout.global_layout.arena_base);
+  if let Some(pers) = &layout.global_layout.persistent {
+    exports.export("__persistent_ptr", ExportKind::Global, pers.ptr);
+  }
   for (i, f) in fns.iter().enumerate() {
     if let Some(export_name) = &f.export_name {
       exports.export(export_name, ExportKind::Func, num_imports + i as u32);
@@ -4572,15 +4611,23 @@ pub(super) fn build_wasm_module(
 
 pub(super) fn build_runtime_fns(
   base_index: u32,
-  number_stack_global: u32,
-  map_tag: i32,
-  list_tag: i32,
-  string_tag: i32,
-  (enum_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (i32, i32, i32, i32, i32, i32),
+  memory_layout: &WasmMemoryLayout,
+  global_layout: &WasmGlobalLayout,
+  boundary: WasmBoundary,
   tag_index: &HashMap<String, u32>,
 ) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
+  let require_tag = |name: &str| *tag_index.get(name).unwrap_or_else(|| panic!("{name} tag must exist")) as i32;
+  let map_tag = require_tag("map");
+  let list_tag = require_tag("list");
+  let string_tag = require_tag("string");
+  let enum_tag = require_tag("enum");
+  let set_tag = require_tag("set");
+  let struct_tag = require_tag("struct");
+  let nil_tag = require_tag("nil");
+  let bool_tag = require_tag("bool");
+  let number_tag = require_tag("number");
   let mut fn_index = HashMap::new();
-  let (mut fns, _) = number_format::load_number_functions(base_index, number_stack_global)?;
+  let (mut fns, _) = number_format::load_number_functions(base_index, global_layout.number_stack)?;
   fn_index.insert(String::from("__rt_ryu_format"), base_index);
 
   let copy_name = String::from("__rt_copy_f64_slots");
@@ -4623,6 +4670,93 @@ pub(super) fn build_runtime_fns(
     locals: vec![ValType::I32],
     instructions: copy_instructions,
   });
+
+  let is_heap_ptr_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_is_heap_ptr"), is_heap_ptr_idx);
+  fns.push(build_rt_is_heap_ptr_fn(memory_layout, global_layout));
+
+  let arena_alloc_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_arena_alloc"), arena_alloc_idx);
+  fns.push(build_rt_arena_alloc_fn());
+
+  let compact_persistent_idx = if let Some(pers) = &global_layout.persistent {
+    let promote_tags = PromoteTypeTags {
+      string: string_tag,
+      buffer: *tag_index.get("buffer").expect("buffer tag must exist") as i32,
+      list: list_tag,
+      buf_list: *tag_index.get("buf-list").expect("buf-list tag must exist") as i32,
+      map: map_tag,
+      set: set_tag,
+      struct_tag,
+      enum_tag,
+      nil: nil_tag,
+      bool_tag,
+      number: number_tag,
+    };
+    let promote_value_slot = fns.len();
+    let promote_value_idx = base_index + promote_value_slot as u32;
+    fn_index.insert(String::from("__rt_promote_value"), promote_value_idx);
+    fns.push(build_rt_hash_f64());
+
+    let promote_map_node_slot = fns.len();
+    let promote_map_node_idx = base_index + promote_map_node_slot as u32;
+    fn_index.insert(String::from("__rt_promote_map_node"), promote_map_node_idx);
+    fns.push(build_rt_hash_f64());
+
+    let persistent_alloc_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_persistent_alloc"), persistent_alloc_idx);
+    fns.push(build_rt_persistent_alloc_fn(pers));
+
+    fns[promote_map_node_slot] =
+      build_rt_promote_map_node_fn(memory_layout, pers, persistent_alloc_idx, promote_value_idx, promote_map_node_idx);
+    fns[promote_value_slot] = build_rt_promote_value_fn(
+      memory_layout,
+      pers,
+      persistent_alloc_idx,
+      promote_value_idx,
+      promote_map_node_idx,
+      &promote_tags,
+    );
+
+    let commit_defref_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_commit_defref"), commit_defref_idx);
+    fns.push(build_rt_commit_defref_fn(memory_layout, pers, promote_value_idx));
+
+    let compact_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_compact_persistent"), compact_idx);
+    fns.push(build_rt_compact_persistent_fn(
+      memory_layout,
+      global_layout,
+      pers,
+      promote_value_idx,
+    ));
+    Some(compact_idx)
+  } else {
+    None
+  };
+
+  if boundary == WasmBoundary::Native {
+    let turn_end_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_turn_end"), turn_end_idx);
+    fns.push(build_rt_turn_end_fn(global_layout, compact_persistent_idx));
+
+    let arena_reset_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__arena_reset"), arena_reset_idx);
+    fns.push(build_arena_reset_fn(memory_layout, global_layout, compact_persistent_idx));
+  } else if let Some(comp) = &global_layout.component {
+    let turn_enter_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_component_turn_enter"), turn_enter_idx);
+    fns.push(build_rt_component_turn_enter_fn(global_layout, comp));
+
+    let turn_exit_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_component_turn_exit"), turn_exit_idx);
+    fns.push(build_rt_component_turn_exit_fn(
+      memory_layout,
+      global_layout,
+      comp,
+      compact_persistent_idx,
+    ));
+  }
 
   let map_flat_pairs_name = String::from("__rt_map_flat_pairs");
   fn_index.insert(map_flat_pairs_name, base_index + fns.len() as u32);
@@ -5030,7 +5164,7 @@ pub(super) fn build_runtime_fns(
     (
       string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
     ),
-    (str_compare_idx, value_equal_idx, map_equal_idx, set_equal_idx),
+    (str_compare_idx, value_equal_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx),
   ));
 
   // Map values can contain nested Options and Enums, so use the same deep comparator.
@@ -5044,7 +5178,7 @@ pub(super) fn build_runtime_fns(
     (
       string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
     ),
-    (hash_idx, map_key_hash_idx, map_linearize_idx),
+    (hash_idx, map_key_hash_idx, map_linearize_idx, is_heap_ptr_idx),
   );
   fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
 
@@ -5347,7 +5481,7 @@ fn build_rt_value_hash(
     i32,
     i32,
   ),
-  (scalar_hash_idx, self_idx, map_linearize_idx): (u32, u32, u32),
+  (scalar_hash_idx, self_idx, map_linearize_idx, is_heap_ptr_idx): (u32, u32, u32, u32),
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
@@ -5358,31 +5492,14 @@ fn build_rt_value_hash(
   let item_hash = b.alloc_i32();
   let nominal = b.alloc_i32();
 
-  // Check range before converting: negative numbers, NaN and infinities are scalars.
+  // Check range and active regions before converting: negative numbers, NaN, infinities,
+  // and numbers colliding with inactive semi-space addresses are treated as scalars.
   b.emit(Instruction::LocalGet(0));
-  b.emit(f64_const((HEAP_BASE + 8) as f64));
-  b.emit(Instruction::F64Ge);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Lt);
-  b.emit(Instruction::I32And);
+  b.emit(Instruction::Call(is_heap_ptr_idx));
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(ptr));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(HEAP_MAGIC));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::I32Const(4));
   b.emit(Instruction::I32Sub);
@@ -5572,7 +5689,6 @@ fn build_rt_value_hash(
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(hash));
   b.emit(Instruction::Return);
-  b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(0));
@@ -13855,7 +13971,7 @@ fn build_rt_value_equal(
     i32,
     i32,
   ),
-  (str_compare_idx, self_idx, map_equal_idx, set_equal_idx): (u32, u32, u32, u32),
+  (str_compare_idx, self_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx): (u32, u32, u32, u32, u32),
 ) -> CompiledFn {
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
@@ -13868,7 +13984,6 @@ fn build_rt_value_equal(
   let i = b.alloc_i32();
   let elem_a = b.alloc_f64();
   let elem_b = b.alloc_f64();
-  let heap_min = (HEAP_BASE + 8) as f64;
 
   // Fast path: scalar value equality (NaN equals NaN, `-0` equals `0`)
   b.emit(Instruction::LocalGet(0));
@@ -13886,23 +14001,11 @@ fn build_rt_value_equal(
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Else);
 
-  // Check both are valid heap pointers
+  // Check both are valid live heap pointers across active regions
   b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::F64Const(Ieee64::from(heap_min)));
-  b.emit(Instruction::F64Ge);
+  b.emit(Instruction::Call(is_heap_ptr_idx));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Const(Ieee64::from(heap_min)));
-  b.emit(Instruction::F64Ge);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Lt);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Lt);
+  b.emit(Instruction::Call(is_heap_ptr_idx));
   b.emit(Instruction::I32And);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
 
@@ -13913,32 +14016,6 @@ fn build_rt_value_equal(
   b.emit(Instruction::LocalGet(1));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(ptr_b));
-
-  // Numeric values in the heap address range are not necessarily pointers.
-  b.emit(Instruction::LocalGet(ptr_a));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(HEAP_MAGIC));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::LocalGet(ptr_b));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(HEAP_MAGIC));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::LocalGet(ptr_a));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(ptr_b));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
 
   // Read type tags (ptr - 4 = raw_base + 4)
   b.emit(Instruction::LocalGet(ptr_a));
@@ -14177,9 +14254,6 @@ fn build_rt_value_equal(
 
   b.emit(Instruction::End); // string if
   b.emit(Instruction::End); // tag_ne if
-  b.emit(Instruction::Else);
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::End); // valid pointer headers
   b.emit(Instruction::Else);
   // Not both heap pointers → not equal
   b.emit(Instruction::I32Const(0));

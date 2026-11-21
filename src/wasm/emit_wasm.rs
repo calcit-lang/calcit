@@ -45,6 +45,7 @@ use crate::wasm::host::runner::preprocess::{
 
 mod component;
 mod edn_parse;
+mod memory;
 mod methods;
 mod number_format;
 mod runtime;
@@ -56,6 +57,11 @@ use component::{
   build_component_post_return_fn, build_component_struct_lift_fn, build_component_struct_lower_fn, build_component_variant_lift_fn,
   build_component_variant_lower_fn, collect_component_compound_types, collect_component_owned_types, component_fields_layout,
   component_memory_layout, push_component_result_reclaim, push_load_value_flat, push_store_value_flat,
+};
+use memory::{
+  ComponentMemoryGlobals, PromoteTypeTags, WasmGlobalLayout, WasmMemoryLayout, build_arena_reset_fn, build_rt_arena_alloc_fn,
+  build_rt_commit_defref_fn, build_rt_compact_persistent_fn, build_rt_component_turn_enter_fn, build_rt_component_turn_exit_fn,
+  build_rt_is_heap_ptr_fn, build_rt_persistent_alloc_fn, build_rt_promote_map_node_fn, build_rt_promote_value_fn, build_rt_turn_end_fn,
 };
 use methods::{emit_call_args, emit_method_invoke, emit_type_of_local};
 use runtime::{
@@ -517,36 +523,38 @@ fn emit_wasm_impl(
     eprintln!("[wasm] tag index: {tag_index:?}");
   }
 
-  let atom_count = ns_order
-    .iter()
-    .filter_map(|ns| program_data.get(ns.as_str()))
-    .flat_map(|file| file.defs.values())
-    .filter(|compiled| {
-      matches!(
-        &compiled.preprocessed_code,
-        Calcit::List(xs)
-          if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defref, _)))
-      )
-    })
-    .count() as u32;
-  let component_free_head_global = (boundary == WasmBoundary::Component).then_some(2 + atom_count);
-  let number_stack_global = 2 + atom_count + u32::from(component_free_head_global.is_some());
-  let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
-    num_imports,
-    number_stack_global,
-    *tag_index.get("map").expect("map tag must exist") as i32,
-    *tag_index.get("list").expect("list tag must exist") as i32,
-    *tag_index.get("string").expect("string tag must exist") as i32,
-    (
-      *tag_index.get("enum").expect("enum tag must exist") as i32,
-      *tag_index.get("set").expect("set tag must exist") as i32,
-      *tag_index.get("struct").expect("struct tag must exist") as i32,
-      *tag_index.get("nil").expect("nil tag must exist") as i32,
-      *tag_index.get("bool").expect("bool tag must exist") as i32,
-      *tag_index.get("number").expect("number tag must exist") as i32,
-    ),
-    &tag_index,
-  )?;
+  // Collect top-level value defs and defref definitions before building the static pool
+  // so both persistent initializers and Dual-Region memory layout are ready before runtime helpers.
+  let mut value_imports: HashMap<String, Calcit> = HashMap::new();
+  let mut defref_defs: Vec<(String, Option<Calcit>)> = Vec::new();
+  for ns in &ns_order {
+    let Some(file_info) = program_data.get(ns.as_str()) else {
+      continue;
+    };
+    for (def_name, compiled) in deterministic_definition_order(file_info) {
+      let qualified = format!("{ns}/{def_name}");
+      if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
+        value_imports.insert(qualified.clone(), compiled.preprocessed_code.to_owned());
+      }
+      if let Calcit::List(xs) = &compiled.preprocessed_code
+        && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defref, _)))
+      {
+        defref_defs.push((qualified, xs.get(2).cloned()));
+      }
+    }
+  }
+  let StaticDataAndAtoms {
+    string_pool,
+    string_data_segment,
+    heap_start,
+    atom_initial_values,
+    atom_globals,
+  } = build_static_data_and_atoms(&fn_defs, &value_imports, &tag_index, target, &defref_defs);
+
+  let atom_count = atom_initial_values.len() as u32;
+  let memory_layout = WasmMemoryLayout::compute(heap_start, atom_count);
+  let global_layout = WasmGlobalLayout::compute(atom_count, boundary == WasmBoundary::Component);
+  let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(num_imports, &memory_layout, &global_layout, boundary, &tag_index)?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
       .get(&("wasi_snapshot_preview1".into(), "fd_write".into()))
@@ -556,18 +564,13 @@ fn emit_wasm_impl(
     compiled_fns.push(build_wasi_write_all_fn(fd_write_idx));
   }
 
-  let (component_cabi_free_index, component_cabi_realloc_index) = if boundary == WasmBoundary::Component {
+  let (component_cabi_free_index, component_cabi_realloc_index) = if let Some(comp) = global_layout.component {
     let free_index = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__cabi_free".into(), free_index);
-    compiled_fns.push(build_cabi_free_fn(
-      component_free_head_global.expect("Component boundary must reserve a free-list global"),
-    ));
+    compiled_fns.push(build_cabi_free_fn(comp));
     let realloc_index = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__cabi_realloc".into(), realloc_index);
-    compiled_fns.push(build_cabi_realloc_fn(
-      free_index,
-      component_free_head_global.expect("Component boundary must reserve a free-list global"),
-    ));
+    compiled_fns.push(build_cabi_realloc_fn(free_index, comp));
     (Some(free_index), Some(realloc_index))
   } else {
     (None, None)
@@ -576,9 +579,12 @@ fn emit_wasm_impl(
   // Emit __str_new(src_ptr: i32, byte_len: i32) → f64 now that we know the string tag id.
   // This is a runtime helper exported for JS FFI: copies bytes into a tagged heap string.
   let str_tag_id = *tag_index.get("string").expect("string tag must exist") as i32;
+  let arena_alloc_idx = *runtime_fn_index
+    .get("__rt_arena_alloc")
+    .expect("__rt_arena_alloc helper must exist");
   let str_new_idx = num_imports + compiled_fns.len() as u32;
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
-  compiled_fns.push(build_str_new_fn(str_tag_id, component_cabi_realloc_index));
+  compiled_fns.push(build_str_new_fn(str_tag_id, arena_alloc_idx));
 
   if wasi_command_fs_common || wasi_command_stdin {
     let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
@@ -760,10 +766,7 @@ fn emit_wasm_impl(
   let component_buffer_new_index = if boundary == WasmBoundary::Component {
     let buffer_tag_id = *tag_index.get("buffer").expect("buffer tag must exist") as i32;
     let index = num_imports + compiled_fns.len() as u32;
-    compiled_fns.push(build_component_buffer_new_fn(
-      buffer_tag_id,
-      component_cabi_realloc_index.expect("Component boundary must install cabi_realloc"),
-    ));
+    compiled_fns.push(build_component_buffer_new_fn(buffer_tag_id, arena_alloc_idx));
     Some(index)
   } else {
     None
@@ -790,17 +793,13 @@ fn emit_wasm_impl(
           let codecs = ComponentValueCodecs {
             str_new_index: str_new_idx,
             buffer_new_index,
+            arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
           };
-          compiled_fns.push(build_component_list_lift_fn(
-            &compound_type,
-            list_tag_id,
-            cabi_realloc_index,
-            &codecs,
-          ));
+          compiled_fns.push(build_component_list_lift_fn(&compound_type, list_tag_id, &codecs));
           compiled_fns.push(build_component_list_lower_fn(&compound_type, cabi_realloc_index, &codecs));
         }
         ComponentAbiType::Struct(record) => {
@@ -813,6 +812,7 @@ fn emit_wasm_impl(
           let codecs = ComponentValueCodecs {
             str_new_index: str_new_idx,
             buffer_new_index,
+            arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
@@ -822,7 +822,6 @@ fn emit_wasm_impl(
             &compound_type,
             nominal_tag_id,
             *tag_index.get("struct").expect("struct tag must exist") as i32,
-            cabi_realloc_index,
             &codecs,
           ));
           compiled_fns.push(build_component_struct_lower_fn(&compound_type, nominal_tag_id, &codecs));
@@ -838,18 +837,13 @@ fn emit_wasm_impl(
           let codecs = ComponentValueCodecs {
             str_new_index: str_new_idx,
             buffer_new_index,
+            arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
           };
-          compiled_fns.push(build_component_variant_lift_fn(
-            &compound_type,
-            tag_ids,
-            enum_tag_id,
-            cabi_realloc_index,
-            &codecs,
-          ));
+          compiled_fns.push(build_component_variant_lift_fn(&compound_type, tag_ids, enum_tag_id, &codecs));
           compiled_fns.push(build_component_variant_lower_fn(&compound_type, tag_ids, &codecs));
         }
         ComponentAbiType::Enum(enum_type) => {
@@ -869,18 +863,13 @@ fn emit_wasm_impl(
           let codecs = ComponentValueCodecs {
             str_new_index: str_new_idx,
             buffer_new_index,
+            arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
           };
-          compiled_fns.push(build_component_enum_lift_fn(
-            &compound_type,
-            &tag_ids,
-            enum_tag_id,
-            cabi_realloc_index,
-            &codecs,
-          ));
+          compiled_fns.push(build_component_enum_lift_fn(&compound_type, &tag_ids, enum_tag_id, &codecs));
           compiled_fns.push(build_component_enum_lower_fn(&compound_type, &tag_ids, &codecs));
         }
         _ => unreachable!("compound type collector returned a scalar type"),
@@ -889,7 +878,7 @@ fn emit_wasm_impl(
   }
   let mut component_drop_indices = BTreeMap::new();
   if let Some(cabi_free_index) = component_cabi_free_index {
-    for owned_type in collect_component_owned_types(&component_adapters) {
+    for owned_type in collect_component_owned_types(&component_adapters, &component_import_adapters) {
       let index = num_imports + compiled_fns.len() as u32;
       component_drop_indices.insert(owned_type.clone(), index);
       compiled_fns.push(build_component_drop_fn(&owned_type, cabi_free_index, &component_drop_indices));
@@ -897,9 +886,11 @@ fn emit_wasm_impl(
   }
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
+    let cabi_free_index = component_cabi_free_index.expect("Component boundary must install cabi_free");
     let codecs = ComponentValueCodecs {
       str_new_index: str_new_idx,
       buffer_new_index,
+      arena_alloc_index: arena_alloc_idx,
       cabi_realloc_index,
       list_codecs: &component_list_codecs,
       struct_codecs: &component_struct_codecs,
@@ -921,7 +912,9 @@ fn emit_wasm_impl(
       compiled_fns.push(build_component_import_adapter(
         adapter,
         component_async_canonical_imports.as_ref(),
+        cabi_free_index,
         cabi_realloc_index,
+        &component_drop_indices,
         &codecs,
       ));
     }
@@ -1091,55 +1084,6 @@ fn emit_wasm_impl(
     }
   }
 
-  // Collect top-level value defs before building the string pool because
-  // imported constants may be inlined later by emit_expr.
-  let mut value_imports: HashMap<String, Calcit> = HashMap::new();
-  for ns in &ns_order {
-    let Some(file_info) = program_data.get(ns.as_str()) else {
-      continue;
-    };
-    for (def_name, compiled) in deterministic_definition_order(file_info) {
-      if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
-        value_imports.insert(format!("{ns}/{def_name}"), compiled.preprocessed_code.to_owned());
-      }
-    }
-  }
-  // Build string literal pool: assigns each unique string a memory offset.
-  let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &value_imports, &tag_index, target);
-
-  // Scan for defref definitions — each gets a mutable WASM global (f64).
-  let mut atom_initial_values: Vec<f64> = Vec::new();
-  let mut atom_globals: HashMap<String, u32> = HashMap::new();
-  for ns in &ns_order {
-    let Some(file_info) = program_data.get(ns.as_str()) else {
-      continue;
-    };
-    for (def_name, compiled) in deterministic_definition_order(file_info) {
-      let qualified = format!("{ns}/{def_name}");
-      if let crate::wasm::host::calcit::Calcit::List(xs) = &compiled.preprocessed_code
-        && matches!(
-          xs.first(),
-          Some(crate::wasm::host::calcit::Calcit::Syntax(
-            crate::wasm::host::calcit::CalcitSyntax::Defref,
-            _
-          ))
-        )
-      {
-        // Global zero belongs to the heap pointer; atoms follow it.
-        let global_idx = 1 + atom_initial_values.len() as u32;
-        atom_globals.insert(qualified, global_idx);
-        // Determine initial value from 3rd node (index 2)
-        let init_val = match xs.get(2) {
-          Some(crate::wasm::host::calcit::Calcit::Bool(true)) => 1.0,
-          Some(crate::wasm::host::calcit::Calcit::Number(n)) => *n,
-          _ => 0.0, // false / nil / complex init → default 0.0
-        };
-        atom_initial_values.push(init_val);
-      }
-    }
-  }
-  debug_assert_eq!(atom_initial_values.len(), atom_count as usize);
-
   let env = WasmCompileEnv {
     function_value_dependencies: Rc::default(),
     fn_index,
@@ -1173,6 +1117,7 @@ fn emit_wasm_impl(
   }
 
   let mut unsupported_dependencies = HashMap::new();
+  let mut native_export_wrappers: Vec<(String, u32, usize)> = Vec::new();
   // Second pass: target failures reject the artifact. Dependency failures keep
   // a trapping slot so preassigned call and table indices remain stable.
   for (ns, def_name, args, body) in &fn_defs {
@@ -1214,12 +1159,19 @@ fn emit_wasm_impl(
         // Ordinary `defn` values stay callable inside the module but are not part
         // of the public host ABI. Only explicit `defwasm-export` declarations
         // (and reserved runtime helpers emitted separately) reach the export
-        // surface. Component adapters replace the explicit declaration itself.
+        // surface. Component adapters replace the explicit declaration itself,
+        // while Native exports are wrapped by thin turn-reset epilogues below.
         if !explicit_export {
           func.export_name = None;
         }
         if boundary == WasmBoundary::Component && explicit_export {
           func.export_name = None;
+        }
+        if boundary == WasmBoundary::Native
+          && explicit_export
+          && let Some(exported) = func.export_name.take()
+        {
+          native_export_wrappers.push((exported, num_imports + compiled_fns.len() as u32, func.params.len()));
         }
         compiled_fns.push(func);
       }
@@ -1262,13 +1214,50 @@ fn emit_wasm_impl(
     }
   }
 
+  if boundary == WasmBoundary::Native && !native_export_wrappers.is_empty() {
+    let turn_end_idx = *env.runtime_fn_index.get("__rt_turn_end").expect("__rt_turn_end helper must exist");
+    for (export_name, target_idx, arity) in native_export_wrappers {
+      let mark = arity as u32;
+      let mut instructions = vec![
+        Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+        Instruction::LocalSet(mark),
+        Instruction::GlobalGet(global_layout.active_turns),
+        Instruction::I32Const(1),
+        Instruction::I32Add,
+        Instruction::GlobalSet(global_layout.active_turns),
+        Instruction::LocalGet(mark),
+      ];
+      for param_idx in 0..arity {
+        instructions.push(Instruction::LocalGet(param_idx as u32));
+      }
+      instructions.push(Instruction::Call(target_idx));
+      instructions.push(Instruction::Call(turn_end_idx));
+      compiled_fns.push(CompiledFn {
+        export_name: Some(export_name),
+        params: vec![ValType::F64; arity],
+        results: vec![ValType::F64],
+        locals: vec![ValType::I32],
+        instructions,
+      });
+    }
+  }
+
   if boundary == WasmBoundary::Component {
     let cabi_realloc_index = component_cabi_realloc_index.expect("Component boundary must install cabi_realloc");
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
+    let turn_enter_idx = *env
+      .runtime_fn_index
+      .get("__rt_component_turn_enter")
+      .expect("__rt_component_turn_enter helper must exist");
+    let turn_exit_idx = *env
+      .runtime_fn_index
+      .get("__rt_component_turn_exit")
+      .expect("__rt_component_turn_exit helper must exist");
     let export_runtime = ComponentExportRuntime {
       codecs: ComponentValueCodecs {
         str_new_index: str_new_idx,
         buffer_new_index,
+        arena_alloc_index: arena_alloc_idx,
         cabi_realloc_index,
         list_codecs: &component_list_codecs,
         struct_codecs: &component_struct_codecs,
@@ -1276,6 +1265,8 @@ fn emit_wasm_impl(
       },
       cabi_free_index: component_cabi_free_index.expect("Component export adapter must install cabi_free"),
       drop_indices: &component_drop_indices,
+      turn_enter_index: turn_enter_idx,
+      turn_exit_index: turn_exit_idx,
     };
     for adapter in &component_adapters {
       if adapter.stream_consumer.is_some() {
@@ -1292,6 +1283,9 @@ fn emit_wasm_impl(
           component_cabi_free_index.expect("stream export must install cabi_free"),
           cabi_realloc_index,
           step_index,
+          &global_layout,
+          turn_enter_idx,
+          turn_exit_idx,
         );
         compiled_fns.push(step);
         compiled_fns.push(entry);
@@ -1313,6 +1307,9 @@ fn emit_wasm_impl(
           component_cabi_free_index.expect("stackless tail export must install cabi_free"),
           cabi_realloc_index,
           &component_drop_indices,
+          arena_alloc_idx,
+          turn_enter_idx,
+          turn_exit_idx,
         );
         compiled_fns.push(entry);
         compiled_fns.push(callback);
@@ -1324,6 +1321,7 @@ fn emit_wasm_impl(
           adapter,
           component_cabi_free_index.expect("memory-owning Component exports must install cabi_free"),
           &component_drop_indices,
+          turn_exit_idx,
         ));
       }
     }
@@ -1451,7 +1449,8 @@ fn emit_wasm_impl(
     ModuleFunctionLayout {
       runtime_fn_count,
       table_fn_count: fn_defs.len() as u32,
-      component_free_head: component_free_head_global.is_some(),
+      memory_layout,
+      global_layout,
       rest_adapters,
     },
   )?;
@@ -1748,6 +1747,8 @@ struct ComponentExportRuntime<'a> {
   codecs: ComponentValueCodecs<'a>,
   cabi_free_index: u32,
   drop_indices: &'a BTreeMap<ComponentAbiType, u32>,
+  turn_enter_index: u32,
+  turn_exit_index: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2911,10 +2912,68 @@ fn component_numeric_from_f64(kind: CalcitNumericRefinement, value: u32) -> Vec<
   instructions
 }
 
-fn build_cabi_free_fn(free_head_global: u32) -> CompiledFn {
+fn emit_track_component_live_change(
+  instructions: &mut Vec<Instruction<'static>>,
+  comp: ComponentMemoryGlobals,
+  header_local: u32,
+  allocate: bool,
+) {
+  if allocate {
+    instructions.extend([
+      Instruction::GlobalGet(comp.total_live),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::GlobalSet(comp.total_live),
+      Instruction::GlobalGet(comp.turn_mark),
+      Instruction::I32Const(0),
+      Instruction::I32Ne,
+      Instruction::LocalGet(header_local),
+      Instruction::GlobalGet(comp.turn_mark),
+      Instruction::I32GeU,
+      Instruction::I32And,
+      Instruction::If(wasm_encoder::BlockType::Empty),
+      Instruction::GlobalGet(comp.live_above_mark),
+      Instruction::I32Const(1),
+      Instruction::I32Add,
+      Instruction::GlobalSet(comp.live_above_mark),
+      Instruction::End,
+    ]);
+  } else {
+    instructions.extend([
+      Instruction::GlobalGet(comp.total_live),
+      Instruction::I32Const(0),
+      Instruction::I32GtU,
+      Instruction::If(wasm_encoder::BlockType::Empty),
+      Instruction::GlobalGet(comp.total_live),
+      Instruction::I32Const(1),
+      Instruction::I32Sub,
+      Instruction::GlobalSet(comp.total_live),
+      Instruction::End,
+      Instruction::GlobalGet(comp.turn_mark),
+      Instruction::I32Const(0),
+      Instruction::I32Ne,
+      Instruction::LocalGet(header_local),
+      Instruction::GlobalGet(comp.turn_mark),
+      Instruction::I32GeU,
+      Instruction::I32And,
+      Instruction::GlobalGet(comp.live_above_mark),
+      Instruction::I32Const(0),
+      Instruction::I32GtU,
+      Instruction::I32And,
+      Instruction::If(wasm_encoder::BlockType::Empty),
+      Instruction::GlobalGet(comp.live_above_mark),
+      Instruction::I32Const(1),
+      Instruction::I32Sub,
+      Instruction::GlobalSet(comp.live_above_mark),
+      Instruction::End,
+    ]);
+  }
+}
+
+fn build_cabi_free_fn(comp: ComponentMemoryGlobals) -> CompiledFn {
   let header = 2;
   let capacity = 3;
-  let instructions = vec![
+  let mut instructions = vec![
     Instruction::LocalGet(0),
     Instruction::I32Eqz,
     Instruction::LocalGet(1),
@@ -2953,11 +3012,12 @@ fn build_cabi_free_fn(free_head_global: u32) -> CompiledFn {
     Instruction::Unreachable,
     Instruction::End,
     Instruction::LocalGet(header),
-    Instruction::GlobalGet(free_head_global),
+    Instruction::GlobalGet(comp.free_head),
     Instruction::I32Store(mem_arg_i32(4)),
     Instruction::LocalGet(header),
-    Instruction::GlobalSet(free_head_global),
+    Instruction::GlobalSet(comp.free_head),
   ];
+  emit_track_component_live_change(&mut instructions, comp, header, false);
   CompiledFn {
     export_name: None,
     params: vec![ValType::I32; 2],
@@ -2967,7 +3027,7 @@ fn build_cabi_free_fn(free_head_global: u32) -> CompiledFn {
   }
 }
 
-fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> CompiledFn {
+fn build_cabi_realloc_fn(cabi_free_index: u32, comp: ComponentMemoryGlobals) -> CompiledFn {
   let new_ptr = 4;
   let new_end = 5;
   let copy_len = 6;
@@ -2977,7 +3037,8 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
   let next_free = 10;
   let free_capacity = 11;
   let header = 12;
-  let instructions = vec![
+  let aligned_end = 13;
+  let mut instructions = vec![
     Instruction::LocalGet(3),
     Instruction::I32Eqz,
     Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
@@ -3001,7 +3062,7 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::End,
     Instruction::I32Const(0),
     Instruction::LocalSet(new_ptr),
-    Instruction::GlobalGet(free_head_global),
+    Instruction::GlobalGet(comp.free_head),
     Instruction::LocalSet(current_free),
     Instruction::I32Const(0),
     Instruction::LocalSet(previous_free),
@@ -3033,7 +3094,7 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::I32Eqz,
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::LocalGet(next_free),
-    Instruction::GlobalSet(free_head_global),
+    Instruction::GlobalSet(comp.free_head),
     Instruction::Else,
     Instruction::LocalGet(previous_free),
     Instruction::LocalGet(next_free),
@@ -3046,6 +3107,9 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::I32Const(8),
     Instruction::I32Add,
     Instruction::LocalSet(new_ptr),
+  ];
+  emit_track_component_live_change(&mut instructions, comp, current_free, true);
+  instructions.extend([
     Instruction::Br(2),
     Instruction::End,
     Instruction::LocalGet(current_free),
@@ -3084,18 +3148,31 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
+    Instruction::LocalGet(new_end),
+    Instruction::I32Const(7),
+    Instruction::I32Add,
+    Instruction::LocalTee(aligned_end),
+    Instruction::LocalGet(new_end),
+    Instruction::I32LtU,
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(aligned_end),
+    Instruction::I32Const(-8),
+    Instruction::I32And,
+    Instruction::LocalSet(aligned_end),
     Instruction::MemorySize(0),
     Instruction::LocalTee(current_pages),
     Instruction::I32Const(65_536),
     Instruction::I32Ne,
     Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(new_end),
+    Instruction::LocalGet(aligned_end),
     Instruction::LocalGet(current_pages),
     Instruction::I32Const(16),
     Instruction::I32Shl,
     Instruction::I32GtU,
     Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(new_end),
+    Instruction::LocalGet(aligned_end),
     Instruction::I64ExtendI32U,
     Instruction::LocalGet(current_pages),
     Instruction::I64ExtendI32U,
@@ -3124,8 +3201,11 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::LocalGet(header),
     Instruction::I32Const(-1),
     Instruction::I32Store(mem_arg_i32(4)),
-    Instruction::LocalGet(new_end),
+    Instruction::LocalGet(aligned_end),
     Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+  ]);
+  emit_track_component_live_change(&mut instructions, comp, header, true);
+  instructions.extend([
     Instruction::End,
     Instruction::LocalGet(0),
     Instruction::I32Eqz,
@@ -3154,12 +3234,12 @@ fn build_cabi_realloc_fn(cabi_free_index: u32, free_head_global: u32) -> Compile
     Instruction::End,
     Instruction::LocalGet(new_ptr),
     Instruction::End,
-  ];
+  ]);
   CompiledFn {
     export_name: Some("cabi_realloc".into()),
     params: vec![ValType::I32; 4],
     results: vec![ValType::I32],
-    locals: vec![ValType::I32; 9],
+    locals: vec![ValType::I32; 10],
     instructions,
   }
 }
@@ -3176,8 +3256,8 @@ fn lower_component_import_parameter_to_flat_locals(
   parameter_count: usize,
   locals: &mut Vec<ValType>,
   instructions: &mut Vec<Instruction<'static>>,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
+  lowered_owned_areas: &mut Vec<(ComponentAbiType, u32)>,
 ) -> u32 {
   match parameter {
     ComponentAbiType::Unit => unreachable!("Unit Component parameters are rejected before adapter construction"),
@@ -3223,11 +3303,8 @@ fn lower_component_import_parameter_to_flat_locals(
         .get(parameter)
         .expect("Component List import parameter codec must be registered");
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(4),
         Instruction::I32Const(8),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalSet(pair_ptr),
         Instruction::LocalGet(parameter_index),
         Instruction::LocalGet(pair_ptr),
@@ -3239,6 +3316,7 @@ fn lower_component_import_parameter_to_flat_locals(
         Instruction::I32Load(mem_arg_i32(4)),
         Instruction::LocalSet(flat_start + 1),
       ]);
+      lowered_owned_areas.push((parameter.clone(), pair_ptr));
       flat_start
     }
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) | ComponentAbiType::Struct(_) => {
@@ -3265,11 +3343,8 @@ fn lower_component_import_parameter_to_flat_locals(
         _ => unreachable!("compound parameter branch must use a registered codec"),
       };
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(layout.alignment),
         Instruction::I32Const(layout.size),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalSet(canonical_ptr),
         Instruction::LocalGet(parameter_index),
         Instruction::LocalGet(canonical_ptr),
@@ -3279,6 +3354,7 @@ fn lower_component_import_parameter_to_flat_locals(
       for offset in (0..flat_types.len()).rev() {
         instructions.push(Instruction::LocalSet(flat_start + offset as u32));
       }
+      lowered_owned_areas.push((parameter.clone(), canonical_ptr));
       flat_start
     }
   }
@@ -3289,18 +3365,15 @@ fn push_component_async_indirect_parameters(
   parameter_count: usize,
   locals: &mut Vec<ValType>,
   instructions: &mut Vec<Instruction<'static>>,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
+  lowered_owned_areas: &mut Vec<(ComponentAbiType, u32)>,
 ) {
   let (layout, offsets) = component_fields_layout(adapter.parameters.iter());
   let record_ptr = parameter_count as u32 + locals.len() as u32;
   locals.push(ValType::I32);
   instructions.extend([
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(layout.alignment),
     Instruction::I32Const(layout.size),
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalSet(record_ptr),
   ]);
   for (index, (parameter, offset)) in adapter.parameters.iter().zip(offsets).enumerate() {
@@ -3310,26 +3383,65 @@ fn push_component_async_indirect_parameters(
       parameter_count,
       locals,
       instructions,
-      cabi_realloc_index,
       codecs,
+      lowered_owned_areas,
     );
     push_store_value_flat(instructions, parameter, flat_start, record_ptr, offset);
   }
   instructions.push(Instruction::LocalGet(record_ptr));
 }
 
+fn emit_reclaim_import_buffers(
+  instructions: &mut Vec<Instruction<'static>>,
+  params_len: usize,
+  locals: &mut Vec<ValType>,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
+  lowered_owned_areas: &[(ComponentAbiType, u32)],
+  result_type: &ComponentAbiType,
+  ret_ptr: Option<u32>,
+) {
+  let param_drops: Vec<(u32, u32)> = lowered_owned_areas
+    .iter()
+    .filter_map(|(ty, area_ptr)| drop_indices.get(ty).map(|&drop_idx| (*area_ptr, drop_idx)))
+    .collect();
+  let result_drop = ret_ptr.and_then(|ptr| drop_indices.get(result_type).map(|&drop_idx| (ptr, drop_idx)));
+  if param_drops.is_empty() && result_drop.is_none() {
+    return;
+  }
+  let lifted_result = params_len as u32 + locals.len() as u32;
+  locals.push(ValType::F64);
+  instructions.push(Instruction::LocalSet(lifted_result));
+  for (area_ptr, drop_idx) in param_drops {
+    instructions.extend([Instruction::LocalGet(area_ptr), Instruction::Call(drop_idx)]);
+  }
+  if let Some((ptr, drop_idx)) = result_drop {
+    instructions.extend([Instruction::LocalGet(ptr), Instruction::Call(drop_idx)]);
+  }
+  instructions.push(Instruction::LocalGet(lifted_result));
+}
+
 fn build_component_import_adapter(
   adapter: &ComponentImportAdapter,
   async_imports: Option<&ComponentAsyncCanonicalImports>,
-  cabi_realloc_index: u32,
+  _cabi_free_index: u32,
+  _cabi_realloc_index: u32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
   codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let params = vec![ValType::F64; adapter.parameters.len()];
   let mut locals = Vec::new();
   let mut instructions = Vec::new();
+  let mut lowered_owned_areas = Vec::new();
 
   if component_async_import_uses_indirect_parameters(adapter) {
-    push_component_async_indirect_parameters(adapter, params.len(), &mut locals, &mut instructions, cabi_realloc_index, codecs);
+    push_component_async_indirect_parameters(
+      adapter,
+      params.len(),
+      &mut locals,
+      &mut instructions,
+      codecs,
+      &mut lowered_owned_areas,
+    );
   } else {
     for (index, parameter) in adapter.parameters.iter().enumerate() {
       match parameter {
@@ -3359,11 +3471,8 @@ fn build_component_import_adapter(
             .get(parameter)
             .expect("Component List import parameter codec must be registered");
           instructions.extend([
-            Instruction::I32Const(0),
-            Instruction::I32Const(0),
-            Instruction::I32Const(4),
             Instruction::I32Const(8),
-            Instruction::Call(cabi_realloc_index),
+            Instruction::Call(codecs.arena_alloc_index),
             Instruction::LocalSet(pair_ptr),
             Instruction::LocalGet(index as u32),
             Instruction::LocalGet(pair_ptr),
@@ -3373,6 +3482,7 @@ fn build_component_import_adapter(
             Instruction::LocalGet(pair_ptr),
             Instruction::I32Load(mem_arg_i32(4)),
           ]);
+          lowered_owned_areas.push((parameter.clone(), pair_ptr));
         }
         ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
           let canonical_ptr = params.len() as u32 + locals.len() as u32;
@@ -3383,17 +3493,15 @@ fn build_component_import_adapter(
             .get(parameter)
             .expect("Component variant import parameter codec must be registered");
           instructions.extend([
-            Instruction::I32Const(0),
-            Instruction::I32Const(0),
-            Instruction::I32Const(layout.alignment),
             Instruction::I32Const(layout.size),
-            Instruction::Call(cabi_realloc_index),
+            Instruction::Call(codecs.arena_alloc_index),
             Instruction::LocalSet(canonical_ptr),
             Instruction::LocalGet(index as u32),
             Instruction::LocalGet(canonical_ptr),
             Instruction::Call(codec.lower_index),
           ]);
           push_load_value_flat(&mut instructions, parameter, canonical_ptr);
+          lowered_owned_areas.push((parameter.clone(), canonical_ptr));
         }
         ComponentAbiType::Struct(_) => {
           let canonical_ptr = params.len() as u32 + locals.len() as u32;
@@ -3404,17 +3512,15 @@ fn build_component_import_adapter(
             .get(parameter)
             .expect("Component Struct import parameter codec must be registered");
           instructions.extend([
-            Instruction::I32Const(0),
-            Instruction::I32Const(0),
-            Instruction::I32Const(layout.alignment),
             Instruction::I32Const(layout.size),
-            Instruction::Call(cabi_realloc_index),
+            Instruction::Call(codecs.arena_alloc_index),
             Instruction::LocalSet(canonical_ptr),
             Instruction::LocalGet(index as u32),
             Instruction::LocalGet(canonical_ptr),
             Instruction::Call(codec.lower_index),
           ]);
           push_load_value_flat(&mut instructions, parameter, canonical_ptr);
+          lowered_owned_areas.push((parameter.clone(), canonical_ptr));
         }
       }
     }
@@ -3427,11 +3533,13 @@ fn build_component_import_adapter(
       params,
       locals,
       instructions,
-      cabi_realloc_index,
+      drop_indices,
       codecs,
+      &lowered_owned_areas,
     );
   }
 
+  let mut sync_ret_ptr = None;
   match &adapter.result {
     ComponentAbiType::Unit => {
       instructions.push(Instruction::Call(adapter.raw_index));
@@ -3453,7 +3561,7 @@ fn build_component_import_adapter(
       instructions.extend(component_numeric_to_f64(*kind, canonical));
     }
     ComponentAbiType::Buffer | ComponentAbiType::String => {
-      let ret_ptr = params.len() as u32;
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::I32);
       let bytes_new_index = match &adapter.result {
         ComponentAbiType::Buffer => codecs.buffer_new_index,
@@ -3461,11 +3569,8 @@ fn build_component_import_adapter(
         _ => unreachable!("byte result branch must use a byte-backed Component type"),
       };
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(4),
         Instruction::I32Const(8),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalTee(ret_ptr),
         Instruction::Call(adapter.raw_index),
         Instruction::LocalGet(ret_ptr),
@@ -3474,20 +3579,18 @@ fn build_component_import_adapter(
         Instruction::I32Load(mem_arg_i32(4)),
         Instruction::Call(bytes_new_index),
       ]);
+      sync_ret_ptr = Some(ret_ptr);
     }
     ComponentAbiType::List(_) => {
-      let ret_ptr = params.len() as u32;
+      let ret_ptr = params.len() as u32 + locals.len() as u32;
       locals.push(ValType::I32);
       let codec = codecs
         .list_codecs
         .get(&adapter.result)
         .expect("Component List import result codec must be registered");
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(4),
         Instruction::I32Const(8),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalTee(ret_ptr),
         Instruction::Call(adapter.raw_index),
         Instruction::LocalGet(ret_ptr),
@@ -3496,6 +3599,7 @@ fn build_component_import_adapter(
         Instruction::I32Load(mem_arg_i32(4)),
         Instruction::Call(codec.lift_index),
       ]);
+      sync_ret_ptr = Some(ret_ptr);
     }
     ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) | ComponentAbiType::Enum(_) => {
       let ret_ptr = params.len() as u32 + locals.len() as u32;
@@ -3506,11 +3610,8 @@ fn build_component_import_adapter(
         .get(&adapter.result)
         .expect("Component variant import result codec must be registered");
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(layout.alignment),
         Instruction::I32Const(layout.size),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalSet(ret_ptr),
       ]);
       if component_flat_types(&adapter.result).len() > 1 {
@@ -3523,6 +3624,7 @@ fn build_component_import_adapter(
         push_store_value_flat(&mut instructions, &adapter.result, discriminant, ret_ptr, 0);
       }
       instructions.extend([Instruction::LocalGet(ret_ptr), Instruction::Call(codec.lift_index)]);
+      sync_ret_ptr = Some(ret_ptr);
     }
     ComponentAbiType::Struct(_) => {
       let ret_ptr = params.len() as u32 + locals.len() as u32;
@@ -3533,11 +3635,8 @@ fn build_component_import_adapter(
         .get(&adapter.result)
         .expect("Component Struct import result codec must be registered");
       instructions.extend([
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(layout.alignment),
         Instruction::I32Const(layout.size),
-        Instruction::Call(cabi_realloc_index),
+        Instruction::Call(codecs.arena_alloc_index),
         Instruction::LocalSet(ret_ptr),
       ]);
       let flat_types = component_flat_types(&adapter.result);
@@ -3552,8 +3651,19 @@ fn build_component_import_adapter(
         instructions.push(Instruction::Call(adapter.raw_index));
       }
       instructions.extend([Instruction::LocalGet(ret_ptr), Instruction::Call(codec.lift_index)]);
+      sync_ret_ptr = Some(ret_ptr);
     }
   }
+
+  emit_reclaim_import_buffers(
+    &mut instructions,
+    params.len(),
+    &mut locals,
+    drop_indices,
+    &lowered_owned_areas,
+    &adapter.result,
+    sync_ret_ptr,
+  );
 
   CompiledFn {
     export_name: None,
@@ -3564,14 +3674,16 @@ fn build_component_import_adapter(
   }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_component_async_import_adapter(
   adapter: &ComponentImportAdapter,
   canonical: &ComponentAsyncCanonicalImports,
   params: Vec<ValType>,
   mut locals: Vec<ValType>,
   mut instructions: Vec<Instruction<'static>>,
-  cabi_realloc_index: u32,
+  drop_indices: &BTreeMap<ComponentAbiType, u32>,
   codecs: &ComponentValueCodecs<'_>,
+  lowered_owned_areas: &[(ComponentAbiType, u32)],
 ) -> CompiledFn {
   let ret_ptr = if matches!(adapter.result, ComponentAbiType::Unit) {
     None
@@ -3580,11 +3692,8 @@ fn finish_component_async_import_adapter(
     locals.push(ValType::I32);
     let layout = component_memory_layout(&adapter.result);
     instructions.extend([
-      Instruction::I32Const(0),
-      Instruction::I32Const(0),
-      Instruction::I32Const(layout.alignment),
       Instruction::I32Const(layout.size),
-      Instruction::Call(cabi_realloc_index),
+      Instruction::Call(codecs.arena_alloc_index),
       Instruction::LocalTee(local),
     ]);
     Some(local)
@@ -3643,11 +3752,8 @@ fn finish_component_async_import_adapter(
     Instruction::LocalGet(subtask),
     Instruction::LocalGet(waitable_set),
     Instruction::Call(canonical.waitable_join),
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
     Instruction::I32Const(8),
-    Instruction::I32Const(8),
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalSet(event_ptr),
     Instruction::Block(wasm_encoder::BlockType::Empty),
     Instruction::Loop(wasm_encoder::BlockType::Empty),
@@ -3777,6 +3883,16 @@ fn finish_component_async_import_adapter(
       ]);
     }
   }
+
+  emit_reclaim_import_buffers(
+    &mut instructions,
+    params.len(),
+    &mut locals,
+    drop_indices,
+    lowered_owned_areas,
+    &adapter.result,
+    ret_ptr,
+  );
 
   CompiledFn {
     export_name: None,
@@ -3946,6 +4062,7 @@ fn finish_component_async_export(
       instructions,
     );
   }
+  instructions.push(Instruction::Call(runtime.turn_exit_index));
 }
 
 fn push_component_task_return_from_area(result: &ComponentAbiType, ret_ptr: Option<u32>, instructions: &mut Vec<Instruction<'static>>) {
@@ -4019,17 +4136,20 @@ fn push_component_stream_task_return(
   adapter: &ComponentExportAdapter,
   result_discriminant: i32,
   error_variant: i32,
+  turn_exit_index: u32,
   instructions: &mut Vec<Instruction<'static>>,
 ) {
   instructions.extend([
     Instruction::I32Const(result_discriminant),
     Instruction::I32Const(error_variant),
     Instruction::Call(adapter.task_return_index.expect("stream export must have task.return")),
+    Instruction::Call(turn_exit_index),
     Instruction::I32Const(0),
     Instruction::Return,
   ]);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_component_stream_export(
   adapter: &ComponentExportAdapter,
   canonical: &ComponentAsyncCanonicalImports,
@@ -4038,6 +4158,9 @@ fn build_component_stream_export(
   cabi_free_index: u32,
   cabi_realloc_index: u32,
   step_index: u32,
+  global_layout: &WasmGlobalLayout,
+  turn_enter_index: u32,
+  turn_exit_index: u32,
 ) -> [CompiledFn; 3] {
   let consumer = adapter
     .stream_consumer
@@ -4059,6 +4182,9 @@ fn build_component_stream_export(
   let continue_reading = local(&mut step_locals, ValType::I32);
   let handler_result = local(&mut step_locals, ValType::F64);
   let read_len = local(&mut step_locals, ValType::I32);
+  let chunk_mark = local(&mut step_locals, ValType::I32);
+  let saved_live_above = local(&mut step_locals, ValType::I32);
+  let saved_free_head = local(&mut step_locals, ValType::I32);
   let mut step = vec![Instruction::Loop(wasm_encoder::BlockType::Empty)];
   step.extend([
     Instruction::LocalGet(1),
@@ -4098,7 +4224,7 @@ fn build_component_stream_export(
   // A zero-item completed read cannot make progress and would otherwise spin
   // inside this core call. Treat it as a terminal empty read, just like EOF.
   push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
-  push_component_stream_task_return(adapter, 0, 0, &mut step);
+  push_component_stream_task_return(adapter, 0, 0, turn_exit_index, &mut step);
   step.extend([
     Instruction::Else,
     Instruction::LocalGet(total),
@@ -4110,12 +4236,24 @@ fn build_component_stream_export(
     Instruction::If(wasm_encoder::BlockType::Empty),
   ]);
   push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
-  push_component_stream_task_return(adapter, 1, consumer.total_limit_variant as i32, &mut step);
+  push_component_stream_task_return(adapter, 1, consumer.total_limit_variant as i32, turn_exit_index, &mut step);
   step.extend([
     Instruction::End,
     Instruction::LocalGet(0),
     Instruction::LocalGet(total),
     Instruction::I32Store(mem_arg_i32(STREAM_STATE_TOTAL)),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalSet(chunk_mark),
+  ]);
+  if let Some(comp) = &global_layout.component {
+    step.extend([
+      Instruction::GlobalGet(comp.live_above_mark),
+      Instruction::LocalSet(saved_live_above),
+      Instruction::GlobalGet(comp.free_head),
+      Instruction::LocalSet(saved_free_head),
+    ]);
+  }
+  step.extend([
     Instruction::LocalGet(0),
     Instruction::I32Load(mem_arg_i32(STREAM_STATE_CHUNK_PTR)),
     Instruction::LocalGet(count),
@@ -4136,6 +4274,39 @@ fn build_component_stream_export(
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
+  ]);
+  // Reclaim ephemeral chunk buffer allocations immediately between stream chunks
+  // as long as no outer turn, deferred compaction, or unmatched cabi_realloc block needs them.
+  step.extend([
+    Instruction::GlobalGet(global_layout.active_turns),
+    Instruction::I32Const(1),
+    Instruction::I32Eq,
+  ]);
+  if let Some(pers) = &global_layout.persistent {
+    step.extend([
+      Instruction::GlobalGet(pers.needs_compact),
+      Instruction::I32Const(2),
+      Instruction::I32Ne,
+      Instruction::I32And,
+    ]);
+  }
+  if let Some(comp) = &global_layout.component {
+    step.extend([
+      Instruction::GlobalGet(comp.live_above_mark),
+      Instruction::LocalGet(saved_live_above),
+      Instruction::I32Eq,
+      Instruction::I32And,
+      Instruction::GlobalGet(comp.free_head),
+      Instruction::LocalGet(saved_free_head),
+      Instruction::I32Eq,
+      Instruction::I32And,
+    ]);
+  }
+  step.extend([
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(chunk_mark),
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::End,
     Instruction::End,
     Instruction::LocalGet(kind),
     Instruction::I32Const(1),
@@ -4146,7 +4317,7 @@ fn build_component_stream_export(
     Instruction::If(wasm_encoder::BlockType::Empty),
   ]);
   push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, 0, &mut step);
-  push_component_stream_task_return(adapter, 0, 0, &mut step);
+  push_component_stream_task_return(adapter, 0, 0, turn_exit_index, &mut step);
   step.extend([
     Instruction::End,
     Instruction::I32Const(consumer.max_total_bytes as i32),
@@ -4191,6 +4362,7 @@ fn build_component_stream_export(
   let waitable_set = 2;
   let chunk_ptr = 3;
   let entry = vec![
+    Instruction::Call(turn_enter_index),
     Instruction::Call(canonical.waitable_set_new),
     Instruction::LocalSet(waitable_set),
     Instruction::LocalGet(0),
@@ -4258,6 +4430,7 @@ fn build_component_stream_export(
   push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, callback_state, &mut callback);
   callback.extend([
     Instruction::Call(stackless.task_cancel),
+    Instruction::Call(turn_exit_index),
     Instruction::I32Const(0),
     Instruction::Return,
     Instruction::End,
@@ -4287,6 +4460,7 @@ fn build_component_stream_export(
   push_component_stream_cleanup(consumer, canonical, stackless, cabi_free_index, callback_state, &mut callback);
   callback.extend([
     Instruction::Call(stackless.task_cancel),
+    Instruction::Call(turn_exit_index),
     Instruction::I32Const(0),
     Instruction::Return,
     Instruction::End,
@@ -4317,6 +4491,7 @@ fn build_component_stream_export(
   [step_fn, entry_fn, callback_fn]
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_component_stackless_tail_export(
   adapter: &ComponentExportAdapter,
   imported: &ComponentImportAdapter,
@@ -4325,6 +4500,9 @@ fn build_component_stackless_tail_export(
   cabi_free_index: u32,
   cabi_realloc_index: u32,
   drop_indices: &BTreeMap<ComponentAbiType, u32>,
+  arena_alloc_index: u32,
+  turn_enter_index: u32,
+  turn_exit_index: u32,
 ) -> [CompiledFn; 2] {
   const STATE_RET_PTR: u64 = 0;
   const STATE_SUBTASK: u64 = 4;
@@ -4334,7 +4512,7 @@ fn build_component_stackless_tail_export(
 
   let params = adapter.parameters.iter().flat_map(component_flat_types).collect::<Vec<_>>();
   let mut locals = Vec::new();
-  let mut instructions = Vec::new();
+  let mut instructions = vec![Instruction::Call(turn_enter_index)];
   let ret_ptr = if matches!(adapter.result, ComponentAbiType::Unit) {
     None
   } else {
@@ -4357,11 +4535,8 @@ fn build_component_stackless_tail_export(
     let record_ptr = params.len() as u32 + locals.len() as u32;
     locals.push(ValType::I32);
     instructions.extend([
-      Instruction::I32Const(0),
-      Instruction::I32Const(0),
-      Instruction::I32Const(layout.alignment),
       Instruction::I32Const(layout.size),
-      Instruction::Call(cabi_realloc_index),
+      Instruction::Call(arena_alloc_index),
       Instruction::LocalSet(record_ptr),
     ]);
     let mut flat_start = 0;
@@ -4418,6 +4593,7 @@ fn build_component_stackless_tail_export(
     push_component_result_reclaim(&adapter.result, ret_ptr, cabi_free_index, drop_indices, &mut instructions);
   }
   instructions.extend([
+    Instruction::Call(turn_exit_index),
     Instruction::I32Const(0),
     Instruction::Else,
     Instruction::LocalGet(status_kind),
@@ -4570,6 +4746,7 @@ fn build_component_stackless_tail_export(
   }
   callback_instructions.extend([
     Instruction::Call(stackless.task_cancel),
+    Instruction::Call(turn_exit_index),
     Instruction::I32Const(0),
     Instruction::Return,
     Instruction::End,
@@ -4618,13 +4795,15 @@ fn build_component_stackless_tail_export(
   callback_instructions.extend([Instruction::Call(
     adapter.task_return_index.expect("stackless callback must have task.return"),
   )]);
-  push_component_result_reclaim(
-    &adapter.result,
-    callback_ret_ptr,
-    cabi_free_index,
-    drop_indices,
-    &mut callback_instructions,
-  );
+  if ret_ptr.is_some() {
+    push_component_result_reclaim(
+      &adapter.result,
+      callback_ret_ptr,
+      cabi_free_index,
+      drop_indices,
+      &mut callback_instructions,
+    );
+  }
   callback_instructions.push(Instruction::Else);
   if ret_ptr.is_some() {
     callback_instructions.extend([
@@ -4633,7 +4812,12 @@ fn build_component_stackless_tail_export(
       Instruction::Call(cabi_free_index),
     ]);
   }
-  callback_instructions.extend([Instruction::Call(stackless.task_cancel), Instruction::End, Instruction::I32Const(0)]);
+  callback_instructions.extend([
+    Instruction::Call(stackless.task_cancel),
+    Instruction::End,
+    Instruction::Call(turn_exit_index),
+    Instruction::I32Const(0),
+  ]);
 
   let callback = CompiledFn {
     export_name: Some(component_async_callback_symbol(adapter)),
@@ -4648,6 +4832,7 @@ fn build_component_stackless_tail_export(
 fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &ComponentExportRuntime<'_>) -> CompiledFn {
   let str_new_index = runtime.codecs.str_new_index;
   let buffer_new_index = runtime.codecs.buffer_new_index;
+  let arena_alloc_index = runtime.codecs.arena_alloc_index;
   let cabi_realloc_index = runtime.codecs.cabi_realloc_index;
   let list_codecs = runtime.codecs.list_codecs;
   let struct_codecs = runtime.codecs.struct_codecs;
@@ -4658,7 +4843,7 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
   }
 
   let mut locals = Vec::new();
-  let mut instructions = Vec::new();
+  let mut instructions = vec![Instruction::Call(runtime.turn_enter_index)];
   let mut flat_index = 0u32;
   let mut lowered = Vec::with_capacity(adapter.parameters.len());
   for parameter in &adapter.parameters {
@@ -4697,6 +4882,12 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           Instruction::LocalGet(flat_index + 1),
           Instruction::Call(bytes_new_index),
           Instruction::LocalSet(local),
+          Instruction::LocalGet(flat_index + 1),
+          Instruction::If(wasm_encoder::BlockType::Empty),
+          Instruction::LocalGet(flat_index),
+          Instruction::LocalGet(flat_index + 1),
+          Instruction::Call(runtime.cabi_free_index),
+          Instruction::End,
         ]);
         lowered.push(local);
         flat_index += 2;
@@ -4713,6 +4904,22 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           Instruction::Call(codec.lift_index),
           Instruction::LocalSet(local),
         ]);
+        if let Some(&drop_idx) = runtime.drop_indices.get(parameter) {
+          let pair_ptr = params.len() as u32 + locals.len() as u32;
+          locals.push(ValType::I32);
+          instructions.extend([
+            Instruction::I32Const(8),
+            Instruction::Call(arena_alloc_index),
+            Instruction::LocalTee(pair_ptr),
+            Instruction::LocalGet(flat_index),
+            Instruction::I32Store(mem_arg_i32(0)),
+            Instruction::LocalGet(pair_ptr),
+            Instruction::LocalGet(flat_index + 1),
+            Instruction::I32Store(mem_arg_i32(4)),
+            Instruction::LocalGet(pair_ptr),
+            Instruction::Call(drop_idx),
+          ]);
+        }
         lowered.push(local);
         flat_index += 2;
       }
@@ -4726,11 +4933,8 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           .get(parameter)
           .expect("Component variant export parameter codec must be registered");
         instructions.extend([
-          Instruction::I32Const(0),
-          Instruction::I32Const(0),
-          Instruction::I32Const(layout.alignment),
           Instruction::I32Const(layout.size),
-          Instruction::Call(cabi_realloc_index),
+          Instruction::Call(arena_alloc_index),
           Instruction::LocalSet(canonical_ptr),
         ]);
         push_store_value_flat(&mut instructions, parameter, flat_index, canonical_ptr, 0);
@@ -4739,6 +4943,9 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           Instruction::Call(codec.lift_index),
           Instruction::LocalSet(local),
         ]);
+        if let Some(&drop_idx) = runtime.drop_indices.get(parameter) {
+          instructions.extend([Instruction::LocalGet(canonical_ptr), Instruction::Call(drop_idx)]);
+        }
         lowered.push(local);
         flat_index += component_flat_types(parameter).len() as u32;
       }
@@ -4752,11 +4959,8 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           .get(parameter)
           .expect("Component Struct export parameter codec must be registered");
         instructions.extend([
-          Instruction::I32Const(0),
-          Instruction::I32Const(0),
-          Instruction::I32Const(layout.alignment),
           Instruction::I32Const(layout.size),
-          Instruction::Call(cabi_realloc_index),
+          Instruction::Call(arena_alloc_index),
           Instruction::LocalSet(canonical_ptr),
         ]);
         push_store_value_flat(&mut instructions, parameter, flat_index, canonical_ptr, 0);
@@ -4765,6 +4969,9 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
           Instruction::Call(codec.lift_index),
           Instruction::LocalSet(local),
         ]);
+        if let Some(&drop_idx) = runtime.drop_indices.get(parameter) {
+          instructions.extend([Instruction::LocalGet(canonical_ptr), Instruction::Call(drop_idx)]);
+        }
         lowered.push(local);
         flat_index += component_flat_types(parameter).len() as u32;
       }
@@ -4786,6 +4993,7 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
     };
   }
 
+  let needs_post_return = component_export_needs_post_return(adapter);
   let results = match &adapter.result {
     ComponentAbiType::Unit => {
       instructions.push(Instruction::Drop);
@@ -4885,19 +5093,25 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
       let codec = variant_codecs
         .get(&adapter.result)
         .expect("Component variant export result codec must be registered");
+      let flat_types = component_flat_types(&adapter.result);
+      instructions.push(Instruction::LocalSet(value));
+      if flat_types.len() > 1 {
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::I32Const(0),
+          Instruction::I32Const(layout.alignment),
+          Instruction::I32Const(layout.size),
+          Instruction::Call(cabi_realloc_index),
+        ]);
+      } else {
+        instructions.extend([Instruction::I32Const(layout.size), Instruction::Call(arena_alloc_index)]);
+      }
       instructions.extend([
-        Instruction::LocalSet(value),
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(layout.alignment),
-        Instruction::I32Const(layout.size),
-        Instruction::Call(cabi_realloc_index),
         Instruction::LocalSet(ret_ptr),
         Instruction::LocalGet(value),
         Instruction::LocalGet(ret_ptr),
         Instruction::Call(codec.lower_index),
       ]);
-      let flat_types = component_flat_types(&adapter.result);
       if flat_types.len() > 1 {
         instructions.push(Instruction::LocalGet(ret_ptr));
         vec![ValType::I32]
@@ -4915,19 +5129,25 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
       let codec = struct_codecs
         .get(&adapter.result)
         .expect("Component Struct export result codec must be registered");
+      let flat_types = component_flat_types(&adapter.result);
+      instructions.push(Instruction::LocalSet(value));
+      if flat_types.len() > 1 {
+        instructions.extend([
+          Instruction::I32Const(0),
+          Instruction::I32Const(0),
+          Instruction::I32Const(layout.alignment),
+          Instruction::I32Const(layout.size),
+          Instruction::Call(cabi_realloc_index),
+        ]);
+      } else {
+        instructions.extend([Instruction::I32Const(layout.size), Instruction::Call(arena_alloc_index)]);
+      }
       instructions.extend([
-        Instruction::LocalSet(value),
-        Instruction::I32Const(0),
-        Instruction::I32Const(0),
-        Instruction::I32Const(layout.alignment),
-        Instruction::I32Const(layout.size),
-        Instruction::Call(cabi_realloc_index),
         Instruction::LocalSet(ret_ptr),
         Instruction::LocalGet(value),
         Instruction::LocalGet(ret_ptr),
         Instruction::Call(codec.lower_index),
       ]);
-      let flat_types = component_flat_types(&adapter.result);
       if flat_types.len() > 1 {
         instructions.push(Instruction::LocalGet(ret_ptr));
         vec![ValType::I32]
@@ -4937,6 +5157,20 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
       }
     }
   };
+
+  if !needs_post_return {
+    if let Some(&result_ty) = results.first() {
+      let ret_flat = params.len() as u32 + locals.len() as u32;
+      locals.push(result_ty);
+      instructions.extend([
+        Instruction::LocalSet(ret_flat),
+        Instruction::Call(runtime.turn_exit_index),
+        Instruction::LocalGet(ret_flat),
+      ]);
+    } else {
+      instructions.push(Instruction::Call(runtime.turn_exit_index));
+    }
+  }
 
   CompiledFn {
     export_name: Some(component_export_emitted_symbol(adapter)),
@@ -10017,7 +10251,10 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           .get(&qualified)
           .ok_or_else(|| format!("unknown atom in reset!: {qualified}"))?;
         emit_expr(ctx, &args_list[1])?;
-        // Store new value in global, and leave it on stack as return value
+        if let Some(&commit_idx) = ctx.runtime_fn_index.get("__rt_commit_defref") {
+          ctx.emit(Instruction::Call(commit_idx));
+        }
+        // Store new (possibly promoted) value in global, and leave it on stack as return value
         let tmp = ctx.alloc_local();
         ctx.emit(Instruction::LocalTee(tmp));
         ctx.emit(Instruction::GlobalSet(global_idx));
@@ -11758,51 +11995,16 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(v_local));
 
-  let is_valid_ptr = ctx.alloc_local_typed(ValType::I32);
-  let raw_base = ctx.alloc_local_typed(ValType::I32);
-
-  // 1) integer-valued: v == trunc(v)
-  ctx.emit(Instruction::LocalGet(v_local));
-  ctx.emit(Instruction::LocalGet(v_local));
-  ctx.emit(Instruction::F64Trunc);
-  ctx.emit(Instruction::F64Eq);
-  // 2) v >= (HEAP_BASE + 8) as f64  (lowest possible logical pointer)
-  ctx.emit(Instruction::LocalGet(v_local));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::I32And);
-  // 3) v < current heap_ptr
-  ctx.emit(Instruction::LocalGet(v_local));
-  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalSet(is_valid_ptr));
-
-  // Short-circuit: only convert and load memory when range is valid. The
-  // unsigned truncation traps on negative, NaN and out-of-range numbers, so it
-  // must stay inside the guarded branch.
+  let is_valid_ptr = emit_is_heap_value(ctx, v_local);
   ctx.emit(Instruction::LocalGet(is_valid_ptr));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  // raw_base = trunc(v) - 8
+  // Load tag id (i32) at ptr-4 and convert to f64.
   ctx.emit(Instruction::LocalGet(v_local));
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Const(4));
   ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_base));
-  // Check magic at raw_base+0 == HEAP_MAGIC.
-  ctx.emit(Instruction::LocalGet(raw_base));
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  // Load tag id (i32) at raw_base+4 and convert to f64.
-  ctx.emit(Instruction::LocalGet(raw_base));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
   ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(number_tag));
-  ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(number_tag));
   ctx.emit(Instruction::End);
@@ -12656,8 +12858,15 @@ fn emit_numeric_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[C
 /// This is the same test `type-of` uses. The cheap range check comes first and
 /// memory is read only after the range and integer checks, so plain numbers
 /// (including fractions in the heap address range) never touch it.
-fn emit_is_heap_value(ctx: &mut WasmGenCtx, value: u32) -> u32 {
+#[allow(private_interfaces)]
+pub(super) fn emit_is_heap_value(ctx: &mut WasmGenCtx, value: u32) -> u32 {
   let result = ctx.alloc_local_typed(ValType::I32);
+  if let Some(&is_heap_idx) = ctx.runtime_fn_index.get("__rt_is_heap_ptr") {
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(Instruction::Call(is_heap_idx));
+    ctx.emit(Instruction::LocalSet(result));
+    return result;
+  }
   let in_heap = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(result));
@@ -13485,31 +13694,12 @@ fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]
   let result = ctx.alloc_local();
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::MemorySize(0));
-  ctx.emit(Instruction::I32Const(16));
-  ctx.emit(Instruction::I32Shl);
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::F64Trunc);
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::I32And);
+  let is_heap = emit_is_heap_value(ctx, value);
+  ctx.emit(Instruction::LocalGet(is_heap));
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::I32Const(4));
   ctx.emit(Instruction::I32Sub);
@@ -13518,7 +13708,6 @@ fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]
     *ctx.tag_index.get("buffer").ok_or("buffer tag not found")? as i32
   ));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32And);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -14981,9 +15170,20 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
 ///   - `string_pool`: maps string content → logical pointer (offset of byte_len field)
 ///   - `data_segment`: raw bytes for the WASM data section
 ///   - `heap_start`: the new heap start offset (after all string data)
+#[cfg(test)]
 fn build_string_pool(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   value_imports: &HashMap<String, Calcit>,
+  tag_index: &HashMap<String, u32>,
+  target: WasmTarget,
+) -> (HashMap<String, u32>, Vec<u8>, i32) {
+  build_string_pool_with_extras(fn_defs, value_imports, &[], tag_index, target)
+}
+
+fn build_string_pool_with_extras(
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  value_imports: &HashMap<String, Calcit>,
+  extra_exprs: &[Calcit],
   tag_index: &HashMap<String, u32>,
   target: WasmTarget,
 ) -> (HashMap<String, u32>, Vec<u8>, i32) {
@@ -14999,7 +15199,7 @@ fn build_string_pool(
       needs_json_format |= expr_uses_json_format(expr);
     }
   }
-  for expr in value_imports.values() {
+  for expr in value_imports.values().chain(extra_exprs.iter()) {
     collect_strings_from_expr(expr, &mut strings);
     needs_edn_format |= expr_uses_cirru_edn_format(expr);
     needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
@@ -15103,6 +15303,100 @@ fn build_string_pool(
 
   let heap_start = offset as i32;
   (pool, data, heap_start)
+}
+
+struct StaticDataAndAtoms {
+  string_pool: HashMap<String, u32>,
+  string_data_segment: Vec<u8>,
+  heap_start: i32,
+  atom_initial_values: Vec<f64>,
+  atom_globals: HashMap<String, u32>,
+}
+
+fn append_static_empty_container(
+  data_segment: &mut Vec<u8>,
+  heap_start: &mut i32,
+  tag_index: &HashMap<String, u32>,
+  tag_name: &str,
+  f64_slots: usize,
+) -> f64 {
+  let tag_id = *tag_index.get(tag_name).unwrap_or_else(|| panic!("{tag_name} type tag must exist"));
+  let logical_ptr = (*heap_start as u32) + 8;
+  data_segment.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
+  data_segment.extend_from_slice(&tag_id.to_le_bytes());
+  for _ in 0..f64_slots {
+    data_segment.extend_from_slice(&0.0f64.to_le_bytes());
+  }
+  *heap_start += 8 + (f64_slots as i32) * 8;
+  logical_ptr as f64
+}
+
+fn build_static_data_and_atoms(
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  value_imports: &HashMap<String, Calcit>,
+  tag_index: &HashMap<String, u32>,
+  target: WasmTarget,
+  defref_defs: &[(String, Option<Calcit>)],
+) -> StaticDataAndAtoms {
+  let extra_exprs: Vec<Calcit> = defref_defs.iter().filter_map(|(_, init)| init.clone()).collect();
+  let (string_pool, mut data_segment, mut heap_start) =
+    build_string_pool_with_extras(fn_defs, value_imports, &extra_exprs, tag_index, target);
+  let mut atom_initial_values: Vec<f64> = Vec::with_capacity(defref_defs.len());
+  let mut atom_globals: HashMap<String, u32> = HashMap::with_capacity(defref_defs.len());
+  let mut empty_list_ptr: Option<f64> = None;
+  let mut empty_set_ptr: Option<f64> = None;
+  let mut empty_map_ptr: Option<f64> = None;
+
+  for (qualified, init_opt) in defref_defs {
+    let global_idx = 1 + atom_initial_values.len() as u32;
+    atom_globals.insert(qualified.clone(), global_idx);
+    let mut current = init_opt.as_ref();
+    while let Some(Calcit::List(items)) = current
+      && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+      && items.len() >= 2
+    {
+      current = Some(&items[1]);
+    }
+    let static_empty = match current {
+      Some(Calcit::Proc(CalcitProc::List)) => Some(("list", 1usize, &mut empty_list_ptr)),
+      Some(Calcit::Import(imp)) if imp.def.as_ref() == "[]" => Some(("list", 1, &mut empty_list_ptr)),
+      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::List))) => {
+        Some(("list", 1, &mut empty_list_ptr))
+      }
+      Some(Calcit::Proc(CalcitProc::Set)) => Some(("set", 1, &mut empty_set_ptr)),
+      Some(Calcit::Import(imp)) if imp.def.as_ref() == "#{}" => Some(("set", 1, &mut empty_set_ptr)),
+      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::Set))) => {
+        Some(("set", 1, &mut empty_set_ptr))
+      }
+      Some(Calcit::Proc(CalcitProc::NativeMap)) => Some(("map", 2, &mut empty_map_ptr)),
+      Some(Calcit::Import(imp)) if imp.def.as_ref() == "{}" => Some(("map", 2, &mut empty_map_ptr)),
+      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeMap))) => {
+        Some(("map", 2, &mut empty_map_ptr))
+      }
+      _ => None,
+    };
+    let init_val = if let Some((tag_name, f64_slots, cache)) = static_empty {
+      *cache.get_or_insert_with(|| append_static_empty_container(&mut data_segment, &mut heap_start, tag_index, tag_name, f64_slots))
+    } else {
+      match current {
+        None | Some(Calcit::Nil) | Some(Calcit::Bool(false)) => 0.0,
+        Some(Calcit::Bool(true)) => 1.0,
+        Some(Calcit::Number(n)) => *n,
+        Some(Calcit::Tag(tag)) => tag_index.get(tag.ref_str()).copied().map_or(0.0, f64::from),
+        Some(Calcit::Str(s)) => string_pool.get(s.as_ref()).copied().map_or(0.0, f64::from),
+        _ => 0.0,
+      }
+    };
+    atom_initial_values.push(init_val);
+  }
+  debug_assert_eq!(heap_start % 8, 0);
+  StaticDataAndAtoms {
+    string_pool,
+    string_data_segment: data_segment,
+    heap_start,
+    atom_initial_values,
+    atom_globals,
+  }
 }
 
 /// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
@@ -15712,16 +16006,16 @@ mod tests {
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
     HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx,
-    WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter,
-    build_component_import_adapter, build_rest_adapter, build_string_pool, build_wasi_component_open_at_fn,
-    build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
-    call_indirect, component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature,
-    component_memory_layout, component_task_return_signature, emit_call_expr, emit_call_spread, emit_call_spread_args_as_regular,
-    emit_inline_closure_call, emit_proc_call, emit_recur_loop, expr_uses_wasi_clocks, expr_uses_wasi_file, expr_uses_wasi_read_dir,
-    expr_uses_wasi_wait, host_imports_for_target, index_host_imports, mem_arg_f64, must_reject_extraction_failure,
-    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
-    validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence, wasi_component_file_imports,
-    wasi_component_read_dir_imports, wasm_non_nil_value_is_nonzero,
+    WasmGlobalLayout, WasmMemoryLayout, WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn,
+    build_component_export_adapter, build_component_import_adapter, build_rest_adapter, build_string_pool,
+    build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
+    build_wasi_component_select_preopen_fn, build_wasm_module, call_indirect, component_abi_type, component_export_needs_post_return,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
+    emit_call_spread, emit_call_spread_args_as_regular, emit_inline_closure_call, emit_proc_call, emit_recur_loop,
+    expr_uses_wasi_clocks, expr_uses_wasi_file, expr_uses_wasi_read_dir, expr_uses_wasi_wait, host_imports_for_target,
+    index_host_imports, mem_arg_f64, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence,
+    wasi_component_file_imports, wasi_component_read_dir_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::wasm::host::calcit::{
     Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitImpl, CalcitImport, CalcitList, CalcitLocal, CalcitNumericRefinement,
@@ -16507,7 +16801,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 0,
         table_fn_count: 2,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(16384, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::from([((3, 0), 4), ((1, 0), 5)]),
       },
     )
@@ -16546,6 +16841,7 @@ mod tests {
       codecs: ComponentValueCodecs {
         str_new_index: 10,
         buffer_new_index: 11,
+        arena_alloc_index: 40,
         cabi_realloc_index: 30,
         list_codecs,
         struct_codecs,
@@ -16553,6 +16849,8 @@ mod tests {
       },
       cabi_free_index: 29,
       drop_indices,
+      turn_enter_index: 41,
+      turn_exit_index: 42,
     }
   }
 
@@ -16715,7 +17013,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 0,
         table_fn_count: 0,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(16, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
       },
     )
@@ -16737,7 +17036,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 0,
         table_fn_count: 0,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(16384, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
       },
     )
@@ -16817,7 +17117,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 0,
         table_fn_count: 0,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(16384, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
       },
     )
@@ -16929,9 +17230,11 @@ mod tests {
           results: vec![],
         },
       ];
-      let mut free = build_cabi_free_fn(2);
+      let global_layout = WasmGlobalLayout::compute(0, true);
+      let comp = global_layout.component.expect("component layout must exist");
+      let mut free = build_cabi_free_fn(comp);
       free.export_name = Some("cabi_free".into());
-      let mut realloc = build_cabi_realloc_fn(2, 2);
+      let mut realloc = build_cabi_realloc_fn(2, comp);
       realloc.export_name = Some("cabi_realloc".into());
       let run = CompiledFn {
         export_name: Some("wasi:cli/run@0.3.1#run".into()),
@@ -16954,6 +17257,7 @@ mod tests {
       };
       let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
       string_data.extend_from_slice(path.as_bytes());
+      let heap_start = HEAP_BASE + ((string_data.len() + 7) & !7) as i32;
       let core = build_wasm_module(
         &[
           free,
@@ -16963,14 +17267,15 @@ mod tests {
           run,
         ],
         &imports,
-        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
+        heap_start,
         &string_data,
         &[],
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 4,
           table_fn_count: 0,
-          component_free_head: true,
+          memory_layout: WasmMemoryLayout::compute(heap_start, 0),
+          global_layout,
           rest_adapters: HashMap::new(),
         },
       )
@@ -17036,9 +17341,11 @@ mod tests {
         results: vec![],
       });
       let free_index = imports.len() as u32;
-      let mut free = build_cabi_free_fn(2);
+      let global_layout = WasmGlobalLayout::compute(0, true);
+      let comp = global_layout.component.expect("component layout must exist");
+      let mut free = build_cabi_free_fn(comp);
       free.export_name = Some("cabi_free".into());
-      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      let mut realloc = build_cabi_realloc_fn(free_index, comp);
       realloc.export_name = Some("cabi_realloc".into());
       let open_index = free_index + 4;
       let instructions = vec![
@@ -17067,6 +17374,7 @@ mod tests {
       };
       let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
       string_data.extend_from_slice(path.as_bytes());
+      let heap_start = HEAP_BASE + ((string_data.len() + 7) & !7) as i32;
       let core = build_wasm_module(
         &[
           free,
@@ -17077,14 +17385,15 @@ mod tests {
           run,
         ],
         &imports,
-        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
+        heap_start,
         &string_data,
         &[],
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 5,
           table_fn_count: 0,
-          component_free_head: true,
+          memory_layout: WasmMemoryLayout::compute(heap_start, 0),
+          global_layout,
           rest_adapters: HashMap::new(),
         },
       )
@@ -17137,9 +17446,11 @@ mod tests {
         .expect("filesystem import")
     };
     let free_index = imports.len() as u32;
-    let mut free = build_cabi_free_fn(2);
+    let global_layout = WasmGlobalLayout::compute(0, true);
+    let comp = global_layout.component.expect("component layout must exist");
+    let mut free = build_cabi_free_fn(comp);
     free.export_name = Some("cabi_free".into());
-    let mut realloc = build_cabi_realloc_fn(free_index, 2);
+    let mut realloc = build_cabi_realloc_fn(free_index, comp);
     realloc.export_name = Some("cabi_realloc".into());
     let open_index = free_index + 4;
     let run = CompiledFn {
@@ -17226,6 +17537,7 @@ mod tests {
     };
     let mut string_data = ("workspace/input.cirru".len() as f64).to_le_bytes().to_vec();
     string_data.extend_from_slice(b"workspace/input.cirru");
+    let heap_start = HEAP_BASE + ((string_data.len() + 7) & !7) as i32;
     let core = build_wasm_module(
       &[
         free,
@@ -17250,14 +17562,15 @@ mod tests {
         run,
       ],
       &imports,
-      HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
+      heap_start,
       &string_data,
       &[],
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 5,
         table_fn_count: 0,
-        component_free_head: true,
+        memory_layout: WasmMemoryLayout::compute(heap_start, 0),
+        global_layout,
         rest_adapters: HashMap::new(),
       },
     )
@@ -17319,9 +17632,11 @@ mod tests {
           .expect("filesystem import")
       };
       let free_index = imports.len() as u32;
-      let mut free = build_cabi_free_fn(2);
+      let global_layout = WasmGlobalLayout::compute(0, true);
+      let comp = global_layout.component.expect("component layout must exist");
+      let mut free = build_cabi_free_fn(comp);
       free.export_name = Some("cabi_free".into());
-      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      let mut realloc = build_cabi_realloc_fn(free_index, comp);
       realloc.export_name = Some("cabi_realloc".into());
       let mut instructions = vec![
         Instruction::I32Const(HEAP_BASE),
@@ -17390,6 +17705,7 @@ mod tests {
       };
       let mut string_data = (path.len() as f64).to_le_bytes().to_vec();
       string_data.extend_from_slice(path.as_bytes());
+      let heap_start = HEAP_BASE + ((string_data.len() + 7) & !7) as i32;
       let core = build_wasm_module(
         &[
           free,
@@ -17430,14 +17746,15 @@ mod tests {
           run,
         ],
         &imports,
-        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
+        heap_start,
         &string_data,
         &[],
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 6,
           table_fn_count: 0,
-          component_free_head: true,
+          memory_layout: WasmMemoryLayout::compute(heap_start, 0),
+          global_layout,
           rest_adapters: HashMap::new(),
         },
       )
@@ -17498,9 +17815,11 @@ mod tests {
       if name == "host-error" && !cfg!(unix) {
         continue;
       }
-      let mut free = build_cabi_free_fn(2);
+      let global_layout = WasmGlobalLayout::compute(0, true);
+      let comp = global_layout.component.expect("component layout must exist");
+      let mut free = build_cabi_free_fn(comp);
       free.export_name = Some("cabi_free".into());
-      let mut realloc = build_cabi_realloc_fn(free_index, 2);
+      let mut realloc = build_cabi_realloc_fn(free_index, comp);
       realloc.export_name = Some("cabi_realloc".into());
       let mut instructions = vec![
         Instruction::I32Const(2048),
@@ -17576,7 +17895,8 @@ mod tests {
         ModuleFunctionLayout {
           runtime_fn_count: 3,
           table_fn_count: 0,
-          component_free_head: true,
+          memory_layout: WasmMemoryLayout::compute(16384, 0),
+          global_layout,
           rest_adapters: HashMap::new(),
         },
       )
@@ -17662,7 +17982,8 @@ mod tests {
     let variant_codecs = BTreeMap::new();
     let drop_indices = BTreeMap::new();
     let runtime = component_export_runtime(&list_codecs, &struct_codecs, &variant_codecs, &drop_indices);
-    let allocator = build_cabi_realloc_fn(9, 10);
+    let comp = WasmGlobalLayout::compute(0, true).component.expect("component layout must exist");
+    let allocator = build_cabi_realloc_fn(9, comp);
     assert_eq!(allocator.export_name.as_deref(), Some("cabi_realloc"));
     assert_eq!(allocator.params, vec![ValType::I32; 4]);
     assert_eq!(allocator.results, vec![ValType::I32]);
@@ -17757,9 +18078,11 @@ mod tests {
     let list_codecs = BTreeMap::new();
     let struct_codecs = BTreeMap::new();
     let variant_codecs = BTreeMap::new();
+    let drop_indices = BTreeMap::new();
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
+      arena_alloc_index: 40,
       cabi_realloc_index: 30,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
@@ -17776,7 +18099,7 @@ mod tests {
       result: ComponentAbiType::Number,
     };
     assert_eq!(component_import_signature(&number), (vec![ValType::F64], vec![ValType::F64]));
-    let number_adapter = build_component_import_adapter(&number, None, 12, &codecs);
+    let number_adapter = build_component_import_adapter(&number, None, 29, 12, &drop_indices, &codecs);
     assert_eq!(number_adapter.params, vec![ValType::F64]);
     assert_eq!(number_adapter.results, vec![ValType::F64]);
 
@@ -17794,7 +18117,7 @@ mod tests {
       component_import_signature(&string),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let string_adapter = build_component_import_adapter(&string, None, 12, &codecs);
+    let string_adapter = build_component_import_adapter(&string, None, 29, 12, &drop_indices, &codecs);
     assert_eq!(string_adapter.params, vec![ValType::F64]);
     assert_eq!(string_adapter.results, vec![ValType::F64]);
 
@@ -17812,7 +18135,7 @@ mod tests {
       component_import_signature(&buffer),
       (vec![ValType::I32, ValType::I32, ValType::I32], vec![])
     );
-    let buffer_adapter = build_component_import_adapter(&buffer, None, 12, &codecs);
+    let buffer_adapter = build_component_import_adapter(&buffer, None, 29, 12, &drop_indices, &codecs);
     assert_eq!(buffer_adapter.params, vec![ValType::F64]);
     assert_eq!(buffer_adapter.results, vec![ValType::F64]);
   }
@@ -17822,9 +18145,11 @@ mod tests {
     let list_codecs = BTreeMap::new();
     let struct_codecs = BTreeMap::new();
     let variant_codecs = BTreeMap::new();
+    let drop_indices = BTreeMap::new();
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
+      arena_alloc_index: 40,
       cabi_realloc_index: 30,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
@@ -17851,7 +18176,7 @@ mod tests {
       component_import_signature(&adapter),
       (vec![ValType::F64, ValType::I32], vec![ValType::I32])
     );
-    let compiled = build_component_import_adapter(&adapter, Some(&canonical), 12, &codecs);
+    let compiled = build_component_import_adapter(&adapter, Some(&canonical), 29, 12, &drop_indices, &codecs);
     assert_eq!(compiled.params, vec![ValType::F64]);
     assert_eq!(compiled.results, vec![ValType::F64]);
     for index in [
@@ -18123,12 +18448,13 @@ mod tests {
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
+      arena_alloc_index: 40,
       cabi_realloc_index: 12,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
       variant_codecs: &variant_codecs,
     };
-    let import_adapter = build_component_import_adapter(&import, None, 12, &codecs);
+    let import_adapter = build_component_import_adapter(&import, None, 29, 12, &drop_indices, &codecs);
     assert_eq!(import_adapter.params, vec![ValType::F64]);
     assert_eq!(import_adapter.results, vec![ValType::F64]);
     assert!(
@@ -18847,7 +19173,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 3,
         table_fn_count: 0,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
       },
     )
@@ -19037,7 +19364,8 @@ mod tests {
       ModuleFunctionLayout {
         runtime_fn_count: 0,
         table_fn_count: 0,
-        component_free_head: false,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE + 96, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
       },
     )

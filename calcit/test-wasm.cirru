@@ -31,10 +31,30 @@
           :code $ quote $ defref *wasm-atom-counter 20
           :examples $ []
           :schema $ quote $ Ref Number
+        '*wasm-ref-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-box (RefBox :label |init :count 0)
+          :examples $ []
+          :schema $ quote $ Ref test-wasm.main/RefBox
         '*wasm-ref-counter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *wasm-ref-counter 10
           :examples $ []
           :schema $ quote $ Ref Number
+        '*wasm-ref-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-list ([])
+          :examples $ []
+          :schema $ quote $ Ref (List String)
+        '*wasm-ref-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-map ({})
+          :examples $ []
+          :schema $ quote $ Ref (Map String String)
+        '*wasm-ref-msg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-msg (RefMsg :empty)
+          :examples $ []
+          :schema $ quote $ Ref test-wasm.main/RefMsg
+        '*wasm-ref-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-str |seed
+          :examples $ []
+          :schema $ quote $ Ref String
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MeasuredPoint (:value Number) (:impls PointScore)
           :examples $ []
@@ -57,6 +77,14 @@
           :code $ quote $ defimpl MeasuredPoint PointScore (.score point:score)
           :examples $ []
           :schema $ quote Impl
+        'RefBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct RefBox (:label String) (:count Number)
+          :examples $ []
+          :schema $ quote StructDef
+        'RefMsg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum RefMsg (:empty) (:text String) (:tagged Number String)
+          :examples $ []
+          :schema $ quote EnumDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
           :code $ quote $ defwasm-export add-two (a b) (&+ a b)
           :examples $ []
@@ -433,6 +461,74 @@
           :tests $ [] $ %{} 'TestEntry (:name |selects-nominal-trait)
             :code $ quote $ assert= 1 (test-custom-trait-score 42)
             :tags $ #{} :core :wasm
+        'test-defref-heap-promotion $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-defref-heap-promotion ()
+            reset! *wasm-ref-str $ &str:concat |step- $ to-string 1
+            swap! *wasm-ref-str $ fn (s)
+              hint-fn $ Fn String $ -> String
+              &str:concat s |-ok
+            reset! *wasm-ref-list $ []
+              &str:concat |a- $ to-string 1
+              &str:concat |b- $ to-string 2
+            swap! *wasm-ref-list $ fn (xs)
+              hint-fn $ Fn (List String)
+                -> $ List String
+              &list:concat xs $ [] |c-3
+            reset! *wasm-ref-map $ &map:assoc ({}) |k1 $ &str:concat |v- (to-string 1)
+            swap! *wasm-ref-map $ fn (m)
+              hint-fn $ Fn (Map String String)
+                -> $ Map String String
+              &map:assoc m |k2 |v-2
+            reset! *wasm-ref-box $ RefBox :label
+              &str:concat |box- $ to-string 7
+              , :count 7
+            swap! *wasm-ref-box $ fn (b)
+              hint-fn $ Fn test-wasm.main/RefBox $ -> test-wasm.main/RefBox
+              RefBox :label
+                &str:concat (:label b) |!
+                , :count $ &+ (:count b) 1
+            reset! *wasm-ref-msg $ RefMsg :tagged 9 $ &str:concat |msg- (to-string 9)
+            swap! *wasm-ref-msg $ fn (m)
+              hint-fn $ Fn test-wasm.main/RefMsg $ -> test-wasm.main/RefMsg
+              match m
+                (:empty) (RefMsg :text |was-empty)
+                (:text s) (RefMsg :text s)
+                (:tagged c s)
+                  RefMsg :tagged (&+ c 1) (&str:concat s |+)
+            let
+                s-val @*wasm-ref-str
+                l-val $ &str:concat (&list:nth @*wasm-ref-list 0)
+                  &str:concat |+ $ &list:nth @*wasm-ref-list 2
+                m-val $ &str:concat
+                  .unwrap-or (.get @*wasm-ref-map |k1) |?
+                  &str:concat |+ $ .unwrap-or (.get @*wasm-ref-map |k2) |?
+                b-val $ &str:concat (:label @*wasm-ref-box)
+                  &str:concat |: $ to-string $ :count @*wasm-ref-box
+                e-val $ match @*wasm-ref-msg
+                  (:empty) |empty
+                  (:text s) s
+                  (:tagged c s)
+                    &str:concat s $ &str:concat |/ $ to-string c
+              &str:concat s-val $ &str:concat |; $ &str:concat l-val
+                &str:concat |; $ &str:concat m-val $ &str:concat |;
+                  &str:concat b-val $ &str:concat |; e-val
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+          :tests $ [] $ %{} 'TestEntry (:name |promotes-heap-values)
+            :code $ quote $ assert= |step-1-ok;a-1+c-3;v-1+v-2;box-7!:8;msg-9+/10 (test-defref-heap-promotion)
+            :tags $ #{} :unit :wasm
+        'test-defref-same-turn-old $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-defref-same-turn-old ()
+            reset! *wasm-ref-str $ &str:concat |before- $ to-string 1
+            let
+                old @*wasm-ref-str
+              reset! *wasm-ref-str $ &str:concat |after- $ to-string 2
+              &str:concat old $ &str:concat |-> @*wasm-ref-str
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-old-deref-after-reset)
+            :code $ quote $ assert= |before-1->after-2 (test-defref-same-turn-old)
+            :tags $ #{} :unit :wasm
         'test-display-by-bin $ %{} 'CodeEntry (:doc "|17 in binary = 0b10001, length 7")
           :code $ quote $ defwasm-export test-display-by-bin ()
             &str:count $ &number:display-by 17 2

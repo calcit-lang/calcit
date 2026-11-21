@@ -4138,7 +4138,12 @@ try {
         memory.setFloat64(original, count, true);
         assert.throws(() => instance.exports["raw-write"](original), WebAssembly.RuntimeError, `wrong count: ${count}`);
         assert.equal(memory.getFloat64(original + 16, true), 1, "rejected updates preserve the source field");
-        assert.equal(instance.exports["make-state"](), original + 40, "rejected updates must not allocate a result");
+        assert.equal(
+          instance.exports.__heap_ptr.value,
+          instance.exports.__arena_base.value,
+          "rejected updates must not advance __heap_ptr",
+        );
+        assert.equal(instance.exports["make-state"](), original, "rejected updates must not allocate a result");
       }
       for (const malformed of ["magic", "fractional", "unaligned", "outside", "nan", "negative"]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
@@ -4166,7 +4171,12 @@ try {
         memory.setFloat64(receiver + 8, layout, true);
         assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError,
           "a forged prefix or copy span beyond the allocated heap must trap");
-        assert.equal(instance.exports["make-state"](), original + 40, "heap-span rejection must precede result allocation");
+        assert.equal(
+          instance.exports.__heap_ptr.value,
+          instance.exports.__arena_base.value,
+          "heap-span rejection must not advance __heap_ptr",
+        );
+        assert.equal(instance.exports["make-state"](), original, "heap-span rejection must precede result allocation");
       }
 
       // Low-level stale metadata must trap instead of overwriting another field.

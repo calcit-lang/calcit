@@ -24,6 +24,7 @@ pub(super) struct ComponentStructCodec {
 pub(super) struct ComponentValueCodecs<'a> {
   pub str_new_index: u32,
   pub buffer_new_index: u32,
+  pub arena_alloc_index: u32,
   pub cabi_realloc_index: u32,
   pub list_codecs: &'a BTreeMap<ComponentAbiType, ComponentListCodec>,
   pub struct_codecs: &'a BTreeMap<ComponentAbiType, ComponentStructCodec>,
@@ -103,10 +104,22 @@ fn collect_component_owned_type(
   }
 }
 
-pub(super) fn collect_component_owned_types(adapters: &[ComponentExportAdapter]) -> Vec<ComponentAbiType> {
+pub(super) fn collect_component_owned_types(
+  adapters: &[ComponentExportAdapter],
+  import_adapters: &[ComponentImportAdapter],
+) -> Vec<ComponentAbiType> {
   let mut seen = BTreeSet::new();
   let mut ordered = Vec::new();
   for adapter in adapters {
+    for parameter in &adapter.parameters {
+      collect_component_owned_type(parameter, &mut seen, &mut ordered);
+    }
+    collect_component_owned_type(&adapter.result, &mut seen, &mut ordered);
+  }
+  for adapter in import_adapters {
+    for parameter in &adapter.parameters {
+      collect_component_owned_type(parameter, &mut seen, &mut ordered);
+    }
     collect_component_owned_type(&adapter.result, &mut seen, &mut ordered);
   }
   ordered
@@ -786,10 +799,12 @@ pub(super) fn build_component_drop_fn(
         Instruction::LocalSet(data_ptr),
         Instruction::LocalGet(0),
         Instruction::I32Load(mem_arg_i32(4)),
-        Instruction::LocalSet(len),
+        Instruction::LocalTee(len),
+        Instruction::If(BlockType::Empty),
         Instruction::LocalGet(data_ptr),
         Instruction::LocalGet(len),
         Instruction::Call(cabi_free_index),
+        Instruction::End,
       ]);
     }
     ComponentAbiType::List(item) => {
@@ -827,13 +842,18 @@ pub(super) fn build_component_drop_fn(
           Instruction::End,
         ]);
       }
-      instructions.extend([
-        Instruction::LocalGet(data_ptr),
-        Instruction::LocalGet(len),
-        Instruction::I32Const(item_layout.size),
-        Instruction::I32Mul,
-        Instruction::Call(cabi_free_index),
-      ]);
+      if item_layout.size > 0 {
+        instructions.extend([
+          Instruction::LocalGet(len),
+          Instruction::If(BlockType::Empty),
+          Instruction::LocalGet(data_ptr),
+          Instruction::LocalGet(len),
+          Instruction::I32Const(item_layout.size),
+          Instruction::I32Mul,
+          Instruction::Call(cabi_free_index),
+          Instruction::End,
+        ]);
+      }
     }
     ComponentAbiType::Option(item) => {
       let payload_offset = component_variant_payload_offset(value_type);
@@ -919,9 +939,11 @@ pub(super) fn build_component_post_return_fn(
   adapter: &ComponentExportAdapter,
   cabi_free_index: u32,
   drop_indices: &BTreeMap<ComponentAbiType, u32>,
+  turn_exit_index: u32,
 ) -> CompiledFn {
   let mut instructions = Vec::new();
   push_component_result_reclaim(&adapter.result, 0, cabi_free_index, drop_indices, &mut instructions);
+  instructions.push(Instruction::Call(turn_exit_index));
   CompiledFn {
     export_name: Some(component_post_return_symbol(adapter)),
     params: vec![ValType::I32],
@@ -1163,7 +1185,6 @@ fn push_lift_element(
 pub(super) fn build_component_list_lift_fn(
   list_type: &ComponentAbiType,
   list_tag_id: i32,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let ComponentAbiType::List(item_type) = list_type else {
@@ -1200,12 +1221,9 @@ pub(super) fn build_component_list_lift_fn(
     Instruction::If(BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(8),
     Instruction::LocalGet(allocation_bytes),
     Instruction::I32WrapI64,
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalTee(raw_base),
     Instruction::I32Const(HEAP_MAGIC),
     Instruction::I32Store(mem_arg_i32(0)),
@@ -1388,7 +1406,6 @@ pub(super) fn build_component_struct_lift_fn(
   struct_type: &ComponentAbiType,
   nominal_tag_id: i32,
   struct_tag_id: i32,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let ComponentAbiType::Struct(record) = struct_type else {
@@ -1404,11 +1421,8 @@ pub(super) fn build_component_struct_lift_fn(
   push_checked_alignment(&mut instructions, 0, layout.alignment);
   push_checked_memory_region_const(&mut instructions, 0, i64::from(layout.size));
   instructions.extend([
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(8),
     Instruction::I32Const(logical_size + 8),
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalTee(raw_base),
     Instruction::I32Const(HEAP_MAGIC),
     Instruction::I32Store(mem_arg_i32(0)),
@@ -1684,7 +1698,6 @@ pub(super) fn build_component_variant_lift_fn(
   variant_type: &ComponentAbiType,
   tag_ids: [i32; 2],
   enum_tag_id: i32,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let layout = component_memory_layout(variant_type);
@@ -1718,11 +1731,8 @@ pub(super) fn build_component_variant_lift_fn(
     Instruction::I32Const(payload_offset),
     Instruction::I32Add,
     Instruction::LocalSet(src_addr),
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(8),
     Instruction::I32Const(32),
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalTee(raw_base),
     Instruction::I32Const(HEAP_MAGIC),
     Instruction::I32Store(mem_arg_i32(0)),
@@ -1882,7 +1892,6 @@ pub(super) fn build_component_enum_lift_fn(
   enum_type: &ComponentAbiType,
   tag_ids: &[i32],
   enum_tag_id: i32,
-  cabi_realloc_index: u32,
   codecs: &ComponentValueCodecs<'_>,
 ) -> CompiledFn {
   let ComponentAbiType::Enum(enum_type) = enum_type else {
@@ -1908,11 +1917,8 @@ pub(super) fn build_component_enum_lift_fn(
     Instruction::If(BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
-    Instruction::I32Const(0),
-    Instruction::I32Const(0),
-    Instruction::I32Const(8),
     Instruction::I32Const(logical_allocation_size),
-    Instruction::Call(cabi_realloc_index),
+    Instruction::Call(codecs.arena_alloc_index),
     Instruction::LocalTee(raw_base),
     Instruction::I32Const(HEAP_MAGIC),
     Instruction::I32Store(mem_arg_i32(0)),

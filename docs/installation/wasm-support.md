@@ -165,6 +165,14 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 `wasm::boundary_tests` 中的 `wasm_dir_reaches_main_crate_only_through_host` 会扫描 `src/wasm/` 下所有 `.rs` 文件（忽略注释与字符串，展开多行 `use crate::{…}`），除 `host.rs` 外（`mod.rs` 也不例外），出现 `crate::` 后接 `wasm`、`wasm_cli`、`ffi_abi`、`ffi_async`、`ffi_interface_ir`、`codegen::emit_wasm` 之外的名字就会失败；裸 `crate::codegen`（含 `use crate::codegen;`、分组与 `as`）同样会失败。需要新的主 crate 条目时，先在 `host.rs` 增加重新导出，再在调用处经由 `crate::wasm::host` 使用。
 
+## 内存模型与 Arena 回收
+
+WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请求临时分配隔离回收：
+
+- **三段式线性内存区域**：静态常量池位于 `[HEAP_BASE, static_end)`；若程序包含 `defref`，其后预留两个各 1 MiB 的持久区半空间（Semi-Space A/B），否则直接衔接请求区；其后的 `[arena_base, ...)` 为请求级 Scratch Arena，由 `__heap_ptr` 线性 bump 分配，并通过只读 global `__arena_base` 与（含 `defref` 时导出的）`__persistent_ptr` 向宿主暴露水位线状态。
+- **Copy-on-Commit 与半空间压缩**：`defref` 的静态初始值（`String`、`Tag`、`Number`、`Bool`、`Nil` 与空容器 `[]`/`{}`/`#{}`）留在静态池；每次 `reset!` / `swap!` 调用会递归把 Scratch Arena 中的可达子图（支持 `String`、`Buffer`、`List`、`Map`、`Set`、`Struct`、`Enum` 及 HAMT 节点并复用已驻留节点）深拷贝晋升到当前活跃持久区半空间。单半空间累计分配达到 512 KiB 阈值或发生 turn 内临时溢出时，最外层 turn 退出安全点会执行半空间压缩，将 live `defref` 对象图及当次返回值搬迁至另一半空间并清零旧半空间。
+- **O(1) Turn 级水印复位**：Core `defwasm-export` 在最外层 turn 退出时将 `__heap_ptr` 复位为进入时的水印（保留嵌套调用中间值与同名局部变量引用）；Component 模型在 `cabi_post_*`、无 `post-return` 的同步导出、async stackful/stackless 回调退出以及 stream 分片退出时清理 `free_head` 并复位 Scratch Arena。Core 宿主若在导出调用之间直接多次调用 `__str_new`，可在安全点调用导出的 `__arena_reset()` 重置 `__heap_ptr`。
+
 ## 限制
 
 - host facade 检查不覆盖 `super::super::`、`use crate as c;` 与 `::crate::` 形式的别名路径。
@@ -174,4 +182,6 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 - `update` 的接收者为 Struct 时，仅支持静态证明的具名 Struct 与字面量 tag key；开放类型或动态 key 的 Struct 接收者在 WASM 上仍会 trap，native 会改写对应字段。
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。
 - `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。
-- `=`、`&compare` 和缺少具体标量证据的 `type-of` 仍使用堆值判定（整数、位于已分配堆内、ptr-8 处为 `HEAP_MAGIC`）；没有 NaN-boxing，开放／可空边界仍可能无法区分同值标量与指针。具体 Number、Bool、Nil、Unit 的静态证据不受该猜测覆盖。
+- `=`、`&compare` 和缺少具体标量证据的 `type-of` 仅把落入活跃区间（静态池、当前活跃持久区半空间与 `[arena_base + 8, __heap_ptr)`）且 `ptr-8` 处为 `HEAP_MAGIC` 的整数视作堆值，开放或可空边界下同值标量与指针仍可能混淆，具名标量的静态证据不受影响。
+- 单个持久区半空间容量上限为 1 MiB，全部活跃 `defref` 可达对象图超出该上限时会触发 WASM trap。
+- `defref` 晋升与半空间压缩的图遍历递归深度上限为 256 层，超过该深度时会触发 WASM trap。

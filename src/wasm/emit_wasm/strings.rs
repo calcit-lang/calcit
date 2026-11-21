@@ -555,37 +555,23 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
 
-  // --- Check if v is already a heap string ---
-  // Use f64 comparison first (avoids unsafe truncation for small/negative values)
-  let heap_min = (HEAP_BASE as f64) + 8.0;
-  ctx.emit(Instruction::LocalGet(v));
-  ctx.emit(f64_const(heap_min));
-  ctx.emit(Instruction::F64Ge);
-  // AND floor(v) == v (integer-valued pointer)
-  ctx.emit(Instruction::LocalGet(v));
-  ctx.emit(Instruction::F64Floor);
-  ctx.emit(Instruction::LocalGet(v));
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::I32And);
+  // Check if v is already a live heap string.
+  let is_heap = emit_is_heap_value(ctx, v);
+  ctx.emit(Instruction::LocalGet(is_heap));
   ctx.begin_block_if();
   {
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::I32TruncF64U);
     ctx.emit(Instruction::LocalSet(v_i32));
     ctx.emit(Instruction::LocalGet(v_i32));
-    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Const(4));
     ctx.emit(Instruction::I32Sub);
     ctx.emit(Instruction::LocalSet(raw_base));
-    // Check HEAP_MAGIC AND type_tag == string_tag
+    // Check type_tag == string_tag (HEAP_MAGIC was already checked by emit_is_heap_value)
     ctx.emit(Instruction::LocalGet(raw_base));
     ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-    ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-    ctx.emit(Instruction::I32Eq);
-    ctx.emit(Instruction::LocalGet(raw_base));
-    ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
     ctx.emit(Instruction::I32Const(string_type_tag));
     ctx.emit(Instruction::I32Eq);
-    ctx.emit(Instruction::I32And);
     ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::LocalSet(result));
@@ -989,16 +975,16 @@ pub(super) fn emit_str_spaced_locals(
 
 /// Build the `__str_new(src_ptr: i32, byte_len: i32) → f64` runtime function.
 /// Copies `byte_len` bytes from `src_ptr` into a new heap-allocated tagged string.
-pub(super) fn build_str_new_fn(str_tag_id: i32, component_cabi_realloc_index: Option<u32>) -> CompiledFn {
-  build_tagged_bytes_new_fn(str_tag_id, Some("__str_new"), component_cabi_realloc_index)
+pub(super) fn build_str_new_fn(str_tag_id: i32, arena_alloc_index: u32) -> CompiledFn {
+  build_tagged_bytes_new_fn(str_tag_id, Some("__str_new"), arena_alloc_index)
 }
 
 /// Build the internal constructor used to lift Canonical ABI `list<u8>` values.
-pub(super) fn build_component_buffer_new_fn(buffer_tag_id: i32, cabi_realloc_index: u32) -> CompiledFn {
-  build_tagged_bytes_new_fn(buffer_tag_id, None, Some(cabi_realloc_index))
+pub(super) fn build_component_buffer_new_fn(buffer_tag_id: i32, arena_alloc_index: u32) -> CompiledFn {
+  build_tagged_bytes_new_fn(buffer_tag_id, None, arena_alloc_index)
 }
 
-fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>, cabi_realloc_index: Option<u32>) -> CompiledFn {
+fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>, arena_alloc_index: u32) -> CompiledFn {
   // params: 0 = src_ptr (i32), 1 = byte_len (i32)
   // locals: 2 = padded, 3 = payload, 4 = allocation_size, 5 = raw_base, 6 = ptr
   let mut instructions = vec![
@@ -1036,32 +1022,10 @@ fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>, cabi_r
     Instruction::If(BlockType::Empty),
     Instruction::Unreachable,
     Instruction::End,
+    Instruction::LocalGet(4),
+    Instruction::Call(arena_alloc_index),
+    Instruction::LocalSet(5),
   ];
-  if let Some(cabi_realloc_index) = cabi_realloc_index {
-    instructions.extend([
-      Instruction::I32Const(0),
-      Instruction::I32Const(0),
-      Instruction::I32Const(8),
-      Instruction::LocalGet(4),
-      Instruction::Call(cabi_realloc_index),
-      Instruction::LocalSet(5),
-    ]);
-  } else {
-    instructions.extend([
-      Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-      Instruction::LocalTee(5),
-      Instruction::LocalGet(4),
-      Instruction::I32Add,
-      Instruction::LocalTee(6),
-      Instruction::LocalGet(5),
-      Instruction::I32LtU,
-      Instruction::If(BlockType::Empty),
-      Instruction::Unreachable,
-      Instruction::End,
-      Instruction::LocalGet(6),
-      Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    ]);
-  }
   instructions.extend([
     // Write HEAP_MAGIC and the type tag at raw_base.
     Instruction::LocalGet(5),

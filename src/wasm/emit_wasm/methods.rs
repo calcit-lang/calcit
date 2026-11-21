@@ -358,43 +358,16 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
 
 pub(super) fn emit_type_of_local(ctx: &mut WasmGenCtx, value_local: u32) {
   let number_tag = get_type_tag(ctx, "number");
-  let is_valid_ptr = ctx.alloc_local_typed(ValType::I32);
-  let raw_base = ctx.alloc_local_typed(ValType::I32);
-
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(Instruction::F64Trunc);
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalSet(is_valid_ptr));
-
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_base));
+  let is_valid_ptr = emit_is_heap_value(ctx, value_local);
 
   ctx.emit(Instruction::LocalGet(is_valid_ptr));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::LocalGet(value_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::LocalGet(raw_base));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
   ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(number_tag));
-  ctx.emit(Instruction::End);
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(number_tag));
   ctx.emit(Instruction::End);
