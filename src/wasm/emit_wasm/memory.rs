@@ -1831,25 +1831,9 @@ pub(super) fn build_rt_promote_value_fn(
   }
 }
 
-/// Reclaims temporary forwarding-table workspace left above `pers.scratch_end` if an earlier
-/// promotion or compaction trapped before cleanup.
-fn emit_reclaim_abandoned_fwd_workspace(
-  instructions: &mut Vec<Instruction<'static>>,
-  memory: &WasmMemoryLayout,
-  pers: &PersistentHeapGlobals,
-) {
+/// Clears persistent forwarding and staging metadata without altering `__heap_ptr`.
+fn emit_clear_fwd_state(instructions: &mut Vec<Instruction<'static>>, pers: &PersistentHeapGlobals) {
   instructions.extend([
-    Instruction::GlobalGet(pers.scratch_end),
-    Instruction::I32Const(memory.arena_base),
-    Instruction::I32GeU,
-    Instruction::GlobalGet(pers.scratch_end),
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32LtU,
-    Instruction::I32And,
-    Instruction::If(BlockType::Empty),
-    Instruction::GlobalGet(pers.scratch_end),
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    Instruction::End,
     Instruction::I32Const(0),
     Instruction::GlobalSet(pers.stage_ptr),
     Instruction::I32Const(0),
@@ -1863,6 +1847,41 @@ fn emit_reclaim_abandoned_fwd_workspace(
     Instruction::I32Const(0),
     Instruction::GlobalSet(pers.scratch_end),
   ]);
+}
+
+/// Reclaims temporary forwarding-table workspace above `pers.scratch_end` only when it is still
+/// at the top of Scratch Arena with no subsequent host allocations (`__str_new` / `cabi_realloc`).
+fn emit_reclaim_abandoned_fwd_workspace(
+  instructions: &mut Vec<Instruction<'static>>,
+  memory: &WasmMemoryLayout,
+  pers: &PersistentHeapGlobals,
+) {
+  instructions.extend([
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::I32Const(memory.arena_base),
+    Instruction::I32GeU,
+    Instruction::GlobalGet(pers.fwd_cap),
+    Instruction::I32Const(0),
+    Instruction::I32Ne,
+    Instruction::I32And,
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32LtU,
+    Instruction::I32And,
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::GlobalGet(pers.fwd_base),
+    Instruction::GlobalGet(pers.fwd_cap),
+    Instruction::I32Const(3),
+    Instruction::I32Shl,
+    Instruction::I32Add,
+    Instruction::I32Eq,
+    Instruction::I32And,
+    Instruction::If(BlockType::Empty),
+    Instruction::GlobalGet(pers.scratch_end),
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::End,
+  ]);
+  emit_clear_fwd_state(instructions, pers);
 }
 
 /// Pops Core Scratch return root nodes at or above `mark_local` when rewinding `__heap_ptr`.
@@ -2820,11 +2839,7 @@ pub(super) fn build_rt_turn_enter_fn(
 ) -> CompiledFn {
   // param: 0 = can_rewind_stale (i32)
   let mark = 1u32;
-  let mut instructions = Vec::new();
-  if let Some(pers) = &globals.persistent {
-    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
-  }
-  instructions.extend([
+  let mut instructions = vec![
     Instruction::GlobalGet(native.host_call_depth),
     Instruction::I32Eqz,
     Instruction::If(BlockType::Empty),
@@ -2846,8 +2861,9 @@ pub(super) fn build_rt_turn_enter_fn(
     Instruction::End,
     Instruction::LocalGet(0),
     Instruction::If(BlockType::Empty),
-  ]);
-  if globals.persistent.is_some() {
+  ];
+  if let Some(pers) = &globals.persistent {
+    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
     emit_pop_scratch_roots_above(&mut instructions, memory, native, mark);
   }
   if let (Some(pers), Some(compact_idx)) = (&globals.persistent, compact_persistent_idx) {
@@ -2861,9 +2877,12 @@ pub(super) fn build_rt_turn_enter_fn(
       Instruction::End,
     ]);
   }
+  instructions.extend([Instruction::LocalGet(mark), Instruction::GlobalSet(HEAP_PTR_GLOBAL)]);
+  if let Some(pers) = &globals.persistent {
+    instructions.push(Instruction::Else);
+    emit_clear_fwd_state(&mut instructions, pers);
+  }
   instructions.extend([
-    Instruction::LocalGet(mark),
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
     Instruction::End,
     Instruction::LocalGet(mark),
     Instruction::GlobalSet(native.outer_turn_mark),
@@ -2872,6 +2891,15 @@ pub(super) fn build_rt_turn_enter_fn(
     Instruction::LocalGet(mark),
     Instruction::Return,
     Instruction::End,
+  ]);
+  if let Some(pers) = &globals.persistent {
+    instructions.extend([Instruction::LocalGet(0), Instruction::If(BlockType::Empty)]);
+    emit_reclaim_abandoned_fwd_workspace(&mut instructions, memory, pers);
+    instructions.push(Instruction::Else);
+    emit_clear_fwd_state(&mut instructions, pers);
+    instructions.push(Instruction::End);
+  }
+  instructions.extend([
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::LocalTee(mark),
     Instruction::GlobalSet(native.outer_turn_mark),
@@ -2880,6 +2908,11 @@ pub(super) fn build_rt_turn_enter_fn(
     Instruction::LocalGet(mark),
     Instruction::Return,
     Instruction::End,
+  ]);
+  if let Some(pers) = &globals.persistent {
+    emit_clear_fwd_state(&mut instructions, pers);
+  }
+  instructions.extend([
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::LocalSet(mark),
     Instruction::GlobalGet(globals.active_turns),

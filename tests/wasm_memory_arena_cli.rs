@@ -2158,6 +2158,16 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
             , 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
+        'pump-state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-state (k size)
+            reset! *state $ &str:pad-right (&str:concat |ov- (to-string k)) size |O
+            &str:count @*state
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'read-state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-state () , @*state
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
@@ -2246,6 +2256,8 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
 
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
   let call_host = instance
     .get_typed_func::<f64, f64>(&mut store, "call-host")
     .expect("call-host export");
@@ -2255,6 +2267,12 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
   let log_and_fail = instance
     .get_typed_func::<(), f64>(&mut store, "log-and-fail")
     .expect("log-and-fail export");
+  let pump_state = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "pump-state")
+    .expect("pump-state export");
+  let read_state = instance
+    .get_typed_func::<(), f64>(&mut store, "read-state")
+    .expect("read-state export");
   let arena_reset = instance
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset export");
@@ -2309,6 +2327,61 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
   assert_eq!(nested_work.call(&mut store, 5.0).expect("nested-work after reset"), 16_389.0);
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  // (d) Mode-0 persistent overflow (needs_compact == 2) after a trapped defwasm-import recovers once host honors
+  // the __arena_reset() post-trap contract; while stuck before __arena_reset(), Scratch *state stays protected.
+  hook_mode.store(2, Ordering::Release);
+  let err_d = call_host
+    .call(&mut store, 30.0)
+    .expect_err("trapping defwasm-import should propagate");
+  assert!(format!("{err_d:?}").contains("host import boom"));
+  for k in 1..=5u64 {
+    assert_eq!(
+      pump_state.call(&mut store, (k as f64, 262_144.0)).expect("pump-state overflow"),
+      262_144.0
+    );
+  }
+  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
+  // Even a scalar call while needs_compact == 2 must not rewind over the Scratch-backed *state target.
+  assert_eq!(nested_work.call(&mut store, 3.0).expect("nested-work during overflow"), 16_387.0);
+  let s_before = read_state.call(&mut store, ()).expect("read-state before reset");
+  let text_before = read_wasm_str(&mut store, &instance, s_before);
+  assert_eq!(text_before.len(), 262_144);
+  assert!(text_before.starts_with("ov-5OOO"));
+
+  // Per the Core post-trap contract, __arena_reset() clears active_turns/host_call_depth, compacts *state into space B, and resets Scratch.
+  arena_reset.call(&mut store, ()).expect("__arena_reset recovers needs_compact == 2");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_b >= space_b_base && pers_b < space_b_base + 270_000,
+    "expected *state compacted into semi-space B, got pers_b={pers_b}"
+  );
+  let s_after = read_state.call(&mut store, ()).expect("read-state after reset");
+  assert!(s_after >= f64::from(space_b_base) && s_after < f64::from(arena_base));
+  let text_after = read_wasm_str(&mut store, &instance, s_after);
+  assert_eq!(text_after.len(), 262_144);
+  assert!(text_after.starts_with("ov-5OOO"));
+
+  // Normal turn-end compaction resumes (B -> A when exceeding threshold).
+  let mut flipped_back = false;
+  for k in 6..=10u64 {
+    assert_eq!(
+      pump_state
+        .call(&mut store, (k as f64, 262_144.0))
+        .expect("pump-state post-recovery"),
+      262_144.0
+    );
+    let pers_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers_now >= space_a_base && pers_now < space_b_base {
+      flipped_back = true;
+      break;
+    }
+  }
+  assert!(
+    flipped_back,
+    "expected normal turn-end compaction B -> A after __arena_reset recovery"
+  );
 }
 
 #[test]
@@ -2541,5 +2614,172 @@ fn core_wasm_repeated_arena_reset_retries_reclaim_failed_compaction_workspace() 
   let s_ptr = recover_last_a.call(&mut store, ()).expect("recover-and-read-last-a");
   assert_eq!(read_wasm_str(&mut store, &instance, s_ptr), "A-200AAAAAAA");
   arena_reset.call(&mut store, ()).expect("__arena_reset after recovery");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+}
+
+#[test]
+fn core_wasm_commit_trap_then_str_new_preserves_host_arg_across_export() {
+  let dir = TestDirectory::create("wasm-commit-trap-str-new-arg");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying post-trap __str_new arguments survive subsequent exports when can_rewind_stale == 0."
+  :package |commit-trap-arg
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'commit-trap-arg.main/main!) (:mode :native) (:reload-fn 'commit-trap-arg.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'commit-trap-arg.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Chain (:Leaf String) (:Link commit-trap-arg.main/Chain)
+          :examples $ []
+          :schema $ quote EnumDef
+        '*a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *a |seed-a
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *b |seed-b
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *chain $ Chain :Leaf |init
+          :examples $ []
+          :schema $ quote $ Ref commit-trap-arg.main/Chain
+        'set-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-a (size)
+            reset! *a $ &str:pad-right |A-LIVE- size |A
+            &str:count @*a
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'set-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-b (size)
+            reset! *b $ &str:pad-right |B-OVERFLOW- size |B
+            &str:count @*b
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'commit-deep-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-deep-chain (depth)
+            let
+                loop-fn $ fn (k acc)
+                  hint-fn $ Fn Number commit-trap-arg.main/Chain (-> commit-trap-arg.main/Chain)
+                  if (&<= k 0) , acc
+                    recur (&- k 1) (Chain :Link acc)
+                deep $ loop-fn depth (Chain :Leaf |leaf)
+              reset! *chain deep
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'recover-with-arg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export recover-with-arg (s)
+            let
+                noise $ &str:pad-right |NOISE- 8192 |N
+              reset! *b s
+              &str:concat (&str:slice s 0 32) (&str:concat |# (to-string (&str:count noise)))
+          :examples $ []
+          :schema $ quote $ Fn String (-> String)
+        'echo-with-noise $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export echo-with-noise (s)
+            let
+                noise $ &str:pad-right |CLOBBER- 8192 |X
+              &str:concat (&str:slice s 0 32) (&str:concat |# (to-string (&str:count noise)))
+          :examples $ []
+          :schema $ quote $ Fn String (-> String)
+        'read-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-b () , @*b
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'scalar-ok $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-ok () 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns commit-trap-arg.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+
+  let set_a = instance.get_typed_func::<f64, f64>(&mut store, "set-a").expect("set-a export");
+  let set_b = instance.get_typed_func::<f64, f64>(&mut store, "set-b").expect("set-b export");
+  let commit_deep_chain = instance
+    .get_typed_func::<f64, f64>(&mut store, "commit-deep-chain")
+    .expect("commit-deep-chain export");
+  let recover_with_arg = instance
+    .get_typed_func::<f64, f64>(&mut store, "recover-with-arg")
+    .expect("recover-with-arg export");
+  let echo_with_noise = instance
+    .get_typed_func::<f64, f64>(&mut store, "echo-with-noise")
+    .expect("echo-with-noise export");
+  let read_b = instance.get_typed_func::<(), f64>(&mut store, "read-b").expect("read-b export");
+  let scalar_ok = instance
+    .get_typed_func::<(), f64>(&mut store, "scalar-ok")
+    .expect("scalar-ok export");
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  // Sub-case A: Staged compaction traps after raising __heap_ptr above pers.scratch_end (active_turns == 0).
+  assert_eq!(set_a.call(&mut store, 600_000.0).expect("set-a"), 600_000.0);
+  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base);
+  let compact_trap = set_b
+    .call(&mut store, 600_000.0)
+    .expect_err("600K + 600K must trap during staged compaction");
+  assert!(format!("{compact_trap:?}").contains("unreachable"));
+
+  let arg_a = format!("HOST-ARG-AFTER-COMPACT-TRAP-{}", "Z".repeat(4096));
+  let src_a = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory
+    .write(&mut store, src_a as usize, arg_a.as_bytes())
+    .expect("write host arg A");
+  let arg_a_ptr = str_new.call(&mut store, (src_a, arg_a.len() as i32)).expect("__str_new arg A");
+
+  // recover-with-arg takes String (can_rewind_stale == 0) so NOISE- must not overwrite arg_a_ptr.
+  let res_a_ptr = recover_with_arg
+    .call(&mut store, arg_a_ptr)
+    .expect("recover-with-arg should succeed");
+  assert_eq!(read_wasm_str(&mut store, &instance, res_a_ptr), format!("{}#8192", &arg_a[..32]));
+  let b_ptr = read_b.call(&mut store, ()).expect("read-b");
+  assert_eq!(read_wasm_str(&mut store, &instance, b_ptr), arg_a);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after sub-case A");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  // Sub-case B: __rt_commit_defref traps mid-export (active_turns == 1) after allocating forwarding table above pers.scratch_end.
+  let commit_trap = commit_deep_chain
+    .call(&mut store, 260.0)
+    .expect_err("depth 260 chain should trap at MAX_PROMOTE_DEPTH");
+  assert!(format!("{commit_trap:?}").contains("unreachable"));
+
+  let arg_b = format!("HOST-ARG-AFTER-COMMIT-TRAP-{}", "Q".repeat(4096));
+  let src_b = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory
+    .write(&mut store, src_b as usize, arg_b.as_bytes())
+    .expect("write host arg B");
+  let arg_b_ptr = str_new.call(&mut store, (src_b, arg_b.len() as i32)).expect("__str_new arg B");
+
+  let res_b_ptr = echo_with_noise
+    .call(&mut store, arg_b_ptr)
+    .expect("echo-with-noise should preserve host arg after commit trap");
+  assert_eq!(read_wasm_str(&mut store, &instance, res_b_ptr), format!("{}#8192", &arg_b[..32]));
+
+  arena_reset.call(&mut store, ()).expect("__arena_reset after sub-case B");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+  assert_eq!(scalar_ok.call(&mut store, ()).expect("scalar-ok"), 1.0);
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 }
