@@ -4130,7 +4130,12 @@ try {
       const forgedMemory = new DataView(forgedInstance.exports.memory.buffer);
       const forgedList = forgedInstance.exports["make-list"](forgedMemory.getUint32(forgedState + 4, true));
       assert.throws(() => forgedInstance.exports["raw-write"](forgedList), WebAssembly.RuntimeError,
-        "a List with a matching nominal-layout slot must not become a Struct");
+        "a List must not become a Struct");
+      const forgedKindList = forgedInstance.exports["make-list"](0);
+      forgedMemory.setUint32(forgedKindList, forgedMemory.getUint32(forgedState, true), true);
+      forgedMemory.setUint32(forgedKindList + 4, forgedMemory.getUint32(forgedState + 4, true), true);
+      assert.throws(() => forgedInstance.exports["raw-write"](forgedKindList), WebAssembly.RuntimeError,
+        "a List carrying matching Struct count and layout_id must still fail allocation-kind validation");
       const controlInstance = new WebAssembly.Instance(guardedModule, imports);
       const controlOriginal = controlInstance.exports["make-state"]();
       const controlHeapAfterMake = controlInstance.exports.__heap_ptr.value;

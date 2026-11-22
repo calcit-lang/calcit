@@ -190,6 +190,40 @@ pub(super) struct StructLayouts {
   pub max_layout_id: u32,
 }
 
+pub(super) const STRUCT_FIELD_META_STRIDE: i32 = 4;
+pub(super) const STRUCT_FIELD_OFFSET_MASK: i32 = 0xFFFF;
+pub(super) const STRUCT_FIELD_KIND_SHIFT: i32 = 16;
+pub(super) const STRUCT_FIELD_KIND_MASK: i32 = 0xFF;
+
+pub(super) fn push_load_struct_field_meta(out: &mut Vec<Instruction<'static>>, meta_ptr_local: u32, index_local: u32) {
+  out.extend([
+    Instruction::LocalGet(meta_ptr_local),
+    Instruction::LocalGet(index_local),
+    Instruction::I32Const(STRUCT_FIELD_META_STRIDE),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::I32Load(mem_arg_i32(0)),
+  ]);
+}
+
+pub(super) fn push_extract_struct_field_offset(out: &mut Vec<Instruction<'static>>, packed_local: u32) {
+  out.extend([
+    Instruction::LocalGet(packed_local),
+    Instruction::I32Const(STRUCT_FIELD_OFFSET_MASK),
+    Instruction::I32And,
+  ]);
+}
+
+pub(super) fn push_extract_struct_field_kind(out: &mut Vec<Instruction<'static>>, packed_local: u32) {
+  out.extend([
+    Instruction::LocalGet(packed_local),
+    Instruction::I32Const(STRUCT_FIELD_KIND_SHIFT),
+    Instruction::I32ShrU,
+    Instruction::I32Const(STRUCT_FIELD_KIND_MASK),
+    Instruction::I32And,
+  ]);
+}
+
 impl StructLayouts {
   pub fn id(&self, definition: &CalcitStructDef) -> Result<u32, String> {
     self.ids.get(&StructIdentity::from(definition)).copied().ok_or_else(|| {
@@ -227,9 +261,8 @@ impl StructLayouts {
         }
         let meta_ptr = (HEAP_BASE + data_segment.len() as i32) as u32;
         for field in &layout.fields {
-          data_segment.extend_from_slice(&field.offset.to_le_bytes());
-          data_segment.push(field.kind as u8);
-          data_segment.push(0);
+          let packed = u32::from(field.offset) | (u32::from(field.kind as u8) << STRUCT_FIELD_KIND_SHIFT);
+          data_segment.extend_from_slice(&packed.to_le_bytes());
         }
         entries.push((layout.payload_bytes, layout.fields.len() as u32, meta_ptr));
       }
@@ -832,22 +865,14 @@ fn emit_dynamic_struct_field_load_as_f64(ctx: &mut WasmGenCtx, ptr_local: u32, i
   let packed = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(desc_ptr));
   ctx.emit(Instruction::I32Load(mem_arg_i32(8))); // fields_meta_ptr
-  ctx.emit(Instruction::LocalGet(idx_local));
-  ctx.emit(Instruction::I32Const(4));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  let meta_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(meta_ptr));
+  push_load_struct_field_meta(&mut ctx.instructions, meta_ptr, idx_local);
   ctx.emit(Instruction::LocalSet(packed));
 
   ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::LocalGet(packed));
-  ctx.emit(Instruction::I32Const(0xFFFF));
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalGet(packed));
-  ctx.emit(Instruction::I32Const(16));
-  ctx.emit(Instruction::I32ShrU);
-  ctx.emit(Instruction::I32Const(0xFF));
-  ctx.emit(Instruction::I32And);
+  push_extract_struct_field_offset(&mut ctx.instructions, packed);
+  push_extract_struct_field_kind(&mut ctx.instructions, packed);
   ctx.call_rt("__rt_struct_load_field");
 }
 
@@ -1346,31 +1371,68 @@ pub(super) fn emit_named_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 /// Emit `&enum:nth enum_value idx` in the requested representation.
 ///
 /// Compact layout: `[count:u32 @ 0][tag:u32 @ 4][payload0:f64 @ 8]...`
-/// `idx == 0` returns tag (`I32Load(4)`), `idx >= 1` returns `payload[idx - 1]` (`F64Load(idx * 8)`).
+/// `idx == 0` returns tag (`I32Load(4)`), `1 <= idx <= count` returns
+/// `payload[idx - 1]` (`F64Load(idx * 8)`), and out-of-range/invalid indices trap.
 pub(super) fn emit_enum_nth_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_repr: NativeValRepr) -> Result<(), String> {
   expect_arity(2, args, "&enum:nth requires 2 args (enum_value, index)")?;
-  if let Calcit::Number(n) = &args[1]
-    && n.is_finite()
-    && *n >= 0.0
-    && n.fract() == 0.0
-  {
-    let idx = *n as usize;
+  if let Calcit::Number(n) = &args[1] {
     let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-    if idx == 0 {
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
-      emit_convert_repr(ctx, NativeValRepr::TagI32, dst_repr);
+    if n.is_finite()
+      && *n >= 0.0
+      && n.fract() == 0.0
+      && *n <= (u32::MAX / 8) as f64
+      && let Some(byte_offset) = (*n as usize).checked_mul(8)
+    {
+      let idx = *n as usize;
+      if idx == 0 {
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+        emit_convert_repr(ctx, NativeValRepr::TagI32, dst_repr);
+      } else {
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+        ctx.emit(Instruction::I32Const(idx as i32));
+        ctx.emit(Instruction::I32LtU);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(ptr));
+        ctx.emit(Instruction::F64Load(mem_arg_f64(byte_offset as u64)));
+        emit_unbox_f64_to_repr(ctx, dst_repr);
+      }
     } else {
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64((idx * 8) as u64)));
-      emit_unbox_f64_to_repr(ctx, dst_repr);
+      ctx.emit(Instruction::Unreachable);
     }
     return Ok(());
   }
 
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let idx_local = ctx.alloc_local_typed(ValType::I32);
+  let idx_f64 = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(idx_f64));
+
+  // Reject NaN, negative, fractional, or out-of-range (> payload count) indices.
+  ctx.emit(Instruction::LocalGet(idx_f64));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(idx_f64));
+  ctx.emit(Instruction::LocalGet(idx_f64));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(idx_f64));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Le);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let idx_local = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(idx_f64));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(idx_local));
 
@@ -1523,7 +1585,7 @@ pub(super) fn resolve_enum_ref(node: &Calcit) -> Result<CalcitEnumDef, String> {
 
 pub(super) fn emit_enum_definition(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&enum:definition expects 1 arg")?;
-  let value_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+  let value_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
   if let Some(enum_def) = value_type.as_deref().and_then(|ty| ty.resolve_to_enum()) {
     emit_expr(ctx, &args[0])?;
     ctx.emit(Instruction::Drop);
@@ -1699,9 +1761,12 @@ mod tests {
     assert_ne!(meta_ptr, 0);
 
     for (idx, field) in layout2.fields.iter().enumerate() {
-      let packed = read_u32(meta_ptr + (idx as i32) * 4);
-      assert_eq!((packed & 0xFFFF) as u16, field.offset);
-      assert_eq!(((packed >> 16) & 0xFF) as u8, field.kind as u8);
+      let packed = read_u32(meta_ptr + (idx as i32) * STRUCT_FIELD_META_STRIDE) as i32;
+      assert_eq!((packed & STRUCT_FIELD_OFFSET_MASK) as u16, field.offset);
+      assert_eq!(
+        ((packed >> STRUCT_FIELD_KIND_SHIFT) & STRUCT_FIELD_KIND_MASK) as u8,
+        field.kind as u8
+      );
     }
   }
 }

@@ -26,7 +26,7 @@ aliases:
 
 | 构造 | 状态 | 证据或说明 | 验证 |
 | --- | --- | --- | --- |
-| `if`、`when`、`when-not`、`if-not`、`and`、`or`、`not` 与 `defn` / `let` / `recur` 尾递归 | supported | 条件统一严格要求静态与运行时 `Bool`（非 `Bool` 静态报 `E_NON_BOOL_CONDITION` / `E_PROC_ARG_TYPE_MISMATCH`）；参数与返回值为 f64 值 ABI | core `:tests`，如 `calcit.core/recur`、`calcit.core/if` |
+| `if`、`when`、`when-not`、`if-not`、`and`、`or`、`not` 与 `defn` / `let` / `recur` 尾递归 | supported | 条件统一严格要求静态与运行时 `Bool`（非 `Bool` 静态报 `E_NON_BOOL_CONDITION` / `E_PROC_ARG_TYPE_MISMATCH`）；已证明封闭标量与非空堆指针在内部直调中使用原生 `i32`/`i64` 槽位，原生宿主导出、间接调用表与开放类型保留 f64 值 ABI | core `:tests`，如 `calcit.core/recur`、`calcit.core/if` |
 | Number、Bool、nil、Unit、String、tag 字面量 | supported | 仅在开放/擦除类型或 `=` 比较等通用值 ABI 下 nil、false、Unit 与 0 共用 f64 表示，见下文诊断说明；条件分支已限定为 `Bool` | core `:tests` |
 | 具体标量输入的 `type-of`、`number?`、`bool?` | supported | 已证明的 Number（含数值 refinement）、Bool、Nil、Unit 优先使用真实类型证据，实参仍求值一次；不会将 false／nil／Unit 的零值重新解释为 Number，合法 Number 也不会被同值堆地址覆盖 | `calcit.core/number?` 的 `:scalar-kind-evidence` 测试与 WASM 参数失败路径回归 |
 | `nil?`、`nil->option` 与 Option 在可空拼接／开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`）；直连 nil 拼接的 `nil->option`、字面量 `get-in` / `dissoc-in` / `assoc-in` / `update-in` 已按闭合静态路径降低，其余开放遍历仍按 `E_WASM_CALL_SPECIALIZATION` 等诊断拒绝 | `calcit.core/nil->option#collapses-nil-joins-under-declared-option`、`calcit.core/get-in#handles-empty-path-and-nil-base`、`calcit.core/dissoc-in#dissocs-nested-maps-and-list-indexes` |
@@ -198,4 +198,5 @@ WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请�
 - `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。
 - `=`、`&compare` 和缺少具体标量证据的 `type-of` 仅把落入活跃区间（静态池、当前活跃持久区半空间与 `[arena_base + 8, __heap_ptr)`）且 `ptr-8` 处为 `HEAP_MAGIC` 的整数视作堆值，开放或可空边界下同值标量与指针仍可能混淆，具名标量的静态证据不受影响。
 - 单个持久区半空间容量上限为 1 MiB，全部活跃 `defref` 可达对象图超出该上限时会触发 WASM trap。
+- 已证明为整型细化类型（`Int8`..`UInt64`）的 WASM 内部槽位与紧凑 `Struct` 字段使用原生整型表示，会将 `-0` 规范化为 `0`（数值相等与比较语义不变，需要保留 IEEE 754 负零符号时请使用通用 `Number` 或 `Float64`）。
 - `defref` 晋升与半空间压缩的图遍历递归深度上限为 256 层，超过该深度时会触发 WASM trap。

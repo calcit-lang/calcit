@@ -1809,21 +1809,13 @@ pub(super) fn build_rt_promote_value_fn(
       Instruction::LocalGet(count),
       Instruction::I32GeU,
       Instruction::BrIf(1),
-      Instruction::LocalGet(meta_ptr),
-      Instruction::LocalGet(i),
-      Instruction::I32Const(4),
-      Instruction::I32Mul,
-      Instruction::I32Add,
-      Instruction::I32Load(mem_arg_i32(0)),
-      Instruction::LocalTee(field_slot),
-      Instruction::I32Const(0xFFFF),
-      Instruction::I32And,
-      Instruction::LocalSet(root_ptr), // field offset
-      Instruction::LocalGet(field_slot),
-      Instruction::I32Const(16),
-      Instruction::I32ShrU,
-      Instruction::I32Const(0xFF),
-      Instruction::I32And,
+    ]);
+    structs::push_load_struct_field_meta(&mut instructions, meta_ptr, i);
+    instructions.push(Instruction::LocalSet(field_slot));
+    structs::push_extract_struct_field_offset(&mut instructions, field_slot);
+    instructions.push(Instruction::LocalSet(root_ptr)); // field offset
+    structs::push_extract_struct_field_kind(&mut instructions, field_slot);
+    instructions.extend([
       Instruction::LocalTee(cap), // field kind
       Instruction::I32Eqz,        // BoxedF64 == 0
       Instruction::If(BlockType::Empty),
@@ -2654,23 +2646,13 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
       Instruction::LocalGet(count),
       Instruction::I32GeU,
       Instruction::BrIf(1),
-      Instruction::LocalGet(meta_ptr),
-      Instruction::LocalGet(i),
-      Instruction::I32Const(4),
-      Instruction::I32Mul,
-      Instruction::I32Add,
-      Instruction::I32Load(mem_arg_i32(0)),
-      Instruction::LocalTee(packed),
-      Instruction::I32Const(0xFFFF),
-      Instruction::I32And,
-      Instruction::LocalGet(ptr),
-      Instruction::I32Add,
-      Instruction::LocalSet(addr),
-      Instruction::LocalGet(packed),
-      Instruction::I32Const(16),
-      Instruction::I32ShrU,
-      Instruction::I32Const(0xFF),
-      Instruction::I32And,
+    ]);
+    structs::push_load_struct_field_meta(&mut instructions, meta_ptr, i);
+    instructions.push(Instruction::LocalSet(packed));
+    structs::push_extract_struct_field_offset(&mut instructions, packed);
+    instructions.extend([Instruction::LocalGet(ptr), Instruction::I32Add, Instruction::LocalSet(addr)]);
+    structs::push_extract_struct_field_kind(&mut instructions, packed);
+    instructions.extend([
       Instruction::LocalTee(field_kind),
       Instruction::I32Eqz, // BoxedF64 == 0
       Instruction::If(BlockType::Empty),

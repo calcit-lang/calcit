@@ -267,30 +267,31 @@ fn wasmparser_verifies_unboxed_signatures_locals_and_zero_heap_probes_on_closed_
           :schema $ quote $ Fn Packet (-> Bool)
         'check-str $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn check-str (s)
-            if (.empty? s) false (= s |hello)
+            if (.empty? s) false (= (&str:count s) 5)
           :examples $ []
           :schema $ quote $ Fn String (-> Bool)
         'run-closed-inner $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn run-closed-inner ()
+          :code $ quote $ defn run-closed-inner (p s-hi s-empty)
             let
-                p $ Packet :u &unit :b true :t :beta :i (assert-type 10 Int32) :big (assert-type 9007199254740991 Int64)
                 b-ok $ not (flip-bool false)
                 t-ok $ = (step-tag :alpha) :beta
                 u-ok $ = (keep-unit &unit) &unit
                 i-ok $ = (pick-i32 (assert-type 10 Int32)) (assert-type 42 Int32)
                 u64-ok $ = (pick-u64 (assert-type 9 UInt64) (assert-type -1 Int64)) (assert-type 9 UInt64)
                 p-ok $ check-packet p
-                s-ok $ and (check-str |hello) (not (check-str |))
+                s-ok $ and (check-str s-hi) (not (check-str s-empty))
                 big-ok $ = (:big p) (assert-type 9007199254740991 Int64)
               and b-ok t-ok u-ok i-ok u64-ok p-ok s-ok big-ok
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn Packet String String (-> Bool)
         'run-closed $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export run-closed () (run-closed-inner)
+          :code $ quote $ defwasm-export run-closed ()
+            let ((p (Packet :u &unit :b true :t :beta :i (assert-type 10 Int32) :big (assert-type 9007199254740991 Int64))))
+              run-closed-inner p |hello |
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (if (run-closed-inner) 1 0)
+          :code $ quote $ defn main! () (if (run-closed) 1 0)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)
@@ -344,50 +345,96 @@ fn wasmparser_verifies_unboxed_signatures_locals_and_zero_heap_probes_on_closed_
       parsed
         .functions
         .get(callee)
-        .is_some_and(|f| f.params.is_empty() && f.results.as_slice() == [ValType::I32])
+        .is_some_and(|f| f.params.as_slice() == [ValType::I32, ValType::I32, ValType::I32] && f.results.as_slice() == [ValType::I32])
     })
+    .collect();
+  let actual_calls: Vec<_> = parsed.functions[&wrapper_targets[0]]
+    .calls
+    .iter()
+    .map(|callee| (*callee, parsed.functions.get(callee).map(|f| (&f.params, &f.results))))
     .collect();
   assert!(
     !inner_calls.is_empty(),
-    "run-closed must directly call run-closed-inner with unboxed (()->i32) signature"
+    "run-closed must directly call run-closed-inner with unboxed (i32, i32, i32)->i32 signature; actual calls: {actual_calls:?}"
   );
   let inner_idx = inner_calls[0];
-  let helper_callees: Vec<&ParsedFunction> = parsed.functions[&inner_idx]
-    .calls
-    .iter()
-    .filter_map(|idx| parsed.functions.get(idx))
-    .filter(|f| f.params.iter().any(|p| matches!(p, ValType::I32 | ValType::I64)))
-    .collect();
-
-  assert!(
-    helper_callees
-      .iter()
-      .any(|f| f.params.as_slice() == [ValType::I32] && f.results.as_slice() == [ValType::I32]),
-    "expected internal Bool/Tag/Unit/Int32/Packet/String helper with (i32)->i32 signature"
+  let mut unique_callees: Vec<u32> = Vec::new();
+  for &callee in &parsed.functions[&inner_idx].calls {
+    if !unique_callees.contains(&callee) {
+      unique_callees.push(callee);
+    }
+  }
+  assert_eq!(
+    unique_callees.len(),
+    7,
+    "run-closed-inner must call only the 7 named helpers in source order: {unique_callees:?}"
   );
-  assert!(
-    helper_callees
-      .iter()
-      .any(|f| f.params.as_slice() == [ValType::I64, ValType::I64] && f.results.as_slice() == [ValType::I64]),
-    "expected internal (UInt64, Int64)->UInt64 helper with (i64, i64)->i64 signature"
-  );
-  assert!(
-    helper_callees.iter().any(|f| f.locals.contains(&ValType::I32)),
-    "expected unboxed ValType::I32 locals in closed internal helpers"
-  );
-  assert!(
-    helper_callees.iter().any(|f| f.locals.contains(&ValType::I64)),
-    "expected unboxed ValType::I64 locals in closed internal helpers"
-  );
-
-  for helper in &helper_callees {
+  struct HelperSpec {
+    name: &'static str,
+    params: &'static [ValType],
+    results: &'static [ValType],
+    local: Option<ValType>,
+  }
+  let expected_sigs = [
+    HelperSpec {
+      name: "flip-bool",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: Some(ValType::I32),
+    },
+    HelperSpec {
+      name: "step-tag",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: Some(ValType::I32),
+    },
+    HelperSpec {
+      name: "keep-unit",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: Some(ValType::I32),
+    },
+    HelperSpec {
+      name: "pick-i32",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: Some(ValType::I32),
+    },
+    HelperSpec {
+      name: "pick-u64",
+      params: &[ValType::I64, ValType::I64],
+      results: &[ValType::I64],
+      local: Some(ValType::I64),
+    },
+    HelperSpec {
+      name: "check-packet",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: Some(ValType::I32),
+    },
+    HelperSpec {
+      name: "check-str",
+      params: &[ValType::I32],
+      results: &[ValType::I32],
+      local: None,
+    },
+  ];
+  for (fn_idx, spec) in unique_callees.iter().zip(expected_sigs) {
+    let helper = &parsed.functions[fn_idx];
+    assert_eq!(helper.params.as_slice(), spec.params, "{} params must be unboxed", spec.name);
+    assert_eq!(helper.results.as_slice(), spec.results, "{} result must be unboxed", spec.name);
+    if let Some(vt) = spec.local {
+      assert!(helper.locals.contains(&vt), "{} must allocate unboxed local {vt:?}", spec.name);
+    }
     assert!(
       helper.calls.iter().all(|c| !is_heap_ptr_fns.contains(c)),
-      "closed scalar/heap helpers must not call __rt_is_heap_ptr"
+      "closed helper {} must not call __rt_is_heap_ptr",
+      spec.name
     );
     assert!(
       !helper.i32_consts.contains(&HEAP_MAGIC),
-      "non-allocating closed helpers must not embed HEAP_MAGIC probes"
+      "non-allocating closed helper {} must not embed HEAP_MAGIC probes",
+      spec.name
     );
   }
 }
@@ -458,9 +505,11 @@ fn table_adapters_bridge_native_signature_functions_via_call_indirect() {
                 it $ Item :tag :alpha :code (assert-type 17 Int32)
                 b-res $ b-fn true
                 t-res $ t-fn :alpha
-                big-res $ = (i-fn (assert-type 42 Int64) (assert-type 1 Int64)) (assert-type 9007199254740991 Int64)
+                i-res $ i-fn (assert-type 42 Int64) (assert-type 1 Int64)
                 s-res $ s-fn it
-              if (and (not b-res) t-res big-res (= s-res (assert-type 17 Int32))) 1 2
+              if (= idx 0)
+                if (and (not b-res) t-res (= i-res (assert-type 9007199254740991 Int64)) (= s-res (assert-type 17 Int32))) 1 0
+                if (and b-res (not t-res) (= i-res (assert-type 42 Int64)) (= s-res (assert-type 99 Int32))) 2 0
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
@@ -700,17 +749,27 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
           :examples $ []
           :schema $ quote $ Fn Number Number (-> (Option FlagNode))
         'count-chain $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn count-chain (start)
+          :code $ quote $ defn count-chain (outer per-chain start)
             loop ((cur start) (cnt 0))
               match cur
                 (:none) cnt
                 (:some node)
-                  let ((item (:item node)))
-                    if (and (= (:u item) &unit) (= (:t item) :ready) (= (:small item) (assert-type 9 UInt8)))
+                  let
+                      item (:item node)
+                      expected-b (= (&number:rem (&+ outer (&- (&- per-chain 1) cnt)) 2) 0)
+                    if (and (= (:u item) &unit) (= (:b item) expected-b) (= (:t item) :ready) (= (:small item) (assert-type 9 UInt8)))
                       recur (:next node) (&+ cnt 1)
                       , -1
           :examples $ []
-          :schema $ quote $ Fn (Option FlagNode) (-> Number)
+          :schema $ quote $ Fn Number Number (Option FlagNode) (-> Number)
+        'alloc-compact-scratch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-compact-scratch (chains per-chain)
+            loop ((outer 0) (lists $ []))
+              if (= outer chains)
+                , lists
+                recur (&+ outer 1) (append lists (build-chain outer per-chain))
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> (List (Option FlagNode)))
         'alloc-compact-chain $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export alloc-compact-chain (chains per-chain)
             loop ((outer 0) (lists $ []))
@@ -726,16 +785,16 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
           :examples $ []
           :schema $ quote $ Fn Number (-> Number)
         'verify-persisted-chain $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export verify-persisted-chain (expected-total)
+          :code $ quote $ defwasm-export verify-persisted-chain (expected-total per-chain)
             loop ((items @*persisted) (idx 0) (total 0))
               if (= idx (&list:count items))
                 = total expected-total
-                let ((n (count-chain (&list:nth items idx))))
+                let ((n (count-chain idx per-chain (&list:nth items idx))))
                   if (< n 0)
                     , false
                     recur items (&+ idx 1) (&+ total n)
           :examples $ []
-          :schema $ quote $ Fn Number (-> Bool)
+          :schema $ quote $ Fn Number Number (-> Bool)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
@@ -759,16 +818,25 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset");
 
-  // Benchmark 1,000 linked compact Struct + Option nodes across 20 chains in Scratch Arena and defref promotion
-  // (keeping per-chain depth below MAX_PROMOTE_DEPTH = 256):
+  // Measure Scratch Arena footprint using an export that returns the Scratch-backed graph directly before reset.
   arena_reset.call(&mut store, ()).expect("arena reset");
   let scratch_before = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let alloc_scratch = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "alloc-compact-scratch")
+    .expect("alloc-compact-scratch");
+  let _ = alloc_scratch
+    .call(&mut store, (20.0, 50.0))
+    .expect("alloc 1000 scratch compact nodes");
+  let scratch_after = get_i32_global(&mut store, &instance, "__heap_ptr");
+  arena_reset.call(&mut store, ()).expect("arena reset");
+
+  // Separately measure promoted persistent footprint across 1,000 linked nodes in 20 chains
+  // (keeping per-chain depth below MAX_PROMOTE_DEPTH = 256):
   let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
   let alloc_chain = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "alloc-compact-chain")
     .expect("alloc-compact-chain");
   assert_eq!(alloc_chain.call(&mut store, (20.0, 50.0)).expect("alloc 1000 compact nodes"), 20.0);
-  let scratch_after = get_i32_global(&mut store, &instance, "__heap_ptr");
   let pers_after = get_i32_global(&mut store, &instance, "__persistent_ptr");
   arena_reset.call(&mut store, ()).expect("arena reset");
 
@@ -784,7 +852,10 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
     pers_used <= 73_500 && pers_used < legacy_1000_bytes * 3 / 5,
     "compact persistent graph ({pers_used} B) must stay <= 73500 B and substantially smaller than legacy ({legacy_1000_bytes} B)"
   );
-  assert!(scratch_used <= 72 * 1000 + 8192, "unexpected scratch overhead: {scratch_used}");
+  assert!(
+    (72 * 1000..=72 * 1000 + 8192).contains(&scratch_used),
+    "unexpected live scratch footprint: {scratch_used}"
+  );
 
   // Trigger persistent semi-space compaction into Semi-Space B and verify every node remains valid.
   let pump_churn = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
@@ -799,12 +870,12 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   assert!(compacted, "expected persistent heap compaction into semi-space B");
 
   let verify_chain = instance
-    .get_typed_func::<f64, f64>(&mut store, "verify-persisted-chain")
+    .get_typed_func::<(f64, f64), f64>(&mut store, "verify-persisted-chain")
     .expect("verify-persisted-chain");
   assert_eq!(
-    verify_chain.call(&mut store, 1000.0).expect("verify persisted chain"),
+    verify_chain.call(&mut store, (1000.0, 50.0)).expect("verify persisted chain"),
     1.0,
-    "all 1000 compact structs and enums must remain intact after defref semi-space compaction"
+    "all 1000 compact structs and enums (including alternating :b parity) must remain intact after defref semi-space compaction"
   );
 }
 
@@ -1067,4 +1138,220 @@ fn component_abi_compact_struct_and_variant_round_trip() {
   assert_eq!(u16::from_le_bytes(buf[20..22].try_into().unwrap()), 1025);
   assert_eq!(u64::from_le_bytes(buf[24..32].try_into().unwrap()), 9_007_199_254_740_991u64);
   post_mixed.call(&mut store, mixed_ret).expect("post-return Mixed");
+}
+
+#[test]
+fn boxed_json_parse_proc_and_bool_unboxing_paths() {
+  let dir = TestDirectory::create("wasm-json-proc-bool");
+  // Uses ONLY `json-parse` (not `&try-parse-json` or `.parse-json`) to verify
+  // `CalcitProc::JsonParse` enables boxed JSON scalar unboxing across branches,
+  // static `map` adapters, and `match` payload bindings.
+  let snapshot = r#"
+{} (:package |compact-json-proc)
+  :about "|json-parse proc boxed scalar unboxing test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-json-proc.main/main!) (:mode :native) (:reload-fn 'compact-json-proc.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-json-proc.main
+    %{} 'FileEntry
+      :defs $ {}
+        'flag->num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn flag->num (b) (if b 1 2)
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Number)
+        'verify-json-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-json-proc ()
+            let
+                x $ json-parse "|false"
+                c1 $ if (bool? x) (if (assert-type x Bool) 1 2) 3
+                xs $ assert-type (json-parse "|[false,true]") (List Bool)
+                mapped $ map xs flag->num
+                opt-b $ if (bool? x) (Some (assert-type x Bool)) None
+                matched $ match opt-b
+                  (:none) 0
+                  (:some b) (if b 10 20)
+              and
+                = c1 2
+                = (&list:nth mapped 0) 2
+                = (&list:nth mapped 1) 1
+                = matched 20
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (verify-json-proc) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-json-proc.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let verify = instance
+    .get_typed_func::<(), f64>(&mut store, "verify-json-proc")
+    .expect("verify-json-proc export");
+  assert_eq!(verify.call(&mut store, ()).expect("verify-json-proc executes"), 1.0);
+}
+
+#[test]
+fn typed_spread_recur_matches_native_local_representations() {
+  let dir = TestDirectory::create("wasm-spread-recur");
+  let snapshot = r#"
+{} (:package |compact-recur)
+  :about "|Typed spread recur representation test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-recur.main/main!) (:mode :native) (:reload-fn 'compact-recur.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-recur.main
+    %{} 'FileEntry
+      :defs $ {}
+        'spread-rest-bool $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn spread-rest-bool (flag & xs)
+            if flag
+              recur false & ([] 7 9)
+              and (= (&list:count xs) 2) (= (&list:nth xs 0) 7) (= (&list:nth xs 1) 9)
+          :examples $ []
+          :schema $ quote $ Fn Bool (& Number) (-> Bool)
+        'spread-unpack-typed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn spread-unpack-typed (flag code & xs)
+            if flag
+              recur false & ([] (assert-type 42 Int32) 11 22)
+              and (= code (assert-type 42 Int32)) (= (&list:count xs) 2) (= (&list:nth xs 0) 11)
+          :examples $ []
+          :schema $ quote $ Fn Bool Int32 (& Number) (-> Bool)
+        'run-spread-recur $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export run-spread-recur ()
+            and
+              spread-rest-bool true 1
+              spread-unpack-typed true (assert-type 1 Int32) 2
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (run-spread-recur) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-recur.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let run = instance
+    .get_typed_func::<(), f64>(&mut store, "run-spread-recur")
+    .expect("run-spread-recur export");
+  assert_eq!(run.call(&mut store, ()).expect("spread recur succeeds"), 1.0);
+}
+
+#[test]
+fn enum_nth_rejects_invalid_literal_overflow_and_out_of_bounds_indices() {
+  let dir = TestDirectory::create("wasm-enum-nth-bounds");
+  let snapshot = r#"
+{} (:package |compact-enum-bounds)
+  :about "|Enum nth bounds and overflow test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-enum-bounds.main/main!) (:mode :native) (:reload-fn 'compact-enum-bounds.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-enum-bounds.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Boxed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Boxed (:Empty) (:One Number)
+          :examples $ []
+          :schema $ quote EnumDef
+        'valid-tag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export valid-tag ()
+            = (assert-type (&enum:nth (Boxed :One 42) 0) Tag) :One
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'valid-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export valid-payload ()
+            assert-type (&enum:nth (Boxed :One 42) 1) Number
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'lit-oob $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export lit-oob ()
+            assert-type (&enum:nth (Boxed :One 42) 2) Number
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'lit-overflow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export lit-overflow ()
+            assert-type (&enum:nth (Boxed :One 42) 2305843009213693952) Number
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'lit-neg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export lit-neg ()
+            assert-type (&enum:nth (Boxed :One 42) -1) Number
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'dyn-nth $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export dyn-nth (idx)
+            assert-type (&enum:nth (Boxed :One 42) idx) Number
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-enum-bounds.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "valid-tag")
+      .expect("valid-tag")
+      .call(&mut store, ())
+      .expect("valid tag call"),
+    1.0
+  );
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "valid-payload")
+      .expect("valid-payload")
+      .call(&mut store, ())
+      .expect("valid payload call"),
+    42.0
+  );
+  for trap_fn in ["lit-oob", "lit-overflow", "lit-neg"] {
+    assert!(
+      instance
+        .get_typed_func::<(), f64>(&mut store, trap_fn)
+        .expect(trap_fn)
+        .call(&mut store, ())
+        .is_err(),
+      "{trap_fn} must trap on invalid literal &enum:nth index"
+    );
+  }
+  let dyn_nth = instance.get_typed_func::<f64, f64>(&mut store, "dyn-nth").expect("dyn-nth");
+  assert_eq!(dyn_nth.call(&mut store, 1.0).expect("dyn idx 1"), 42.0);
+  for bad in [-1.0, 0.5, 2.0, f64::NAN, f64::INFINITY] {
+    assert!(dyn_nth.call(&mut store, bad).is_err(), "dyn-nth({bad}) must trap");
+  }
 }
