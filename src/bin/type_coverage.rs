@@ -1293,7 +1293,7 @@ fn child_is_return_position(
   }
   if is_code_root {
     return match head {
-      Some("defn" | "defmacro") => child_index >= 3 && child_index + 1 == child_count,
+      Some("defn" | "defmacro" | "defcomp") => child_index >= 3 && child_index + 1 == child_count,
       Some("fn" | "macro") => child_index >= 2 && child_index + 1 == child_count,
       Some("def") => child_index == 2,
       _ => false,
@@ -4451,6 +4451,13 @@ mod tests {
     let comp_reach = super::js_ffi_host_reach(&comp).expect("defcomp reach");
     assert_eq!(comp_reach.params, vec![false, false]);
     assert!(!comp_reach.ret);
+
+    let comp_host = cirru_parser::parse("defcomp comp-preview (states props) (println states) props.-hostNode")
+      .expect("parse comp")
+      .remove(0);
+    let comp_host_reach = super::js_ffi_host_reach(&comp_host).expect("defcomp host reach");
+    assert_eq!(comp_host_reach.params, vec![false, true]);
+    assert!(comp_host_reach.ret);
   }
 
   #[test]
