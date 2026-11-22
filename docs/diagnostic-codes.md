@@ -298,7 +298,7 @@
 | `E_WASI_HTTP_CAPABILITY` | `src/wasm/emit_wasm.rs` |
 | `E_WASI_HTTP_ENTRY` | `src/wasm/emit_wasm/http_proxy.rs` |
 | `E_WASI_HTTP_EXPORT` | `src/wasm/emit_wasm/http_proxy.rs` |
-| `E_WASI_WORLD` | `src/wasm/emit_wasm.rs` |
+| `E_WASI_WORLD` | `src/wasm/emit_wasm.rs`<br>`src/wasm/wasm_cli.rs` |
 | `E_WASM_BOUNDARY` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_BOUNDARY_DYNAMIC` | `src/runner/preprocess/mod.rs` |
 | `E_WASM_CALL_SPECIALIZATION` | `src/wasm/emit_wasm.rs` |

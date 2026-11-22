@@ -26,6 +26,9 @@ pub struct WasmCliOptions {
 }
 
 pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
+  if target == WasmTarget::Wasi && options.world == WasiWorld::Http && options.boundary != WasmBoundary::Component {
+    return Err("E_WASI_WORLD: `--world http` requires `--boundary component`; WASI Preview 1 has no HTTP proxy world".into());
+  }
   let core_snapshot = host::load_core_snapshot()?;
 
   let input_path = PathBuf::from(&options.input);

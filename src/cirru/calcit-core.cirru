@@ -4328,20 +4328,35 @@
           :examples $ []
           :schema $ quote EnumDef
           :tags $ #{} :core :data
-          :tests $ [] $ %{} 'TestEntry (:name |constructs-and-matches-variants)
-            :code $ quote $ do
-              assert= :empty $ match (HttpBody :empty)
-                (:empty) :empty
-                _ :other
-              assert= |hi $ match (HttpBody :text |hi)
-                (:text s) s
-                _ |
-              assert= (&buffer 1 2)
-                match
-                  HttpBody :bytes $ &buffer 1 2
-                  (:bytes b) b
-                  _ $ &buffer
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |constructs-and-matches-variants)
+              :code $ quote $ do
+                assert= :empty $ match (HttpBody :empty)
+                  (:empty) :empty
+                  _ :other
+                assert= |hi $ match (HttpBody :text |hi)
+                  (:text s) s
+                  _ |
+                assert= (&buffer 1 2)
+                  match
+                    HttpBody :bytes $ &buffer 1 2
+                    (:bytes b) b
+                    _ $ &buffer
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |constructs-and-matches-empty-and-text)
+              :code $ quote $ do
+                let
+                    empty-body $ HttpBody :empty
+                    text-body $ HttpBody :text |hello
+                  assert= |empty $ match empty-body
+                    (:empty) |empty
+                    (:text s) s
+                    (:bytes _b) |bytes
+                  assert= |hello $ match text-body
+                    (:empty) |empty
+                    (:text s) s
+                    (:bytes _b) |bytes
+              :tags $ #{} :core :unit
         'HttpHeader $ %{} 'CodeEntry
           :doc "|Nominal HTTP header entry with UTF-8 field name and value."
           :code $ quote $ defstruct HttpHeader (:name String) (:value String)

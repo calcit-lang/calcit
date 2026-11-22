@@ -513,6 +513,7 @@ pub(super) fn build_wasi_http_send_plain_fn(
   let resp = b.alloc_i32();
   let body = b.alloc_i32();
   let stream = b.alloc_i32();
+  let write_err = b.alloc_i32();
 
   b.emit(Instruction::Call(fields_new));
   b.emit(Instruction::LocalTee(fields));
@@ -578,15 +579,22 @@ pub(super) fn build_wasi_http_send_plain_fn(
   b.emit(Instruction::LocalGet(3));
   b.emit(Instruction::LocalGet(4));
   b.emit(Instruction::Call(write_all_idx));
-  b.emit(Instruction::Drop);
+  b.emit(Instruction::LocalSet(write_err));
 
   b.emit(Instruction::LocalGet(stream));
   b.emit(Instruction::Call(stream_drop));
+  b.emit(Instruction::LocalGet(write_err));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(body));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalGet(4));
   b.emit(Instruction::Call(body_finish));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(body));
+  b.emit(Instruction::Call(body_drop));
+  b.emit(Instruction::End);
 
   b.finish(vec![ValType::I32; 5], vec![])
 }
@@ -676,6 +684,180 @@ fn push_turn_cleanup_and_return(b: &mut RuntimeFnBuilder, active_turns_global: u
   b.emit(Instruction::Return);
 }
 
+/// Check whether `(ptr[..len])` matches ASCII `"content-length"` case-insensitively.
+fn push_check_is_content_length_name(b: &mut RuntimeFnBuilder, ptr_local: u32, len_local: u32, out_bool_local: u32) {
+  const TARGET: &[u8; 14] = b"content-length";
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(out_bool_local));
+  b.emit(Instruction::LocalGet(len_local));
+  b.emit(Instruction::I32Const(TARGET.len() as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  for (idx, &expected) in TARGET.iter().enumerate() {
+    b.emit(Instruction::LocalGet(ptr_local));
+    b.emit(Instruction::I32Load8U(mem_arg_byte(idx as u64)));
+    if expected == b'-' {
+      b.emit(Instruction::I32Const(i32::from(expected)));
+    } else {
+      b.emit(Instruction::I32Const(0x20));
+      b.emit(Instruction::I32Or);
+      b.emit(Instruction::I32Const(i32::from(expected)));
+    }
+    b.emit(Instruction::I32Eq);
+    if idx > 0 {
+      b.emit(Instruction::I32And);
+    }
+  }
+  b.emit(Instruction::LocalSet(out_bool_local));
+  b.emit(Instruction::End);
+}
+
+/// Parse an unsigned decimal `Content-Length` value (trimming ASCII OWS) into `i64`, or `-1` on invalid input/overflow.
+fn push_parse_content_length_value(b: &mut RuntimeFnBuilder, ptr_local: u32, len_local: u32, out_i64_local: u32) {
+  let start = b.alloc_i32();
+  let end = b.alloc_i32();
+  let idx = b.alloc_i32();
+  let ch = b.alloc_i32();
+  let digit = b.alloc_i32();
+  let invalid = b.alloc_i32();
+  let acc = b.alloc_i64();
+  let digit_i64 = b.alloc_i64();
+
+  b.emit(Instruction::I64Const(-1));
+  b.emit(Instruction::LocalSet(out_i64_local));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(start));
+  b.emit(Instruction::LocalGet(len_local));
+  b.emit(Instruction::LocalSet(end));
+
+  // Skip leading ASCII spaces/tabs.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(ptr_local));
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalTee(ch));
+  b.emit(Instruction::I32Const(i32::from(b' ')));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Const(i32::from(b'\t')));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(start));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Skip trailing ASCII spaces/tabs.
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(ptr_local));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::LocalTee(ch));
+  b.emit(Instruction::I32Const(i32::from(b' ')));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::LocalGet(ch));
+  b.emit(Instruction::I32Const(i32::from(b'\t')));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalSet(end));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::I32LtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(acc));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(invalid));
+  b.emit(Instruction::LocalGet(start));
+  b.emit(Instruction::LocalSet(idx));
+
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::LocalGet(end));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(ptr_local));
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Const(i32::from(b'0')));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::LocalTee(digit));
+  b.emit(Instruction::I32Const(9));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(invalid));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(digit));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::LocalSet(digit_i64));
+  b.emit(Instruction::LocalGet(acc));
+  b.emit(Instruction::I64Const(i64::MAX));
+  b.emit(Instruction::LocalGet(digit_i64));
+  b.emit(Instruction::I64Sub);
+  b.emit(Instruction::I64Const(10));
+  b.emit(Instruction::I64DivS);
+  b.emit(Instruction::I64GtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(invalid));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(acc));
+  b.emit(Instruction::I64Const(10));
+  b.emit(Instruction::I64Mul);
+  b.emit(Instruction::LocalGet(digit_i64));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(acc));
+
+  b.emit(Instruction::LocalGet(idx));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(idx));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(invalid));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(acc));
+  b.emit(Instruction::LocalSet(out_i64_local));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn build_wasi_http_incoming_handler_fn(
   handler_idx: u32,
@@ -718,6 +900,7 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   let error_drop = host_imports[&(io_error.into(), "[resource-drop]error".into())];
 
   let arena_alloc_idx = runtime_fn_index["__rt_arena_alloc"];
+  let cabi_realloc_idx = runtime_fn_index["__cabi_realloc"];
   let cabi_free_idx = runtime_fn_index["__cabi_free"];
   let str_new_idx = runtime_fn_index["__str_new"];
   let utf8_valid_idx = runtime_fn_index["__rt_utf8_valid"];
@@ -758,6 +941,7 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   let mut b = RuntimeFnBuilder::new(2);
   let retptr = b.alloc_i32();
   let disc = b.alloc_i32();
+  let is_head = b.alloc_i32();
   let raw_ptr = b.alloc_i32();
   let raw_len = b.alloc_i32();
   let method_f64 = b.alloc_f64();
@@ -785,10 +969,11 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
 
   let in_body = b.alloc_i32();
   let in_stream = b.alloc_i32();
-  let chunk_head = b.alloc_i32();
-  let chunk_tail = b.alloc_i32();
-  let chunk_node = b.alloc_i32();
-  let chunk_next = b.alloc_i32();
+  let chunk_slot = b.alloc_i32();
+  let aligned_end = b.alloc_i32();
+  let current_pages = b.alloc_i32();
+  let needed_end_i64 = b.alloc_i64();
+  let mem_bytes_i64 = b.alloc_i64();
   let body_obj_raw = b.alloc_i32();
   let body_obj_ptr = b.alloc_i32();
   let write_off = b.alloc_i32();
@@ -815,12 +1000,18 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   let resp_body_tag = b.alloc_i32();
 
   let out_fields = b.alloc_i32();
+  let is_cl_name = b.alloc_i32();
+  let has_cl = b.alloc_i32();
+  let cl_invalid = b.alloc_i32();
+  let parsed_cl = b.alloc_i64();
+  let declared_cl = b.alloc_i64();
   let out_bytes_ptr = b.alloc_i32();
   let out_bytes_len = b.alloc_i32();
   let payload_obj_ptr = b.alloc_i32();
   let out_resp = b.alloc_i32();
   let out_body = b.alloc_i32();
   let out_stream = b.alloc_i32();
+  let write_err = b.alloc_i32();
 
   // 1. Enter request Scratch Arena turn and allocate 64-byte 8-byte-aligned retptr.
   b.emit(Instruction::Call(turn_enter_idx));
@@ -835,6 +1026,10 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::LocalGet(retptr));
   b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
   b.emit(Instruction::LocalTee(disc));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalSet(is_head));
+  b.emit(Instruction::LocalGet(disc));
   b.emit(Instruction::I32Const(9));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
@@ -1091,10 +1286,31 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::I32Load(mem_arg_i32(4)));
   b.emit(Instruction::LocalSet(in_stream));
 
+  // Reserve a reusable 64 KiB cabi_realloc slot below body_obj so host reads never advance past write_off.
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(chunk_head));
   b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(chunk_tail));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Const(HTTP_READ_CHUNK_BYTES as i32));
+  b.emit(Instruction::Call(cabi_realloc_idx));
+  b.emit(Instruction::LocalSet(chunk_slot));
+  b.emit(Instruction::LocalGet(chunk_slot));
+  b.emit(Instruction::I32Const(HTTP_READ_CHUNK_BYTES as i32));
+  b.emit(Instruction::Call(cabi_free_idx));
+
+  // Allocate the 16-byte heap object header + length f64 slot at the arena frontier;
+  // incoming body chunks copy directly into write_off == HEAP_PTR_GLOBAL without staging buffers.
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::Call(arena_alloc_idx));
+  b.emit(Instruction::LocalTee(body_obj_raw));
+  b.emit(Instruction::I32Const(HEAP_MAGIC));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(body_obj_raw));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(body_obj_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(write_off));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(staging_len));
   b.emit(Instruction::I32Const(0));
@@ -1130,38 +1346,72 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::Br(3));
   b.emit(Instruction::End);
 
-  // Append incoming chunk pointer directly onto a linked list without doubling copies.
+  // Copy incoming chunk directly to write_off, extend HEAP_PTR_GLOBAL, and recycle the 64 KiB slot.
   b.emit(Instruction::LocalGet(raw_len));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32GtU);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::Call(arena_alloc_idx));
-  b.emit(Instruction::LocalTee(chunk_node));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32Store(mem_arg_i32(0)));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::LocalGet(raw_ptr));
-  b.emit(Instruction::I32Store(mem_arg_i32(4)));
-  b.emit(Instruction::LocalGet(chunk_node));
+  b.emit(Instruction::LocalGet(write_off));
+  b.emit(Instruction::I64ExtendI32U);
   b.emit(Instruction::LocalGet(raw_len));
-  b.emit(Instruction::I32Store(mem_arg_i32(8)));
-  b.emit(Instruction::LocalGet(chunk_head));
-  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::I64Const(7));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::I64Const(-8i64));
+  b.emit(Instruction::I64And);
+  b.emit(Instruction::LocalTee(needed_end_i64));
+  b.emit(Instruction::I64Const(i64::from(u32::MAX)));
+  b.emit(Instruction::I64GtU);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::LocalSet(chunk_head));
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(chunk_tail));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::Unreachable);
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::LocalSet(chunk_tail));
+  b.emit(Instruction::LocalGet(needed_end_i64));
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::LocalSet(aligned_end));
+
+  b.emit(Instruction::MemorySize(0));
+  b.emit(Instruction::LocalSet(current_pages));
+  b.emit(Instruction::LocalGet(current_pages));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(16));
+  b.emit(Instruction::I64Shl);
+  b.emit(Instruction::LocalSet(mem_bytes_i64));
+  b.emit(Instruction::LocalGet(needed_end_i64));
+  b.emit(Instruction::LocalGet(mem_bytes_i64));
+  b.emit(Instruction::I64GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(needed_end_i64));
+  b.emit(Instruction::LocalGet(mem_bytes_i64));
+  b.emit(Instruction::I64Sub);
+  b.emit(Instruction::I64Const(65_535));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::I64Const(16));
+  b.emit(Instruction::I64ShrU);
+  b.emit(Instruction::I32WrapI64);
+  b.emit(Instruction::MemoryGrow(0));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(write_off));
+  b.emit(Instruction::LocalGet(raw_ptr));
+  b.emit(Instruction::LocalGet(raw_len));
+  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.emit(Instruction::LocalGet(write_off));
+  b.emit(Instruction::LocalGet(raw_len));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(write_off));
   b.emit(Instruction::LocalGet(staging_len));
   b.emit(Instruction::LocalGet(raw_len));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(staging_len));
+  b.emit(Instruction::LocalGet(aligned_end));
+  b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+  push_cabi_free_if_nonzero(&mut b, cabi_free_idx, raw_ptr, &[Instruction::LocalGet(raw_len)]);
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
   // Err(stream-error): 0 = last-operation-failed(error), 1 = closed (EOF)
@@ -1201,28 +1451,8 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
 
   b.emit(Instruction::LocalGet(body_status));
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(chunk_head));
-  b.emit(Instruction::LocalSet(chunk_node));
-  b.emit(Instruction::Block(BlockType::Empty));
-  b.emit(Instruction::Loop(BlockType::Empty));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Eqz);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::LocalSet(chunk_next));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(4)));
-  b.emit(Instruction::LocalSet(raw_ptr));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(8)));
-  b.emit(Instruction::LocalSet(raw_len));
-  push_cabi_free_if_nonzero(&mut b, cabi_free_idx, raw_ptr, &[Instruction::LocalGet(raw_len)]);
-  b.emit(Instruction::LocalGet(chunk_next));
-  b.emit(Instruction::LocalSet(chunk_node));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(body_obj_raw));
+  b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
   b.emit(Instruction::LocalGet(body_status));
   b.emit(Instruction::I32Const(2));
   b.emit(Instruction::I32Eq);
@@ -1244,67 +1474,20 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   push_turn_cleanup_and_return(&mut b, active_turns_global, comp_globals, turn_exit_idx);
   b.emit(Instruction::End);
 
-  // Convert linked body chunks directly into one String or Buffer (:empty | :text String | :bytes Buffer).
+  // Finalize the contiguous in-place buffer as HttpBody (:empty | :text String | :bytes Buffer).
   b.emit(Instruction::LocalGet(staging_len));
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(body_obj_raw));
+  b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
   b.emit(Instruction::I32Const(body_empty_tag_id));
   b.emit(Instruction::LocalSet(var_tag_tmp));
   push_alloc_enum(&mut b, arena_alloc_idx, enum_tag_id, var_tag_tmp, None, body_f64);
   b.emit(Instruction::Else);
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::LocalGet(staging_len));
-  b.emit(Instruction::I32Const(7));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::I32Const(-8i32));
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::Call(arena_alloc_idx));
-  b.emit(Instruction::LocalTee(body_obj_raw));
-  b.emit(Instruction::I32Const(HEAP_MAGIC));
-  b.emit(Instruction::I32Store(mem_arg_i32(0)));
-  b.emit(Instruction::LocalGet(body_obj_raw));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalTee(body_obj_ptr));
+  b.emit(Instruction::LocalGet(body_obj_ptr));
   b.emit(Instruction::LocalGet(staging_len));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(body_obj_ptr));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(write_off));
-
-  b.emit(Instruction::LocalGet(chunk_head));
-  b.emit(Instruction::LocalSet(chunk_node));
-  b.emit(Instruction::Block(BlockType::Empty));
-  b.emit(Instruction::Loop(BlockType::Empty));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Eqz);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::LocalSet(chunk_next));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(4)));
-  b.emit(Instruction::LocalSet(raw_ptr));
-  b.emit(Instruction::LocalGet(chunk_node));
-  b.emit(Instruction::I32Load(mem_arg_i32(8)));
-  b.emit(Instruction::LocalSet(raw_len));
-  b.emit(Instruction::LocalGet(write_off));
-  b.emit(Instruction::LocalGet(raw_ptr));
-  b.emit(Instruction::LocalGet(raw_len));
-  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
-  b.emit(Instruction::LocalGet(write_off));
-  b.emit(Instruction::LocalGet(raw_len));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(write_off));
-  push_cabi_free_if_nonzero(&mut b, cabi_free_idx, raw_ptr, &[Instruction::LocalGet(raw_len)]);
-  b.emit(Instruction::LocalGet(chunk_next));
-  b.emit(Instruction::LocalSet(chunk_node));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
 
   b.emit(Instruction::LocalGet(body_obj_ptr));
   b.emit(Instruction::I32Const(8));
@@ -1435,13 +1618,13 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   );
   b.emit(Instruction::LocalSet(resp_body_f64));
 
-  // Validate HTTP status code is an integer in 100..=599.
+  // Validate HTTP status code is an integer in 200..=599 (1xx interim responses are invalid here).
   b.emit(Instruction::LocalGet(status_f64));
   b.emit(Instruction::LocalGet(status_f64));
   b.emit(Instruction::F64Trunc);
   b.emit(Instruction::F64Ne);
   b.emit(Instruction::LocalGet(status_f64));
-  b.emit(f64_const(100.0));
+  b.emit(f64_const(200.0));
   b.emit(Instruction::F64Lt);
   b.emit(Instruction::I32Or);
   b.emit(Instruction::LocalGet(status_f64));
@@ -1461,9 +1644,60 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(status_i32));
 
-  // Build outgoing headers from List<HttpHeader>.
+  // Extract outgoing body bytes before validating Content-Length headers and committing response-outparam.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(out_bytes_ptr));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(out_bytes_len));
+
+  b.emit(Instruction::LocalGet(resp_body_f64));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(resp_body_ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalTee(resp_body_tag));
+  b.emit(Instruction::I32Const(body_empty_tag_id));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(resp_body_tag));
+  b.emit(Instruction::I32Const(body_text_tag_id));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(resp_body_tag));
+  b.emit(Instruction::I32Const(body_bytes_tag_id));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(resp_body_ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(payload_obj_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(out_bytes_ptr));
+  b.emit(Instruction::LocalGet(payload_obj_ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(out_bytes_len));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(500));
+  b.emit(Instruction::I32Const(internal_err_ptr));
+  b.emit(Instruction::I32Const(internal_err_len));
+  b.emit(Instruction::LocalGet(retptr));
+  b.emit(Instruction::Call(send_plain_idx));
+  push_turn_cleanup_and_return(&mut b, active_turns_global, comp_globals, turn_exit_idx);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
+  // Build outgoing headers from List<HttpHeader> and track declared Content-Length.
   b.emit(Instruction::Call(fields_new));
   b.emit(Instruction::LocalSet(out_fields));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(has_cl));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(cl_invalid));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(declared_cl));
   b.emit(Instruction::LocalGet(resp_headers_f64));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalTee(resp_headers_ptr));
@@ -1513,6 +1747,46 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(val_len));
 
+  // Track Content-Length declarations so mismatched lengths return 500 before committing response-outparam.
+  b.emit(Instruction::LocalGet(name_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(raw_ptr));
+  push_check_is_content_length_name(&mut b, raw_ptr, name_len, is_cl_name);
+  b.emit(Instruction::LocalGet(is_cl_name));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(val_ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(raw_ptr));
+  push_parse_content_length_value(&mut b, raw_ptr, val_len, parsed_cl);
+  b.emit(Instruction::LocalGet(parsed_cl));
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::I64LtS);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(cl_invalid));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(has_cl));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(has_cl));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(parsed_cl));
+  b.emit(Instruction::LocalGet(declared_cl));
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(cl_invalid));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(parsed_cl));
+  b.emit(Instruction::LocalSet(declared_cl));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::LocalSet(has_cl));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
   b.emit(Instruction::LocalGet(out_fields));
   b.emit(Instruction::LocalGet(name_ptr));
   b.emit(Instruction::I32Const(8));
@@ -1547,41 +1821,26 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 
-  // Extract outgoing body bytes before transferring response-outparam.
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(out_bytes_ptr));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(out_bytes_len));
-
-  b.emit(Instruction::LocalGet(resp_body_f64));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalTee(resp_body_ptr));
-  b.emit(Instruction::I32Load(mem_arg_i32(4)));
-  b.emit(Instruction::LocalTee(resp_body_tag));
-  b.emit(Instruction::I32Const(body_empty_tag_id));
-  b.emit(Instruction::I32Eq);
+  // Reject malformed, conflicting, or body-length-mismatched Content-Length before committing response-outparam.
+  b.emit(Instruction::LocalGet(has_cl));
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(resp_body_tag));
-  b.emit(Instruction::I32Const(body_text_tag_id));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::LocalGet(resp_body_tag));
-  b.emit(Instruction::I32Const(body_bytes_tag_id));
+  b.emit(Instruction::LocalGet(cl_invalid));
+  b.emit(Instruction::LocalGet(declared_cl));
+  b.emit(Instruction::LocalGet(out_bytes_len));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Ne);
+  b.emit(Instruction::LocalGet(is_head));
+  b.emit(Instruction::LocalGet(status_i32));
+  b.emit(Instruction::I32Const(304));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(out_bytes_len));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(resp_body_ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(8)));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalTee(payload_obj_ptr));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(out_bytes_ptr));
-  b.emit(Instruction::LocalGet(payload_obj_ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(out_bytes_len));
-  b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(out_fields));
   b.emit(Instruction::Call(fields_drop));
   b.emit(Instruction::LocalGet(1));
@@ -1656,6 +1915,8 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
 
   push_response_outparam_ok(&mut b, outparam_set, 1, out_resp);
 
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(write_err));
   b.emit(Instruction::LocalGet(out_bytes_len));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32GtU);
@@ -1665,16 +1926,23 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::LocalGet(out_bytes_len));
   b.emit(Instruction::LocalGet(retptr));
   b.emit(Instruction::Call(write_all_idx));
-  b.emit(Instruction::Drop);
+  b.emit(Instruction::LocalSet(write_err));
   b.emit(Instruction::End);
 
   b.emit(Instruction::LocalGet(out_stream));
   b.emit(Instruction::Call(out_stream_drop));
+  b.emit(Instruction::LocalGet(write_err));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(out_body));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalGet(retptr));
   b.emit(Instruction::Call(out_body_finish));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(out_body));
+  b.emit(Instruction::Call(out_body_drop));
+  b.emit(Instruction::End);
 
   push_turn_cleanup_and_return(&mut b, active_turns_global, comp_globals, turn_exit_idx);
 

@@ -17220,6 +17220,7 @@ fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
         ))
       ) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
     }
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_typed_cirru_edn_parse),
     _ => false,
   }
 }
@@ -17237,6 +17238,7 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
       };
       writes || xs.iter().any(expr_uses_wasi_stdio)
     }
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_stdio),
     _ => false,
   }
 }
@@ -17244,6 +17246,7 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
 fn expr_uses_wasi_file(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_file),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_file),
     Calcit::Proc(CalcitProc::NativeFsReadText | CalcitProc::NativeFsWriteText) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
@@ -17259,6 +17262,7 @@ fn expr_uses_wasi_file(expr: &Calcit) -> bool {
 fn expr_uses_wasi_read_dir(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_read_dir),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_read_dir),
     Calcit::Proc(CalcitProc::NativeFsReadDir) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-dir" | "fs-path:walk-dir" | "try-read-dir")
@@ -17274,6 +17278,7 @@ fn expr_uses_wasi_read_dir(expr: &Calcit) -> bool {
 fn expr_uses_wasi_clocks(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_clocks),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_clocks),
     Calcit::Proc(CalcitProc::UnixTimeMs | CalcitProc::MonotonicTimeMs) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
       ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "unix-time-ms" | "monotonic-time-ms")
@@ -17285,6 +17290,7 @@ fn expr_uses_wasi_clocks(expr: &Calcit) -> bool {
 fn expr_uses_wasi_wait(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_wait),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_wait),
     Calcit::Proc(CalcitProc::NativeWaitMs) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "wait-ms",
     _ => false,
@@ -17294,6 +17300,7 @@ fn expr_uses_wasi_wait(expr: &Calcit) -> bool {
 fn expr_uses_wasi_random(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_random),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_random),
     Calcit::Proc(CalcitProc::NativeSecureRandomBytes) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "secure-random-bytes",
     _ => false,
@@ -17326,6 +17333,7 @@ fn validate_stdin_boundary(
 fn expr_uses_wasi_stdin(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => xs.iter().any(expr_uses_wasi_stdin),
+    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_wasi_stdin),
     Calcit::Proc(CalcitProc::NativeReadStdinText) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == "calcit.core" && def.as_ref() == "read-stdin-text",
     _ => false,

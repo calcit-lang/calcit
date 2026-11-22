@@ -177,6 +177,7 @@ fn send_raw_http(child: &mut Child, addr: SocketAddr, raw_request: &[u8]) -> Htt
     }
   }
 
+  let is_head = raw_request.starts_with(b"HEAD ");
   let header_end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or_else(|| {
     panic!(
       "invalid HTTP response ({} bytes): {:?}",
@@ -211,10 +212,23 @@ fn send_raw_http(child: &mut Child, addr: SocketAddr, raw_request: &[u8]) -> Htt
     }
   }
 
-  let body = if is_chunked {
+  let body = if is_head || status == 204 || status == 304 {
+    assert!(
+      raw_body.is_empty(),
+      "unexpected body bytes ({}) for header-only HTTP response (status {status})",
+      raw_body.len()
+    );
+    Vec::new()
+  } else if is_chunked {
     decode_chunked_bytes(raw_body)
   } else if let Some(len) = content_length {
-    raw_body[..len.min(raw_body.len())].to_vec()
+    assert_eq!(
+      raw_body.len(),
+      len,
+      "HTTP response body length ({}) did not match Content-Length ({len})",
+      raw_body.len()
+    );
+    raw_body.to_vec()
   } else {
     raw_body.to_vec()
   };
@@ -300,6 +314,24 @@ fn http_proxy_cli_and_validator_reject_invalid_worlds_schemas_and_capabilities()
   let native_http_err = String::from_utf8_lossy(&native_http.stderr);
   assert!(native_http_err.contains("E_WASI_WORLD"), "{native_http_err}");
   assert!(!out.path().join("program.wasm").exists());
+
+  // --world http --boundary native --check-only on a zero-arg command entry must report E_WASI_WORLD, not E_WASI_HTTP_ENTRY.
+  let native_check_cmd = calcit(
+    &[
+      "tests/fixtures/wasi-command-03.cirru",
+      "wasi",
+      "--world",
+      "http",
+      "--boundary",
+      "native",
+      "--check-only",
+    ],
+    out.path(),
+  );
+  assert!(!native_check_cmd.status.success());
+  let native_check_cmd_err = String::from_utf8_lossy(&native_check_cmd.stderr);
+  assert!(native_check_cmd_err.contains("E_WASI_WORLD"), "{native_check_cmd_err}");
+  assert!(!native_check_cmd_err.contains("E_WASI_HTTP_ENTRY"), "{native_check_cmd_err}");
 
   let dir = tempfile::tempdir().expect("temp fixture directory");
 
@@ -485,7 +517,7 @@ fn http_proxy_supports_println_and_eprintln_logging_and_live_wasmtime_serve() {
   };
   let addr = free_loopback_addr();
   let mut guard = ChildGuard(
-    Command::new(wasmtime_cli)
+    Command::new(&wasmtime_cli)
       .args(["serve", "--addr", &addr.to_string(), "--max-instance-reuse-count", "8"])
       .arg(&wasm_path)
       .stdout(Stdio::piped())
@@ -499,6 +531,58 @@ fn http_proxy_supports_println_and_eprintln_logging_and_live_wasmtime_serve() {
   let (stdout, stderr) = guard.kill_and_collect_output();
   assert!(stdout.contains("http-stdout /ping"), "stdout: {stdout:?}");
   assert!(stderr.contains("http-stderr /ping"), "stderr: {stderr:?}");
+
+  // Verify stdio detection recurses into nested Calcit::Fn lambdas (e.g. `each` callback).
+  let lambda_snapshot = dir.path().join("stdio-lambda-proxy.cirru");
+  fs::copy("tests/fixtures/wasi-http-proxy.cirru", &lambda_snapshot).expect("copy HTTP proxy fixture for lambda stdio");
+  edit_def(
+    &lambda_snapshot,
+    "app.main/handle",
+    concat!(
+      "quote $ defn handle (req)\n",
+      "  do\n",
+      "    each ([] (:path req))\n",
+      "      fn (p) (do (println |lambda-stdout p) (eprintln |lambda-stderr p))\n",
+      "    Result :ok (plain-response 200 |lambda-logged)",
+    ),
+    "quote $ Fn HttpRequest (-> (Result HttpResponse String)) (:features :io)",
+  );
+  let lambda_emit_dir = tempfile::tempdir().expect("lambda stdio proxy emit dir");
+  let lambda_built = calcit(
+    &[lambda_snapshot.to_str().unwrap(), "wasi", "--world", "http"],
+    lambda_emit_dir.path(),
+  );
+  assert!(lambda_built.status.success(), "{}", String::from_utf8_lossy(&lambda_built.stderr));
+  let lambda_wasm_path = lambda_emit_dir.path().join("program.wasm");
+  let lambda_wasm_bytes = fs::read(&lambda_wasm_path).expect("read lambda stdio Component");
+  let lambda_component = Component::new(&engine, &lambda_wasm_bytes).expect("valid WASI HTTP lambda stdio Component");
+  let lambda_component_type = lambda_component.component_type();
+  let lambda_imports = lambda_component_type.imports(&engine).map(|(n, _)| n).collect::<Vec<_>>();
+  assert!(lambda_imports.contains(&"wasi:cli/stdout@0.2.12"), "imports: {lambda_imports:?}");
+  assert!(lambda_imports.contains(&"wasi:cli/stderr@0.2.12"), "imports: {lambda_imports:?}");
+
+  let lambda_addr = free_loopback_addr();
+  let mut lambda_guard = ChildGuard(
+    Command::new(&wasmtime_cli)
+      .args(["serve", "--addr", &lambda_addr.to_string(), "--max-instance-reuse-count", "8"])
+      .arg(&lambda_wasm_path)
+      .stdout(Stdio::piped())
+      .stderr(Stdio::piped())
+      .spawn()
+      .expect("spawn wasmtime serve for lambda stdio proxy"),
+  );
+  let lambda_reply = send_http(&mut lambda_guard.0, lambda_addr, "GET", "/lambda-ping", &[], b"");
+  assert_eq!(lambda_reply.status, 200);
+  assert_eq!(String::from_utf8_lossy(&lambda_reply.body), "lambda-logged");
+  let (lambda_stdout, lambda_stderr) = lambda_guard.kill_and_collect_output();
+  assert!(
+    lambda_stdout.contains("lambda-stdout /lambda-ping"),
+    "lambda stdout: {lambda_stdout:?}"
+  );
+  assert!(
+    lambda_stderr.contains("lambda-stderr /lambda-ping"),
+    "lambda stderr: {lambda_stderr:?}"
+  );
 }
 
 #[test]
@@ -614,7 +698,29 @@ fn http_proxy_serves_routes_binary_errors_and_64_stress_turns_under_8mib_cap() {
   assert_eq!(r7.status, 404);
   assert_eq!(String::from_utf8_lossy(&r7.body), "not-found");
 
-  // 8. >4 MiB POST body -> HTTP 413 Request Entity Too Large before handler crash/OOM
+  // 8a. Exact 4 MiB POST body -> HTTP 200 byte-exact round-trip within 8 MiB hard memory cap
+  let max_accepted: Vec<u8> = (0..(4 * 1024 * 1024usize))
+    .map(|i| ((i.wrapping_mul(73) ^ 0xa5) & 0xff) as u8)
+    .collect();
+  assert!(std::str::from_utf8(&max_accepted).is_err());
+  let r8_exact = send_http(
+    &mut guard.0,
+    addr,
+    "POST",
+    "/echo-bytes",
+    &[("content-type", b"application/octet-stream")],
+    &max_accepted,
+  );
+  assert_eq!(
+    r8_exact.status,
+    200,
+    "exact 4 MiB body failed: {:?}",
+    String::from_utf8_lossy(&r8_exact.body)
+  );
+  assert_eq!(r8_exact.body.len(), max_accepted.len());
+  assert_eq!(r8_exact.body, max_accepted, "exact 4 MiB binary payload must round-trip losslessly");
+
+  // 8b. >4 MiB POST body -> HTTP 413 Request Entity Too Large before handler crash/OOM
   let oversized = vec![b'x'; 4 * 1024 * 1024 + 512];
   let r8 = send_http(
     &mut guard.0,
@@ -652,4 +758,77 @@ fn http_proxy_serves_routes_binary_errors_and_64_stress_turns_under_8mib_cap() {
   let final_health = send_http(&mut guard.0, addr, "GET", "/health", &[], b"");
   assert_eq!(final_health.status, 200);
   assert_eq!(String::from_utf8_lossy(&final_health.body), format!("ok:{expected_hits}"));
+}
+
+#[test]
+fn http_proxy_rejects_interim_status_and_mismatched_content_length() {
+  let Some(wasmtime_cli) = find_wasmtime_cli() else {
+    return;
+  };
+  let dir = tempfile::tempdir().expect("http validation directory");
+  let snapshot = dir.path().join("validation-proxy.cirru");
+  fs::copy("tests/fixtures/wasi-http-proxy.cirru", &snapshot).expect("copy HTTP proxy fixture");
+  edit_def(
+    &snapshot,
+    "app.main/handle",
+    concat!(
+      "quote $ defn handle (req)\n",
+      "  let ((method (method-name (:method req))) (path (:path req)))\n",
+      "    cond\n",
+      "      (= path |/interim)\n",
+      "        Result :ok $ HttpResponse :status 103 :headers ([]) :body (HttpBody :empty)\n",
+      "      (= path |/bad-cl-len)\n",
+      "        Result :ok $ HttpResponse :status 200 :headers ([] (HttpHeader :name |Content-Length :value |10)) :body (HttpBody :text |hello)\n",
+      "      (= path |/bad-cl-parse)\n",
+      "        Result :ok $ HttpResponse :status 200 :headers ([] (HttpHeader :name |content-length :value |abc)) :body (HttpBody :text |hello)\n",
+      "      (= path |/good-cl)\n",
+      "        Result :ok $ HttpResponse :status 200 :headers ([] (HttpHeader :name |Content-Length :value |5)) :body (HttpBody :text |hello)\n",
+      "      (and (= method |HEAD) (= path |/head-cl))\n",
+      "        Result :ok $ HttpResponse :status 200 :headers ([] (HttpHeader :name |content-length :value |12)) :body (HttpBody :empty)\n",
+      "      true\n",
+      "        Result :ok $ plain-response 404 |not-found",
+    ),
+    "quote $ Fn HttpRequest (-> (Result HttpResponse String))",
+  );
+
+  let emit_dir = tempfile::tempdir().expect("validation proxy emit dir");
+  let built = calcit(&[snapshot.to_str().unwrap(), "wasi", "--world", "http"], emit_dir.path());
+  assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+  let wasm_path = emit_dir.path().join("program.wasm");
+
+  let addr = free_loopback_addr();
+  let mut guard = ChildGuard(
+    Command::new(wasmtime_cli)
+      .args(["serve", "--addr", &addr.to_string(), "--max-instance-reuse-count", "32"])
+      .arg(&wasm_path)
+      .stdout(Stdio::null())
+      .stderr(Stdio::piped())
+      .spawn()
+      .expect("spawn wasmtime serve for validation proxy"),
+  );
+
+  let r_interim = send_http(&mut guard.0, addr, "GET", "/interim", &[], b"");
+  assert_eq!(r_interim.status, 500);
+  assert_eq!(String::from_utf8_lossy(&r_interim.body), "handler failed");
+
+  let r_bad_len = send_http(&mut guard.0, addr, "GET", "/bad-cl-len", &[], b"");
+  assert_eq!(r_bad_len.status, 500);
+  assert_eq!(String::from_utf8_lossy(&r_bad_len.body), "handler failed");
+
+  let r_bad_parse = send_http(&mut guard.0, addr, "GET", "/bad-cl-parse", &[], b"");
+  assert_eq!(r_bad_parse.status, 500);
+  assert_eq!(String::from_utf8_lossy(&r_bad_parse.body), "handler failed");
+
+  let r_good_cl = send_http(&mut guard.0, addr, "GET", "/good-cl", &[], b"");
+  assert_eq!(r_good_cl.status, 200);
+  assert_eq!(String::from_utf8_lossy(&r_good_cl.body), "hello");
+
+  let r_head_cl = send_http(&mut guard.0, addr, "HEAD", "/head-cl", &[], b"");
+  assert_eq!(r_head_cl.status, 200);
+  assert!(r_head_cl.body.is_empty());
+  assert!(
+    r_head_cl.headers.iter().any(|(k, v)| k == "content-length" && v == "12"),
+    "HEAD headers: {:?}",
+    r_head_cl.headers
+  );
 }
