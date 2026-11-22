@@ -12,7 +12,7 @@ aliases:
 ---
 # WASM 支持矩阵
 
-本页说明一段 Calcit 代码能否由 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command）编译。两个命令共享加载、预处理、target 校验与 codegen，下面的状态对两者相同，个别行注明了两者的差异；WASI 宿主能力另见 [宿主能力边界](host-capability-boundary.md)，Component 类型见 [WASM Component 边界](wasm-component-boundary.md)。
+本页说明一段 Calcit 代码能否由 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command，或通过 `--world http` 面向 `wasi:http/proxy@0.2.12`）编译。各个目标共享加载、预处理、target 校验与 codegen，下面的状态对这些目标相同，个别行注明了两者的差异；WASI 宿主能力另见 [宿主能力边界](host-capability-boundary.md)，Component 类型见 [WASM Component 边界](wasm-component-boundary.md)。
 
 ## 状态
 
@@ -70,6 +70,7 @@ aliases:
 调用下列内建 Proc 时 WASM 报告 `unsupported proc in WASM: <name>`。`node scripts/run-core-tests.mjs` 校验排除清单中出现的每个此类 Proc 都列在这里。
 
 ```text wasm-unsupported-procs
+&buffer
 &cirru-nth
 &cirru-quote:to-list
 &cirru-type
@@ -135,6 +136,10 @@ write-file
 | `E_WASM_EDN_DEPTH` | 数据形状嵌套过深 | 拆分数据结构 |
 | `E_WASM_EDN_SYNTAX`、`E_WASM_EDN_TAG`、`E_WASM_EDN_ENUM`、`E_WASM_EDN_RANGE` | 运行时解析失败：语法错误、未知 tag、Enum 不匹配、数值越界；返回 `Result :err` | 按 Result 分支处理 |
 | `E_WASM_EDN_INPUT_LIMIT`、`E_WASM_EDN_TOKEN_LIMIT`、`E_WASM_EDN_MAP_LIMIT` | 运行时输入超过 64 KiB、List 4096 项或 Map 2048 项；返回 `Result :err` | 拆分输入 |
+| `E_WASI_WORLD` | 未知的 `--world`，或 `--world http` 与 `--boundary native` 组合 | `--world` 仅支持 `command` 或 `http`，且 `http` 必须使用 `--boundary component` |
+| `E_WASI_HTTP_ENTRY` | HTTP 入口不是单参数函数，或缺少精确 `Fn HttpRequest (-> (Result HttpResponse String))` schema | 为 `:init-fn` 声明匹配的入参与返回值类型 |
+| `E_WASI_HTTP_EXPORT` | 在 `--world http` 下额外声明通用 `defwasm-export` | HTTP proxy world 只导出 `wasi:http/incoming-handler@0.2.12`，移除多余 `defwasm-export` |
+| `E_WASI_HTTP_CAPABILITY` | 在 `--world http` 可达闭包中调用仅限 `command` 的能力（如 CLI 参数、环境变量、filesystem、stdin、`quit!`、时钟、阻塞等待或安全随机数） | 保留在 `command` world 或改用纯 HTTP 请求/响应与 stdio 日志逻辑 |
 
 ## 维护
 

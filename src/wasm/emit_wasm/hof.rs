@@ -1577,6 +1577,7 @@ mod tests {
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
       },
     );
     for (name, arity) in [("unary", 1), ("binary", 2), ("ternary", 3)] {
@@ -1683,6 +1684,7 @@ mod tests {
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
       },
     );
     ctx.locals.insert("item".into(), 0);

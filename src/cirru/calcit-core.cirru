@@ -4322,6 +4322,88 @@
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
+        'HttpBody $ %{} 'CodeEntry
+          :doc "|Nominal HTTP message body: :empty, :text String, or :bytes Buffer."
+          :code $ quote $ defenum HttpBody (:empty) (:text String) (:bytes Buffer)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tags $ #{} :core :data
+          :tests $ [] $ %{} 'TestEntry (:name |constructs-and-matches-variants)
+            :code $ quote $ do
+              assert= :empty $ match (HttpBody :empty)
+                (:empty) :empty
+                _ :other
+              assert= |hi $ match (HttpBody :text |hi)
+                (:text s) s
+                _ |
+              assert= (&buffer 1 2)
+                match
+                  HttpBody :bytes $ &buffer 1 2
+                  (:bytes b) b
+                  _ $ &buffer
+            :tags $ #{} :core :unit
+        'HttpHeader $ %{} 'CodeEntry
+          :doc "|Nominal HTTP header entry with UTF-8 field name and value."
+          :code $ quote $ defstruct HttpHeader (:name String) (:value String)
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :core :data
+          :tests $ [] $ %{} 'TestEntry (:name |constructs-and-reads-fields)
+            :code $ quote $ let
+                h $ HttpHeader :name |content-type :value |application/json
+              assert= |content-type $ :name h
+              assert= |application/json $ :value h
+            :tags $ #{} :core :unit
+        'HttpMethod $ %{} 'CodeEntry
+          :doc "|Nominal HTTP request method corresponding to wasi:http/types.method."
+          :code $ quote $ defenum HttpMethod (:get) (:head) (:post) (:put) (:delete) (:connect) (:options) (:trace) (:patch) (:other String)
+          :examples $ []
+          :schema $ quote EnumDef
+          :tags $ #{} :core :data
+          :tests $ [] $ %{} 'TestEntry (:name |matches-standard-and-custom-methods)
+            :code $ quote $ do
+              assert= :get $ match (HttpMethod :get)
+                (:get) :get
+                _ :other
+              assert= |PURGE $ match (HttpMethod :other |PURGE)
+                (:other s) s
+                _ |
+            :tags $ #{} :core :unit
+        'HttpRequest $ %{} 'CodeEntry
+          :doc "|Nominal incoming HTTP request passed to WASI HTTP handlers."
+          :code $ quote $ defstruct HttpRequest (:method HttpMethod) (:path String)
+            :headers $ List HttpHeader
+            :body HttpBody
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :core :data
+          :tests $ [] $ %{} 'TestEntry (:name |constructs-request-with-nominal-fields)
+            :code $ quote $ let
+                req $ HttpRequest :method (HttpMethod :post) :path |/items :headers
+                  [] $ HttpHeader :name |accept :value |application/json
+                  , :body $ HttpBody :text |ok
+              assert= (HttpMethod :post) (:method req)
+              assert= |/items $ :path req
+              assert= 1 $ count $ :headers req
+              assert= (HttpBody :text |ok) (:body req)
+            :tags $ #{} :core :unit
+        'HttpResponse $ %{} 'CodeEntry
+          :doc "|Nominal outgoing HTTP response returned by WASI HTTP handlers."
+          :code $ quote $ defstruct HttpResponse (:status Number)
+            :headers $ List HttpHeader
+            :body HttpBody
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :core :data
+          :tests $ [] $ %{} 'TestEntry (:name |constructs-response-with-nominal-fields)
+            :code $ quote $ let
+                resp $ HttpResponse :status 200 :headers
+                  [] $ HttpHeader :name |content-type :value |text/plain
+                  , :body $ HttpBody :empty
+              assert= 200 $ :status resp
+              assert= 1 $ count $ :headers resp
+              assert= (HttpBody :empty) (:body resp)
+            :tags $ #{} :core :unit
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote $ deftrait Len
             .len $ Fn Self $ -> Number

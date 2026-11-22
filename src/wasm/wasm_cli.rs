@@ -11,7 +11,7 @@ use crate::wasm::host::calcit::LocatedWarning;
 use crate::wasm::host::call_stack::CallStackList;
 use crate::wasm::host::util::string::strip_shebang;
 use crate::wasm::host::{self, ProgramEntries, call_stack, codegen, program, runner, snapshot, util};
-use crate::wasm::{WasmBoundary, WasmTarget};
+use crate::wasm::{WasiWorld, WasmBoundary, WasmTarget};
 
 #[derive(Clone, Debug)]
 pub struct WasmCliOptions {
@@ -22,6 +22,7 @@ pub struct WasmCliOptions {
   pub entry: Option<String>,
   pub check_only: bool,
   pub boundary: WasmBoundary,
+  pub world: WasiWorld,
 }
 
 pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
@@ -92,15 +93,21 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     &CallStackList::default(),
   )
   .map_err(|e| e.msg)?;
+  if target == WasmTarget::Wasi && options.world == WasiWorld::Http {
+    for core_def in ["Result", "HttpMethod", "HttpHeader", "HttpBody", "HttpRequest", "HttpResponse"] {
+      runner::preprocess::ensure_ns_def_compiled(host::calcit::CORE_NS, core_def, &check_warnings, &CallStackList::default())
+        .map_err(|e| e.msg)?;
+    }
+  }
 
   if options.check_only {
-    run_check_only(&entries, target, options.boundary)
+    run_check_only(&entries, target, options.boundary, options.world)
   } else {
-    run_wasm_codegen(&entries, &options.emit_path, target, options.boundary)
+    run_wasm_codegen(&entries, &options.emit_path, target, options.boundary, options.world)
   }
 }
 
-fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBoundary, world: WasiWorld) -> Result<(), String> {
   let started_time = Instant::now();
   let check_warnings = RefCell::new(vec![]);
 
@@ -119,13 +126,13 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
   }
   reject_preprocess_warnings(&check_warnings)?;
 
-  codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
-  if boundary == WasmBoundary::Component {
-    codegen::emit_wasm::validate_wasm_boundary(target, boundary, &entries.init_ns, &entries.init_def)?;
+  codegen::emit_wasm::validate_wasm_target_with_world(&entries.init_ns, &entries.init_def, target, world)?;
+  if boundary == WasmBoundary::Component || (target == WasmTarget::Wasi && world == WasiWorld::Http) {
+    codegen::emit_wasm::validate_wasm_boundary_with_world(target, boundary, world, &entries.init_ns, &entries.init_def)?;
   }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-    codegen::emit_wasm::check_wasm_command_component(&entries.init_ns, &entries.init_def)?;
+    codegen::emit_wasm::check_wasi_component(&entries.init_ns, &entries.init_def, world)?;
   }
 
   let duration = Instant::now().duration_since(started_time);
@@ -170,14 +177,20 @@ fn preprocess_entry(
   }
 }
 
-fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
+fn run_wasm_codegen(
+  entries: &ProgramEntries,
+  emit_path: &str,
+  target: WasmTarget,
+  boundary: WasmBoundary,
+  world: WasiWorld,
+) -> Result<(), String> {
   let started_time = Instant::now();
   codegen::set_codegen_mode(true);
 
   let check_warnings = RefCell::new(vec![]);
   preprocess_wasm_namespace(entries, &check_warnings)?;
   reject_preprocess_warnings(&check_warnings)?;
-  codegen::emit_wasm::emit_wasm(&entries.init_ns, &entries.init_def, emit_path, target, boundary)?;
+  codegen::emit_wasm::emit_wasm_with_world(&entries.init_ns, &entries.init_def, emit_path, target, boundary, world)?;
 
   let duration = Instant::now().duration_since(started_time);
   println!("{}", format!("took {}ms", duration.as_micros() as f64 / 1000.0).dimmed());

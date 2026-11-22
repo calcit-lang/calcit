@@ -330,7 +330,10 @@ pub struct EmitWasiCommand {
   /// output ABI boundary: component (WASI 0.3 default) or native (Preview 1)
   #[argh(option, default = "String::from(\"component\")")]
   pub boundary: String,
-  /// validate the WASI command without writing program.wasm
+  /// target WASI world: command (WASI 0.3 default) or http (WASI 0.2 proxy)
+  #[argh(option, default = "String::from(\"command\")")]
+  pub world: String,
+  /// validate the WASI component without writing program.wasm
   #[argh(switch)]
   pub check_only: bool,
 }
@@ -2643,7 +2646,15 @@ mod wasm_command_tests {
     assert_eq!(options.input.as_deref(), Some("command.cirru"));
     assert_eq!(options.init_fn.as_deref(), Some("app.main/main!"));
     assert_eq!(options.boundary, "component");
+    assert_eq!(options.world, "command");
     assert!(!options.check_only);
+
+    let http = ToplevelCalcit::from_args(&["calcit"], &["wasi", "http.cirru", "--world", "http"]).expect("parse WASI HTTP proxy world");
+    let Some(CalcitCommand::EmitWasi(options)) = http.subcommand else {
+      panic!("expected wasi subcommand");
+    };
+    assert_eq!(options.boundary, "component");
+    assert_eq!(options.world, "http");
 
     let preview1 = ToplevelCalcit::from_args(&["calcit"], &["wasi", "command.cirru", "--boundary", "native"])
       .expect("parse WASI Preview 1 command boundary");

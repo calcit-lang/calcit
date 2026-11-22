@@ -270,9 +270,9 @@ dependencies = [
 
 [[package]]
 name = "calcit-bindgen"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e2fc188be31467969da3cbe771df5e05073571e905f677fd2352363f41df22"
+checksum = "4388b375a20cc9832478ab9ed0eee2ad6d986110bf5cfa0720ff45dd648f566b"
 dependencies = [
  "bytes",
  "cap-fs-ext",

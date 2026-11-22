@@ -2037,6 +2037,7 @@ mod sort_tests {
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
       },
     )
   }

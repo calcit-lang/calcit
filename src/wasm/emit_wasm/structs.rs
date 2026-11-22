@@ -366,6 +366,35 @@ pub(super) fn collect_struct_layouts(
       }
     }
   }
+  // Register compiled `defstruct` declarations (such as `calcit.core/HttpRequest`) that are only
+  // consumed through Component / WASI HTTP boundaries without a source constructor call.
+  // Done with `or_insert_with` after `visit` so raw un-preprocessed declarations never widen compact structs.
+  for (ns, file) in program_data.iter() {
+    for (name, compiled) in &file.defs {
+      for expression in [&compiled.preprocessed_code, &compiled.codegen_form] {
+        let resolved =
+          match expression {
+            Calcit::StructDef(def) => Some(def.as_ref().clone()),
+            _ => try_parse_defrecord_form(expression).or_else(|| {
+              match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(expression) {
+                Some(Calcit::StructDef(def)) => Some(def.as_ref().clone()),
+                _ => None,
+              }
+            }),
+          };
+        if let Some(definition) = resolved {
+          let definition = if definition.definition_ref.is_some() {
+            definition
+          } else {
+            definition.with_definition_ref(ns, name)
+          };
+          field_kinds
+            .entry(StructIdentity::from(&definition))
+            .or_insert_with(|| kinds_from_struct_def(&definition));
+        }
+      }
+    }
+  }
   for ty in component_types {
     if let ComponentAbiType::Struct(record) = ty {
       let identity = component_struct_identity(record);

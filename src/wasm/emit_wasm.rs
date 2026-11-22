@@ -45,6 +45,7 @@ use crate::wasm::host::runner::preprocess::{
 
 mod component;
 mod edn_parse;
+mod http_proxy;
 mod memory;
 mod methods;
 mod number_format;
@@ -214,6 +215,25 @@ impl FromStr for WasmTarget {
   }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum WasiWorld {
+  #[default]
+  Command,
+  Http,
+}
+
+impl FromStr for WasiWorld {
+  type Err = String;
+
+  fn from_str(value: &str) -> Result<Self, Self::Err> {
+    match value {
+      "command" => Ok(Self::Command),
+      "http" => Ok(Self::Http),
+      _ => Err(format!("E_WASI_WORLD: unknown WASI world `{value}`; expected `command` or `http`")),
+    }
+  }
+}
+
 fn deterministic_namespace_order(program_data: &program::CompiledProgram, first: Option<&str>) -> Vec<String> {
   let mut namespaces = program_data.keys().map(|namespace| namespace.to_string()).collect::<Vec<_>>();
   namespaces.sort_unstable();
@@ -233,11 +253,26 @@ fn deterministic_definition_order(file: &program::CompiledFileData) -> Vec<(&Arc
 }
 
 pub fn emit_wasm(init_ns: &str, init_def: &str, emit_path: &str, target: WasmTarget, boundary: WasmBoundary) -> Result<(), String> {
-  emit_wasm_impl(init_ns, init_def, emit_path, target, boundary, true)
+  emit_wasm_with_world(init_ns, init_def, emit_path, target, boundary, WasiWorld::Command)
+}
+
+pub fn emit_wasm_with_world(
+  init_ns: &str,
+  init_def: &str,
+  emit_path: &str,
+  target: WasmTarget,
+  boundary: WasmBoundary,
+  world: WasiWorld,
+) -> Result<(), String> {
+  emit_wasm_impl(init_ns, init_def, emit_path, target, boundary, world, true)
 }
 
 pub fn check_wasm_command_component(init_ns: &str, init_def: &str) -> Result<(), String> {
-  emit_wasm_impl(init_ns, init_def, "", WasmTarget::Wasi, WasmBoundary::Component, false)
+  check_wasi_component(init_ns, init_def, WasiWorld::Command)
+}
+
+pub fn check_wasi_component(init_ns: &str, init_def: &str, world: WasiWorld) -> Result<(), String> {
+  emit_wasm_impl(init_ns, init_def, "", WasmTarget::Wasi, WasmBoundary::Component, world, false)
 }
 
 fn emit_wasm_impl(
@@ -246,13 +281,20 @@ fn emit_wasm_impl(
   emit_path: &str,
   target: WasmTarget,
   boundary: WasmBoundary,
+  world: WasiWorld,
   write_output: bool,
 ) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
-  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)?;
-  validate_stdin_boundary(&program_data, init_ns, init_def, target, boundary)?;
+  if target == WasmTarget::Wasi && world == WasiWorld::Http && boundary != WasmBoundary::Component {
+    return Err("E_WASI_WORLD: `--world http` requires `--boundary component`; WASI Preview 1 has no HTTP proxy world".into());
+  }
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target, world)?;
+  validate_stdin_boundary(&program_data, init_ns, init_def, target, boundary, world)?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-    validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+    match world {
+      WasiWorld::Command => validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?,
+      WasiWorld::Http => http_proxy::validate_wasi_http_component_in_program(&program_data, init_ns, init_def)?,
+    }
   }
 
   // First pass: extract all function signatures from all namespaces
@@ -294,30 +336,21 @@ fn emit_wasm_impl(
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
-  let wasi_command_stdio = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
+  let wasi_command_component = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Command;
+  let wasi_http_proxy = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Http;
+  let wasi_command_stdio = wasi_command_component
     && fn_defs.iter().any(|(namespace, name, _, body)| {
       (namespace != "calcit.core" || name.starts_with("&calcit:test:")) && body.iter().any(expr_uses_wasi_stdio)
     });
-  let wasi_command_file = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
-  let wasi_command_read_dir = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_read_dir);
+  let wasi_http_stdio = wasi_http_proxy && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdio);
+  let wasi_command_file = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
+  let wasi_command_read_dir =
+    wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_read_dir);
   let wasi_command_fs_common = wasi_command_file || wasi_command_read_dir;
-  let wasi_command_stdin = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
-  let wasi_command_clocks = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_clocks);
-  let wasi_command_wait = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_wait);
-  let wasi_command_random = target == WasmTarget::Wasi
-    && boundary == WasmBoundary::Component
-    && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
+  let wasi_command_stdin = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
+  let wasi_command_clocks = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_clocks);
+  let wasi_command_wait = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_wait);
+  let wasi_command_random = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
   let wasi_command_stackful = wasi_command_stdio || wasi_command_fs_common || wasi_command_stdin || wasi_command_wait;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
@@ -335,7 +368,7 @@ fn emit_wasm_impl(
   } else {
     Vec::new()
   };
-  if boundary == WasmBoundary::Component && target == WasmTarget::Wasi {
+  if wasi_command_component {
     component_import_adapters.push(ComponentImportAdapter {
       definition: "calcit.core/get-args".into(),
       module: "wasi:cli/environment@0.3.1".into(),
@@ -361,13 +394,15 @@ fn emit_wasm_impl(
   let mut component_async_canonical_imports = None;
   let mut component_stackless_canonical_imports = None;
   if boundary == WasmBoundary::Component {
-    if target == WasmTarget::Wasi {
+    if wasi_command_component {
       host_imports.push(HostImport {
         module: "wasi:cli/exit@0.3.1".into(),
         name: "exit-with-code".into(),
         params: vec![ValType::I32],
         results: vec![],
       });
+    } else if wasi_http_proxy {
+      host_imports.extend(http_proxy::wasi_http_proxy_imports(wasi_http_stdio));
     }
     for adapter in &mut component_import_adapters {
       let index = host_imports.len() as u32;
@@ -380,7 +415,7 @@ fn emit_wasm_impl(
         results,
       });
     }
-    if target == WasmTarget::Wasi {
+    if wasi_command_component {
       host_imports.push(HostImport {
         module: "wasi:cli/environment@0.3.1".into(),
         name: "get-environment".into(),
@@ -618,7 +653,7 @@ fn emit_wasm_impl(
   runtime_fn_index.insert("__str_new".to_string(), str_new_idx);
   compiled_fns.push(build_str_new_fn(str_tag_id, arena_alloc_idx));
 
-  if wasi_command_fs_common || wasi_command_stdin {
+  if wasi_command_fs_common || wasi_command_stdin || wasi_http_proxy {
     let utf8_valid_idx = num_imports + compiled_fns.len() as u32;
     runtime_fn_index.insert("__rt_utf8_valid".into(), utf8_valid_idx);
     compiled_fns.push(build_utf8_valid_fn());
@@ -760,7 +795,7 @@ fn emit_wasm_impl(
     ));
   }
 
-  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+  if wasi_command_component {
     let environment_idx = *index_host_imports(&host_imports)
       .get(&("wasi:cli/environment@0.3.1".into(), "get-environment".into()))
       .expect("WASI 0.3 environment import must be registered");
@@ -773,6 +808,23 @@ fn emit_wasm_impl(
       component_cabi_free_index.expect("Component boundary must install cabi_free"),
     ));
   }
+
+  let (wasi_http_write_all_idx, wasi_http_send_plain_idx) = if wasi_http_proxy {
+    let import_indices = index_host_imports(&host_imports);
+    let write_all_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_http_write_all".into(), write_all_idx);
+    compiled_fns.push(http_proxy::build_wasi_http_write_all_fn(&import_indices));
+    let send_plain_idx = num_imports + compiled_fns.len() as u32;
+    runtime_fn_index.insert("__rt_wasi_http_send_plain".into(), send_plain_idx);
+    compiled_fns.push(http_proxy::build_wasi_http_send_plain_fn(
+      &import_indices,
+      &string_pool,
+      write_all_idx,
+    ));
+    (Some(write_all_idx), Some(send_plain_idx))
+  } else {
+    (None, None)
+  };
 
   if wasi_command_stdin {
     let indices = index_host_imports(&host_imports);
@@ -1196,6 +1248,7 @@ fn emit_wasm_impl(
     host_imports: host_imports_map,
     target,
     boundary,
+    world,
   };
   for adapter in &mut component_adapters {
     adapter.target_index = *env
@@ -1312,8 +1365,9 @@ fn emit_wasm_impl(
             .static_fn_defs
             .get(&qualified)
             .is_some_and(|definition| definition_requires_trait_specialization(definition));
-        let deferred_wasi_capability =
-          target == WasmTarget::Wasi && boundary == WasmBoundary::Component && e.starts_with("E_WASI_COMMAND_CAPABILITY:");
+        let deferred_wasi_capability = target == WasmTarget::Wasi
+          && boundary == WasmBoundary::Component
+          && (e.starts_with("E_WASI_COMMAND_CAPABILITY:") || e.starts_with("E_WASI_HTTP_CAPABILITY:"));
         if explicit_export
           || (ns == init_ns
             && (def_name == init_def || !(deferred_nil_specialization || deferred_trait_specialization || deferred_wasi_capability)))
@@ -1476,49 +1530,71 @@ fn emit_wasm_impl(
       .fn_index
       .get(&qualified_init)
       .copied()
-      .ok_or_else(|| format!("E_WASM_TARGET: command entry `{qualified_init}` was not compiled"))?;
-    let init_arity = env.fn_arity.get(&qualified_init).copied().unwrap_or(0);
-    if init_arity != 0 {
-      return Err(format!(
-        "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
-      ));
-    }
+      .ok_or_else(|| format!("E_WASM_TARGET: WASI entry `{qualified_init}` was not compiled"))?;
     if boundary == WasmBoundary::Component {
       reject_reachable_wasi_command_dependencies(&compiled_fns, num_imports, init_index, &unsupported_dependencies)?;
     }
-    let component_command = boundary == WasmBoundary::Component;
-    compiled_fns.push(CompiledFn {
-      export_name: Some(if component_command && wasi_command_stackful {
-        "[async-lift-stackful]wasi:cli/run@0.3.1#run".into()
-      } else if component_command {
-        "wasi:cli/run@0.3.1#run".into()
-      } else {
-        "_start".into()
-      }),
-      params: vec![],
-      results: if component_command && !wasi_command_stackful {
-        vec![ValType::I32]
-      } else {
-        vec![]
-      },
-      locals: vec![],
-      instructions: if component_command && wasi_command_stackful {
-        vec![
-          Instruction::Call(init_index),
-          Instruction::Drop,
-          Instruction::I32Const(0),
-          Instruction::Call(
-            *index_host_imports(&host_imports)
-              .get(&("[export]wasi:cli/run@0.3.1".into(), "[task-return]run".into()))
-              .expect("stdio command must register task return"),
-          ),
-        ]
-      } else if component_command {
-        vec![Instruction::Call(init_index), Instruction::Drop, Instruction::I32Const(0)]
-      } else {
-        vec![Instruction::Call(init_index), Instruction::Drop]
-      },
-    });
+    if wasi_http_proxy {
+      let layout_info = http_proxy::resolve_wasi_http_layout_info(&program_data, &env.struct_layouts)?;
+      let comp_globals = global_layout
+        .component
+        .expect("WASI HTTP proxy Component boundary must install Component memory globals");
+      compiled_fns.push(http_proxy::build_wasi_http_incoming_handler_fn(
+        init_index,
+        wasi_http_write_all_idx.expect("WASI HTTP proxy must emit write-all helper"),
+        wasi_http_send_plain_idx.expect("WASI HTTP proxy must emit send-plain helper"),
+        &layout_info,
+        &env.host_imports,
+        &env.runtime_fn_index,
+        &env.tag_index,
+        &env.string_pool,
+        global_layout.active_turns,
+        comp_globals,
+      ));
+    } else {
+      let init_arity = env.fn_arity.get(&qualified_init).copied().unwrap_or(0);
+      if init_arity != 0 {
+        return Err(format!(
+          "E_WASM_TARGET: WASI command entry `{qualified_init}` must take no arguments, got {init_arity}"
+        ));
+      }
+      let component_command = boundary == WasmBoundary::Component;
+      compiled_fns.push(CompiledFn {
+        export_name: Some(if component_command && wasi_command_stackful {
+          "[async-lift-stackful]wasi:cli/run@0.3.1#run".into()
+        } else if component_command {
+          "wasi:cli/run@0.3.1#run".into()
+        } else {
+          "_start".into()
+        }),
+        params: vec![],
+        results: if component_command && !wasi_command_stackful {
+          vec![ValType::I32]
+        } else {
+          vec![]
+        },
+        locals: vec![],
+        instructions: if component_command && wasi_command_stackful {
+          vec![
+            Instruction::Call(init_index),
+            Instruction::Drop,
+            Instruction::I32Const(0),
+            Instruction::Call(
+              *index_host_imports(&host_imports)
+                .get(&("[export]wasi:cli/run@0.3.1".into(), "[task-return]run".into()))
+                .expect("stdio command must register task return"),
+            ),
+          ]
+        } else if component_command {
+          vec![Instruction::Call(init_index), Instruction::Drop, Instruction::I32Const(0)]
+        } else {
+          vec![Instruction::Call(init_index), Instruction::Drop]
+        },
+      });
+    }
+    if boundary == WasmBoundary::Component {
+      prune_unreachable_wasi_component_fns(&mut compiled_fns, num_imports, init_index);
+    }
   }
 
   if compiled_fns.is_empty() {
@@ -1564,9 +1640,7 @@ fn emit_wasm_impl(
       _ => None,
     })
     .collect();
-  if !call_arities.is_empty() || !fn_defs.is_empty() {
-    let mut table_arities = call_arities.clone();
-    table_arities.insert(0);
+  if !call_arities.is_empty() {
     let mut adapter_ctx = WasmGenCtx::new(0, env.clone());
     for (slot, (_, _, args, _)) in fn_defs.iter().enumerate() {
       let target_fn = num_imports + runtime_fn_count + slot as u32;
@@ -1579,7 +1653,7 @@ fn emit_wasm_impl(
         && sig.has_native_slots()
       {
         let arity = sig.params.len() as u32;
-        if table_arities.contains(&arity) {
+        if call_arities.contains(&arity) {
           rest_adapters.insert((arity, slot as u32), num_imports + compiled_fns.len() as u32);
           compiled_fns.push(build_native_sig_table_adapter(&mut adapter_ctx, target_fn, &sig));
         }
@@ -1605,7 +1679,10 @@ fn emit_wasm_impl(
   )?;
 
   let wasm_bytes = if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-    calcit_bindgen::package_wasi_command(&wasm_bytes)?
+    match world {
+      WasiWorld::Command => calcit_bindgen::package_wasi_command(&wasm_bytes)?,
+      WasiWorld::Http => calcit_bindgen::package_wasi_http_proxy(&wasm_bytes)?,
+    }
   } else {
     wasm_bytes
   };
@@ -1624,16 +1701,39 @@ fn emit_wasm_impl(
 }
 
 pub fn validate_wasm_target(init_ns: &str, init_def: &str, target: WasmTarget) -> Result<(), String> {
+  validate_wasm_target_with_world(init_ns, init_def, target, WasiWorld::Command)
+}
+
+pub fn validate_wasm_target_with_world(init_ns: &str, init_def: &str, target: WasmTarget, world: WasiWorld) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
-  validate_wasm_target_in_program(&program_data, init_ns, init_def, target)
+  validate_wasm_target_in_program(&program_data, init_ns, init_def, target, world)
 }
 
 pub fn validate_wasm_boundary(target: WasmTarget, boundary: WasmBoundary, init_ns: &str, init_def: &str) -> Result<(), String> {
+  validate_wasm_boundary_with_world(target, boundary, WasiWorld::Command, init_ns, init_def)
+}
+
+pub fn validate_wasm_boundary_with_world(
+  target: WasmTarget,
+  boundary: WasmBoundary,
+  world: WasiWorld,
+  init_ns: &str,
+  init_def: &str,
+) -> Result<(), String> {
   let program_data = program::clone_compiled_program_snapshot()?;
-  validate_stdin_boundary(&program_data, init_ns, init_def, target, boundary)?;
+  validate_stdin_boundary(&program_data, init_ns, init_def, target, boundary, world)?;
   if target == WasmTarget::Wasi {
-    if boundary == WasmBoundary::Component {
-      validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+    match (world, boundary) {
+      (WasiWorld::Http, WasmBoundary::Native) => {
+        return Err("E_WASI_WORLD: `--world http` requires `--boundary component`; WASI Preview 1 has no HTTP proxy world".into());
+      }
+      (WasiWorld::Http, WasmBoundary::Component) => {
+        http_proxy::validate_wasi_http_component_in_program(&program_data, init_ns, init_def)?;
+      }
+      (WasiWorld::Command, WasmBoundary::Component) => {
+        validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+      }
+      (WasiWorld::Command, WasmBoundary::Native) => {}
     }
     return Ok(());
   }
@@ -1673,6 +1773,7 @@ fn validate_wasm_target_in_program(
   init_ns: &str,
   init_def: &str,
   target: WasmTarget,
+  world: WasiWorld,
 ) -> Result<(), String> {
   for (namespace, file) in program_data {
     for definition in file.defs.keys() {
@@ -1707,6 +1808,10 @@ fn validate_wasm_target_in_program(
         return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
       }
     }
+  }
+
+  if world == WasiWorld::Http {
+    return http_proxy::validate_wasi_http_target_in_program(program_data, init_ns, init_def);
   }
 
   let qualified_init = format!("{init_ns}/{init_def}");
@@ -1791,6 +1896,8 @@ fn reject_reachable_wasm_dependencies(
     if let Some((definition, reason)) = unsupported.get(&index) {
       let code = if !wasi_command {
         "E_WASM_TARGET"
+      } else if reason.starts_with("E_WASI_HTTP_CAPABILITY:") {
+        "E_WASI_HTTP_CAPABILITY"
       } else if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
         "E_WASI_COMMAND_CAPABILITY"
       } else {
@@ -1818,6 +1925,39 @@ fn reject_reachable_wasm_dependencies(
     }
   }
   Ok(())
+}
+
+/// Replace unreachable non-exported function bodies with `unreachable` in WASI Components
+/// so dead dependency `call_indirect` instructions do not pull funcref tables into pooling hosts.
+fn prune_unreachable_wasi_component_fns(functions: &mut [CompiledFn], num_imports: u32, entry_index: u32) {
+  let mut pending = vec![entry_index];
+  for (i, func) in functions.iter().enumerate() {
+    if func.export_name.is_some() {
+      pending.push(num_imports + i as u32);
+    }
+  }
+  let mut reachable = HashSet::new();
+  while let Some(index) = pending.pop() {
+    if !reachable.insert(index) || index < num_imports {
+      continue;
+    }
+    let Some(func) = functions.get((index - num_imports) as usize) else {
+      continue;
+    };
+    for instr in &func.instructions {
+      match instr {
+        Instruction::Call(callee) | Instruction::RefFunc(callee) => pending.push(*callee),
+        Instruction::CallIndirect { .. } => return,
+        _ => {}
+      }
+    }
+  }
+  for (i, func) in functions.iter_mut().enumerate() {
+    if !reachable.contains(&(num_imports + i as u32)) {
+      func.locals.clear();
+      func.instructions = vec![Instruction::Unreachable];
+    }
+  }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -5617,6 +5757,7 @@ struct WasmCompileEnv {
   /// Selected output ABI. Surface Calcit calls stay target-independent.
   target: WasmTarget,
   boundary: WasmBoundary,
+  world: WasiWorld,
 }
 
 fn extract_fn_parts(code: &Calcit) -> Result<(CalcitFnArgs, Vec<Calcit>), String> {
@@ -6038,6 +6179,7 @@ struct WasmGenCtx {
   /// Selected output ABI. Surface Calcit calls stay target-independent.
   target: WasmTarget,
   boundary: WasmBoundary,
+  world: WasiWorld,
   /// Statically known closures retain the lexical local bindings visible at creation.
   /// They are specialized at known call sites instead of receiving a dynamic heap ABI.
   lambda_locals: HashMap<String, Arc<InlineClosure>>,
@@ -6130,6 +6272,7 @@ impl WasmGenCtx {
       host_imports: env.host_imports,
       target: env.target,
       boundary: env.boundary,
+      world: env.world,
       lambda_locals: HashMap::new(),
       specialization_stack: vec![],
       impl_selectors: HashMap::new(),
@@ -12854,6 +12997,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
     CalcitProc::GetEnv => {
       expect_arity(1, args, "&get-env")?;
+      if ctx.target == WasmTarget::Wasi && ctx.world == WasiWorld::Http {
+        return Err("E_WASI_HTTP_CAPABILITY: `&get-env` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available".into());
+      }
       emit_expr(ctx, &args[0])?;
       let name = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(name));
@@ -12886,6 +13032,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       if ctx.target != WasmTarget::Wasi {
         return Err("E_WASM_CAPABILITY: process arguments are unavailable for the core WASM target".into());
       }
+      if ctx.world == WasiWorld::Http {
+        return Err("E_WASI_HTTP_CAPABILITY: `get-args` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available".into());
+      }
       ctx.call_rt("__rt_wasi_get_args");
       Ok(())
     }
@@ -12912,6 +13061,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     CalcitProc::Quit => {
       expect_arity(1, args, "quit!")?;
+      if ctx.target == WasmTarget::Wasi && ctx.world == WasiWorld::Http {
+        return Err("E_WASI_HTTP_CAPABILITY: `quit!` is not supported in `--world http` (`wasi:http/proxy`); return `Result :err` from the handler instead".into());
+      }
       emit_expr(ctx, &args[0])?;
       let code = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(code));
@@ -13301,6 +13453,11 @@ fn emit_wasi_clock_ms(ctx: &mut WasmGenCtx, clock_id: i32, proc_name: &str) -> R
   if ctx.target != WasmTarget::Wasi {
     return Err(format!("E_WASM_CAPABILITY: {proc_name} is unavailable for the core WASM target"));
   }
+  if ctx.world == WasiWorld::Http {
+    return Err(format!(
+      "E_WASI_HTTP_CAPABILITY: `{proc_name}` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+    ));
+  }
   if ctx.boundary == WasmBoundary::Component {
     if clock_id == 1 {
       let now_idx = resolve_host_import(ctx, "wasi:clocks/monotonic-clock@0.3.1", "now")
@@ -13352,6 +13509,12 @@ fn emit_wasi_wait_ms(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String
   expect_arity(3, args, "&wait-ms")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: wait-ms is unavailable for the core WASM target".into());
+  }
+  if ctx.world == WasiWorld::Http {
+    return Err(
+      "E_WASI_HTTP_CAPABILITY: `&wait-ms` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+        .into(),
+    );
   }
   if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_wait") {
     return Err("E_WASI_COMMAND_CAPABILITY: `&wait-ms` needs a reachable WASI 0.3 clocks effect".into());
@@ -13410,6 +13573,12 @@ fn emit_wasi_secure_random_bytes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   expect_arity(3, args, "&secure-random-bytes")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target".into());
+  }
+  if ctx.world == WasiWorld::Http {
+    return Err(
+      "E_WASI_HTTP_CAPABILITY: `&secure-random-bytes` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+        .into(),
+    );
   }
   if ctx.boundary == WasmBoundary::Component && !ctx.runtime_fn_index.contains_key("__rt_wasi_component_random_get") {
     return Err("E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs a reachable WASI 0.3 random effect".into());
@@ -13488,6 +13657,12 @@ fn emit_wasi_read_text(ctx: &mut WasmGenCtx, args: &[Calcit], stdin: bool) -> Re
   )?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: host text reads are unavailable for the core WASM target".into());
+  }
+  if ctx.world == WasiWorld::Http {
+    let op = if stdin { "read-stdin-text" } else { "&fs-read-text" };
+    return Err(format!(
+      "E_WASI_HTTP_CAPABILITY: `{op}` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+    ));
   }
   if stdin && ctx.boundary != WasmBoundary::Component {
     return Err("E_WASI_COMMAND_CAPABILITY: read-stdin-text requires `calcit wasi --boundary component`".into());
@@ -13593,6 +13768,12 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   }
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem directory reads are unavailable for the core WASM target".into());
+  }
+  if ctx.world == WasiWorld::Http {
+    return Err(
+      "E_WASI_HTTP_CAPABILITY: `&fs-read-dir` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+        .into(),
+    );
   }
   if args.len() == 5 && matches!(args[4], Calcit::Bool(true)) {
     return Err("E_WASM_CAPABILITY: recursive `&fs-read-dir` (`FsPath .walk-dir`) is not yet supported on WASI".into());
@@ -13710,6 +13891,12 @@ fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   expect_arity(4, args, "&fs-write-text")?;
   if ctx.target != WasmTarget::Wasi {
     return Err("E_WASM_CAPABILITY: filesystem writes are unavailable for the core WASM target".into());
+  }
+  if ctx.world == WasiWorld::Http {
+    return Err(
+      "E_WASI_HTTP_CAPABILITY: `&fs-write-text` is not supported in `--world http` (`wasi:http/proxy`); only HTTP incoming requests, response building, and stdio logging are available"
+        .into(),
+    );
   }
   if ctx.boundary == WasmBoundary::Component {
     if !ctx.runtime_fn_index.contains_key("__rt_wasi_component_write_bytes") {
@@ -13831,6 +14018,36 @@ fn emit_wasi_component_write_literal(ctx: &mut WasmGenCtx, interface: &str, text
 }
 
 fn emit_wasi_component_write_string(ctx: &mut WasmGenCtx, interface: &str, ptr: u32) -> Result<(), String> {
+  if ctx.world == WasiWorld::Http {
+    let cli_module = format!("wasi:cli/{interface}@0.2.12");
+    let map_missing = |_| {
+      "E_WASI_HTTP_CAPABILITY: stdio logging requires a reachable `println` / `eprintln` / `echo` call from the HTTP handler".to_owned()
+    };
+    let get_stream = resolve_host_import(ctx, &cli_module, &format!("get-{interface}")).map_err(map_missing)?;
+    let drop_stream = resolve_host_import(ctx, "wasi:io/streams@0.2.12", "[resource-drop]output-stream").map_err(map_missing)?;
+    let stream = ctx.alloc_local_typed(ValType::I32);
+    let retptr = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::Call(get_stream));
+    ctx.emit(Instruction::LocalSet(stream));
+    ctx.emit(Instruction::I32Const(16));
+    ctx.call_rt("__rt_arena_alloc");
+    ctx.emit(Instruction::LocalSet(retptr));
+    ctx.emit(Instruction::LocalGet(stream));
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalGet(retptr));
+    ctx.call_rt("__rt_wasi_http_write_all");
+    ctx.emit(Instruction::LocalGet(stream));
+    ctx.emit(Instruction::Call(drop_stream));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+    return Ok(());
+  }
   let module = format!("wasi:cli/{interface}@0.3.1");
   let new = resolve_host_import(ctx, &module, "[stream-new-0]write-via-stream")?;
   let write = resolve_host_import(ctx, &module, "[stream-write-0]write-via-stream")?;
@@ -16562,6 +16779,11 @@ fn build_string_pool_with_extras(
     strings.push(" ".into());
     strings.push("\n".into());
     strings.push("E_WASM_CAPABILITY: recursive directory reads are not supported on WASI".into());
+    strings.push(http_proxy::HTTP_STATIC_CONTENT_TYPE_KEY.into());
+    strings.push(http_proxy::HTTP_STATIC_CONTENT_TYPE_TEXT_PLAIN.into());
+    strings.push(http_proxy::HTTP_STATIC_BAD_REQUEST_MSG.into());
+    strings.push(http_proxy::HTTP_STATIC_BODY_TOO_LARGE_MSG.into());
+    strings.push(http_proxy::HTTP_STATIC_INTERNAL_ERROR_MSG.into());
   }
   strings.push("true".into());
   strings.push("false".into());
@@ -17008,6 +17230,9 @@ fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
       let writes = match xs.first() {
         Some(Calcit::Symbol { sym, .. }) => matches!(sym.as_ref(), "println" | "eprintln" | "echo"),
         Some(Calcit::Registered(name)) => matches!(name.as_ref(), "println" | "eprintln" | "echo"),
+        Some(Calcit::Import(import)) => {
+          import.ns.as_ref() == "calcit.core" && matches!(import.def.as_ref(), "println" | "eprintln" | "echo")
+        }
         _ => false,
       };
       writes || xs.iter().any(expr_uses_wasi_stdio)
@@ -17081,7 +17306,15 @@ fn validate_stdin_boundary(
   init_def: &str,
   target: WasmTarget,
   boundary: WasmBoundary,
+  world: WasiWorld,
 ) -> Result<(), String> {
+  if target == WasmTarget::Wasi
+    && boundary == WasmBoundary::Component
+    && world == WasiWorld::Http
+    && reachable_wasi_effect(program_data, init_ns, init_def, expr_uses_wasi_stdin)
+  {
+    return Err("E_WASI_HTTP_CAPABILITY: `read-stdin-text` is not supported in `--world http` (`wasi:http/proxy`)".into());
+  }
   if (target != WasmTarget::Wasi || boundary != WasmBoundary::Component)
     && reachable_wasi_effect(program_data, init_ns, init_def, expr_uses_wasi_stdin)
   {
@@ -17358,8 +17591,8 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
-    HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx,
-    WasmGlobalLayout, WasmMemoryLayout, WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn,
+    HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasiWorld, WasmBoundary, WasmCompileEnv,
+    WasmGenCtx, WasmGlobalLayout, WasmMemoryLayout, WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn,
     build_component_export_adapter, build_component_import_adapter, build_rest_adapter, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, call_indirect, component_abi_type, component_export_needs_post_return,
@@ -17414,6 +17647,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(1, env.clone());
     let numeric = WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number));
@@ -17613,6 +17847,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     ctx.static_fn_defs.insert(
@@ -17838,6 +18073,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let spread = || Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm"));
@@ -17944,6 +18180,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let closure = InlineClosure {
@@ -18027,6 +18264,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let list_literal = |items: &[f64]| {
@@ -18131,6 +18369,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     // Calls `call_indirect` on `slot` with `arity` arguments 10, 20, ...
@@ -20465,6 +20704,7 @@ mod tests {
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
       },
     );
     ctx.locals.insert("arg".into(), 0);
@@ -20508,6 +20748,7 @@ mod tests {
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
       },
     );
     let local_node = |name: &str| {
@@ -20789,6 +21030,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let local_x = |type_info: Arc<CalcitTypeAnnotation>| {
       Calcit::Local(CalcitLocal {
@@ -20998,6 +21240,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let nullable_num_ty = Arc::new(CalcitTypeAnnotation::Nullable(
@@ -21135,6 +21378,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
 
     let info = Arc::new(CalcitSymbolInfo {
@@ -21265,6 +21509,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let info = Arc::new(CalcitSymbolInfo {
       at_ns: Arc::from("tests.wasm"),
@@ -21393,6 +21638,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
     let info = Arc::new(CalcitSymbolInfo {
       at_ns: Arc::from("tests.wasm"),
@@ -21485,6 +21731,7 @@ mod tests {
           host_imports: HashMap::new(),
           target: WasmTarget::Core,
           boundary: WasmBoundary::Native,
+          world: WasiWorld::Command,
         };
         let info = Arc::new(CalcitSymbolInfo {
           at_ns: Arc::from("tests.wasm"),

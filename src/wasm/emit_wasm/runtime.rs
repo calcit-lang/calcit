@@ -4401,8 +4401,8 @@ pub(super) fn build_wasm_module(
   // Table section: funcref table N serves function-value calls with N
   // arguments. Table slot i → calcit fn at fn_defs[i] (function index:
   // num_imports + runtime_fn_count + i), or its rest adapter for that arity.
-  // Table 0 is always filled; other tables are filled only when a call uses
-  // them and are empty otherwise.
+  // Omit the table section completely when no `call_indirect` is emitted so
+  // pooling hosts with a 1-table limit (such as `wasmtime serve`) stay compatible.
   let used_tables: BTreeSet<u32> = fns
     .iter()
     .flat_map(|f| f.instructions.iter())
@@ -4410,21 +4410,22 @@ pub(super) fn build_wasm_module(
       Instruction::CallIndirect { table_index, .. } => Some(*table_index),
       _ => None,
     })
-    .chain([0])
     .collect();
-  let table_count = used_tables.last().map_or(1, |last| last + 1);
-  let mut tables = TableSection::new();
-  for table in 0..table_count {
-    let size = if used_tables.contains(&table) { layout.table_fn_count } else { 0 } as u64;
-    tables.table(TableType {
-      element_type: RefType::FUNCREF,
-      minimum: size,
-      maximum: Some(size),
-      table64: false,
-      shared: false,
-    });
+  if !used_tables.is_empty() {
+    let table_count = used_tables.last().expect("non-empty used_tables") + 1;
+    let mut tables = TableSection::new();
+    for table in 0..table_count {
+      let size = if used_tables.contains(&table) { layout.table_fn_count } else { 0 } as u64;
+      tables.table(TableType {
+        element_type: RefType::FUNCREF,
+        minimum: size,
+        maximum: Some(size),
+        table64: false,
+        shared: false,
+      });
+    }
+    module.section(&tables);
   }
-  module.section(&tables);
 
   // Memory section: baseline pages covering static data, optional persistent semi-spaces, and Scratch Arena.
   let mut memories = MemorySection::new();
@@ -4562,7 +4563,7 @@ pub(super) fn build_wasm_module(
 
   // Element section: populate the funcref table with user calcit function indices.
   // table slot i → function index (num_imports + runtime_fn_count + i).
-  if layout.table_fn_count > 0 {
+  if layout.table_fn_count > 0 && !used_tables.is_empty() {
     let mut elements = ElementSection::new();
     for &table in &used_tables {
       let fn_indices: Vec<u32> = (0..layout.table_fn_count)
@@ -5295,14 +5296,14 @@ const RT_MAP_TABLE_CHILDREN: i32 = 32;
 const RT_MAP_TABLE_SLOTS: i32 = 33; // kind + 32 child pointers
 const RT_MAP_TABLE_BYTES: i32 = RT_MAP_TABLE_SLOTS * 8;
 
-struct RuntimeFnBuilder {
+pub(super) struct RuntimeFnBuilder {
   locals: Vec<ValType>,
   next_local: u32,
-  instructions: Vec<Instruction<'static>>,
+  pub(super) instructions: Vec<Instruction<'static>>,
 }
 
 impl RuntimeFnBuilder {
-  fn new(param_count: u32) -> Self {
+  pub(super) fn new(param_count: u32) -> Self {
     Self {
       locals: Vec::new(),
       next_local: param_count,
@@ -5310,34 +5311,38 @@ impl RuntimeFnBuilder {
     }
   }
 
-  fn alloc_i32(&mut self) -> u32 {
+  pub(super) fn alloc_i32(&mut self) -> u32 {
     let idx = self.next_local;
     self.next_local += 1;
     self.locals.push(ValType::I32);
     idx
   }
 
-  fn alloc_i64(&mut self) -> u32 {
+  pub(super) fn alloc_i64(&mut self) -> u32 {
     let idx = self.next_local;
     self.next_local += 1;
     self.locals.push(ValType::I64);
     idx
   }
 
-  fn alloc_f64(&mut self) -> u32 {
+  pub(super) fn alloc_f64(&mut self) -> u32 {
     let idx = self.next_local;
     self.next_local += 1;
     self.locals.push(ValType::F64);
     idx
   }
 
-  fn emit(&mut self, instr: Instruction<'static>) {
+  pub(super) fn emit(&mut self, instr: Instruction<'static>) {
     self.instructions.push(instr);
   }
 
-  fn finish(self, params: Vec<ValType>, results: Vec<ValType>) -> CompiledFn {
+  pub(super) fn finish(self, params: Vec<ValType>, results: Vec<ValType>) -> CompiledFn {
+    self.finish_exported(None, params, results)
+  }
+
+  pub(super) fn finish_exported(self, export_name: Option<String>, params: Vec<ValType>, results: Vec<ValType>) -> CompiledFn {
     CompiledFn {
-      export_name: None,
+      export_name,
       params,
       results,
       locals: self.locals,

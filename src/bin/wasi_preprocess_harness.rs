@@ -8,7 +8,7 @@ use argh::FromArgs;
 use calcit::builtins;
 #[cfg(not(target_arch = "wasm32"))]
 use calcit::runner;
-use calcit::wasm::{self, WasmBoundary, WasmCliOptions, WasmTarget};
+use calcit::wasm::{self, WasiWorld, WasmBoundary, WasmCliOptions, WasmTarget};
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// Feature-gated harness for WASI preprocessing regression tests.
@@ -62,6 +62,7 @@ fn main() -> Result<(), String> {
       entry: cli_args.entry,
       check_only: cli_args.check_only,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     },
     target,
   )

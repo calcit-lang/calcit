@@ -24,7 +24,10 @@ pub mod emit_wasm;
 pub mod wasm_cli;
 
 #[cfg(feature = "wasm")]
-pub use emit_wasm::{WasmBoundary, WasmTarget, check_wasm_command_component, emit_wasm, validate_wasm_boundary, validate_wasm_target};
+pub use emit_wasm::{
+  WasiWorld, WasmBoundary, WasmTarget, check_wasi_component, check_wasm_command_component, emit_wasm, emit_wasm_with_world,
+  validate_wasm_boundary, validate_wasm_boundary_with_world, validate_wasm_target, validate_wasm_target_with_world,
+};
 #[cfg(feature = "wasm")]
 pub use wasm_cli::{WasmCliOptions, run};
 

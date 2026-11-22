@@ -2333,6 +2333,7 @@ mod tests {
       host_imports: HashMap::new(),
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
     };
 
     let mut json_12 = WasmGenCtx::new(1, env.clone());
