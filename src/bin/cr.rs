@@ -444,6 +444,7 @@ fn resolve_public_wasm_options(
     entry: entry.or(cli_args.entry.as_deref()).map(str::to_owned),
     check_only: check_only || cli_args.check_only,
     boundary: calcit::wasm::WasmBoundary::Native,
+    world: calcit::wasm::WasiWorld::Command,
   }
 }
 
@@ -669,6 +670,7 @@ fn run_cli() -> Result<(), String> {
         command.check_only,
       );
       options.boundary = command.boundary.parse()?;
+      options.world = command.world.parse()?;
       return calcit::wasm::run(&options, calcit::wasm::WasmTarget::Wasi);
     }
     #[cfg(not(feature = "wasm"))]

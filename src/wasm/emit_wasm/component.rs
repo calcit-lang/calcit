@@ -1291,7 +1291,7 @@ pub(super) fn build_component_list_lift_fn(
   }
 }
 
-fn push_store_f64_into_compact_struct_field(instructions: &mut Vec<Instruction<'static>>, field: StructFieldLayout) {
+pub(super) fn push_store_f64_into_compact_struct_field(instructions: &mut Vec<Instruction<'static>>, field: StructFieldLayout) {
   let offset = u64::from(field.offset);
   match field.kind {
     StructFieldKind::UnitZero => {
@@ -1312,7 +1312,11 @@ fn push_store_f64_into_compact_struct_field(instructions: &mut Vec<Instruction<'
   }
 }
 
-fn push_load_compact_struct_field_f64(instructions: &mut Vec<Instruction<'static>>, struct_ptr: u32, field: StructFieldLayout) {
+pub(super) fn push_load_compact_struct_field_f64(
+  instructions: &mut Vec<Instruction<'static>>,
+  struct_ptr: u32,
+  field: StructFieldLayout,
+) {
   let offset = u64::from(field.offset);
   if field.kind == StructFieldKind::UnitZero {
     instructions.push(f64_const(0.0));

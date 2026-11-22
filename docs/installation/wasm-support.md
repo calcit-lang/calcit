@@ -12,7 +12,7 @@ aliases:
 ---
 # WASM 支持矩阵
 
-本页说明一段 Calcit 代码能否由 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI command）编译。两个命令共享加载、预处理、target 校验与 codegen，下面的状态对两者相同，个别行注明了两者的差异；WASI 宿主能力另见 [宿主能力边界](host-capability-boundary.md)，Component 类型见 [WASM Component 边界](wasm-component-boundary.md)。
+本页说明一段 Calcit 代码能否由 `calcit wasm`（browser/embedded core module）与 `calcit wasi`（WASI `command` world，或通过 `--world http` 面向 `wasi:http/proxy@0.2.12`）编译。共享的纯语言降低与类型/能力校验在各目标间复用，下表中的 WASI 宿主能力行默认描述 `command` world（`wasi:cli/command@0.3.1`）；`--world http` 复用纯语言降低与 `println` / `eprintln` / `echo` 标准日志流，并拒绝仅限 `command` 的宿主能力（`get-args`、`get-env`、`read-stdin-text`、`FsPath`、时钟、`wait-ms`、`secure-random-bytes`、`quit!`），用法与限制见 [WASI HTTP proxy (`--world http`)](../run/cli-options.md#wasi-http-proxy---world-http)。WASI 宿主能力另见 [宿主能力边界](host-capability-boundary.md)，Component 类型见 [WASM Component 边界](wasm-component-boundary.md)。
 
 ## 状态
 
@@ -54,12 +54,12 @@ aliases:
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |
 | `decode-map-as`、`try-decode-map-as`、`encode-map-as`、`parse-cirru-edn-as` | supported-with-type-evidence | `decode-map-as` / `try-decode-map-as` / `encode-map-as` 复用闭合 `DataShapeGraph` 编解码受支持的标量种类（`Nil`、`Unit`、`Bool`、`Number` 与数值 refinement、`String`、`Tag`）、开放原样透传节点 `Dynamic`（含声明为 `Dynamic` 的 Struct 字段，编码时无需标量类型证据）、容器（`List`、`Tuple`、`Set`、`Map`）及名义 `Struct` / `Enum` / `Option` / `Result`；`parse-cirru-edn-as` 支持上述闭合标量、`List`、标量键 `Map` 及 `Struct` / `Enum`。编译期排除项与运行期失败严格区分：不支持的图节点（`Union`、`Ref`、`Symbol`、`Buffer`、`CirruQuote`，以及 `parse-cirru-edn-as` 中的 `Tuple` / `Set`）在 WASM 编译期以 `E_WASM_EDN_SHAPE` 拒绝模块，`decode-map-as` / `try-decode-map-as` 中缺少具体静态 `:tag` 证据的开放 `Tag` 节点，以及 `encode-map-as` 中缺少具体静态类型证据的开放 `Nil` / `Unit` / `Bool` / `Number` / `Numeric` / `Tag` 标量节点或开放 `Option` 节点在编译期以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝，共享节点展开超限在编译期以 `E_WASM_EDN_DEPTH` 拒绝；已通过编译的受支持形状在运行期遇到值或范围不匹配时，`try-decode-map-as` 返回 `Result :err`，`decode-map-as`、`encode-map-as` 与 `parse-cirru-edn-as` 在运行期 trap | `calcit.core/decode-map-as#decodes-struct-and-option`、`calcit.core/try-decode-map-as#result-contract`、`calcit.core/encode-map-as#round-trips-struct-and-option`、`calcit.core/encode-map-as#encodes-structs-inside-enum-payloads`、`calcit.core/try-parse-cirru-edn-as#parse-form-inside-typed-nth` |
 | `json-parse`、`try-parse-json`（`String .parse-json`）、`json-stringify`、`json-pretty` | supported-with-type-evidence | `json-stringify` 与 `json-pretty` 支持闭合静态类型（`Nil`、`Bool`、`Number` 与数值 refinement、`String`、`Tag`、`List`、`Tuple`、`Set`、`:tag` 或 `:string` 键的 `Map`、名义 `Struct` / `Enum`，以及 `encode-map-as` 生成的结构化 `Map`），开放 `Dynamic` 输入在编译期报告 `E_WASM_EDN_TYPE`，非 `:tag` / `:string` 的 Map 键报告 `E_WASM_EDN_MAP_KEY`，非有限浮点数在运行期 trap；`json-parse` 与 `try-parse-json`（`.parse-json`）将 JSON 文本解析为 Calcit 值（JSON 对象键映射为编译期已登记的 `Tag`），可与 `decode-map-as` / `try-decode-map-as` 组合完成闭合类型边界解码 | `calcit.core/try-parse-json#result-method-contract`、`calcit.core/encode-map-as#round-trips-json-codec` |
-| `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
+| `&list:first`、`&list:last`、`&map:get`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env`、`&parse-float` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env`，在 WASI `--world http` 下以 `E_WASI_HTTP_CAPABILITY` 拒绝 | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | `&map:destruct`、`&set:destruct` | supported | 直接返回 `MapDestruct<K,V>` / `SetDestruct<T>`：`:some` 的独立字段保留成员与剩余集合类型，空集合为对应的 `:none` | 两个原语与公开解构函数的 core `:tests` |
 | `=` / `&=` / `not=`、Map 键操作与 Set 构造／成员／并差交运算 | supported-with-type-evidence | 顶层相等操作数、Map 键与 Set 元素类型（以及作为 Map 键或 Set 元素的列表、Tuple、Map 和 Set 的递归成员）必须能排除不同标量种类的数值表示冲突（如 `Number`、`Bool`、`Nil`、`Unit`、`Tag` 之间的擦除碰撞）；列表与 Tuple 的相等比较也会递归检查静态已知的元素类型（定长列表／Tuple 字面量对应位置为不同具体种类时直接收敛为不相等，已知具体元素标量种类可能发生擦除碰撞时报告 `E_WASM_NIL_TYPE_EVIDENCE`）；静态已知属于不同具体标量种类时直接收敛为不相等／不命中，至少一侧为已知非标量堆类型时按运行时堆头校验安全分区（其中 Set 与 Map 仍检查成员／键类型不碰撞）。缺少安全区分证据时，`=` / `&=` / `not=` 报告 `E_WASM_NIL_TYPE_EVIDENCE`（若涉及不安全 Set 成员或 Map 键类型则报告 `E_WASM_SET_ELEMENT_KIND`），Map 与 Set 操作报告 `E_WASM_SET_ELEMENT_KIND` | `calcit.core/=#distinguishes-disjoint-scalar-kinds`、`calcit.core/exclude#distinguishes-disjoint-scalar-kinds` 与 WASM / WASI CLI 拒绝用例 |
 | 默认比较器的 `sort` | supported（静态证明的同种标量/字符串列表或 Tuple） | Tag 及开放/异构元素类型仍需显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator`、`calcit.core/sort#sorts-nan-after-numbers` |
 | `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
-| 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
+| 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标 / WASI `--world http`） | core 目标报 `E_WASM_CAPABILITY`；`calcit wasi` 默认 `command` world 按所选边界支持，而 `--world http` 以 `E_WASI_HTTP_CAPABILITY` 拒绝这些仅限 `command` 的能力（仅保留 `println` / `eprintln` / `echo` 日志） | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
 | `defwasm-import` / `defwasm-export` | supported-with-type-evidence | 显式 host ABI 边界（参数、rest 与返回值不得出现 `Dynamic`，否则在预处理期报告 `E_WASM_BOUNDARY_DYNAMIC`） | `scripts/wasm-validation.md`、`src/bin/cr_tests/type_fail.rs` |
 
@@ -70,6 +70,7 @@ aliases:
 调用下列内建 Proc 时 WASM 报告 `unsupported proc in WASM: <name>`。`node scripts/run-core-tests.mjs` 校验排除清单中出现的每个此类 Proc 都列在这里。
 
 ```text wasm-unsupported-procs
+&buffer
 &cirru-nth
 &cirru-quote:to-list
 &cirru-type
@@ -135,6 +136,10 @@ write-file
 | `E_WASM_EDN_DEPTH` | 数据形状嵌套过深 | 拆分数据结构 |
 | `E_WASM_EDN_SYNTAX`、`E_WASM_EDN_TAG`、`E_WASM_EDN_ENUM`、`E_WASM_EDN_RANGE` | 运行时解析失败：语法错误、未知 tag、Enum 不匹配、数值越界；返回 `Result :err` | 按 Result 分支处理 |
 | `E_WASM_EDN_INPUT_LIMIT`、`E_WASM_EDN_TOKEN_LIMIT`、`E_WASM_EDN_MAP_LIMIT` | 运行时输入超过 64 KiB、List 4096 项或 Map 2048 项；返回 `Result :err` | 拆分输入 |
+| `E_WASI_WORLD` | 未知的 `--world`，或 `--world http` 与 `--boundary native` 组合 | `--world` 仅支持 `command` 或 `http`，且 `http` 必须使用 `--boundary component` |
+| `E_WASI_HTTP_ENTRY` | HTTP 入口不是单参数函数，或缺少精确 `Fn HttpRequest (-> (Result HttpResponse String))` schema | 为 `:init-fn` 声明匹配的入参与返回值类型 |
+| `E_WASI_HTTP_EXPORT` | 在 `--world http` 下额外声明通用 `defwasm-export` | HTTP proxy world 只导出 `wasi:http/incoming-handler@0.2.12`，移除多余 `defwasm-export` |
+| `E_WASI_HTTP_CAPABILITY` | 在 `--world http` 可达闭包中调用仅限 `command` 的能力（如 CLI 参数、环境变量、filesystem、stdin、`quit!`、时钟、阻塞等待或安全随机数） | 保留在 `command` world 或改用纯 HTTP 请求/响应与 stdio 日志逻辑 |
 
 ## 维护
 

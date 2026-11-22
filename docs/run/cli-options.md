@@ -615,8 +615,10 @@ WASM 支持范围不能与 Calcit 表层语义混淆：macro 在编译前展开�
 calcit wasm calcit.cirru --emit-path js-out
 calcit wasm calcit.cirru --boundary component --emit-path target/component-core
 calcit wasi calcit.cirru --emit-path target/wasi-03-command
+calcit wasi calcit.cirru --entry http --world http --emit-path target/wasi-http-proxy
 calcit wasi calcit.cirru --boundary native --emit-path target/wasi-command
 wasmtime run -S p3 -W component-model-more-async-builtins=y -W component-model-async-stackful=y target/wasi-03-command/program.wasm
+wasmtime serve --addr 127.0.0.1:8080 --max-instance-reuse-count 128 target/wasi-http-proxy/program.wasm
 ```
 
 两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。`read-stdin-text`、`unix-time-ms`、`monotonic-time-ms`、`wait-ms`、`secure-random-bytes` 以及 `FsPath .read-text`、`.write-text!` 与 `.read-dir` 已在 Component 路径支持，旧 `.write-text` 已在 0.29.0 退役，调用报告 `E_RETIRED_METHOD`，应改用 `.write-text!`。编译器还会沿入口的直接调用链检查失败的依赖，不会把核心包装函数变成运行时 trap。当前无法证明目标安全的间接调用会以 `E_WASI_COMMAND_INDIRECT` 拒绝。通用 `defwasm-export` 以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。使用标准流、文件系统或 `wait-ms` 的 Component 在 Wasmtime 49 中需要上述两个 `-W` 选项；未使用异步流的纯计算、参数、环境变量、时钟和随机数命令仍可只用 `-S p3`。
@@ -656,6 +658,16 @@ wasmtime run -S p3 -W component-model-more-async-builtins=y \
 仓库中的 [`examples/wasi-command/`](../../examples/wasi-command/) 提供了一个可直接运行的文本处理项目：它从命令行接收 guest 输入/输出路径，通过环境变量选择前缀，处理 Result 错误分支，并以稳定的非零状态码报告参数、读取或写入失败。新项目应先复用这个单一 `calcit wasi` 工作流，不需要增加包装命令。
 
 未提供 preopen、以 `/` 开头的绝对路径、包含完整 `..` 分段的越界路径、非法 UTF-8、I/O 错误和无法继续推进的 partial I/O 都返回 `Result :err`。当前 WASI 文本读取单文件上限为 4 MiB。`.read-dir` 枚举即时子项，沿 Preview 1 cookie 处理分页和截断记录，过滤 `.`、`..` 后按完整 guest path 排序；单次最多返回 4096 项，累计路径字节最多 4 MiB，单个 UTF-8 名称最多 4096 字节。超过限制同样返回错误，避免模块为不受控输入分配过量线性内存。Calcit 不接触 raw descriptor；`calcit wasm` 的 core module 也不会继承文件权限，而是在 codegen 阶段以 `E_WASM_CAPABILITY` 拒绝。递归 `.walk-dir` 尚未接入 WASI。
+
+### WASI HTTP proxy (`--world http`)
+
+`calcit wasi --world http` 生成面向 `wasi:http/proxy@0.2.12` 的 Component，只导出 `wasi:http/incoming-handler@0.2.12`。由于 `command` 默认入口是零参数 `Unit`，HTTP 项目应使用单独的 `--entry http`（或专用 HTTP Snapshot，如仓库内的 `tests/fixtures/wasi-http-proxy.cirru`），其 `:init-fn` 必须具有显式 schema `Fn HttpRequest (-> (Result HttpResponse String))`，且不能再声明额外的 `defwasm-export` 或 `defwasm-import`。`calcit.core` 提供 `HttpMethod`、`HttpHeader`、`HttpBody`、`HttpRequest` 与 `HttpResponse` 五个名义类型；每次请求处理返回后会自动重置 Request Scratch Arena，同时保留该实例内的 `defref` 持久化状态。注意 Preview 2 组件在 `wasmtime serve` 下的默认实例复用上限为 `--max-instance-reuse-count 1`（每次请求新建实例），如需在单实例内跨请求保留 `defref` 状态应显式提高上限（例如 `--max-instance-reuse-count 128`），且 `defref` 状态仅在被复用的单个实例内持久、不会跨实例共享。请求体直接按块写入请求缓冲区并以 UTF-8 合法性映射为 `HttpBody :text` 或 `:bytes`，`Result :err` 会写回 `500` 纯文本响应，`println` / `echo` / `eprintln` 会在可达时经 WASI `0.2.12` stdout/stderr 流记录日志。
+
+限制：
+
+- 请求体缓冲上限为 4 MiB，超过时直接返回 `413`。
+- 仅支持同步请求处理与响应，尚未开放 `wasi:http/outgoing-handler` 客户端发起。
+- 仅限 `command` world 的能力（`get-args`、`get-env`、`quit!`、`read-stdin-text`、filesystem、时钟、阻塞等待、安全随机数）与 `--boundary native` 会以 `E_WASI_HTTP_CAPABILITY` / `E_WASI_WORLD` 拒绝。
 
 ## Markdown 代码块检查
 
