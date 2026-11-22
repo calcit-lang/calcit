@@ -216,11 +216,7 @@ fn load_entry_snapshot_for_check_md_reads_respo_project() {
   if !entry.exists() {
     return;
   }
-  let snapshot = match load_entry_snapshot_for_check_md(entry.to_str().expect("entry path utf-8")) {
-    Ok(s) => s,
-    Err(e) if e.contains("E_LEGACY_TYPE_SYNTAX") => return,
-    Err(e) => panic!("read snapshot: {e}"),
-  };
+  let snapshot = load_entry_snapshot_for_check_md(entry.to_str().expect("entry path utf-8")).expect("load respo entry");
   assert!(snapshot.files.contains_key("respo.core"));
 }
 
