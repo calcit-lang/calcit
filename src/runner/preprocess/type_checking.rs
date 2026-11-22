@@ -239,6 +239,7 @@ fn specialize_core_callback_expected_types_inner(
   match fn_info.name.as_ref() {
     "fold" | "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
     "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
+    "sort" => specialize_collection_sort_expected_types(args, scope_types, expected_types),
     _ => None,
   }
 }

@@ -53,6 +53,24 @@
           :code $ quote $ def NamedLabels ([])
           :examples $ []
           :schema $ quote $ List String
+        'def-fn-square $ %{} 'CodeEntry (:doc "|Top-level def holding an anonymous function with schema")
+          :code $ quote $ def def-fn-square
+            fn (x) (&* x x)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |def-fn-receives-schema-parameter-context)
+            :code $ quote $ do
+              assert= 25 (def-fn-square 5)
+            :tags $ #{} :core :types :unit
+        'sort-numbers-descending $ %{} 'CodeEntry (:doc "|Sort list of numbers using anonymous comparator with inferred parameters")
+          :code $ quote $ defn sort-numbers-descending (xs)
+            sort xs $ fn (a b) (&- b a)
+          :examples $ []
+          :schema $ quote $ Fn (List Number) (-> $ List Number)
+          :tests $ [] $ %{} 'TestEntry (:name |sort-comparator-infers-item-parameter-types)
+            :code $ quote $ do
+              assert= ([] 3 2 1) (sort-numbers-descending ([] 1 3 2))
+            :tags $ #{} :core :types :unit
         'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalAbsenceFields
             :number $ Option Number

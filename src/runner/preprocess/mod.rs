@@ -133,9 +133,20 @@ struct DefinitionContextScope {
   _host_nullish: HostNullishReturnScope,
 }
 
+fn is_top_level_fn_expression(source: &Calcit) -> bool {
+  let Calcit::List(forms) = source else { return false };
+  match forms.first() {
+    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn" => true,
+    Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "def" => {
+      matches!(forms.get(2), Some(Calcit::List(inner)) if matches!(inner.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
+    }
+    _ => false,
+  }
+}
+
 impl DefinitionContextScope {
   fn enter(ns: &str, def: &str, source: &Calcit) -> Self {
-    let context = if matches!(source, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
+    let context = if is_top_level_fn_expression(source)
       && let CalcitTypeAnnotation::Fn(signature) = program::lookup_def_schema(ns, def).as_ref()
     {
       Some(ExpectedFunctionContext {
@@ -7374,7 +7385,7 @@ fn preprocess_known_function_call(
       checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
     let can_refresh_core_types = info.def_ns.as_ref() == calcit::CORE_NS
       && ((args.len() == 3 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce"))
-        || (args.len() == 2 && info.name.as_ref() == "&list:sort-by"));
+        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "sort")));
     let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_core_types) {
       let contextual_arg = resolve_callback_constructor(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       let processed_count = ys.len().saturating_sub(1);
@@ -7560,7 +7571,7 @@ fn preprocess_known_function_call(
 
     let form = result?;
     // Same empty-seed widening as the proc and method folds (#2646).
-    let is_fold = can_refresh_core_types && arg_idx == 2 && info.name.as_ref() != "&list:sort-by";
+    let is_fold = can_refresh_core_types && arg_idx == 2 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce");
     let form = match widened_fold_accumulator(is_fold, &ys, expected_type.as_ref(), &form, scope_types) {
       Some(widened) => {
         check_warnings.borrow_mut().truncate(warnings_before);
@@ -20635,6 +20646,25 @@ mod tests {
         .is_some_and(|features| features.contains(&EdnTag::from("js-ffi")))
     }));
     assert!(HOST_NULLISH_RETURN_FORMS.with(|cell| cell.borrow().contains(&1)));
+  }
+
+  #[test]
+  fn top_level_def_fn_detected_for_parameter_context() {
+    let source_fn = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![Cirru::leaf("x")])]);
+    let calcit_fn = code_to_calcit(&source_fn, "tests.context", "fn-demo", vec![]).unwrap();
+    assert!(is_top_level_fn_expression(&calcit_fn));
+
+    let source_def_fn = Cirru::List(vec![
+      Cirru::leaf("def"),
+      Cirru::leaf("foo"),
+      Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![Cirru::leaf("x")])]),
+    ]);
+    let calcit_def_fn = code_to_calcit(&source_def_fn, "tests.context", "foo", vec![]).unwrap();
+    assert!(is_top_level_fn_expression(&calcit_def_fn));
+
+    let source_def_val = Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf("bar"), Cirru::leaf("1")]);
+    let calcit_def_val = code_to_calcit(&source_def_val, "tests.context", "bar", vec![]).unwrap();
+    assert!(!is_top_level_fn_expression(&calcit_def_val));
   }
 
   #[test]
