@@ -22,7 +22,7 @@ function rustFiles(directory) {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) {
       if (!skippedDirectories.has(path)) files.push(...rustFiles(path));
-    } else if (name.endsWith(".rs")) {
+    } else if (name.endsWith(".rs") && !name.endsWith("_tests.rs")) {
       files.push(path);
     }
   }
