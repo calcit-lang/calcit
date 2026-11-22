@@ -467,7 +467,10 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     return Ok(());
   }
 
-  match super::infer_wasm_static_type(ctx, &args[0]).as_deref() {
+  match super::infer_wasm_static_type(ctx, &args[0])
+    .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .as_deref()
+  {
     Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => {
       let f64_to_str_idx = *ctx
         .runtime_fn_index
@@ -477,10 +480,13 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       ctx.emit(Instruction::Call(f64_to_str_idx));
       return Ok(());
     }
-    Some(CalcitTypeAnnotation::Bool) => {
+    Some(CalcitTypeAnnotation::String) => {
       emit_expr(ctx, &args[0])?;
-      ctx.emit(f64_const(0.0));
-      ctx.emit(Instruction::F64Eq);
+      return Ok(());
+    }
+    Some(CalcitTypeAnnotation::Bool) => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::BoolI32)?;
+      ctx.emit(Instruction::I32Eqz);
       ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
       let false_ptr = *ctx.string_pool.get("false").ok_or("missing WASM false string literal")?;
       ctx.emit(f64_const(false_ptr as f64));
@@ -491,9 +497,9 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       return Ok(());
     }
     Some(CalcitTypeAnnotation::Tag) => {
-      let tag = ctx.alloc_local();
+      let tag = ctx.alloc_local_typed(ValType::I32);
       let result = ctx.alloc_local();
-      emit_expr(ctx, &args[0])?;
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::TagI32)?;
       ctx.emit(Instruction::LocalSet(tag));
       // Inside a loop the local keeps the previous iteration's string; reset it
       // so an unmatched tag reaches `unreachable` instead of reusing that value.
@@ -507,8 +513,8 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
           .get(&name)
           .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
         ctx.emit(Instruction::LocalGet(tag));
-        ctx.emit(f64_const(id as f64));
-        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::I32Const(id as i32));
+        ctx.emit(Instruction::I32Eq);
         ctx.begin_block_if();
         ctx.emit(f64_const(ptr as f64));
         ctx.emit(Instruction::LocalSet(result));

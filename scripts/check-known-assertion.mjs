@@ -4128,9 +4128,14 @@ try {
       const forgedInstance = new WebAssembly.Instance(guardedModule, imports);
       const forgedState = forgedInstance.exports["make-state"]();
       const forgedMemory = new DataView(forgedInstance.exports.memory.buffer);
-      const forgedList = forgedInstance.exports["make-list"](forgedMemory.getFloat64(forgedState + 8, true));
+      const forgedList = forgedInstance.exports["make-list"](forgedMemory.getUint32(forgedState + 4, true));
       assert.throws(() => forgedInstance.exports["raw-write"](forgedList), WebAssembly.RuntimeError,
-        "a List with a matching nominal-layout slot must not become a Struct");
+        "a List must not become a Struct");
+      const forgedKindList = forgedInstance.exports["make-list"](0);
+      forgedMemory.setUint32(forgedKindList, forgedMemory.getUint32(forgedState, true), true);
+      forgedMemory.setUint32(forgedKindList + 4, forgedMemory.getUint32(forgedState + 4, true), true);
+      assert.throws(() => forgedInstance.exports["raw-write"](forgedKindList), WebAssembly.RuntimeError,
+        "a List carrying matching Struct count and layout_id must still fail allocation-kind validation");
       const controlInstance = new WebAssembly.Instance(guardedModule, imports);
       const controlOriginal = controlInstance.exports["make-state"]();
       const controlHeapAfterMake = controlInstance.exports.__heap_ptr.value;
@@ -4141,16 +4146,16 @@ try {
         controlInstance.exports.__heap_ptr.value > controlHeapAfterMake,
         "valid WriteState update advances __heap_ptr past controlHeapAfterMake",
       );
-      assert.equal(new DataView(controlInstance.exports.memory.buffer).getFloat64(controlUpdated + 16, true), 2);
-      for (const count of [-1, 0, 1, 3, 1.5, NaN, Infinity]) {
+      assert.equal(new DataView(controlInstance.exports.memory.buffer).getFloat64(controlUpdated + 8, true), 2);
+      for (const count of [-1, 0, 1, 3]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
         const original = instance.exports["make-state"]();
         const heapAfterMake = instance.exports.__heap_ptr.value;
         assert.ok(heapAfterMake > original, "make-state must allocate in Scratch before raw-write");
         const memory = new DataView(instance.exports.memory.buffer);
-        memory.setFloat64(original, count, true);
+        memory.setUint32(original, count, true);
         assert.throws(() => instance.exports["raw-write"](original), WebAssembly.RuntimeError, `wrong count: ${count}`);
-        assert.equal(memory.getFloat64(original + 16, true), 1, "rejected updates preserve the source field");
+        assert.equal(memory.getFloat64(original + 8, true), 1, "rejected updates preserve the source field");
         assert.equal(
           instance.exports.__heap_ptr.value,
           heapAfterMake,
@@ -4174,7 +4179,7 @@ try {
           : malformed === "negative" ? -1 : original;
         assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError, malformed);
       }
-      for (const offset of [16, 24]) {
+      for (const offset of [8, 16]) {
         const instance = new WebAssembly.Instance(guardedModule, imports);
         const original = instance.exports["make-state"]();
         const heapAfterMake = instance.exports.__heap_ptr.value;
@@ -4182,12 +4187,12 @@ try {
         const memory = new DataView(instance.exports.memory.buffer);
         const magic = memory.getUint32(original - 8, true);
         const kind = memory.getUint32(original - 4, true);
-        const layout = memory.getFloat64(original + 8, true);
+        const layout = memory.getUint32(original + 4, true);
         const receiver = original + offset;
         memory.setUint32(receiver - 8, magic, true);
         memory.setUint32(receiver - 4, kind, true);
-        memory.setFloat64(receiver, 2, true);
-        memory.setFloat64(receiver + 8, layout, true);
+        memory.setUint32(receiver, 2, true);
+        memory.setUint32(receiver + 4, layout, true);
         assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError,
           "a forged prefix or copy span beyond the allocated heap must trap");
         assert.equal(

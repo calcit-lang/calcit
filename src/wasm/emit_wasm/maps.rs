@@ -6,7 +6,7 @@ use super::*;
 // ===========================================================================
 
 fn normalize_map_key_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  let expanded = expand_wasm_value_type(annotation);
   if matches!(expanded.as_ref(), CalcitTypeAnnotation::StructValue(_)) {
     Arc::new(CalcitTypeAnnotation::Tag)
   } else {

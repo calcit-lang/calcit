@@ -161,57 +161,38 @@ pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>)
   emit_core_enum(ctx, tag_name, payload_local.as_slice())
 }
 
-/// Core enums share the constructor's tag and ordered payload layout.
-pub(super) fn emit_core_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_locals: &[u32]) -> Result<(), String> {
+/// Core enums share the constructor's tag and ordered payload layout, returning
+/// the raw i32 heap pointer local without converting through f64.
+pub(super) fn emit_core_enum_raw_i32(ctx: &mut WasmGenCtx, tag_name: &str, payload_locals: &[u32]) -> Result<u32, String> {
   let tag_id = *ctx
     .tag_index
     .get(tag_name)
-    .ok_or_else(|| format!("Core enum tag missing from WASM tag index: {tag_name}"))? as f64;
+    .ok_or_else(|| format!("Core enum tag missing from WASM tag index: {tag_name}"))?;
   let payload_count = payload_locals.len();
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, ((2 + payload_count) * 8) as i32, ptr_local, "enum");
-
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(payload_count as f64));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(tag_id));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
+  emit_bump_alloc(ctx, ((1 + payload_count) * 8) as i32, ptr_local, "enum");
+  emit_store_compact_header(ctx, ptr_local, payload_count as u32, tag_id);
 
   for (idx, payload) in payload_locals.iter().enumerate() {
     ctx.emit(Instruction::LocalGet(ptr_local));
     ctx.emit(Instruction::LocalGet(*payload));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + idx) * 8) as u64)));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + idx) * 8) as u64)));
   }
 
+  Ok(ptr_local)
+}
+
+/// Core enums share the constructor's tag and ordered payload layout.
+pub(super) fn emit_core_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_locals: &[u32]) -> Result<(), String> {
+  let ptr_local = emit_core_enum_raw_i32(ctx, tag_name, payload_locals)?;
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
-/// Allocate a one-payload Result enum using the same layout as `%::`.
+/// Allocate a one-payload Result enum using the same compact layout as `%::`.
 pub(super) fn emit_result_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_local: u32) -> Result<(), String> {
-  let tag_id = *ctx
-    .tag_index
-    .get(tag_name)
-    .ok_or_else(|| format!("Result tag missing from WASM tag index: {tag_name}"))? as f64;
-  let ptr_local = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, 24, ptr_local, "enum");
-
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(f64_const(tag_id));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::LocalGet(payload_local));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
-
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::F64ConvertI32U);
-  Ok(())
+  emit_core_enum(ctx, tag_name, &[payload_local])
 }
 
 // ===========================================================================
@@ -219,7 +200,7 @@ pub(super) fn emit_result_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_loc
 // ===========================================================================
 
 /// Evaluate expression → i32 pointer, saved in a new local.
-/// Emit `expr` as an i32 heap pointer.  For literal tags, emit the interned string ptr
+/// Emit `expr` as an i32 heap pointer. For literal tags, emit the interned string ptr
 /// directly (tags are conceptually coercible to their name string in string operations).
 pub(super) fn emit_ptr_to_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32, String> {
   let local = ctx.alloc_local_typed(ValType::I32);
@@ -234,10 +215,27 @@ pub(super) fn emit_ptr_to_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32
     ctx.emit(Instruction::LocalSet(local));
     return Ok(local);
   }
-  emit_expr(ctx, expr)?;
-  ctx.emit(Instruction::I32TruncF64U);
+  emit_expr_as_repr(ctx, expr, NativeValRepr::HeapPtrI32)?;
   ctx.emit(Instruction::LocalSet(local));
   Ok(local)
+}
+
+/// Load the compact header payload count (`u32 @ 0`) from an Enum/Struct pointer.
+pub(super) fn emit_load_enum_count_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalSet(count));
+  count
+}
+
+/// Load the compact header tag/layout id (`u32 @ 4`) from an Enum/Struct pointer.
+pub(super) fn emit_load_enum_tag_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+  let tag = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::LocalSet(tag));
+  tag
 }
 
 /// Load the count (first f64 slot) from an i32 pointer, store as i32.

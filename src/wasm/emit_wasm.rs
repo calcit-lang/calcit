@@ -76,11 +76,15 @@ use runtime::{
   build_wasi_read_text_fn, build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, call_indirect,
   core_host_import, host_imports_for_target,
 };
+#[allow(unused_imports)]
 use structs::{
-  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_definition,
-  emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def,
-  emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
-  emit_struct_to_map, emit_struct_with_at, enum_identity_tag, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
+  StructFieldKind, StructFieldLayout, StructLayout, StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc,
+  emit_enum_count, emit_enum_definition, emit_enum_new, emit_enum_new_raw_i32, emit_enum_nth, emit_enum_nth_as_repr,
+  emit_load_struct_field_as_repr, emit_named_enum_new, emit_named_enum_new_raw_i32, emit_store_compact_header,
+  emit_store_struct_field_expr, emit_store_struct_field_from_f64_local, emit_struct_assoc_at, emit_struct_contains, emit_struct_count,
+  emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new,
+  emit_struct_new_raw_i32, emit_struct_nth, emit_struct_nth_as_repr, emit_struct_to_map, emit_struct_with_at, enum_identity_tag,
+  resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -557,11 +561,19 @@ fn emit_wasm_impl(
   }
   let StaticDataAndAtoms {
     string_pool,
-    string_data_segment,
-    heap_start,
+    mut string_data_segment,
+    mut heap_start,
     atom_initial_values,
     atom_globals,
   } = build_static_data_and_atoms(&fn_defs, &value_imports, &tag_index, target, &defref_defs);
+
+  let component_types = if boundary == WasmBoundary::Component {
+    collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)?
+  } else {
+    Vec::new()
+  };
+  let mut struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index)?;
+  struct_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
 
   let atom_count = atom_initial_values.len() as u32;
   let memory_layout = WasmMemoryLayout::compute(heap_start, atom_count);
@@ -573,6 +585,7 @@ fn emit_wasm_impl(
     boundary,
     &tag_index,
     &atom_is_scalar_vec,
+    &struct_layouts,
   )?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
@@ -793,12 +806,6 @@ fn emit_wasm_impl(
   let mut component_list_codecs = BTreeMap::new();
   let mut component_struct_codecs = BTreeMap::new();
   let mut component_variant_codecs = BTreeMap::new();
-  let component_types = if component_cabi_realloc_index.is_some() {
-    collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)?
-  } else {
-    Vec::new()
-  };
-  let struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index)?;
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     let list_tag_id = *tag_index.get("list").expect("list tag must exist") as i32;
@@ -827,6 +834,7 @@ fn emit_wasm_impl(
             .get(&component_struct_identity(record))
             .ok_or_else(|| format!("E_COMPONENT_ABI_STRUCT_TAG: `{}` has no registered identity", record.id))?
             as i32;
+          let struct_layout = struct_layouts.layout_by_id(nominal_tag_id as u32)?;
           component_struct_codecs.insert(compound_type.clone(), ComponentStructCodec { lift_index, lower_index });
           let codecs = ComponentValueCodecs {
             str_new_index: str_new_idx,
@@ -841,9 +849,15 @@ fn emit_wasm_impl(
             &compound_type,
             nominal_tag_id,
             *tag_index.get("struct").expect("struct tag must exist") as i32,
+            struct_layout,
             &codecs,
           ));
-          compiled_fns.push(build_component_struct_lower_fn(&compound_type, nominal_tag_id, &codecs));
+          compiled_fns.push(build_component_struct_lower_fn(
+            &compound_type,
+            nominal_tag_id,
+            struct_layout,
+            &codecs,
+          ));
         }
         ComponentAbiType::Option(_) | ComponentAbiType::Result(_, _) => {
           let tag_ids = match &compound_type {
@@ -1064,6 +1078,14 @@ fn emit_wasm_impl(
       *wasm_import_arities.get(name).expect("WASM import arity must be registered"),
     );
   }
+  let has_boxed_json_scalars = program_has_boxed_json_scalars(&fn_defs, &value_imports);
+  let component_handlers: HashSet<String> = component_adapters
+    .iter()
+    .flat_map(|adapter| {
+      std::iter::once(adapter.definition.clone()).chain(adapter.stream_consumer.iter().map(|c| c.handler_definition.clone()))
+    })
+    .collect();
+  let mut fn_signatures: HashMap<u32, InternalFnSig> = HashMap::new();
   for (i, (ns, name, args, _)) in fn_defs.iter().enumerate() {
     let idx = num_imports + runtime_fn_count + i as u32;
     let qualified = format!("{ns}/{name}");
@@ -1077,8 +1099,34 @@ fn emit_wasm_impl(
       fn_has_rest.insert(name.clone(), fixed);
     }
     // Table slot = position in fn_defs (0-based)
-    fn_table_index.insert(qualified, i as u32);
+    fn_table_index.insert(qualified.clone(), i as u32);
     fn_table_index.insert(name.clone(), i as u32);
+
+    let compiled_def = program_data.get(ns.as_str()).and_then(|file| file.defs.get(name.as_str()));
+    let explicit_export = compiled_def.is_some_and(|compiled| is_wasm_export_def(&compiled.preprocessed_code));
+    let is_custom_core = ns == "calcit.core"
+      && matches!(
+        name.as_str(),
+        "repeat" | "interleave" | "zipmap" | "intersperse" | "join-string" | "try-parse-json" | "keys-non-nil"
+      );
+    let is_wasi_init = target == WasmTarget::Wasi && ns == init_ns && name == init_def;
+    if matches!(args, CalcitFnArgs::Args(_))
+      && !explicit_export
+      && !is_custom_core
+      && !is_wasi_init
+      && !component_handlers.contains(&qualified)
+      && let Some(sig) = compiled_def.and_then(|compiled| qualified_fn_schema(&compiled.schema, ns))
+      && sig.rest_type.is_none()
+      && sig.arg_types.len() == arity as usize
+    {
+      let native_sig = InternalFnSig {
+        params: sig.arg_types.iter().map(NativeValRepr::from_type_annotation).collect(),
+        result: NativeValRepr::from_type_annotation(&sig.return_type),
+      };
+      if native_sig.has_native_slots() {
+        fn_signatures.insert(idx, native_sig);
+      }
+    }
   }
 
   let mut static_fn_defs: HashMap<String, Arc<StaticFnDef>> = HashMap::new();
@@ -1086,7 +1134,7 @@ fn emit_wasm_impl(
     let Some(signature) = program_data
       .get(ns.as_str())
       .and_then(|file| file.defs.get(name.as_str()))
-      .and_then(|compiled| compiled.schema.resolve_to_fn())
+      .and_then(|compiled| qualified_fn_schema(&compiled.schema, ns))
     else {
       continue;
     };
@@ -1134,6 +1182,8 @@ fn emit_wasm_impl(
     fn_index,
     fn_arity,
     fn_has_rest,
+    fn_signatures,
+    has_boxed_json_scalars,
     runtime_fn_index,
     tag_index,
     struct_layouts,
@@ -1177,7 +1227,7 @@ fn emit_wasm_impl(
     let function_signature = program_data
       .get(ns.as_str())
       .and_then(|file| file.defs.get(def_name.as_str()))
-      .and_then(|compiled| compiled.schema.resolve_to_fn());
+      .and_then(|compiled| qualified_fn_schema(&compiled.schema, ns));
     let explicit_export = program_data
       .get(ns.as_str())
       .and_then(|file| file.defs.get(def_name.as_str()))
@@ -1275,10 +1325,12 @@ fn emit_wasm_impl(
           eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
         }
         let (arity, _) = compute_fn_arity(args);
+        let fallback_idx = num_imports + compiled_fns.len() as u32;
+        let fallback_sig = env.fn_signatures.get(&fallback_idx);
         compiled_fns.push(CompiledFn {
           export_name: None,
-          params: vec![ValType::F64; arity as usize],
-          results: vec![ValType::F64],
+          params: fallback_sig.map_or_else(|| vec![ValType::F64; arity as usize], InternalFnSig::wasm_params),
+          results: vec![fallback_sig.map_or(ValType::F64, |s| s.result.val_type())],
           locals: vec![],
           instructions: vec![Instruction::Unreachable],
         });
@@ -1500,8 +1552,9 @@ fn emit_wasm_impl(
     }
   }
 
-  // Function values of `&` rest-parameter functions are called through
-  // adapters that pack the trailing arguments, one per call arity in use.
+  // Function values of `&` rest-parameter functions and functions with internal
+  // unboxed native signatures are called through canonical `(f64 x arity) -> f64`
+  // table adapters whenever their funcref table is materialized (#1972, #2876).
   let mut rest_adapters = HashMap::new();
   let call_arities: BTreeSet<u32> = compiled_fns
     .iter()
@@ -1511,20 +1564,25 @@ fn emit_wasm_impl(
       _ => None,
     })
     .collect();
-  if !call_arities.is_empty() {
-    let mut adapter_ctx = WasmGenCtx::new(0, env);
+  if !call_arities.is_empty() || !fn_defs.is_empty() {
+    let mut table_arities = call_arities.clone();
+    table_arities.insert(0);
+    let mut adapter_ctx = WasmGenCtx::new(0, env.clone());
     for (slot, (_, _, args, _)) in fn_defs.iter().enumerate() {
-      let (_, Some(fixed)) = compute_fn_arity(args) else {
-        continue;
-      };
-      for &arity in call_arities.range(fixed..) {
-        rest_adapters.insert((arity, slot as u32), num_imports + compiled_fns.len() as u32);
-        compiled_fns.push(build_rest_adapter(
-          &mut adapter_ctx,
-          num_imports + runtime_fn_count + slot as u32,
-          fixed,
-          arity,
-        ));
+      let target_fn = num_imports + runtime_fn_count + slot as u32;
+      if let Some(fixed) = compute_fn_arity(args).1 {
+        for &arity in call_arities.range(fixed..) {
+          rest_adapters.insert((arity, slot as u32), num_imports + compiled_fns.len() as u32);
+          compiled_fns.push(build_rest_adapter(&mut adapter_ctx, target_fn, fixed, arity));
+        }
+      } else if let Some(sig) = env.fn_signatures.get(&target_fn).cloned()
+        && sig.has_native_slots()
+      {
+        let arity = sig.params.len() as u32;
+        if table_arities.contains(&arity) {
+          rest_adapters.insert((arity, slot as u32), num_imports + compiled_fns.len() as u32);
+          compiled_fns.push(build_native_sig_table_adapter(&mut adapter_ctx, target_fn, &sig));
+        }
       }
     }
   }
@@ -5450,6 +5508,85 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
   }
 }
 
+/// Internal unboxed WASM value representation for closed scalars, integer
+/// refinements, and known non-null heap pointers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum NativeValRepr {
+  F64,
+  BoolI32,
+  TagI32,
+  UnitI32,
+  Int32S,
+  UInt32,
+  Int64S,
+  UInt64,
+  HeapPtrI32,
+}
+
+impl NativeValRepr {
+  pub(super) fn val_type(self) -> ValType {
+    match self {
+      Self::F64 => ValType::F64,
+      Self::Int64S | Self::UInt64 => ValType::I64,
+      Self::BoolI32 | Self::TagI32 | Self::UnitI32 | Self::Int32S | Self::UInt32 | Self::HeapPtrI32 => ValType::I32,
+    }
+  }
+
+  pub(super) fn from_type_annotation(annotation: &Arc<CalcitTypeAnnotation>) -> Self {
+    let expanded = expand_wasm_value_type(annotation);
+    match expanded.as_ref() {
+      CalcitTypeAnnotation::Bool => Self::BoolI32,
+      CalcitTypeAnnotation::Tag => Self::TagI32,
+      CalcitTypeAnnotation::Unit => Self::UnitI32,
+      CalcitTypeAnnotation::Numeric(refinement) => match refinement {
+        CalcitNumericRefinement::Int8 | CalcitNumericRefinement::Int16 | CalcitNumericRefinement::Int32 => Self::Int32S,
+        CalcitNumericRefinement::UInt8 | CalcitNumericRefinement::UInt16 | CalcitNumericRefinement::UInt32 => Self::UInt32,
+        CalcitNumericRefinement::Int64 => Self::Int64S,
+        CalcitNumericRefinement::UInt64 => Self::UInt64,
+        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::F64,
+      },
+      CalcitTypeAnnotation::String
+      | CalcitTypeAnnotation::Buffer
+      | CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
+      | CalcitTypeAnnotation::Set(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Struct(_, _)
+      | CalcitTypeAnnotation::StructValue(_)
+      | CalcitTypeAnnotation::Enum(_, _)
+      | CalcitTypeAnnotation::EnumValue(_)
+      | CalcitTypeAnnotation::AnonymousEnum => Self::HeapPtrI32,
+      CalcitTypeAnnotation::TypeRef(_, _) if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() => {
+        Self::HeapPtrI32
+      }
+      _ => Self::F64,
+    }
+  }
+}
+
+/// Native WASM calling convention for internal fixed-arity functions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct InternalFnSig {
+  pub params: Vec<NativeValRepr>,
+  pub result: NativeValRepr,
+}
+
+impl InternalFnSig {
+  pub(super) fn has_native_slots(&self) -> bool {
+    self.result != NativeValRepr::F64 || self.params.iter().any(|repr| *repr != NativeValRepr::F64)
+  }
+
+  pub(super) fn wasm_params(&self) -> Vec<ValType> {
+    self.params.iter().map(|r| r.val_type()).collect()
+  }
+}
+
+/// Qualify short nominal type references in a definition's schema before inspecting its
+/// signature for WASM lowering so same-namespace struct/enum names resolve cleanly.
+fn qualified_fn_schema(schema: &Arc<CalcitTypeAnnotation>, ns: &str) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  crate::wasm::host::calcit::type_refs::qualify_namespace_type_refs(schema.clone(), ns).resolve_to_fn()
+}
+
 #[derive(Clone)]
 struct WasmCompileEnv {
   /// Function values actually emitted, keyed by their containing function index.
@@ -5457,6 +5594,10 @@ struct WasmCompileEnv {
   fn_index: HashMap<String, u32>,
   fn_arity: HashMap<String, u32>,
   fn_has_rest: HashMap<String, u32>,
+  /// Internal native signatures keyed by WASM function index.
+  fn_signatures: HashMap<u32, InternalFnSig>,
+  /// Whether any user-reachable definition may construct heap-boxed JSON scalars.
+  has_boxed_json_scalars: bool,
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
   struct_layouts: StructLayouts,
@@ -5864,6 +6005,12 @@ struct WasmGenCtx {
   /// Function name → fixed-arity (params before `&`) for functions with rest args.
   /// WASM arity for these is `fixed_arity + 1` (the rest list pointer).
   fn_has_rest: HashMap<String, u32>,
+  /// Internal native signatures keyed by WASM function index.
+  fn_signatures: HashMap<u32, InternalFnSig>,
+  /// Native value representation for WASM locals that do not use the f64 slot ABI.
+  local_reprs: HashMap<u32, NativeValRepr>,
+  /// Whether the module may contain heap-boxed JSON scalars.
+  has_boxed_json_scalars: bool,
   /// Internal runtime helper name → function index.
   runtime_fn_index: HashMap<String, u32>,
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
@@ -5967,6 +6114,9 @@ impl WasmGenCtx {
       fn_index: env.fn_index,
       fn_arity: env.fn_arity,
       fn_has_rest: env.fn_has_rest,
+      fn_signatures: env.fn_signatures,
+      local_reprs: HashMap::new(),
+      has_boxed_json_scalars: env.has_boxed_json_scalars,
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
       struct_layouts: env.struct_layouts,
@@ -6005,9 +6155,30 @@ impl WasmGenCtx {
   }
 
   fn declare_local(&mut self, name: &str) -> u32 {
-    let idx = self.alloc_local();
+    self.declare_local_with_repr(name, NativeValRepr::F64)
+  }
+
+  fn local_repr(&self, index: u32) -> NativeValRepr {
+    self.local_reprs.get(&index).copied().unwrap_or(NativeValRepr::F64)
+  }
+
+  fn declare_local_with_repr(&mut self, name: &str, repr: NativeValRepr) -> u32 {
+    let idx = self.alloc_local_typed(repr.val_type());
     self.locals.insert(name.to_owned(), idx);
+    if repr != NativeValRepr::F64 {
+      self.local_reprs.insert(idx, repr);
+    }
     idx
+  }
+
+  fn emit_local_as_f64(&mut self, index: u32) {
+    self.emit_local_as_repr(index, NativeValRepr::F64);
+  }
+
+  fn emit_local_as_repr(&mut self, index: u32, dst: NativeValRepr) {
+    let src = self.local_repr(index);
+    self.emit(Instruction::LocalGet(index));
+    emit_convert_repr(self, src, dst);
   }
 
   fn emit(&mut self, instr: Instruction<'static>) {
@@ -6928,7 +7099,7 @@ fn resolve_codec_target_annotation(items: &crate::wasm::host::calcit::CalcitList
 fn resolved_struct_fields_for_annotation(
   annotation: &Arc<CalcitTypeAnnotation>,
 ) -> Option<Vec<(cirru_edn::EdnTag, Arc<CalcitTypeAnnotation>)>> {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
+  let expanded = expand_wasm_value_type(annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::Struct(nominal, args) => edn::resolved_struct_fields(nominal, args).ok(),
     CalcitTypeAnnotation::StructValue(nominal) => edn::resolved_struct_fields(nominal, &[]).ok(),
@@ -8863,7 +9034,7 @@ fn wasm_non_nil_value_is_nonzero(annotation: &CalcitTypeAnnotation) -> bool {
 fn wasm_type_has_ambiguous_nil_join(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => {
-      let expanded = CalcitTypeAnnotation::expand_schema_alias(inner);
+      let expanded = expand_wasm_value_type(inner);
       matches!(
         expanded.as_ref(),
         CalcitTypeAnnotation::Bool
@@ -8879,7 +9050,7 @@ fn wasm_type_has_ambiguous_nil_join(annotation: &CalcitTypeAnnotation) -> bool {
 }
 
 fn wasm_type_requires_scalar_specialization(annotation: &CalcitTypeAnnotation) -> bool {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(&Arc::new(annotation.clone()));
+  let expanded = expand_wasm_value_type(&Arc::new(annotation.clone()));
   if nil_type_evidence_is_open(expanded.as_ref()) || wasm_type_has_ambiguous_nil_join(expanded.as_ref()) {
     return true;
   }
@@ -9167,10 +9338,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
         .fn_index
         .get(qualified)
         .ok_or_else(|| format!("unknown function: {qualified}"))?;
-      for argument in completed {
-        emit_expr(ctx, argument)?;
-      }
-      ctx.emit(Instruction::Call(function));
+      emit_direct_fn_call(ctx, function, completed.len() as u32, None, completed, NativeValRepr::F64)?;
       return Ok(true);
     }
     return Ok(false);
@@ -9260,10 +9428,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       .fn_index
       .get(qualified)
       .ok_or_else(|| format!("unknown function: {qualified}"))?;
-    for argument in completed {
-      emit_expr(ctx, argument)?;
-    }
-    ctx.emit(Instruction::Call(function));
+    emit_direct_fn_call(ctx, function, completed.len() as u32, None, completed, NativeValRepr::F64)?;
     return Ok(true);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
@@ -9663,6 +9828,249 @@ fn try_custom_def_impl(
   }
 }
 
+fn program_has_boxed_json_scalars(
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  value_imports: &HashMap<String, Calcit>,
+) -> bool {
+  fn expr_uses_json_parse(expr: &Calcit) -> bool {
+    match expr {
+      Calcit::Import(imp) => {
+        imp.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+          && matches!(imp.def.as_ref(), "try-parse-json" | "&try-parse-json" | "json-parse")
+      }
+      Calcit::Symbol { sym, .. } => matches!(sym.as_ref(), "try-parse-json" | "&try-parse-json" | "json-parse"),
+      Calcit::Method(name, MethodKind::Invoke(_)) => name.as_ref() == "parse-json",
+      Calcit::Proc(CalcitProc::JsonParse | CalcitProc::NativeTryParseJson) => true,
+      Calcit::List(items) => items.iter().any(expr_uses_json_parse),
+      _ => false,
+    }
+  }
+  for (ns, def_name, _, body) in fn_defs {
+    if ns == crate::wasm::host::calcit::CORE_NS
+      && matches!(
+        def_name.as_str(),
+        "try-parse-json" | "&try-parse-json" | "json-parse" | "parse-json" | "&core-string-methods"
+      )
+    {
+      continue;
+    }
+    if body.iter().any(expr_uses_json_parse) {
+      return true;
+    }
+  }
+  for (qualified, expr) in value_imports {
+    if matches!(
+      qualified.as_str(),
+      "calcit.core/try-parse-json"
+        | "calcit.core/&try-parse-json"
+        | "calcit.core/json-parse"
+        | "calcit.core/&core-string-methods"
+        | "calcit.core/String"
+    ) {
+      continue;
+    }
+    if expr_uses_json_parse(expr) {
+      return true;
+    }
+  }
+  false
+}
+
+fn expr_is_guaranteed_unboxed_scalar(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  if !ctx.has_boxed_json_scalars {
+    return true;
+  }
+  match expr {
+    Calcit::Bool(_) | Calcit::Number(_) | Calcit::Nil | Calcit::Unit | Calcit::Tag(_) => true,
+    Calcit::Local(local) => ctx
+      .locals
+      .get(local.sym.as_ref())
+      .is_some_and(|&idx| ctx.local_repr(idx) != NativeValRepr::F64),
+    Calcit::Symbol { sym, .. } => ctx
+      .locals
+      .get(sym.as_ref())
+      .is_some_and(|&idx| ctx.local_repr(idx) != NativeValRepr::F64),
+    Calcit::List(items) if !items.is_empty() => match &items[0] {
+      Calcit::Syntax(CalcitSyntax::AssertType, _) if items.len() == 3 => {
+        let target = expand_wasm_value_type(&CalcitTypeAnnotation::parse_type_annotation_form(&items[2]));
+        matches!(
+          target.as_ref(),
+          CalcitTypeAnnotation::Bool
+            | CalcitTypeAnnotation::Nil
+            | CalcitTypeAnnotation::Unit
+            | CalcitTypeAnnotation::Tag
+            | CalcitTypeAnnotation::Number
+            | CalcitTypeAnnotation::Numeric(_)
+        )
+      }
+      Calcit::Proc(proc) => matches!(
+        proc,
+        CalcitProc::NativeAdd
+          | CalcitProc::NativeMinus
+          | CalcitProc::NativeMultiply
+          | CalcitProc::NativeDivide
+          | CalcitProc::NativeNumberRem
+          | CalcitProc::NativeLessThan
+          | CalcitProc::NativeGreaterThan
+          | CalcitProc::NativeEquals
+          | CalcitProc::Identical
+          | CalcitProc::Not
+          | CalcitProc::NativeCompare
+          | CalcitProc::BitAnd
+          | CalcitProc::BitOr
+          | CalcitProc::BitXor
+          | CalcitProc::BitShl
+          | CalcitProc::BitShr
+          | CalcitProc::BitNot
+          | CalcitProc::NilQuestion
+          | CalcitProc::BoolQuestion
+          | CalcitProc::NumberQuestion
+          | CalcitProc::StringQuestion
+          | CalcitProc::TagQuestion
+          | CalcitProc::ListQuestion
+          | CalcitProc::MapQuestion
+          | CalcitProc::SetQuestion
+          | CalcitProc::SymbolQuestion
+          | CalcitProc::StructQuestion
+          | CalcitProc::EnumQuestion
+          | CalcitProc::FnQuestion
+          | CalcitProc::NativeStructCount
+          | CalcitProc::NativeEnumCount
+          | CalcitProc::NativeStructMatches
+          | CalcitProc::NativeStructContains
+          | CalcitProc::NativeListEmpty
+          | CalcitProc::NativeListCount
+          | CalcitProc::NativeMapEmpty
+          | CalcitProc::NativeMapCount
+          | CalcitProc::NativeMapContains
+          | CalcitProc::NativeMapIncludes
+          | CalcitProc::NativeSetEmpty
+          | CalcitProc::NativeSetCount
+          | CalcitProc::NativeSetIncludes
+      ),
+      Calcit::Import(imp) => {
+        let qualified = format!("{}/{}", imp.ns, imp.def);
+        ctx
+          .fn_index
+          .get(&qualified)
+          .or_else(|| ctx.fn_index.get(imp.def.as_ref()))
+          .and_then(|idx| ctx.fn_signatures.get(idx))
+          .is_some_and(|sig| sig.result != NativeValRepr::F64)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+fn emit_box_repr_to_f64(ctx: &mut WasmGenCtx, src: NativeValRepr) {
+  match src {
+    NativeValRepr::F64 => {}
+    NativeValRepr::BoolI32 | NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32 => {
+      ctx.emit(Instruction::F64ConvertI32U);
+    }
+    NativeValRepr::UnitI32 => {
+      ctx.emit(Instruction::Drop);
+      ctx.emit(f64_const(0.0));
+    }
+    NativeValRepr::Int32S => ctx.emit(Instruction::F64ConvertI32S),
+    NativeValRepr::Int64S => ctx.emit(Instruction::F64ConvertI64S),
+    NativeValRepr::UInt64 => ctx.emit(Instruction::F64ConvertI64U),
+  }
+}
+
+fn emit_unbox_f64_to_repr(ctx: &mut WasmGenCtx, dst: NativeValRepr) {
+  match dst {
+    NativeValRepr::F64 => {}
+    NativeValRepr::BoolI32 => {
+      if ctx.has_boxed_json_scalars && ctx.tag_index.contains_key("bool") {
+        let tmp = ctx.alloc_local();
+        ctx.emit(Instruction::LocalSet(tmp));
+        emit_unbox_scalar_if_tag(ctx, tmp, "bool", false);
+        ctx.emit(Instruction::LocalGet(tmp));
+      }
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Ne);
+    }
+    NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32 => {
+      ctx.emit(Instruction::I32TruncF64U);
+    }
+    NativeValRepr::UnitI32 => {
+      ctx.emit(Instruction::Drop);
+      ctx.emit(Instruction::I32Const(0));
+    }
+    NativeValRepr::Int32S => ctx.emit(Instruction::I32TruncF64S),
+    NativeValRepr::Int64S => ctx.emit(Instruction::I64TruncF64S),
+    NativeValRepr::UInt64 => ctx.emit(Instruction::I64TruncF64U),
+  }
+}
+
+fn emit_convert_repr(ctx: &mut WasmGenCtx, src: NativeValRepr, dst: NativeValRepr) {
+  if src == dst {
+    return;
+  }
+  match (src, dst) {
+    (_, NativeValRepr::F64) => emit_box_repr_to_f64(ctx, src),
+    (NativeValRepr::F64, _) => emit_unbox_f64_to_repr(ctx, dst),
+    (_, NativeValRepr::UnitI32) => {
+      ctx.emit(Instruction::Drop);
+      ctx.emit(Instruction::I32Const(0));
+    }
+    (NativeValRepr::UnitI32, NativeValRepr::BoolI32)
+    | (NativeValRepr::UnitI32, NativeValRepr::TagI32)
+    | (NativeValRepr::UnitI32, NativeValRepr::UInt32)
+    | (NativeValRepr::UnitI32, NativeValRepr::HeapPtrI32)
+    | (NativeValRepr::UnitI32, NativeValRepr::Int32S) => {
+      // Already i32(0) on stack
+    }
+    (NativeValRepr::BoolI32, NativeValRepr::UInt32 | NativeValRepr::TagI32 | NativeValRepr::Int32S)
+    | (
+      NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32,
+      NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32,
+    ) => {
+      // Same unsigned 32-bit bit pattern
+    }
+    (NativeValRepr::Int32S, NativeValRepr::Int64S) => ctx.emit(Instruction::I64ExtendI32S),
+    (
+      NativeValRepr::BoolI32 | NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32,
+      NativeValRepr::Int64S | NativeValRepr::UInt64,
+    ) => {
+      ctx.emit(Instruction::I64ExtendI32U);
+    }
+    (NativeValRepr::TagI32 | NativeValRepr::UInt32 | NativeValRepr::HeapPtrI32, NativeValRepr::BoolI32) => {
+      ctx.emit(Instruction::I32Const(0));
+      ctx.emit(Instruction::I32Ne);
+    }
+    _ => {
+      emit_box_repr_to_f64(ctx, src);
+      emit_unbox_f64_to_repr(ctx, dst);
+    }
+  }
+}
+
+/// Emit canonical `(f64 x arity) -> f64` table trampoline for an internal function
+/// that uses unboxed `i32`/`i64` native parameters or return value (#2876).
+fn build_native_sig_table_adapter(ctx: &mut WasmGenCtx, target: u32, sig: &InternalFnSig) -> CompiledFn {
+  ctx.instructions.clear();
+  ctx.extra_locals.clear();
+  ctx.local_reprs.clear();
+  let arity = sig.params.len() as u32;
+  ctx.next_local = arity;
+  for (param, &repr) in sig.params.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(param as u32));
+    emit_unbox_f64_to_repr(ctx, repr);
+  }
+  ctx.emit(Instruction::Call(target));
+  emit_box_repr_to_f64(ctx, sig.result);
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64; sig.params.len()],
+    results: vec![ValType::F64],
+    locals: std::mem::take(&mut ctx.extra_locals),
+    instructions: std::mem::take(&mut ctx.instructions),
+  }
+}
+
 /// A funcref table entry for the `&` rest-parameter function `target` with
 /// `fixed` leading parameters, typed `(f64 x arity) -> f64` like every
 /// function-value call with `arity` arguments: it packs the arguments after
@@ -9704,10 +10112,18 @@ fn compile_fn(
     .get(&format!("{source_ns}/{export_name}"))
     .or_else(|| env.fn_index.get(export_name))
     .copied();
+  let native_sig = ctx.source_fn_index.and_then(|idx| env.fn_signatures.get(&idx)).cloned();
+  let param_reprs: Vec<NativeValRepr> = native_sig
+    .as_ref()
+    .map_or_else(|| vec![NativeValRepr::F64; arity], |s| s.params.clone());
+  let ret_repr = native_sig.as_ref().map_or(NativeValRepr::F64, |s| s.result);
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
     ctx.locals.insert(pname.clone(), i as u32);
+    if param_reprs[i] != NativeValRepr::F64 {
+      ctx.local_reprs.insert(i as u32, param_reprs[i]);
+    }
     if let Some(signature) = signature {
       let annotation = signature.arg_types.get(i).cloned().or_else(|| {
         signature
@@ -9748,18 +10164,17 @@ fn compile_fn(
   ctx.uses_recur = body.iter().any(check_uses_recur);
 
   if ctx.uses_recur {
-    // loop $recur (result f64) ... end
-    ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
-    emit_body(&mut ctx, body)?;
+    ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ret_repr.val_type())));
+    emit_body_as_repr(&mut ctx, body, ret_repr)?;
     ctx.emit(Instruction::End); // end loop
   } else {
-    emit_body(&mut ctx, body)?;
+    emit_body_as_repr(&mut ctx, body, ret_repr)?;
   }
 
   Ok(CompiledFn {
     export_name: Some(export_name.to_owned()),
-    params: vec![ValType::F64; arity],
-    results: vec![ValType::F64],
+    params: param_reprs.into_iter().map(NativeValRepr::val_type).collect(),
+    results: vec![ret_repr.val_type()],
     locals: ctx.extra_locals,
     instructions: ctx.instructions,
   })
@@ -10042,6 +10457,23 @@ fn expr_uses_method_call(expr: &Calcit) -> bool {
 
 /// Emit instructions for a sequence of expressions (last is the return value).
 fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
+  emit_body_as_repr(ctx, exprs, NativeValRepr::F64)
+}
+
+fn emit_unit_const_repr(ctx: &mut WasmGenCtx, dst_repr: NativeValRepr) {
+  match dst_repr {
+    NativeValRepr::BoolI32
+    | NativeValRepr::TagI32
+    | NativeValRepr::UnitI32
+    | NativeValRepr::Int32S
+    | NativeValRepr::UInt32
+    | NativeValRepr::HeapPtrI32 => ctx.emit(Instruction::I32Const(0)),
+    NativeValRepr::Int64S | NativeValRepr::UInt64 => ctx.emit(Instruction::I64Const(0)),
+    NativeValRepr::F64 => ctx.emit(f64_const(0.0)),
+  }
+}
+
+fn emit_body_as_repr(ctx: &mut WasmGenCtx, exprs: &[Calcit], dst_repr: NativeValRepr) -> Result<(), String> {
   // Strict preprocessing may append a function contract after the executable
   // body. `hint-fn` is compile-time metadata, not the closure's return value.
   let executable = exprs
@@ -10049,7 +10481,7 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
     .filter(|expr| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(expr))
     .collect::<Vec<_>>();
   if executable.is_empty() {
-    ctx.emit(f64_const(0.0));
+    emit_unit_const_repr(ctx, dst_repr);
     return Ok(());
   }
   for (i, expr) in executable.iter().enumerate() {
@@ -10062,8 +10494,10 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
     if !is_last && is_inline_closure_assert_type(ctx, expr) {
       continue;
     }
-    emit_expr(ctx, expr)?;
-    if !is_last {
+    if is_last {
+      emit_expr_as_repr(ctx, expr, dst_repr)?;
+    } else {
+      emit_expr(ctx, expr)?;
       ctx.emit(Instruction::Drop);
     }
   }
@@ -10307,7 +10741,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         ));
       }
       let idx = *ctx.locals.get(name).ok_or_else(|| format!("undefined local variable: {name}"))?;
-      ctx.emit(Instruction::LocalGet(idx));
+      ctx.emit_local_as_f64(idx);
     }
     Calcit::List(xs) if !xs.is_empty() => {
       emit_call_expr(ctx, xs)?;
@@ -10414,6 +10848,411 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     _ => return Err(format!("unsupported WASM expression: {expr}")),
   }
   Ok(())
+}
+
+/// Evaluate an expression directly into `dst_repr`, avoiding redundant f64 boxing
+/// on locals, literals, calls with native signatures, and unboxed struct/enum ops.
+fn emit_expr_as_repr(ctx: &mut WasmGenCtx, expr: &Calcit, dst_repr: NativeValRepr) -> Result<(), String> {
+  if dst_repr == NativeValRepr::F64 {
+    return emit_expr(ctx, expr);
+  }
+  match expr {
+    Calcit::Bool(b) if dst_repr == NativeValRepr::BoolI32 => {
+      ctx.emit(Instruction::I32Const(i32::from(*b)));
+      return Ok(());
+    }
+    Calcit::Nil | Calcit::Unit if matches!(dst_repr, NativeValRepr::UnitI32 | NativeValRepr::BoolI32) => {
+      ctx.emit(Instruction::I32Const(0));
+      return Ok(());
+    }
+    Calcit::Number(n) if n.is_finite() && n.fract() == 0.0 => match dst_repr {
+      NativeValRepr::Int32S if (-2_147_483_648.0..=2_147_483_647.0).contains(n) => {
+        ctx.emit(Instruction::I32Const(*n as i32));
+        return Ok(());
+      }
+      NativeValRepr::UInt32 if (0.0..=4_294_967_295.0).contains(n) => {
+        ctx.emit(Instruction::I32Const((*n as u32) as i32));
+        return Ok(());
+      }
+      NativeValRepr::Int64S if (-9_007_199_254_740_991.0..=9_007_199_254_740_991.0).contains(n) => {
+        ctx.emit(Instruction::I64Const(*n as i64));
+        return Ok(());
+      }
+      NativeValRepr::UInt64 if (0.0..=9_007_199_254_740_991.0).contains(n) => {
+        ctx.emit(Instruction::I64Const((*n as u64) as i64));
+        return Ok(());
+      }
+      _ => {}
+    },
+    Calcit::Tag(t) if dst_repr == NativeValRepr::TagI32 => {
+      let tag_str = t.to_string();
+      let id = *ctx
+        .tag_index
+        .get(&tag_str)
+        .ok_or_else(|| format!("unknown tag in WASM codegen: {tag_str}"))?;
+      ctx.emit(Instruction::I32Const(id as i32));
+      return Ok(());
+    }
+    Calcit::Str(s) if dst_repr == NativeValRepr::HeapPtrI32 => {
+      let ptr = *ctx
+        .string_pool
+        .get(s.as_ref())
+        .ok_or_else(|| format!("string literal not found in pool: {s}"))?;
+      ctx.emit(Instruction::I32Const(ptr as i32));
+      return Ok(());
+    }
+    Calcit::Local(local) => {
+      let name = &*local.sym;
+      if ctx.lambda_locals.contains_key(name) {
+        return Err(format!(
+          "E_WASM_CLOSURE_SPECIALIZATION: closure `{name}` escapes a statically specialized call"
+        ));
+      }
+      let idx = *ctx.locals.get(name).ok_or_else(|| format!("undefined local variable: {name}"))?;
+      if dst_repr == NativeValRepr::BoolI32
+        && ctx.local_repr(idx) == NativeValRepr::F64
+        && !expr_is_guaranteed_unboxed_scalar(ctx, expr)
+      {
+        emit_value_is_truthy_i32(ctx, idx);
+      } else {
+        ctx.emit_local_as_repr(idx, dst_repr);
+      }
+      return Ok(());
+    }
+    Calcit::Import(import)
+      if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && import.def.as_ref() == "do"
+        && !ctx.fn_table_index.contains_key(&format!("{}/{}", import.ns, import.def)) =>
+    {
+      emit_unit_const_repr(ctx, dst_repr);
+      return Ok(());
+    }
+    Calcit::Import(import) => {
+      let qualified = format!("{}/{}", import.ns, import.def);
+      if !ctx.atom_globals.contains_key(&qualified)
+        && import.def.as_ref() != "{}"
+        && import.def.as_ref() != "[]"
+        && resolve_struct_ref(expr).is_err()
+        && resolve_enum_ref(expr).is_err()
+        && !ctx.fn_table_index.contains_key(&qualified)
+        && !ctx.fn_table_index.contains_key(import.def.as_ref())
+        && let Some(value_expr) = ctx.value_imports.get(&qualified).cloned()
+      {
+        return emit_expr_as_repr(ctx, &value_expr, dst_repr).map_err(|reason| format!("{reason} (imported value `{qualified}`)"));
+      }
+    }
+    Calcit::List(xs) if !xs.is_empty() => {
+      return emit_call_expr_as_repr(ctx, xs, dst_repr);
+    }
+    _ => {}
+  }
+
+  emit_expr(ctx, expr)?;
+  if dst_repr == NativeValRepr::BoolI32 && !expr_is_guaranteed_unboxed_scalar(ctx, expr) {
+    let tmp = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(tmp));
+    emit_value_is_truthy_i32(ctx, tmp);
+  } else {
+    emit_unbox_f64_to_repr(ctx, dst_repr);
+  }
+  Ok(())
+}
+
+fn is_core_special_call_name(name: &str) -> bool {
+  name.parse::<CalcitProc>().is_ok()
+    || matches!(
+      name,
+      "="
+        | "not="
+        | "union"
+        | "difference"
+        | "intersection"
+        | "include"
+        | "exclude"
+        | "pairs-map"
+        | "merge"
+        | "merge-non-nil"
+        | "fold"
+        | "reduce"
+        | "foldl-compare"
+        | "map"
+        | "&list:map"
+        | "map-indexed"
+        | "&list:map-indexed"
+        | "each"
+        | "filter"
+        | "&list:filter"
+        | "&set:filter"
+        | "any?"
+        | "every?"
+        | "find"
+        | "find-index"
+        | "concat"
+        | "deref"
+        | "str"
+        | "str-spaced"
+        | "filter-not"
+        | "dissoc"
+        | "conj"
+        | "update"
+        | "mapcat"
+        | "repeat"
+        | "interleave"
+        | "zipmap"
+        | "intersperse"
+        | "join-string"
+        | "let"
+        | "filter-map-kv"
+        | "keys-non-nil"
+        | "try-parse-json"
+        | "nil->option"
+        | "'"
+    )
+}
+
+/// Emit instructions for a call expression with an expected native representation.
+fn emit_call_expr_as_repr(
+  ctx: &mut WasmGenCtx,
+  xs: &crate::wasm::host::calcit::CalcitList,
+  dst_repr: NativeValRepr,
+) -> Result<(), String> {
+  let head = &xs[0];
+  let args_list: Vec<Calcit> = xs.drop_left().to_vec();
+
+  if dst_repr != NativeValRepr::F64
+    && (matches!(head, Calcit::Local(_)) || matches!(head, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, head)
+  {
+    let mut call = vec![Calcit::Import(definition)];
+    call.extend(args_list);
+    return emit_call_expr_as_repr(ctx, &crate::wasm::host::calcit::CalcitList::from(&call[..]), dst_repr);
+  }
+
+  if dst_repr != NativeValRepr::F64
+    && !matches!(head, Calcit::Syntax(..))
+    && !args_list
+      .iter()
+      .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+    && (args_list.iter().any(|arg| selected_local(ctx, arg).is_some())
+      || args_list.iter().any(|arg| impl_alternatives(ctx, arg).is_some()))
+  {
+    emit_call_expr(ctx, xs)?;
+    emit_unbox_f64_to_repr(ctx, dst_repr);
+    return Ok(());
+  }
+
+  match head {
+    Calcit::Syntax(CalcitSyntax::If, _) if dst_repr != NativeValRepr::F64 => return emit_if_as_repr(ctx, &args_list, dst_repr),
+    Calcit::Syntax(CalcitSyntax::CoreLet, _) if dst_repr != NativeValRepr::F64 => {
+      return emit_let_as_repr(ctx, &args_list, dst_repr);
+    }
+    Calcit::Syntax(CalcitSyntax::HintFn, _) if dst_repr == NativeValRepr::UnitI32 => {
+      ctx.emit(Instruction::I32Const(0));
+      return Ok(());
+    }
+    Calcit::Proc(CalcitProc::Not) if dst_repr == NativeValRepr::BoolI32 => {
+      return emit_not_as_i32(ctx, &args_list);
+    }
+    Calcit::Proc(CalcitProc::NativeLessThan) if dst_repr == NativeValRepr::BoolI32 && args_list.len() == 2 => {
+      return emit_numeric_cmp_as_i32(ctx, true, &args_list);
+    }
+    Calcit::Proc(CalcitProc::NativeGreaterThan) if dst_repr == NativeValRepr::BoolI32 && args_list.len() == 2 => {
+      return emit_numeric_cmp_as_i32(ctx, false, &args_list);
+    }
+    Calcit::Proc(CalcitProc::Identical) if dst_repr == NativeValRepr::BoolI32 && args_list.len() == 2 => {
+      return emit_identical_as_i32(ctx, &args_list);
+    }
+    Calcit::Proc(CalcitProc::NativeEquals) if dst_repr == NativeValRepr::BoolI32 && args_list.len() == 2 => {
+      return emit_equals_as_i32(ctx, &args_list);
+    }
+    Calcit::Proc(CalcitProc::NativeStruct) if dst_repr == NativeValRepr::HeapPtrI32 => {
+      let ptr = emit_struct_new_raw_i32(ctx, &args_list)?;
+      ctx.emit(Instruction::LocalGet(ptr));
+      return Ok(());
+    }
+    Calcit::Proc(CalcitProc::NativeStructNth) if dst_repr != NativeValRepr::F64 => {
+      return emit_struct_nth_as_repr(ctx, &args_list, dst_repr);
+    }
+    Calcit::Proc(CalcitProc::NativeEnum) if dst_repr == NativeValRepr::HeapPtrI32 => {
+      let ptr = emit_enum_new_raw_i32(ctx, &args_list)?;
+      ctx.emit(Instruction::LocalGet(ptr));
+      return Ok(());
+    }
+    Calcit::Proc(CalcitProc::NativeNamedEnumNew) if dst_repr == NativeValRepr::HeapPtrI32 => {
+      let ptr = emit_named_enum_new_raw_i32(ctx, &args_list)?;
+      ctx.emit(Instruction::LocalGet(ptr));
+      return Ok(());
+    }
+    Calcit::Proc(CalcitProc::NativeEnumNth) if dst_repr != NativeValRepr::F64 => {
+      return emit_enum_nth_as_repr(ctx, &args_list, dst_repr);
+    }
+    Calcit::Import(import)
+      if dst_repr != NativeValRepr::F64 && import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "do" =>
+    {
+      return emit_body_as_repr(ctx, &args_list, dst_repr);
+    }
+    Calcit::Import(import)
+      if dst_repr == NativeValRepr::BoolI32
+        && import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && import.def.as_ref() == "="
+        && args_list.len() == 2 =>
+    {
+      return emit_equals_as_i32(ctx, &args_list);
+    }
+    Calcit::Import(import)
+      if dst_repr == NativeValRepr::BoolI32
+        && import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && import.def.as_ref() == "not="
+        && args_list.len() == 2 =>
+    {
+      emit_equals_as_i32(ctx, &args_list)?;
+      ctx.emit(Instruction::I32Eqz);
+      return Ok(());
+    }
+    _ => {}
+  }
+
+  // Try direct call to a function with native signature when dst_repr != F64
+  if dst_repr != NativeValRepr::F64 && !args_list.iter().any(|a| resolve_inline_closure(ctx, a).is_some()) {
+    match head {
+      Calcit::Import(import) => {
+        let qualified = format!("{}/{}", import.ns, import.def);
+        let is_core_special =
+          import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && is_core_special_call_name(import.def.as_ref());
+        if !is_core_special
+          && !ctx.value_imports.contains_key(&qualified)
+          && let Some(&fn_idx) = ctx.fn_index.get(&qualified).or_else(|| ctx.fn_index.get(import.def.as_ref()))
+        {
+          if emit_specialized_static_call(ctx, &qualified, &args_list)? {
+            emit_unbox_f64_to_repr(ctx, dst_repr);
+            return Ok(());
+          }
+          let target_arity = ctx
+            .fn_arity
+            .get(&qualified)
+            .or_else(|| ctx.fn_arity.get(import.def.as_ref()))
+            .copied()
+            .unwrap_or(args_list.len() as u32);
+          let rest_fixed = ctx
+            .fn_has_rest
+            .get(&qualified)
+            .or_else(|| ctx.fn_has_rest.get(import.def.as_ref()))
+            .copied();
+          return emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, dst_repr);
+        }
+      }
+      Calcit::Symbol { sym, info, .. } => {
+        let name = sym.as_ref();
+        let qualified = format!("{}/{}", info.at_ns, name);
+        let is_reserved = matches!(name, "println" | "eprintln" | "echo")
+          || ctx.lambda_locals.contains_key(name)
+          || ctx.locals.contains_key(name)
+          || is_core_special_call_name(name)
+          || ctx.value_imports.contains_key(&qualified);
+        let target_name = if ctx.fn_index.contains_key(&qualified) {
+          qualified.as_str()
+        } else {
+          name
+        };
+        if !is_reserved && let Some(&fn_idx) = ctx.fn_index.get(target_name) {
+          if emit_specialized_static_call(ctx, target_name, &args_list)? {
+            emit_unbox_f64_to_repr(ctx, dst_repr);
+            return Ok(());
+          }
+          let target_arity = ctx.fn_arity.get(target_name).copied().unwrap_or(args_list.len() as u32);
+          let rest_fixed = ctx.fn_has_rest.get(target_name).copied();
+          return emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, dst_repr);
+        }
+      }
+      Calcit::Fn { info, .. } => {
+        if let Some(def_ref) = &info.def_ref {
+          let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
+          let is_core_hof =
+            def_ref.def_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && is_core_special_call_name(def_ref.def_name.as_ref());
+          if !is_core_hof && let Some(&fn_idx) = ctx.fn_index.get(&qualified).or_else(|| ctx.fn_index.get(def_ref.def_name.as_ref())) {
+            if emit_specialized_static_call(ctx, &qualified, &args_list)? {
+              emit_unbox_f64_to_repr(ctx, dst_repr);
+              return Ok(());
+            }
+            let target_arity = ctx
+              .fn_arity
+              .get(&qualified)
+              .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
+              .copied()
+              .unwrap_or(args_list.len() as u32);
+            let rest_fixed = ctx
+              .fn_has_rest
+              .get(&qualified)
+              .or_else(|| ctx.fn_has_rest.get(def_ref.def_name.as_ref()))
+              .copied();
+            return emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, dst_repr);
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+
+  emit_call_expr(ctx, xs)?;
+  if dst_repr == NativeValRepr::BoolI32 && !expr_is_guaranteed_unboxed_scalar(ctx, &Calcit::List(Arc::new(xs.clone()))) {
+    let tmp = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(tmp));
+    emit_value_is_truthy_i32(ctx, tmp);
+  } else {
+    emit_unbox_f64_to_repr(ctx, dst_repr);
+  }
+  Ok(())
+}
+
+/// Call `fn_idx`, unboxing arguments into `fn_signatures[fn_idx]` slots when present
+/// and adapting its return value into `dst_repr`.
+fn emit_direct_fn_call(
+  ctx: &mut WasmGenCtx,
+  fn_idx: u32,
+  target_arity: u32,
+  rest_fixed: Option<u32>,
+  args: &[Calcit],
+  dst_repr: NativeValRepr,
+) -> Result<(), String> {
+  if rest_fixed.is_none()
+    && let Some(sig) = ctx.fn_signatures.get(&fn_idx).cloned()
+  {
+    if args.len() != sig.params.len() {
+      return Err(format!("call arity mismatch: expected {}, got {}", sig.params.len(), args.len()));
+    }
+    for (arg, &param_repr) in args.iter().zip(&sig.params) {
+      emit_expr_as_repr(ctx, arg, param_repr)?;
+    }
+    ctx.emit(Instruction::Call(fn_idx));
+    emit_convert_repr(ctx, sig.result, dst_repr);
+    return Ok(());
+  }
+  emit_call_args(ctx, args, target_arity, rest_fixed)?;
+  ctx.emit(Instruction::Call(fn_idx));
+  emit_unbox_f64_to_repr(ctx, dst_repr);
+  Ok(())
+}
+
+/// Adapt `target_arity` pre-pushed `f64` stack arguments when calling `fn_idx` from spread dispatch.
+fn emit_call_fn_with_f64_stack_args(ctx: &mut WasmGenCtx, fn_idx: u32, target_arity: u32) {
+  let Some(sig) = ctx.fn_signatures.get(&fn_idx).cloned() else {
+    ctx.emit(Instruction::Call(fn_idx));
+    return;
+  };
+  let mut temps = Vec::with_capacity(target_arity as usize);
+  for _ in 0..target_arity {
+    temps.push(ctx.alloc_local());
+  }
+  for &tmp in temps.iter().rev() {
+    ctx.emit(Instruction::LocalSet(tmp));
+  }
+  for (idx, tmp) in temps.into_iter().enumerate() {
+    let dst = sig.params.get(idx).copied().unwrap_or(NativeValRepr::F64);
+    ctx.emit(Instruction::LocalGet(tmp));
+    emit_unbox_f64_to_repr(ctx, dst);
+  }
+  ctx.emit(Instruction::Call(fn_idx));
+  emit_box_repr_to_f64(ctx, sig.result);
 }
 
 /// Emit instructions for a call expression.
@@ -10671,9 +11510,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         .get(&qualified)
         .or_else(|| ctx.fn_has_rest.get(import.def.as_ref()))
         .copied();
-      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
-      Ok(())
+      emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, NativeValRepr::F64)
     }
     Calcit::Symbol { sym, info, .. } => {
       let name = sym.as_ref();
@@ -10798,9 +11635,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         .ok_or_else(|| format!("unknown function symbol in direct call: {sym:?}"))?;
       let target_arity = ctx.fn_arity.get(target_name).copied().unwrap_or(args_list.len() as u32);
       let rest_fixed = ctx.fn_has_rest.get(target_name).copied();
-      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
-      Ok(())
+      emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, NativeValRepr::F64)
     }
     Calcit::Registered(name) => {
       // Registered procs (eprintln, println, echo, etc.)
@@ -10865,9 +11700,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         .get(&qualified)
         .or_else(|| ctx.fn_has_rest.get(def_ref.def_name.as_ref()))
         .copied();
-      emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
-      Ok(())
+      emit_direct_fn_call(ctx, fn_idx, target_arity, rest_fixed, &args_list, NativeValRepr::F64)
     }
     // Inline IIFE: call head is `(defn name (params...) body...)`
     // Generated by `apply-args` and similar macros for TCO-friendly recursive loops.
@@ -11029,7 +11862,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         .or_else(|| ctx.fn_has_rest.get(import.def.as_ref()))
         .copied();
       emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
+      emit_call_fn_with_f64_stack_args(ctx, fn_idx, target_arity);
       Ok(())
     }
     Calcit::Symbol { sym, .. } => {
@@ -11043,7 +11876,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(call_args.len() as u32);
       let rest_fixed = ctx.fn_has_rest.get(name).copied();
       emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
+      emit_call_fn_with_f64_stack_args(ctx, fn_idx, target_arity);
       Ok(())
     }
     Calcit::Fn { info, .. } => {
@@ -11074,7 +11907,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         .or_else(|| ctx.fn_has_rest.get(def_ref.def_name.as_ref()))
         .copied();
       emit_call_spread_args(ctx, call_args, target_arity, rest_fixed)?;
-      ctx.emit(Instruction::Call(fn_idx));
+      emit_call_fn_with_f64_stack_args(ctx, fn_idx, target_arity);
       Ok(())
     }
     Calcit::Proc(proc) => {
@@ -11408,6 +12241,29 @@ fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   emit_resolved_method_call(ctx, callable, &args[2..])
 }
 
+fn emit_not_as_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "not")?;
+  let ev = infer_wasm_evidence(ctx, &args[0]);
+  let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
+  match ty.as_ref() {
+    CalcitTypeAnnotation::Never => {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      ctx.emit(Instruction::I32Const(0));
+      Ok(())
+    }
+    CalcitTypeAnnotation::Bool => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::BoolI32)?;
+      ctx.emit(Instruction::I32Eqz);
+      Ok(())
+    }
+    _ => Err(format!(
+      "E_NON_BOOL_CONDITION: not expects Bool in WASM, got `{}`",
+      ty.to_brief_string()
+    )),
+  }
+}
+
 /// Emit instructions for builtin proc calls.
 fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Result<(), String> {
   match proc {
@@ -11581,11 +12437,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       match ty.as_ref() {
         CalcitTypeAnnotation::Never => emit_expr(ctx, &args[0]),
         CalcitTypeAnnotation::Bool => {
-          emit_expr(ctx, &args[0])?;
-          let v = ctx.alloc_local();
-          ctx.emit(Instruction::LocalSet(v));
-          emit_value_is_truthy_i32(ctx, v);
-          ctx.emit(Instruction::I32Eqz);
+          emit_not_as_i32(ctx, args)?;
           ctx.emit(Instruction::F64ConvertI32U);
           Ok(())
         }
@@ -11681,29 +12533,38 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
         ctx.emit(Instruction::I32TruncF64U);
         ctx.emit(Instruction::LocalSet(spread_i32));
 
-        // Evaluate explicit prefix args into temps.
+        // Evaluate explicit prefix args into temps matching each parameter's native repr.
         let mut temps = Vec::new();
-        for arg in explicit {
-          let tmp = ctx.alloc_local();
-          emit_expr(ctx, arg)?;
+        for (idx, arg) in explicit.iter().enumerate() {
+          let target_repr = ctx.arg_indices.get(idx).map_or(NativeValRepr::F64, |&local| ctx.local_repr(local));
+          let tmp = ctx.alloc_local_typed(target_repr.val_type());
+          emit_expr_as_repr(ctx, arg, target_repr)?;
           ctx.emit(Instruction::LocalSet(tmp));
           temps.push(tmp);
         }
 
         // Extract (n_remaining - 1) individual elements from spread list for the remaining fixed slots.
         for i in 0..(n_remaining - 1) {
-          let tmp = ctx.alloc_local();
+          let slot = explicit.len() + i;
+          let target_repr = ctx.arg_indices.get(slot).map_or(NativeValRepr::F64, |&local| ctx.local_repr(local));
+          let tmp = ctx.alloc_local_typed(target_repr.val_type());
           ctx.emit(Instruction::LocalGet(spread_i32));
           ctx.emit(Instruction::I32Const(((1 + i) * 8) as i32));
           ctx.emit(Instruction::I32Add);
           ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+          emit_unbox_f64_to_repr(ctx, target_repr);
           ctx.emit(Instruction::LocalSet(tmp));
           temps.push(tmp);
         }
 
         // Last slot: list_slice(spread, n_remaining-1) — the new rest list.
-        let rest_slice_local = ctx.alloc_local();
+        let rest_repr = ctx
+          .arg_indices
+          .get(total - 1)
+          .map_or(NativeValRepr::F64, |&local| ctx.local_repr(local));
+        let rest_slice_local = ctx.alloc_local_typed(rest_repr.val_type());
         emit_list_slice_from_i32_local(ctx, spread_i32, n_remaining - 1)?;
+        emit_unbox_f64_to_repr(ctx, rest_repr);
         ctx.emit(Instruction::LocalSet(rest_slice_local));
         temps.push(rest_slice_local);
 
@@ -11737,11 +12598,16 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           };
           return Err(format!("recur arity mismatch: expected {expected}, got {}", args.len()));
         }
-        // Evaluate all args into temp locals first
+        // Evaluate all args into temp locals matching each parameter's native repr
         let mut temps = Vec::new();
-        for arg in args {
-          let tmp = ctx.alloc_local();
-          emit_expr(ctx, arg)?;
+        for (i, arg) in args.iter().enumerate() {
+          let target_repr = if i < positional {
+            ctx.arg_indices.get(i).map_or(NativeValRepr::F64, |&idx| ctx.local_repr(idx))
+          } else {
+            NativeValRepr::F64
+          };
+          let tmp = ctx.alloc_local_typed(target_repr.val_type());
+          emit_expr_as_repr(ctx, arg, target_repr)?;
           ctx.emit(Instruction::LocalSet(tmp));
           temps.push(tmp);
         }
@@ -12320,7 +13186,7 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
       ctx.emit(f64_const(1.0));
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) if wasm_non_nil_value_is_nonzero(inner) => {
-      if ctx.tag_index.contains_key("nil") {
+      if ctx.has_boxed_json_scalars && ctx.tag_index.contains_key("nil") {
         let v = ctx.alloc_local();
         emit_expr(ctx, &args[0])?;
         ctx.emit(Instruction::LocalSet(v));
@@ -12783,17 +13649,33 @@ fn emit_wasi_fs_read_dir(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   let value = ctx.alloc_local();
   emit_list_load_elem(ctx, list, index);
   ctx.emit(Instruction::LocalSet(value));
+  let fs_path_layout = ctx
+    .struct_layouts
+    .ids
+    .iter()
+    .find(|(id, _)| id.name == "FsPath" && id.definition.as_deref() == Some("calcit.core/FsPath"))
+    .or_else(|| ctx.struct_layouts.ids.iter().find(|(id, _)| id.name == "FsPath"))
+    .and_then(|(_, layout_id)| ctx.struct_layouts.layouts.get(layout_id).cloned());
+  let (fs_path_bytes, fs_path_field) = match fs_path_layout {
+    Some(layout) if !layout.fields.is_empty() => (layout.payload_bytes as i32, layout.fields[0]),
+    _ => (
+      16,
+      StructFieldLayout {
+        offset: 8,
+        kind: StructFieldKind::HeapPtrI32,
+      },
+    ),
+  };
   let struct_ptr = ctx.alloc_local_typed(ValType::I32);
-  emit_bump_alloc(ctx, 24, struct_ptr, "struct");
+  emit_bump_alloc(ctx, fs_path_bytes, struct_ptr, "struct");
   ctx.emit(Instruction::LocalGet(struct_ptr));
-  ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.emit(Instruction::LocalGet(struct_ptr));
   ctx.emit(Instruction::LocalGet(path_type));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalGet(struct_ptr));
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+  emit_store_struct_field_from_f64_local(ctx, struct_ptr, fs_path_field, value);
   ctx.emit(Instruction::LocalGet(list));
   ctx.emit(Instruction::LocalGet(index));
   ctx.emit(Instruction::I32Const(1));
@@ -13278,12 +14160,20 @@ fn emit_normalize_proven_scalar_pair(ctx: &mut WasmGenCtx, left_expr: &Calcit, r
   let right_type = expand_wasm_value_type(right_ev.scalar_origin.as_ref().unwrap_or(&right_ev.annotation));
   match (proven_scalar_kind(&left_type), proven_scalar_kind(&right_type)) {
     (Some("bool"), Some("bool")) => {
-      emit_unbox_scalar_if_tag(ctx, a, "bool", false);
-      emit_unbox_scalar_if_tag(ctx, b, "bool", false);
+      if !expr_is_guaranteed_unboxed_scalar(ctx, left_expr) {
+        emit_unbox_scalar_if_tag(ctx, a, "bool", false);
+      }
+      if !expr_is_guaranteed_unboxed_scalar(ctx, right_expr) {
+        emit_unbox_scalar_if_tag(ctx, b, "bool", false);
+      }
     }
     (Some("nil"), Some("nil")) => {
-      emit_unbox_scalar_if_tag(ctx, a, "nil", true);
-      emit_unbox_scalar_if_tag(ctx, b, "nil", true);
+      if !expr_is_guaranteed_unboxed_scalar(ctx, left_expr) {
+        emit_unbox_scalar_if_tag(ctx, a, "nil", true);
+      }
+      if !expr_is_guaranteed_unboxed_scalar(ctx, right_expr) {
+        emit_unbox_scalar_if_tag(ctx, b, "nil", true);
+      }
     }
     _ => {}
   }
@@ -13311,7 +14201,7 @@ fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
 /// - Fast path: `a == b` on raw f64 representation.
 /// - If not equal and both look like heap strings, compare by `__rt_str_compare`.
 /// - Otherwise false.
-fn proven_disjoint_value_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
+pub(super) fn proven_disjoint_value_kind(annotation: &CalcitTypeAnnotation) -> Option<&'static str> {
   if let Some(scalar) = proven_scalar_kind(annotation) {
     return Some(scalar);
   }
@@ -13395,7 +14285,7 @@ fn resolve_match_payload_type(binding: &Calcit, sub_pt: Arc<CalcitTypeAnnotation
   }
 }
 
-fn expand_wasm_value_type(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+pub(super) fn expand_wasm_value_type(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   if matches!(ty.as_ref(), CalcitTypeAnnotation::TypeRef(..)) && (ty.resolve_to_struct().is_some() || ty.resolve_to_enum().is_some()) {
     ty.clone()
   } else {
@@ -13819,7 +14709,97 @@ fn validate_wasm_equality_operands(
   ))
 }
 
-fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+fn emit_numeric_cmp_as_i32(ctx: &mut WasmGenCtx, is_lt: bool, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "numeric comparison")?;
+  let mut mismatch = false;
+  let mut operand_types = Vec::with_capacity(2);
+  for operand in args {
+    let annotation = infer_wasm_static_type(ctx, operand)
+      .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: numeric comparison requires concrete operand types before scalar erasure".to_owned())?;
+    let proof = annotation.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new());
+    if proof.is_mismatch() {
+      mismatch = true;
+    } else if !proof.is_proven() {
+      return Err(format!(
+        "E_WASM_NIL_TYPE_EVIDENCE: numeric comparison cannot distinguish Number from an open `{}` operand",
+        annotation.to_brief_string()
+      ));
+    }
+    operand_types.push(expand_wasm_value_type(&annotation));
+  }
+  if mismatch {
+    for operand in args {
+      emit_expr(ctx, operand)?;
+      ctx.emit(Instruction::Drop);
+    }
+    ctx.emit(Instruction::Unreachable);
+    return Ok(());
+  }
+  let left_repr = NativeValRepr::from_type_annotation(&operand_types[0]);
+  let right_repr = NativeValRepr::from_type_annotation(&operand_types[1]);
+  match (left_repr, right_repr) {
+    (NativeValRepr::Int32S, NativeValRepr::Int32S) => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::Int32S)?;
+      emit_expr_as_repr(ctx, &args[1], NativeValRepr::Int32S)?;
+      ctx.emit(if is_lt { Instruction::I32LtS } else { Instruction::I32GtS });
+    }
+    (NativeValRepr::UInt32, NativeValRepr::UInt32) => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::UInt32)?;
+      emit_expr_as_repr(ctx, &args[1], NativeValRepr::UInt32)?;
+      ctx.emit(if is_lt { Instruction::I32LtU } else { Instruction::I32GtU });
+    }
+    (NativeValRepr::Int64S, NativeValRepr::Int64S) => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::Int64S)?;
+      emit_expr_as_repr(ctx, &args[1], NativeValRepr::Int64S)?;
+      ctx.emit(if is_lt { Instruction::I64LtS } else { Instruction::I64GtS });
+    }
+    (NativeValRepr::UInt64, NativeValRepr::UInt64) => {
+      emit_expr_as_repr(ctx, &args[0], NativeValRepr::UInt64)?;
+      emit_expr_as_repr(ctx, &args[1], NativeValRepr::UInt64)?;
+      ctx.emit(if is_lt { Instruction::I64LtU } else { Instruction::I64GtU });
+    }
+    _ => {
+      emit_expr(ctx, &args[0])?;
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(if is_lt { Instruction::F64Lt } else { Instruction::F64Gt });
+    }
+  }
+  Ok(())
+}
+
+fn emit_identical_as_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "identical?")?;
+  let left_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
+  let right_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| expand_wasm_value_type(&ty));
+  if let (Some(l), Some(r)) = (left_ty.as_ref(), right_ty.as_ref()) {
+    let lr = NativeValRepr::from_type_annotation(l);
+    let rr = NativeValRepr::from_type_annotation(r);
+    if lr == rr
+      && lr.val_type() == ValType::I32
+      && expr_is_guaranteed_unboxed_scalar(ctx, &args[0])
+      && expr_is_guaranteed_unboxed_scalar(ctx, &args[1])
+    {
+      emit_expr_as_repr(ctx, &args[0], lr)?;
+      emit_expr_as_repr(ctx, &args[1], rr)?;
+      ctx.emit(Instruction::I32Eq);
+      return Ok(());
+    }
+    if lr == rr && lr.val_type() == ValType::I64 {
+      emit_expr_as_repr(ctx, &args[0], lr)?;
+      emit_expr_as_repr(ctx, &args[1], rr)?;
+      ctx.emit(Instruction::I64Eq);
+      return Ok(());
+    }
+  }
+  emit_expr(ctx, &args[0])?;
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::F64Eq);
+  Ok(())
+}
+
+/// Evaluate `=` on two operands, leaving `i32` (`1` = equal, `0` = not equal)
+/// without `HEAP_MAGIC` probes for statically proven closed types.
+fn emit_equals_as_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 2 {
     return Err(format!("= expects 2 args, got {}", args.len()));
   }
@@ -13829,7 +14809,7 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::Drop);
     emit_expr(ctx, &args[1])?;
     ctx.emit(Instruction::Drop);
-    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::I32Const(0));
     return Ok(());
   }
 
@@ -13837,17 +14817,95 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let right_buffer = buffer_literal_bytes(&args[1])?;
   match (left_buffer, right_buffer) {
     (Some(left), Some(right)) => {
-      ctx.emit(f64_const(if left == right { 1.0 } else { 0.0 }));
+      ctx.emit(Instruction::I32Const(i32::from(left == right)));
       return Ok(());
     }
-    (Some(bytes), None) => return emit_buffer_literal_equals(ctx, &args[1], &bytes),
-    (None, Some(bytes)) => return emit_buffer_literal_equals(ctx, &args[0], &bytes),
+    (Some(bytes), None) => {
+      emit_buffer_literal_equals_i32(ctx, &args[1], &bytes)?;
+      return Ok(());
+    }
+    (None, Some(bytes)) => {
+      emit_buffer_literal_equals_i32(ctx, &args[0], &bytes)?;
+      return Ok(());
+    }
     (None, None) => {}
+  }
+
+  let left_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
+  let right_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| expand_wasm_value_type(&ty));
+  if let (Some(l), Some(r)) = (left_ty.as_ref(), right_ty.as_ref()) {
+    match (l.as_ref(), r.as_ref()) {
+      (CalcitTypeAnnotation::String, CalcitTypeAnnotation::String) => {
+        let a_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+        let b_ptr = emit_ptr_to_i32(ctx, &args[1])?;
+        ctx.emit(Instruction::LocalGet(a_ptr));
+        ctx.emit(Instruction::LocalGet(b_ptr));
+        ctx.emit(Instruction::I32Eq);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+        ctx.emit(Instruction::I32Const(1));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(a_ptr));
+        ctx.emit(Instruction::LocalGet(b_ptr));
+        ctx.call_rt("__rt_str_compare");
+        ctx.emit(f64_const(0.0));
+        ctx.emit(Instruction::F64Eq);
+        ctx.emit(Instruction::End);
+        return Ok(());
+      }
+      (CalcitTypeAnnotation::Bool, CalcitTypeAnnotation::Bool) => {
+        emit_expr_as_repr(ctx, &args[0], NativeValRepr::BoolI32)?;
+        emit_expr_as_repr(ctx, &args[1], NativeValRepr::BoolI32)?;
+        ctx.emit(Instruction::I32Eq);
+        return Ok(());
+      }
+      (CalcitTypeAnnotation::Tag, CalcitTypeAnnotation::Tag) => {
+        emit_expr_as_repr(ctx, &args[0], NativeValRepr::TagI32)?;
+        emit_expr_as_repr(ctx, &args[1], NativeValRepr::TagI32)?;
+        ctx.emit(Instruction::I32Eq);
+        return Ok(());
+      }
+      (CalcitTypeAnnotation::Unit, CalcitTypeAnnotation::Unit) => {
+        emit_expr(ctx, &args[0])?;
+        ctx.emit(Instruction::Drop);
+        emit_expr(ctx, &args[1])?;
+        ctx.emit(Instruction::Drop);
+        ctx.emit(Instruction::I32Const(1));
+        return Ok(());
+      }
+      (CalcitTypeAnnotation::Nil, CalcitTypeAnnotation::Nil)
+        if expr_is_guaranteed_unboxed_scalar(ctx, &args[0]) && expr_is_guaranteed_unboxed_scalar(ctx, &args[1]) =>
+      {
+        emit_expr(ctx, &args[0])?;
+        ctx.emit(Instruction::Drop);
+        emit_expr(ctx, &args[1])?;
+        ctx.emit(Instruction::Drop);
+        ctx.emit(Instruction::I32Const(1));
+        return Ok(());
+      }
+      _ => {
+        let lr = NativeValRepr::from_type_annotation(l);
+        let rr = NativeValRepr::from_type_annotation(r);
+        match (lr, rr) {
+          (NativeValRepr::Int32S, NativeValRepr::Int32S) | (NativeValRepr::UInt32, NativeValRepr::UInt32) => {
+            emit_expr_as_repr(ctx, &args[0], lr)?;
+            emit_expr_as_repr(ctx, &args[1], rr)?;
+            ctx.emit(Instruction::I32Eq);
+            return Ok(());
+          }
+          (NativeValRepr::Int64S, NativeValRepr::Int64S) | (NativeValRepr::UInt64, NativeValRepr::UInt64) => {
+            emit_expr_as_repr(ctx, &args[0], lr)?;
+            emit_expr_as_repr(ctx, &args[1], rr)?;
+            ctx.emit(Instruction::I64Eq);
+            return Ok(());
+          }
+          _ => {}
+        }
+      }
+    }
   }
 
   let a = ctx.alloc_local();
   let b = ctx.alloc_local();
-
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(a));
   emit_expr(ctx, &args[1])?;
@@ -13857,7 +14915,6 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::LocalGet(a));
     ctx.emit(Instruction::LocalGet(b));
     emit_f64_value_eq(ctx);
-    ctx.emit(Instruction::F64ConvertI32U);
     return Ok(());
   }
 
@@ -13865,6 +14922,14 @@ fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 
   let result = emit_equals_core(ctx, a, b)?;
   ctx.emit(Instruction::LocalGet(result));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  Ok(())
+}
+
+fn emit_equals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  emit_equals_as_i32(ctx, args)?;
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
@@ -13963,35 +15028,40 @@ fn buffer_literal_bytes(value: &Calcit) -> Result<Option<Vec<u8>>, String> {
   Ok(Some(bytes))
 }
 
-fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]) -> Result<(), String> {
-  emit_expr(ctx, value)?;
-  let value = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(value));
-  let ptr = ctx.alloc_local_typed(ValType::I32);
-  let result = ctx.alloc_local();
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::LocalSet(result));
-  let is_heap = emit_is_heap_value(ctx, value);
-  ctx.emit(Instruction::LocalGet(is_heap));
-  ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(ptr));
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Const(4));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(
-    *ctx.tag_index.get("buffer").ok_or("buffer tag not found")? as i32
-  ));
-  ctx.emit(Instruction::I32Eq);
-  ctx.begin_block_if();
+fn emit_buffer_literal_equals_i32(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]) -> Result<(), String> {
+  let result = ctx.alloc_i32(0);
+  let known_buffer =
+    infer_wasm_static_type(ctx, value).is_some_and(|ty| matches!(expand_wasm_value_type(&ty).as_ref(), CalcitTypeAnnotation::Buffer));
+  let ptr = if known_buffer {
+    emit_ptr_to_i32(ctx, value)?
+  } else {
+    emit_expr(ctx, value)?;
+    let val_local = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(val_local));
+    let ptr = ctx.alloc_local_typed(ValType::I32);
+    let is_heap = emit_is_heap_value(ctx, val_local);
+    ctx.emit(Instruction::LocalGet(is_heap));
+    ctx.begin_block_if();
+    ctx.emit(Instruction::LocalGet(val_local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::LocalSet(ptr));
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Sub);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::I32Const(
+      *ctx.tag_index.get("buffer").ok_or("buffer tag not found")? as i32
+    ));
+    ctx.emit(Instruction::I32Eq);
+    ctx.begin_block_if();
+    ptr
+  };
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(f64_const(bytes.len() as f64));
   ctx.emit(Instruction::F64Eq);
   ctx.begin_block_if();
-  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(result));
   for (index, byte) in bytes.iter().enumerate() {
     ctx.emit(Instruction::LocalGet(ptr));
@@ -13999,14 +15069,23 @@ fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]
     ctx.emit(Instruction::I32Const(i32::from(*byte)));
     ctx.emit(Instruction::I32Ne);
     ctx.begin_block_if();
-    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::I32Const(0));
     ctx.emit(Instruction::LocalSet(result));
     ctx.emit(Instruction::End);
   }
   ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
+  if !known_buffer {
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::End);
+  }
   ctx.emit(Instruction::LocalGet(result));
+  Ok(())
+}
+
+#[allow(dead_code)]
+fn emit_buffer_literal_equals(ctx: &mut WasmGenCtx, value: &Calcit, bytes: &[u8]) -> Result<(), String> {
+  emit_buffer_literal_equals_i32(ctx, value, bytes)?;
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
@@ -14546,7 +15625,7 @@ fn static_predicate_condition_outcome_in_scope(
     return Some(true);
   }
   let ty = infer_wasm_evidence_in_scope(ctx, operand, local_types, closures, &mut HashSet::new())
-    .map(|ev| CalcitTypeAnnotation::expand_schema_alias(&ev.annotation))?;
+    .map(|ev| expand_wasm_value_type(&ev.annotation))?;
   if nil_type_evidence_is_open(&ty) || matches!(ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_)) {
     return None;
   }
@@ -14585,8 +15664,13 @@ fn static_predicate_condition_outcome_in_scope(
   }
 }
 
-/// Emit WASM for `if` expression.
+/// Emit WASM for `if` expression returning `F64`.
 fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  emit_if_as_repr(ctx, args, NativeValRepr::F64)
+}
+
+/// Emit WASM for `if` expression returning `dst_repr`.
+fn emit_if_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_repr: NativeValRepr) -> Result<(), String> {
   if args.len() < 2 || args.len() > 3 {
     return Err(format!("if expects 2-3 args, got {}", args.len()));
   }
@@ -14594,23 +15678,23 @@ fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     emit_if_condition(ctx, &args[0])?;
     ctx.emit(Instruction::Drop);
     if taken {
-      return emit_expr(ctx, &args[1]);
+      return emit_expr_as_repr(ctx, &args[1], dst_repr);
     } else if args.len() == 3 {
-      return emit_expr(ctx, &args[2]);
+      return emit_expr_as_repr(ctx, &args[2], dst_repr);
     } else {
-      ctx.emit(f64_const(0.0));
+      emit_unit_const_repr(ctx, dst_repr);
       return Ok(());
     }
   }
   emit_if_condition(ctx, &args[0])?;
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(dst_repr.val_type())));
   ctx.block_depth += 1;
-  emit_expr(ctx, &args[1])?;
+  emit_expr_as_repr(ctx, &args[1], dst_repr)?;
   ctx.emit(Instruction::Else);
   if args.len() == 3 {
-    emit_expr(ctx, &args[2])?;
+    emit_expr_as_repr(ctx, &args[2], dst_repr)?;
   } else {
-    ctx.emit(f64_const(0.0));
+    emit_unit_const_repr(ctx, dst_repr);
   }
   ctx.block_depth -= 1;
   ctx.emit(Instruction::End);
@@ -14629,13 +15713,7 @@ fn emit_if_condition(ctx: &mut WasmGenCtx, condition: &Calcit) -> Result<(), Str
       ctx.emit(Instruction::I32Const(0));
       Ok(())
     }
-    CalcitTypeAnnotation::Bool => {
-      emit_expr(ctx, condition)?;
-      let v = ctx.alloc_local();
-      ctx.emit(Instruction::LocalSet(v));
-      emit_value_is_truthy_i32(ctx, v);
-      Ok(())
-    }
+    CalcitTypeAnnotation::Bool => emit_expr_as_repr(ctx, condition, NativeValRepr::BoolI32),
     other => Err(format!(
       "E_NON_BOOL_CONDITION: if condition expects Bool in WASM, got `{}`",
       other.to_brief_string()
@@ -14869,9 +15947,12 @@ fn emit_scoped_let(
       ctx.emit(Instruction::LocalSet(index));
       ctx.impl_selectors.insert(index, selector);
     } else {
-      emit_expr(ctx, value)?;
+      let repr = binding_type
+        .as_ref()
+        .map_or(NativeValRepr::F64, |ev| NativeValRepr::from_type_annotation(&ev.annotation));
+      emit_expr_as_repr(ctx, value, repr)?;
       ctx.lambda_locals.remove(name);
-      let index = ctx.declare_local(name);
+      let index = ctx.declare_local_with_repr(name, repr);
       ctx.emit(Instruction::LocalSet(index));
       if let Some(definition) = function_value {
         ctx.local_function_values.insert(index, definition);
@@ -14934,10 +16015,14 @@ fn emit_let_pairs(ctx: &mut WasmGenCtx, pairs: &[Calcit], body: &[Calcit]) -> Re
   emit_scoped_let(ctx, &var_name, &xs[1], |ctx| emit_let_pairs(ctx, &pairs[1..], body))
 }
 
-/// Emit WASM for `let` expression.
+/// Emit WASM for `let` expression returning `F64`.
 fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
+  emit_let_as_repr(ctx, body, NativeValRepr::F64)
+}
+
+fn emit_let_as_repr(ctx: &mut WasmGenCtx, body: &[Calcit], dst_repr: NativeValRepr) -> Result<(), String> {
   if body.is_empty() {
-    ctx.emit(f64_const(0.0));
+    emit_unit_const_repr(ctx, dst_repr);
     return Ok(());
   }
 
@@ -14945,8 +16030,8 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
   let rest = &body[1..];
 
   match pair {
-    Calcit::Nil | Calcit::Unit => emit_body(ctx, rest),
-    Calcit::List(xs) if xs.is_empty() => emit_body(ctx, rest),
+    Calcit::Nil | Calcit::Unit => emit_body_as_repr(ctx, rest, dst_repr),
+    Calcit::List(xs) if xs.is_empty() => emit_body_as_repr(ctx, rest, dst_repr),
     Calcit::List(xs) if xs.len() == 2 => {
       let var_name = match &xs[0] {
         Calcit::Local(CalcitLocal { sym, .. }) => sym.to_string(),
@@ -14957,7 +16042,7 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
         && is_direct_nil_to_option_call_on_var(&rest[0], &var_name)
         && let Some(lowered) = lower_nil_to_option_target(ctx, &xs[1])?
       {
-        return emit_expr(ctx, &lowered);
+        return emit_expr_as_repr(ctx, &lowered, dst_repr);
       }
       emit_scoped_let(ctx, &var_name, &xs[1], |ctx| {
         // Flatten nested lets while retaining each binding's lexical scope.
@@ -14966,9 +16051,9 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
           && let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first()
         {
           let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
-          return emit_let(ctx, &inner_body);
+          return emit_let_as_repr(ctx, &inner_body, dst_repr);
         }
-        emit_body(ctx, rest)
+        emit_body_as_repr(ctx, rest, dst_repr)
       })
     }
     _ => Err(format!("unsupported let binding form: {pair}")),
@@ -14996,22 +16081,10 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return emit_destruct_list_match(ctx, &shape);
   }
 
-  // Evaluate the value expression (an enum) and store its f64 pointer
-  emit_expr(ctx, &args[0])?;
-  let ptr_f64 = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(ptr_f64));
-
-  // Convert to i32 for memory access and load count (offset 0) + tag_id (offset 8)
-  let count_local = ctx.alloc_local();
-  let tag_local = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr_f64));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(count_local));
-  ctx.emit(Instruction::LocalGet(ptr_f64));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(tag_local));
+  // Evaluate the enum subject as an i32 pointer and read `[count:u32 @ 0][tag_id:u32 @ 4]`.
+  let enum_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let count_local = emit_load_enum_count_i32(ctx, enum_ptr);
+  let tag_local = emit_load_enum_tag_i32(ctx, enum_ptr);
 
   // Collect branches: separate tag branches and wildcard
   let branches: Vec<&Calcit> = if args.len() == 3
@@ -15063,7 +16136,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   let subject_ev = infer_wasm_value_evidence(ctx, &args[0]);
   let subject_ty = subject_ev
     .as_ref()
-    .map(|ev| CalcitTypeAnnotation::expand_schema_alias(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation)));
+    .map(|ev| expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation)));
   let anon_enum = match &args[0] {
     Calcit::List(xs)
       if xs.len() >= 2 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeEnum | CalcitProc::NativeEnumNew))) =>
@@ -15097,11 +16170,11 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     // Compare: tag_local == tag_id && count_local == binding_count
     let binding_count = pat_xs.len() - 1;
     ctx.emit(Instruction::LocalGet(tag_local));
-    ctx.emit(f64_const(tag_id as f64));
-    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Const(tag_id as i32));
+    ctx.emit(Instruction::I32Eq);
     ctx.emit(Instruction::LocalGet(count_local));
-    ctx.emit(f64_const(binding_count as f64));
-    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Const(binding_count as i32));
+    ctx.emit(Instruction::I32Eq);
     ctx.emit(Instruction::I32And);
 
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -15116,13 +16189,8 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("match binding expected symbol, got: {other}")),
       };
-      // Payload at offset (2 + bind_idx) * 8 from enum pointer (skip count + tag)
-      let offset = ((2 + bind_idx) * 8) as u64;
-      ctx.emit(Instruction::LocalGet(ptr_f64));
-      ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
-      let idx = ctx.declare_local(&bind_name);
-      saved_types.push((bind_name.clone(), ctx.local_types.get(&bind_name).cloned()));
+      // Payload at offset (1 + bind_idx) * 8 after 8-byte compact enum header
+      let offset = ((1 + bind_idx) * 8) as u64;
       let bound_ev = if let Some((anon_tag, anon_payloads)) = &anon_enum
         && anon_tag == &tag_str
       {
@@ -15145,6 +16213,14 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
       } else {
         None
       };
+      let bind_repr = bound_ev
+        .as_ref()
+        .map_or(NativeValRepr::F64, |ev| NativeValRepr::from_type_annotation(&ev.annotation));
+      ctx.emit(Instruction::LocalGet(enum_ptr));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
+      emit_unbox_f64_to_repr(ctx, bind_repr);
+      let idx = ctx.declare_local_with_repr(&bind_name, bind_repr);
+      saved_types.push((bind_name.clone(), ctx.local_types.get(&bind_name).cloned()));
       if let Some(ev) = bound_ev {
         ctx.local_types.insert(bind_name, ev);
       } else {
@@ -15390,7 +16466,7 @@ fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
       collect_json_keys_from_str(s, tags);
     }
     Calcit::Local(local) => {
-      if let Some(enum_def) = CalcitTypeAnnotation::expand_schema_alias(&local.type_info).resolve_to_enum() {
+      if let Some(enum_def) = expand_wasm_value_type(&local.type_info).resolve_to_enum() {
         tags.push(enum_identity_tag(&enum_def));
       }
     }
@@ -16324,6 +17400,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -16521,6 +17599,8 @@ mod tests {
       fn_index: fn_index.clone(),
       fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -16744,6 +17824,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -16848,6 +17930,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -16929,6 +18013,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("list".to_string(), 1)]),
       struct_layouts: Default::default(),
@@ -17031,6 +18117,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("list".to_string(), 1)]),
       struct_layouts: Default::default(),
@@ -19331,6 +20419,8 @@ mod tests {
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
         runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
         tag_index: HashMap::from([("list".into(), 1)]),
         struct_layouts: Default::default(),
@@ -19404,6 +20494,8 @@ mod tests {
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
         runtime_fn_index: HashMap::new(),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),
@@ -19683,6 +20775,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("nil".into(), 10), ("bool".into(), 11)]),
       struct_layouts: Default::default(),
@@ -19890,6 +20984,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -20008,6 +21104,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::from([
         ("__rt_str_compare".to_owned(), 0),
         ("__rt_set_find_elem".to_owned(), 1),
@@ -20153,6 +21251,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -20279,6 +21379,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
@@ -20369,6 +21471,8 @@ mod tests {
           fn_index: HashMap::new(),
           fn_arity: HashMap::new(),
           fn_has_rest: HashMap::new(),
+          fn_signatures: HashMap::new(),
+          has_boxed_json_scalars: true,
           runtime_fn_index: HashMap::new(),
           tag_index: HashMap::new(),
           struct_layouts: Default::default(),

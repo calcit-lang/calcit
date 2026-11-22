@@ -2023,6 +2023,8 @@ mod sort_tests {
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
         runtime_fn_index: HashMap::new(),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),

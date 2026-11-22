@@ -5,6 +5,8 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
     return Err(format!("method .{name} expects at least 1 operand"));
   }
 
+  let static_kind = static_receiver_kind(ctx, &args[0]);
+
   let receiver = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(receiver));
@@ -24,43 +26,43 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       if !extra_locals.is_empty() {
         return Err("method .empty expects 0 arguments".into());
       }
-      emit_method_empty_value(ctx, receiver)
+      emit_method_empty_value(ctx, receiver, static_kind)
     }
     "empty?" => {
       if !extra_locals.is_empty() {
         return Err("method .empty? expects 0 arguments".into());
       }
-      emit_method_empty_question(ctx, receiver)
+      emit_method_empty_question(ctx, receiver, static_kind)
     }
     "count" => {
       if !extra_locals.is_empty() {
         return Err("method .count expects 0 arguments".into());
       }
-      emit_method_count(ctx, receiver)
+      emit_method_count(ctx, receiver, static_kind)
     }
     "first" => {
       if !extra_locals.is_empty() {
         return Err("method .first expects 0 arguments".into());
       }
-      emit_method_first(ctx, receiver)
+      emit_method_first(ctx, receiver, static_kind)
     }
     "rest" => {
       if !extra_locals.is_empty() {
         return Err("method .rest expects 0 arguments".into());
       }
-      emit_method_rest(ctx, receiver)
+      emit_method_rest(ctx, receiver, static_kind)
     }
     "nth" => {
       if extra_locals.len() != 1 {
         return Err("method .nth expects 1 argument".into());
       }
-      emit_method_nth(ctx, receiver, extra_locals[0])
+      emit_method_nth(ctx, receiver, extra_locals[0], static_kind)
     }
     "get" => {
       if extra_locals.len() != 1 {
         return Err("method .get expects 1 argument".into());
       }
-      emit_method_get(ctx, receiver, extra_locals[0])
+      emit_method_get_with_kind(ctx, receiver, extra_locals[0], static_kind)
     }
     "contains?" => {
       if extra_locals.len() != 1 {
@@ -72,31 +74,31 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
         return Err("E_WASM_NIL_TYPE_EVIDENCE: Enum .contains? requires concrete key type evidence before scalar erasure".into());
       }
       let number_key = key_type.is_some_and(|annotation| annotation.is_proven_for(&CalcitTypeAnnotation::Number));
-      emit_method_contains(ctx, receiver, extra_locals[0], number_key)
+      emit_method_contains(ctx, receiver, extra_locals[0], number_key, static_kind)
     }
     "includes?" => {
       if extra_locals.len() != 1 {
         return Err("method .includes? expects 1 argument".into());
       }
-      emit_method_includes(ctx, receiver, extra_locals[0])
+      emit_method_includes(ctx, receiver, extra_locals[0], static_kind)
     }
     "min" => {
       if !extra_locals.is_empty() {
         return Err("method .min expects 0 arguments".into());
       }
-      emit_method_min(ctx, receiver)
+      emit_method_extreme(ctx, receiver, true, static_kind)
     }
     "max" => {
       if !extra_locals.is_empty() {
         return Err("method .max expects 0 arguments".into());
       }
-      emit_method_max(ctx, receiver)
+      emit_method_extreme(ctx, receiver, false, static_kind)
     }
     "assoc" => {
       if extra_locals.len() != 2 {
         return Err("method .assoc expects 2 arguments".into());
       }
-      emit_method_assoc(ctx, receiver, extra_locals[0], extra_locals[1])
+      emit_method_assoc_with_kind(ctx, receiver, extra_locals[0], extra_locals[1], static_kind)
     }
     // .deref — for atom/ref types; falls through when not a ref (return receiver as-is).
     "deref" => {
@@ -110,6 +112,14 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
     "to-list" => {
       if !extra_locals.is_empty() {
         return Err("method .to-list expects 0 arguments".into());
+      }
+      match static_kind {
+        Some("nil") => return emit_list_new(ctx, &[]),
+        Some("list") => {
+          ctx.emit(Instruction::LocalGet(receiver));
+          return Ok(());
+        }
+        _ => {}
       }
       let result = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(receiver));
@@ -129,6 +139,14 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
     "to-map" => {
       if !extra_locals.is_empty() {
         return Err("method .to-map expects 0 arguments".into());
+      }
+      match static_kind {
+        Some("nil") => return emit_map_new(ctx, &[]),
+        Some("map") => {
+          ctx.emit(Instruction::LocalGet(receiver));
+          return Ok(());
+        }
+        _ => {}
       }
       let result = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(receiver));
@@ -356,6 +374,12 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
   }
 }
 
+fn static_receiver_kind(ctx: &WasmGenCtx, expr: &Calcit) -> Option<&'static str> {
+  let annotation = super::infer_wasm_static_type(ctx, expr)?;
+  let expanded = super::expand_wasm_value_type(&annotation);
+  super::proven_disjoint_value_kind(&expanded)
+}
+
 pub(super) fn emit_type_of_local(ctx: &mut WasmGenCtx, value_local: u32) {
   let number_tag = get_type_tag(ctx, "number");
   let is_valid_ptr = emit_is_heap_value(ctx, value_local);
@@ -377,6 +401,13 @@ fn emit_heap_count_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.emit(Instruction::LocalGet(receiver_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+}
+
+fn emit_compact_header_count_f64(ctx: &mut WasmGenCtx, receiver_local: u32) {
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::F64ConvertI32U);
 }
 
 fn emit_list_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
@@ -426,16 +457,25 @@ fn emit_list_rest_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
 }
 
 fn emit_enum_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
+  let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
+  let idx_local = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(index_local));
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(idx_local));
+  ctx.emit(Instruction::LocalGet(idx_local));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::LocalGet(idx_local));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::LocalGet(receiver_local));
-  ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::End);
 }
 
 fn emit_map_get_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) {
@@ -721,7 +761,43 @@ fn emit_empty_string(ctx: &mut WasmGenCtx) {
   ctx.ptr_to_f64(ptr_local);
 }
 
-fn emit_method_empty_value(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_enum_contains_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, number_key: bool) {
+  if number_key {
+    // The Enum contract checks the numeric range, including the tag slot.
+    // Keep f64 comparisons: fractional indices are not truncated to integers.
+    ctx.emit(Instruction::LocalGet(key_local));
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ge);
+    ctx.emit(Instruction::LocalGet(key_local));
+    emit_compact_header_count_f64(ctx, receiver_local);
+    ctx.emit(f64_const(1.0));
+    ctx.emit(Instruction::F64Add);
+    ctx.emit(Instruction::F64Lt);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::F64ConvertI32U);
+  } else {
+    // Native numeric comparison rejects non-Number keys. Their erased scalar
+    // payloads must not be reinterpreted as indices (nil/false alias zero).
+    ctx.emit(Instruction::Unreachable);
+  }
+}
+
+fn emit_method_empty_value(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Option<&'static str>) -> Result<(), String> {
+  match static_kind {
+    Some("list") => return emit_list_new(ctx, &[]),
+    Some("map") => return emit_map_new(ctx, &[]),
+    Some("set") => return emit_set_new(ctx, &[]),
+    Some("string") => {
+      emit_empty_string(ctx);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
@@ -762,13 +838,42 @@ fn emit_method_empty_value(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<
   Ok(())
 }
 
-fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Option<&'static str>) -> Result<(), String> {
+  match static_kind {
+    Some("nil") => {
+      ctx.emit(f64_const(1.0));
+      return Ok(());
+    }
+    Some("list" | "map" | "set" | "string") => {
+      ctx.emit(f64_const(1.0));
+      ctx.emit(f64_const(0.0));
+      emit_heap_count_from_local(ctx, receiver_local);
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::Select);
+      return Ok(());
+    }
+    Some("enum" | "struct") => {
+      ctx.emit(Instruction::LocalGet(receiver_local));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::F64ConvertI32U);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let nil_tag = get_type_tag(ctx, "nil");
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let type_name = get_type_tag(ctx, "enum");
+  let enum_tag = get_type_tag(ctx, "enum");
   let struct_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -781,14 +886,25 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::Else);
 
-  for tag in [list_tag, map_tag, set_tag, string_tag, type_name, struct_tag] {
+  for (tag, compact) in [
+    (list_tag, false),
+    (map_tag, false),
+    (set_tag, false),
+    (string_tag, false),
+    (enum_tag, true),
+    (struct_tag, true),
+  ] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     ctx.emit(f64_const(1.0));
     ctx.emit(f64_const(0.0));
-    emit_heap_count_from_local(ctx, receiver_local);
+    if compact {
+      emit_compact_header_count_f64(ctx, receiver_local);
+    } else {
+      emit_heap_count_from_local(ctx, receiver_local);
+    }
     ctx.emit(f64_const(0.0));
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::Select);
@@ -803,7 +919,37 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32) -> Resu
   Ok(())
 }
 
-fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, number_key: bool) -> Result<(), String> {
+fn emit_method_contains(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  key_local: u32,
+  number_key: bool,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_contains_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some("map") => {
+      emit_map_contains_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some("set") => {
+      emit_set_includes_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some("enum") => {
+      emit_enum_contains_from_local(ctx, receiver_local, key_local, number_key);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
@@ -834,24 +980,7 @@ fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u3
   ctx.emit(f64_const(enum_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  if number_key {
-    // The Enum contract checks the numeric range, including the tag slot.
-    // Keep f64 comparisons: fractional indices are not truncated to integers.
-    ctx.emit(Instruction::LocalGet(key_local));
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Ge);
-    ctx.emit(Instruction::LocalGet(key_local));
-    emit_heap_count_from_local(ctx, receiver_local);
-    ctx.emit(f64_const(1.0));
-    ctx.emit(Instruction::F64Add);
-    ctx.emit(Instruction::F64Lt);
-    ctx.emit(Instruction::I32And);
-    ctx.emit(Instruction::F64ConvertI32U);
-  } else {
-    // Native numeric comparison rejects non-Number keys. Their erased scalar
-    // payloads must not be reinterpreted as indices (nil/false alias zero).
-    ctx.emit(Instruction::Unreachable);
-  }
+  emit_enum_contains_from_local(ctx, receiver_local, key_local, number_key);
   ctx.emit(Instruction::Else);
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::End);
@@ -899,11 +1028,11 @@ pub(super) fn emit_update_has_slot(ctx: &mut WasmGenCtx, receiver_local: u32, ke
 
 /// Push 1.0 when `index_local` names an existing Enum slot (the tag at 0 or a
 /// payload), and trap otherwise, matching the native `&enum:nth` range error.
-/// Layout: [payload_count:f64][tag:f64][payload0:f64]..., so valid indices are
-/// `0..=payload_count`.
+/// Compact layout: `[count:u32 @ 0][tag_id:u32 @ 4][payload0:f64 @ 8]...`, so
+/// valid indices are `0..=payload_count`.
 fn emit_enum_slot_checked_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let payload_count = super::emit_load_count_i32(ctx, ptr_local);
+  let payload_count = super::emit_load_enum_count_i32(ctx, ptr_local);
   let slot_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(payload_count));
   ctx.emit(Instruction::I32Const(1));
@@ -919,7 +1048,36 @@ fn emit_enum_slot_checked_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, 
   ctx.emit(Instruction::End);
 }
 
-fn emit_method_includes(ctx: &mut WasmGenCtx, receiver_local: u32, target_local: u32) -> Result<(), String> {
+fn emit_method_includes(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  target_local: u32,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_includes_from_local(ctx, receiver_local, target_local);
+      return Ok(());
+    }
+    Some("map") => {
+      emit_map_includes_from_local(ctx, receiver_local, target_local);
+      return Ok(());
+    }
+    Some("set") => {
+      emit_set_includes_from_local(ctx, receiver_local, target_local);
+      return Ok(());
+    }
+    Some("string") => {
+      emit_str_includes_from_local(ctx, receiver_local, target_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
@@ -973,7 +1131,18 @@ fn emit_str_includes_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, targe
   ctx.emit(Instruction::F64ConvertI32U);
 }
 
-fn emit_method_min(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_method_extreme(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  use_min: bool,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("list" | "set") => return emit_sequence_extreme_option_from_local(ctx, receiver_local, use_min),
+    Some(_) => return emit_option_enum(ctx, None),
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let set_tag = get_type_tag(ctx, "set");
   let type_local = ctx.alloc_local();
@@ -984,38 +1153,13 @@ fn emit_method_min(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Stri
   ctx.emit(f64_const(list_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_option_from_local(ctx, receiver_local, true)?;
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, use_min)?;
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(type_local));
   ctx.emit(f64_const(set_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_option_from_local(ctx, receiver_local, true)?;
-  ctx.emit(Instruction::Else);
-  emit_option_enum(ctx, None)?;
-  ctx.emit(Instruction::End);
-  ctx.emit(Instruction::End);
-  Ok(())
-}
-
-fn emit_method_max(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
-  let list_tag = get_type_tag(ctx, "list");
-  let set_tag = get_type_tag(ctx, "set");
-  let type_local = ctx.alloc_local();
-  emit_type_of_local(ctx, receiver_local);
-  ctx.emit(Instruction::LocalSet(type_local));
-
-  ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(list_tag));
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_option_from_local(ctx, receiver_local, false)?;
-  ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(type_local));
-  ctx.emit(f64_const(set_tag));
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  emit_sequence_extreme_option_from_local(ctx, receiver_local, false)?;
+  emit_sequence_extreme_option_from_local(ctx, receiver_local, use_min)?;
   ctx.emit(Instruction::Else);
   emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::End);
@@ -1071,20 +1215,16 @@ fn emit_list_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
 
 fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = super::emit_load_count_i32(ctx, ptr_local);
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  let count_local = super::emit_load_enum_count_i32(ctx, ptr_local);
   let idx_local = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(index_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(idx_local));
 
-  ctx.emit(Instruction::LocalGet(count_local));
-  ctx.emit(Instruction::I32Const(2));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
-
   let size = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(total_slots));
+  ctx.emit(Instruction::LocalGet(count_local));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::LocalSet(size));
@@ -1092,24 +1232,66 @@ fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
   let dst = ctx.alloc_local_typed(ValType::I32);
   super::emit_bump_alloc_dynamic(ctx, size, dst, "enum");
 
-  let dst_base = super::emit_addr_offset(ctx, dst, 0);
-  let src_base = super::emit_addr_offset(ctx, ptr_local, 0);
-  super::emit_copy_f64_loop(ctx, dst_base, src_base, total_slots);
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::I64Load(mem_arg_i64(0)));
+  ctx.emit(Instruction::I64Store(mem_arg_i64(0)));
 
+  let dst_base = super::emit_addr_offset(ctx, dst, 8);
+  let src_base = super::emit_addr_offset(ctx, ptr_local, 8);
+  super::emit_copy_f64_loop(ctx, dst_base, src_base, count_local);
+
+  ctx.emit(Instruction::LocalGet(idx_local));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::LocalGet(val_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+  ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::LocalGet(idx_local));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalGet(val_local));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::End);
 
   ctx.ptr_to_f64(dst);
 }
 
 pub(super) fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
+  emit_method_assoc_with_kind(ctx, receiver_local, key_local, val_local, None)
+}
+
+fn emit_method_assoc_with_kind(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  key_local: u32,
+  val_local: u32,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_assoc_from_local(ctx, receiver_local, key_local, val_local);
+      return Ok(());
+    }
+    Some("map") => {
+      emit_map_assoc_from_local(ctx, receiver_local, key_local, val_local);
+      return Ok(());
+    }
+    Some("enum") => {
+      emit_enum_assoc_from_local(ctx, receiver_local, key_local, val_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = super::get_type_tag(ctx, "list");
   let map_tag = super::get_type_tag(ctx, "map");
   let type_name = super::get_type_tag(ctx, "enum");
@@ -1143,13 +1325,33 @@ pub(super) fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_l
   Ok(())
 }
 
-fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Option<&'static str>) -> Result<(), String> {
+  match static_kind {
+    Some("nil") => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    Some("list" | "map" | "set" | "string") => {
+      emit_heap_count_from_local(ctx, receiver_local);
+      return Ok(());
+    }
+    Some("enum" | "struct") => {
+      emit_compact_header_count_f64(ctx, receiver_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let nil_tag = get_type_tag(ctx, "nil");
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
   let set_tag = get_type_tag(ctx, "set");
   let string_tag = get_type_tag(ctx, "string");
-  let type_name = get_type_tag(ctx, "enum");
+  let enum_tag = get_type_tag(ctx, "enum");
   let struct_tag = get_type_tag(ctx, "struct");
   let type_local = ctx.alloc_local();
   emit_type_of_local(ctx, receiver_local);
@@ -1162,12 +1364,23 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::Else);
 
-  for tag in [list_tag, map_tag, set_tag, string_tag, type_name, struct_tag] {
+  for (tag, compact) in [
+    (list_tag, false),
+    (map_tag, false),
+    (set_tag, false),
+    (string_tag, false),
+    (enum_tag, true),
+    (struct_tag, true),
+  ] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-    emit_heap_count_from_local(ctx, receiver_local);
+    if compact {
+      emit_compact_header_count_f64(ctx, receiver_local);
+    } else {
+      emit_heap_count_from_local(ctx, receiver_local);
+    }
     ctx.emit(Instruction::Else);
   }
 
@@ -1179,7 +1392,32 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   Ok(())
 }
 
-fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) -> Result<(), String> {
+fn emit_method_nth(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  index_local: u32,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_nth_from_local(ctx, receiver_local, index_local);
+      return Ok(());
+    }
+    Some("enum") => {
+      emit_enum_nth_from_local(ctx, receiver_local, index_local);
+      return Ok(());
+    }
+    Some("string") => {
+      emit_str_nth_from_local(ctx, receiver_local, index_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let type_name = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
@@ -1212,7 +1450,30 @@ fn emit_method_nth(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) 
   Ok(())
 }
 
-fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Option<&'static str>) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_first_from_local(ctx, receiver_local);
+      return Ok(());
+    }
+    Some("enum") => {
+      let zero = ctx.alloc_local();
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::LocalSet(zero));
+      emit_enum_nth_from_local(ctx, receiver_local, zero);
+      return Ok(());
+    }
+    Some("string") => {
+      emit_str_first_from_local(ctx, receiver_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let type_name = get_type_tag(ctx, "enum");
   let string_tag = get_type_tag(ctx, "string");
@@ -1248,7 +1509,24 @@ fn emit_method_first(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), St
   Ok(())
 }
 
-fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), String> {
+fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Option<&'static str>) -> Result<(), String> {
+  match static_kind {
+    Some("list") => {
+      emit_list_rest_from_local(ctx, receiver_local);
+      return Ok(());
+    }
+    Some("string") => {
+      let ptr = emit_ptr_local_from_receiver(ctx, receiver_local);
+      emit_str_rest_from_ptr(ctx, ptr);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let list_tag = get_type_tag(ctx, "list");
   let string_tag = get_type_tag(ctx, "string");
   let type_local = ctx.alloc_local();
@@ -1275,6 +1553,35 @@ fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Str
 }
 
 pub(super) fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
+  emit_method_get_with_kind(ctx, receiver_local, key_local, None)
+}
+
+fn emit_method_get_with_kind(
+  ctx: &mut WasmGenCtx,
+  receiver_local: u32,
+  key_local: u32,
+  static_kind: Option<&'static str>,
+) -> Result<(), String> {
+  match static_kind {
+    Some("map") => {
+      emit_map_get_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some("list") => {
+      emit_list_nth_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some("enum") => {
+      emit_enum_nth_from_local(ctx, receiver_local, key_local);
+      return Ok(());
+    }
+    Some(_) => {
+      ctx.emit(f64_const(0.0));
+      return Ok(());
+    }
+    None => {}
+  }
+
   let map_tag = get_type_tag(ctx, "map");
   let list_tag = get_type_tag(ctx, "list");
   let type_name = get_type_tag(ctx, "enum");

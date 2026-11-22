@@ -203,8 +203,8 @@ fn resolved_enum_variants(nominal: &CalcitEnumDef, args: &[Arc<CalcitTypeAnnotat
 }
 
 fn emit_is_option_enum_runtime(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
-  let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as f64;
-  let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as f64;
+  let none_tag = *ctx.tag_index.get("none").ok_or("none tag missing")? as i32;
+  let some_tag = *ctx.tag_index.get("some").ok_or("some tag missing")? as i32;
   let enum_tag = get_type_tag(ctx, "enum") as i32;
   let is_heap = emit_is_heap_value(ctx, value);
   let is_option_enum = ctx.alloc_i32(0);
@@ -221,27 +221,21 @@ fn emit_is_option_enum_runtime(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, 
   ctx.emit(Instruction::I32Const(enum_tag));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  let count = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(count));
-  let vtag = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(vtag));
+  let count = emit_load_enum_count_i32(ctx, ptr);
+  let vtag = emit_load_enum_tag_i32(ctx, ptr);
   ctx.emit(Instruction::LocalGet(vtag));
-  ctx.emit(f64_const(none_tag));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(none_tag));
+  ctx.emit(Instruction::I32Eq);
   ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Eq);
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalGet(vtag));
-  ctx.emit(f64_const(some_tag));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(some_tag));
+  ctx.emit(Instruction::I32Eq);
   ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(f64_const(1.0));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Eq);
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::I32Or);
   ctx.emit(Instruction::LocalSet(is_option_enum));
@@ -262,15 +256,8 @@ fn emit_edn_enum_variants(
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  let payload_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(payload_count));
-  let variant_tag = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(variant_tag));
+  let payload_count = emit_load_enum_count_i32(ctx, ptr);
+  let variant_tag = emit_load_enum_tag_i32(ctx, ptr);
 
   let result = literal_local(ctx, if nested { "(%::" } else { "%::" })?;
   let with_name_space = concat_with_literal_after(ctx, result, " ")?;
@@ -291,8 +278,8 @@ fn emit_edn_enum_variants(
       )
     })?;
     ctx.emit(Instruction::LocalGet(variant_tag));
-    ctx.emit(f64_const(tag_id as f64));
-    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Const(tag_id as i32));
+    ctx.emit(Instruction::I32Eq);
     ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(payload_count));
     ctx.emit(Instruction::I32Const(payloads.len() as i32));
@@ -313,7 +300,7 @@ fn emit_edn_enum_variants(
       ctx.emit(Instruction::LocalSet(result));
       let payload = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + index) * 8) as u64)));
       ctx.emit(Instruction::LocalSet(payload));
       let formatted = emit_edn_value(ctx, payload, payload_type, depth + 1, true)?;
       let with_payload = concat_string_locals(ctx, result, formatted);
@@ -359,12 +346,12 @@ fn emit_extract_option_parts(ctx: &mut WasmGenCtx, value: u32, enum_name: &str) 
     .tag_index
     .get("none")
     .ok_or_else(|| format!("E_WASM_EDN_ENUM_SHAPE: enum :{enum_name} variant :none is not present in the compiled program"))?
-    as f64;
+    as i32;
   let some_tag = *ctx
     .tag_index
     .get("some")
     .ok_or_else(|| format!("E_WASM_EDN_ENUM_SHAPE: enum :{enum_name} variant :some is not present in the compiled program"))?
-    as f64;
+    as i32;
   let is_option_enum = emit_is_option_enum_runtime(ctx, value)?;
   let is_none = ctx.alloc_i32(0);
   let is_some = ctx.alloc_i32(0);
@@ -378,19 +365,12 @@ fn emit_extract_option_parts(ctx: &mut WasmGenCtx, value: u32, enum_name: &str) 
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  let payload_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(payload_count));
-  let variant_tag = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(variant_tag));
+  let payload_count = emit_load_enum_count_i32(ctx, ptr);
+  let variant_tag = emit_load_enum_tag_i32(ctx, ptr);
 
   ctx.emit(Instruction::LocalGet(variant_tag));
-  ctx.emit(f64_const(none_tag));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(none_tag));
+  ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(payload_count));
   ctx.emit(Instruction::I32Const(0));
@@ -402,8 +382,8 @@ fn emit_extract_option_parts(ctx: &mut WasmGenCtx, value: u32, enum_name: &str) 
   ctx.emit(Instruction::LocalSet(is_none));
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::LocalGet(variant_tag));
-  ctx.emit(f64_const(some_tag));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Const(some_tag));
+  ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(payload_count));
   ctx.emit(Instruction::I32Const(1));
@@ -412,7 +392,7 @@ fn emit_extract_option_parts(ctx: &mut WasmGenCtx, value: u32, enum_name: &str) 
   ctx.emit(Instruction::Unreachable);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(16)));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
   ctx.emit(Instruction::LocalSet(payload));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(is_some));
@@ -537,6 +517,20 @@ pub(super) fn resolved_struct_fields(
   )
 }
 
+fn struct_layout_for_nominal(ctx: &WasmGenCtx, nominal: &CalcitStructDef) -> Result<StructLayout, String> {
+  if let Ok(id) = ctx.struct_layouts.id(nominal)
+    && let Ok(layout) = ctx.struct_layouts.layout_by_id(id)
+  {
+    return Ok(layout.clone());
+  }
+  let kinds: Vec<StructFieldKind> = if nominal.field_types.len() == nominal.fields.len() {
+    nominal.field_types.iter().map(StructFieldKind::from_type_annotation).collect()
+  } else {
+    vec![StructFieldKind::BoxedF64; nominal.fields.len()]
+  };
+  StructLayout::compute(&kinds)
+}
+
 fn emit_edn_struct(
   ctx: &mut WasmGenCtx,
   value: u32,
@@ -549,6 +543,7 @@ fn emit_edn_struct(
   for (_, field_type) in &fields {
     validate_edn_type(field_type, depth + 1)?;
   }
+  let struct_layout = struct_layout_for_nominal(ctx, nominal)?;
 
   let ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(value));
@@ -576,8 +571,7 @@ fn emit_edn_struct(
     ctx.emit(Instruction::LocalSet(result));
 
     let field_value = ctx.alloc_local();
-    ctx.emit(Instruction::LocalGet(ptr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+    emit_load_struct_field_as_repr(ctx, ptr, struct_layout.fields[index], NativeValRepr::F64);
     ctx.emit(Instruction::LocalSet(field_value));
     let formatted = emit_edn_value(ctx, field_value, field_type, depth + 1, true)?;
     let with_value = concat_string_locals(ctx, result, formatted);
@@ -1603,6 +1597,7 @@ fn emit_json_struct(
     return literal_local(ctx, "{}");
   }
 
+  let struct_layout = struct_layout_for_nominal(ctx, nominal)?;
   let ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
@@ -1643,8 +1638,7 @@ fn emit_json_struct(
     ctx.emit(Instruction::LocalSet(result));
 
     let field_value = ctx.alloc_local();
-    ctx.emit(Instruction::LocalGet(ptr));
-    ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + *field_idx) * 8) as u64)));
+    emit_load_struct_field_as_repr(ctx, ptr, struct_layout.fields[*field_idx], NativeValRepr::F64);
     ctx.emit(Instruction::LocalSet(field_value));
     let formatted = emit_json_value(ctx, field_value, field_type, depth + 1, pretty, op_name)?;
     let with_value = concat_string_locals(ctx, result, formatted);
@@ -1676,15 +1670,8 @@ fn emit_json_enum_variants(
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  let payload_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(payload_count));
-  let variant_tag = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
-  ctx.emit(Instruction::LocalSet(variant_tag));
+  let payload_count = emit_load_enum_count_i32(ctx, ptr);
+  let variant_tag = emit_load_enum_tag_i32(ctx, ptr);
 
   let result = literal_local(ctx, if pretty { "[\n" } else { "[" })?;
   let child_indent = "  ".repeat(depth + 1);
@@ -1700,8 +1687,8 @@ fn emit_json_enum_variants(
       )
     })?;
     ctx.emit(Instruction::LocalGet(variant_tag));
-    ctx.emit(f64_const(tag_id as f64));
-    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Const(tag_id as i32));
+    ctx.emit(Instruction::I32Eq);
     ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(payload_count));
     ctx.emit(Instruction::I32Const(payloads.len() as i32));
@@ -1735,7 +1722,7 @@ fn emit_json_enum_variants(
       }
       let payload = ctx.alloc_local();
       ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((2 + index) * 8) as u64)));
+      ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + index) * 8) as u64)));
       ctx.emit(Instruction::LocalSet(payload));
       let formatted = emit_json_value(ctx, payload, payload_type, depth + 1, pretty, op_name)?;
       let with_payload = concat_string_locals(ctx, result, formatted);
@@ -2326,6 +2313,8 @@ mod tests {
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::from([("__rt_json_string".to_owned(), 0), ("__rt_edn_string".to_owned(), 1)]),
       tag_index: HashMap::from([
         ("string".to_owned(), 0),
