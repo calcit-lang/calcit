@@ -5241,7 +5241,7 @@ pub(super) fn build_runtime_fns(
 
   let struct_store_field_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_struct_store_field"), struct_store_field_idx);
-  fns.push(build_rt_struct_store_field());
+  fns.push(build_rt_struct_store_field(is_heap_ptr_idx, bool_tag));
 
   // value-equal: __rt_value_equal(a: f64, b: f64) → i32 (1=equal, 0=not)
   // Deep equality for strings, containers, and nominal payloads.
@@ -5659,9 +5659,10 @@ fn build_rt_struct_load_field() -> CompiledFn {
 }
 
 /// Runtime helper: store `val: f64` into a compact Struct field at `(ptr, offset, kind)`.
-fn build_rt_struct_store_field() -> CompiledFn {
+fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4);
   let addr = b.alloc_i32();
+  let boxed_ptr = b.alloc_i32();
   // params: 0 = ptr (i32), 1 = offset (i32), 2 = kind (i32), 3 = val (f64)
   b.emit(Instruction::LocalGet(2));
   b.emit(Instruction::I32Const(StructFieldKind::UnitZero as i32));
@@ -5701,12 +5702,35 @@ fn build_rt_struct_store_field() -> CompiledFn {
     &[],
     Instruction::F64Store(mem_arg_f64(0)),
   );
-  emit_case(
-    &mut b,
-    &[StructFieldKind::BoolU8 as i32],
-    &[f64_const(0.0), Instruction::F64Ne],
-    Instruction::I32Store8(mem_arg_byte(0)),
-  );
+  // Unbox heap-tagged JSON Bool scalars so boxed `false` stores `0` instead of non-zero ptr.
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::I32Const(StructFieldKind::BoolU8 as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(3));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(3));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalTee(boxed_ptr));
+  b.emit(Instruction::I32Const(4));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(bool_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(boxed_ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalSet(3));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(addr));
+  b.emit(Instruction::LocalGet(3));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::I32Store8(mem_arg_byte(0)));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   emit_case(
     &mut b,
     &[
@@ -14380,6 +14404,7 @@ fn build_rt_value_equal(
   let desc_ptr = b.alloc_i32();
   let meta_ptr = b.alloc_i32();
   let packed = b.alloc_i32();
+  let field_kind = b.alloc_i32();
 
   // Fast path: scalar value equality (NaN equals NaN, `-0` equals `0`)
   b.emit(Instruction::LocalGet(0));
@@ -14636,15 +14661,43 @@ fn build_rt_value_equal(
     b.emit(Instruction::BrIf(1));
     structs::push_load_struct_field_meta(&mut b.instructions, meta_ptr, i);
     b.emit(Instruction::LocalSet(packed));
+    structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+    b.emit(Instruction::LocalSet(field_kind));
     b.emit(Instruction::LocalGet(ptr_a));
     structs::push_extract_struct_field_offset(&mut b.instructions, packed);
-    structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+    b.emit(Instruction::LocalGet(field_kind));
     b.emit(Instruction::Call(struct_load_field_idx));
+    b.emit(Instruction::LocalSet(elem_a));
     b.emit(Instruction::LocalGet(ptr_b));
     structs::push_extract_struct_field_offset(&mut b.instructions, packed);
-    structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+    b.emit(Instruction::LocalGet(field_kind));
     b.emit(Instruction::Call(struct_load_field_idx));
+    b.emit(Instruction::LocalSet(elem_b));
+    b.emit(Instruction::LocalGet(field_kind));
+    b.emit(Instruction::I32Const(StructFieldKind::BoxedF64 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::LocalGet(field_kind));
+    b.emit(Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::I32Or);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
     b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Else);
+    // Packed scalar fields hold non-heap values; compare without probing the heap table.
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Eq);
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::I32Or);
+    b.emit(Instruction::End);
     b.emit(Instruction::I32Eqz);
     b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
     b.emit(Instruction::I32Const(0));

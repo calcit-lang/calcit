@@ -1355,3 +1355,196 @@ fn enum_nth_rejects_invalid_literal_overflow_and_out_of_bounds_indices() {
     assert!(dyn_nth.call(&mut store, bad).is_err(), "dyn-nth({bad}) must trap");
   }
 }
+
+#[test]
+fn compact_struct_scalar_equality_ignores_matching_heap_string_addresses() {
+  let dir = TestDirectory::create("wasm-compact-eq-scalar");
+  let snapshot = r#"
+{} (:package |compact-eq-scalar)
+  :about "|Compact scalar struct equality without heap probes test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-eq-scalar.main/main!) (:mode :native) (:reload-fn 'compact-eq-scalar.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-eq-scalar.main
+    %{} 'FileEntry
+      :defs $ {}
+        'IdBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct IdBox (:id UInt32)
+          :examples $ []
+          :schema $ quote StructDef
+        'NameBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NameBox (:name String)
+          :examples $ []
+          :schema $ quote StructDef
+        '*s1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *s1 |
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*s2 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *s2 |
+          :examples $ []
+          :schema $ quote $ Ref String
+        'init-strings $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export init-strings ()
+            do
+              reset! *s1 (&str:concat |he |llo)
+              reset! *s2 (&str:concat |he |llo)
+              , true
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'get-s1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export get-s1 () @*s1
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'get-s2 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export get-s2 () @*s2
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'check-eq $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-eq (a b)
+            let
+                b1 $ IdBox :id a
+                b2 $ IdBox :id b
+                m $ &{} b1 10 b2 20
+              and
+                not= b1 b2
+                = b1 (IdBox :id a)
+                = (&map:get m b1) (Some 10)
+                = (&map:get m b2) (Some 20)
+                = (NameBox :name @*s1) (NameBox :name @*s2)
+          :examples $ []
+          :schema $ quote $ Fn UInt32 UInt32 (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-eq-scalar.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "init-strings")
+      .expect("init-strings")
+      .call(&mut store, ())
+      .expect("init-strings succeeds"),
+    1.0
+  );
+  let addr1 = instance
+    .get_typed_func::<(), f64>(&mut store, "get-s1")
+    .expect("get-s1")
+    .call(&mut store, ())
+    .expect("get-s1 succeeds");
+  let addr2 = instance
+    .get_typed_func::<(), f64>(&mut store, "get-s2")
+    .expect("get-s2")
+    .call(&mut store, ())
+    .expect("get-s2 succeeds");
+  assert_ne!(
+    addr1, addr2,
+    "distinct allocations of \"hello\" must occupy distinct heap addresses"
+  );
+  assert!(addr1 > 0.0 && addr2 > 0.0, "heap addresses must be positive");
+
+  let check_eq = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "check-eq")
+    .expect("check-eq");
+  assert_eq!(check_eq.call(&mut store, (addr1, addr2)).expect("check-eq executes"), 1.0);
+}
+
+#[test]
+fn runtime_struct_store_field_unboxes_boxed_json_bool() {
+  let dir = TestDirectory::create("wasm-rt-struct-bool-store");
+  let snapshot = r#"
+{} (:package |compact-rt-bool-store)
+  :about "|Runtime __rt_struct_store_field boxed JSON Bool unboxing test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-rt-bool-store.main/main!) (:mode :native) (:reload-fn 'compact-rt-bool-store.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-rt-bool-store.main
+    %{} 'FileEntry
+      :defs $ {}
+        'BoolFlag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct BoolFlag (:flag Bool)
+          :examples $ []
+          :schema $ quote StructDef
+        'NumFlag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumFlag (:flag Number)
+          :examples $ []
+          :schema $ quote StructDef
+        'verify-rt-bool-store $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-rt-bool-store ()
+            let
+                xs $ assert-type (json-parse "|[false,true]") (List Bool)
+                b-true $ BoolFlag :flag true
+                b-false $ BoolFlag :flag false
+                nf $ NumFlag :flag 7
+                from-json-false $ &struct:assoc-at b-true 0 :flag (&list:nth xs 0)
+                from-json-true $ &struct:assoc-at b-false 0 :flag (&list:nth xs 1)
+                from-plain-false $ &struct:assoc-at b-true 0 :flag false
+                from-plain-true $ &struct:assoc-at b-false 0 :flag true
+                nf-updated $ &struct:assoc-at nf 0 :flag 9
+              and
+                not (:flag from-json-false)
+                :flag from-json-true
+                not (:flag from-plain-false)
+                :flag from-plain-true
+                = (:flag nf-updated) 9
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (verify-rt-bool-store) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-rt-bool-store.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let parsed = parse_wasm_module(&bytes);
+
+  let export_idx = *parsed.exports.get("verify-rt-bool-store").expect("verify-rt-bool-store export");
+  let target_idx = *parsed.functions[&export_idx]
+    .calls
+    .iter()
+    .find(|callee| {
+      parsed
+        .functions
+        .get(callee)
+        .is_some_and(|f| f.params.is_empty() && f.results.as_slice() == [ValType::F64])
+    })
+    .expect("export wrapper must target verify-rt-bool-store");
+  assert!(
+    parsed.functions[&target_idx].calls.iter().any(|callee| {
+      parsed
+        .functions
+        .get(callee)
+        .is_some_and(|f| f.params.as_slice() == [ValType::I32, ValType::I32, ValType::I32, ValType::F64] && f.results.is_empty())
+    }),
+    "verify-rt-bool-store must exercise __rt_struct_store_field when BoolFlag and NumFlag disagree on :flag kind"
+  );
+
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let verify = instance
+    .get_typed_func::<(), f64>(&mut store, "verify-rt-bool-store")
+    .expect("verify-rt-bool-store export");
+  assert_eq!(verify.call(&mut store, ()).expect("verify-rt-bool-store executes"), 1.0);
+}
