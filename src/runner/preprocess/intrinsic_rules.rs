@@ -69,7 +69,7 @@ pub fn intrinsic_rule_summary(def: &str) -> Option<&'static [&'static str]> {
     "assoc-in" => &["nested Map with a literal path, the leaf value type -> the same Map type"],
     "update-in" => &["nested Map with a literal path, (Fn (Option Leaf) (-> Leaf)) -> the same Map type"],
     "dissoc-in" => &["nested Map / List with a literal path -> the receiver's type"],
-    "pairs-map" => &["List (List T) -> Map T T"],
+    "pairs-map" => &["List (Tuple K V) -> Map K V", "List (List T) -> Map T T"],
     "apply" => &["(Fn A... (-> R)), a List literal or List of matching arguments -> R"],
     "&list:sort-by" => &["List T, (Fn T (-> K)) -> List T", "List T, field tag -> List T"],
     "&fs-read-dir" => &[

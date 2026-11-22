@@ -1703,7 +1703,7 @@ fn js_ffi_host_reach(code: &Cirru) -> Option<JsFfiHostReach> {
   let Cirru::List(items) = code else {
     return None;
   };
-  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn") {
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn" || head.as_ref() == "defcomp") {
     return None;
   }
   let Some(Cirru::List(raw_params)) = items.get(2) else {
@@ -4444,6 +4444,13 @@ mod tests {
       .expect("parse adapter")
       .remove(0);
     assert!(!super::js_ffi_host_reach(&plain).expect("defn reach").ret);
+
+    let comp = cirru_parser::parse("defcomp comp-codearea (states props) (div ({}))")
+      .expect("parse comp")
+      .remove(0);
+    let comp_reach = super::js_ffi_host_reach(&comp).expect("defcomp reach");
+    assert_eq!(comp_reach.params, vec![false, false]);
+    assert!(!comp_reach.ret);
   }
 
   #[test]

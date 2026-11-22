@@ -2097,24 +2097,30 @@ pub(super) fn emit_pairs_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     }
   } else {
     let xs_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-    let key_ty = match xs_ty.as_deref() {
-      Some(CalcitTypeAnnotation::List(elem_ty)) => {
-        let elem_ty = CalcitTypeAnnotation::expand_schema_alias(elem_ty);
-        match elem_ty.as_ref() {
-          CalcitTypeAnnotation::Tuple(items) if !items.is_empty() => normalize_map_key_type(&items[0]),
-          CalcitTypeAnnotation::List(inner) => normalize_map_key_type(inner),
-          other => {
-            return Err(format!(
-              "E_WASM_SET_ELEMENT_KIND: pairs-map requires a statically proven pair key type in the current scalar ABI, found `{}`",
-              other.to_brief_string()
-            ));
-          }
-        }
+    let elem_ty = match xs_ty.as_deref() {
+      Some(CalcitTypeAnnotation::List(elem_ty)) => Some(CalcitTypeAnnotation::expand_schema_alias(elem_ty)),
+      Some(CalcitTypeAnnotation::Tuple(slots)) => {
+        let elem = CalcitTypeAnnotation::homogeneous_tuple_item(slots).or_else(|| slots.first());
+        elem.map(CalcitTypeAnnotation::expand_schema_alias)
       }
-      other => {
+      _ => None,
+    };
+    let key_ty = match elem_ty.as_deref() {
+      Some(CalcitTypeAnnotation::Tuple(items)) if !items.is_empty() => normalize_map_key_type(&items[0]),
+      Some(CalcitTypeAnnotation::List(inner)) => normalize_map_key_type(inner),
+      Some(other) => {
+        return Err(format!(
+          "E_WASM_SET_ELEMENT_KIND: pairs-map requires a statically proven pair key type in the current scalar ABI, found `{}`",
+          other.to_brief_string()
+        ));
+      }
+      None => {
         return Err(format!(
           "E_WASM_SET_ELEMENT_KIND: pairs-map requires a List of pairs with statically proven key types, found `{}`",
-          other.map(|t| t.to_brief_string()).unwrap_or_else(|| "Dynamic".to_owned())
+          xs_ty
+            .as_deref()
+            .map(|t| t.to_brief_string())
+            .unwrap_or_else(|| "Dynamic".to_owned())
         ));
       }
     };
