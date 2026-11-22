@@ -12328,6 +12328,24 @@
                     hint-fn $ Fn String $ -> Bool
                     .includes? error "|expects pair for pairs-map"
               :tags $ #{} :core :pairs-map-proof :unit
+            %{} 'TestEntry (:name |preserves-tuple-pairs)
+              :code $ quote $ let
+                  xs $ []
+                    [] |a $ [] |x
+                    [] |b $ [] |y |z
+                  answer $ pairs-map xs
+                assert-type answer $ Map String $ List String
+                assert=
+                  {}
+                    |a $ [] |x
+                    |b $ [] |y |z
+                  , answer
+                assert=
+                  {}
+                    |a $ [] |x
+                    |b $ [] |y |z
+                  .pairs-map xs
+              :tags $ #{} :core :pairs-map-proof :unit
         'parse-cirru $ %{} 'CodeEntry
           :doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure"
           :code $ quote &runtime-implementation

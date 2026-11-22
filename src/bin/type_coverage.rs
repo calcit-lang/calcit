@@ -1293,7 +1293,7 @@ fn child_is_return_position(
   }
   if is_code_root {
     return match head {
-      Some("defn" | "defmacro") => child_index >= 3 && child_index + 1 == child_count,
+      Some("defn" | "defmacro" | "defcomp") => child_index >= 3 && child_index + 1 == child_count,
       Some("fn" | "macro") => child_index >= 2 && child_index + 1 == child_count,
       Some("def") => child_index == 2,
       _ => false,
@@ -1703,7 +1703,7 @@ fn js_ffi_host_reach(code: &Cirru) -> Option<JsFfiHostReach> {
   let Cirru::List(items) = code else {
     return None;
   };
-  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn") {
+  if !matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defn" || head.as_ref() == "defcomp") {
     return None;
   }
   let Some(Cirru::List(raw_params)) = items.get(2) else {
@@ -4444,6 +4444,20 @@ mod tests {
       .expect("parse adapter")
       .remove(0);
     assert!(!super::js_ffi_host_reach(&plain).expect("defn reach").ret);
+
+    let comp = cirru_parser::parse("defcomp comp-codearea (states props) (div ({}))")
+      .expect("parse comp")
+      .remove(0);
+    let comp_reach = super::js_ffi_host_reach(&comp).expect("defcomp reach");
+    assert_eq!(comp_reach.params, vec![false, false]);
+    assert!(!comp_reach.ret);
+
+    let comp_host = cirru_parser::parse("defcomp comp-preview (states props) (println states) props.-hostNode")
+      .expect("parse comp")
+      .remove(0);
+    let comp_host_reach = super::js_ffi_host_reach(&comp_host).expect("defcomp host reach");
+    assert_eq!(comp_host_reach.params, vec![false, true]);
+    assert!(comp_host_reach.ret);
   }
 
   #[test]

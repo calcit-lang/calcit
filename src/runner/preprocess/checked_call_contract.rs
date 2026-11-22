@@ -353,7 +353,8 @@ fn resolve_checked_call_contract_inner(
     _ => match CalcitTypeAnnotation::expand_schema_alias(&receiver_type) {
       expanded if matches!(expanded.as_ref(), T::Tuple(_)) && fn_def != "nth" => expanded,
       expanded
-        if matches!(expanded.as_ref(), T::List(_) | T::Map(_, _) | T::String) && matches!(fn_def, "get" | "first" | "last" | "nth") =>
+        if matches!(expanded.as_ref(), T::List(_) | T::Map(_, _) | T::String)
+          && matches!(fn_def, "get" | "first" | "last" | "nth" | "pairs-map") =>
       {
         expanded
       }
@@ -491,16 +492,21 @@ fn resolve_checked_call_contract_inner(
   }
   match (fn_def, receiver_type.as_ref()) {
     ("pairs-map", T::List(pair)) => {
-      let T::List(member) = pair.as_ref() else { return None };
-      if is_syntax_member(member) {
+      let pair = CalcitTypeAnnotation::expand_schema_alias(pair);
+      let (key, val) = match pair.as_ref() {
+        T::Tuple(items) if items.len() == 2 => (items[0].clone(), items[1].clone()),
+        T::List(member) => (member.clone(), member.clone()),
+        _ => return None,
+      };
+      if is_syntax_member(&key) || is_syntax_member(&val) {
         return None;
       }
       // The implementation checks every pair's length before reading it.
-      // Homogeneous list members prove both positions; heterogeneous lists
+      // Homogeneous list members and 2-tuples prove their positions; other lists
       // retain Dynamic instead of inventing independent key/value variables.
       Some(CheckedCallContract {
         expected_types: Some(vec![receiver_type.clone()]),
-        return_type: Arc::new(T::Map(member.clone(), member.clone())),
+        return_type: Arc::new(T::Map(key, val)),
         lowering: None,
       })
     }
@@ -1195,5 +1201,18 @@ mod tests {
       core_type_ref("Option", vec![optional_number]),
       "lookup absence must not flatten a field payload that is already Option"
     );
+  }
+
+  #[test]
+  fn pairs_map_preserves_tuple_key_and_value_types() {
+    let key = Arc::new(CalcitTypeAnnotation::String);
+    let val = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)));
+    let tuple = Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![key.clone(), val.clone()])));
+    let receiver = Arc::new(CalcitTypeAnnotation::List(tuple));
+    let args = CalcitList::from(&[local("pairs", receiver)] as &[Calcit]);
+
+    let contract = resolve_checked_call_contract(calcit::CORE_NS, "pairs-map", &args, &ScopeTypes::new())
+      .expect("pairs-map should resolve a checked call contract for List of Tuples");
+    assert_eq!(contract.return_type, Arc::new(CalcitTypeAnnotation::Map(key, val)));
   }
 }

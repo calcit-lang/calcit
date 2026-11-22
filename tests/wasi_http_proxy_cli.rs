@@ -518,7 +518,15 @@ fn http_proxy_supports_println_and_eprintln_logging_and_live_wasmtime_serve() {
   let addr = free_loopback_addr();
   let mut guard = ChildGuard(
     Command::new(&wasmtime_cli)
-      .args(["serve", "--addr", &addr.to_string(), "--max-instance-reuse-count", "8"])
+      .args([
+        "serve",
+        "--addr",
+        &addr.to_string(),
+        "--max-instance-reuse-count",
+        "8",
+        "--idle-instance-timeout",
+        "60s",
+      ])
       .arg(&wasm_path)
       .stdout(Stdio::piped())
       .stderr(Stdio::piped())
@@ -564,7 +572,15 @@ fn http_proxy_supports_println_and_eprintln_logging_and_live_wasmtime_serve() {
   let lambda_addr = free_loopback_addr();
   let mut lambda_guard = ChildGuard(
     Command::new(&wasmtime_cli)
-      .args(["serve", "--addr", &lambda_addr.to_string(), "--max-instance-reuse-count", "8"])
+      .args([
+        "serve",
+        "--addr",
+        &lambda_addr.to_string(),
+        "--max-instance-reuse-count",
+        "8",
+        "--idle-instance-timeout",
+        "60s",
+      ])
       .arg(&lambda_wasm_path)
       .stdout(Stdio::piped())
       .stderr(Stdio::piped())
@@ -608,6 +624,8 @@ fn http_proxy_serves_routes_binary_errors_and_64_stress_turns_under_8mib_cap() {
         &addr.to_string(),
         "--max-instance-reuse-count",
         "128",
+        "--idle-instance-timeout",
+        "60s",
         "-W",
         "max-memory-size=8388608",
       ])
@@ -752,6 +770,7 @@ fn http_proxy_serves_routes_binary_errors_and_64_stress_turns_under_8mib_cap() {
     let prefix = format!("stress:{expected_hits}:");
     assert!(text.starts_with(&prefix), "step {step} expected {prefix}*, got {text:?}");
     expected_hits += 1;
+    std::thread::sleep(Duration::from_millis(10));
   }
 
   // Final health check confirms instance reuse remained alive across all 64 stress turns.
@@ -799,7 +818,15 @@ fn http_proxy_rejects_interim_status_and_mismatched_content_length() {
   let addr = free_loopback_addr();
   let mut guard = ChildGuard(
     Command::new(wasmtime_cli)
-      .args(["serve", "--addr", &addr.to_string(), "--max-instance-reuse-count", "32"])
+      .args([
+        "serve",
+        "--addr",
+        &addr.to_string(),
+        "--max-instance-reuse-count",
+        "32",
+        "--idle-instance-timeout",
+        "60s",
+      ])
       .arg(&wasm_path)
       .stdout(Stdio::null())
       .stderr(Stdio::piped())
