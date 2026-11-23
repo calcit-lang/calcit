@@ -715,7 +715,6 @@ const expectedImports = [
   "[export]$root/[task-cancel]",
   "$root/[waitable-set-drop]",
   "$root/[waitable-set-new]",
-  "$root/[waitable-set-wait]",
   "$root/[waitable-join]",
 ].sort();
 if (JSON.stringify(imports) !== JSON.stringify(expectedImports)) {

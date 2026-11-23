@@ -115,6 +115,8 @@ struct ParsedFunction {
 }
 
 struct ParsedModule {
+  num_func_imports: u32,
+  type_count: usize,
   exports: HashMap<String, u32>,
   functions: HashMap<u32, ParsedFunction>,
   data_offsets: Vec<i32>,
@@ -221,6 +223,8 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
   }
 
   ParsedModule {
+    num_func_imports,
+    type_count: type_sigs.len(),
     exports,
     functions,
     data_offsets,
@@ -1603,24 +1607,28 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
   let arith_wasm = compile_wasm_with_boundary(&arith_dir, arith_snapshot, "native");
   let arith_bytes = fs::read(&arith_wasm).expect("arith wasm bytes should read");
   assert!(
-    arith_bytes.len() < 4096,
-    "pure arithmetic module must elide static core string/tag pool and stay under 4 KB, got {} bytes",
+    arith_bytes.len() < 1024,
+    "pure arithmetic module must elide unused imports, types, and data under 1 KB, got {} bytes",
     arith_bytes.len()
   );
   let arith_parsed = parse_wasm_module(&arith_bytes);
-  assert!(
-    !arith_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
-    "pure arithmetic module must omit Ryū table at {NUMBER_TABLE_BASE}, got {:?}",
-    arith_parsed.data_offsets
+  assert_eq!(
+    arith_parsed.num_func_imports, 0,
+    "pure arithmetic module must prune all unused host imports"
   );
   assert!(
-    arith_parsed.data_bytes < 256,
-    "pure arithmetic module must elide static core string/tag pool data (< 256 B), got {} bytes",
+    arith_parsed.type_count <= 5,
+    "pure arithmetic module must deduplicate types and omit canonical HOF signatures, got {}",
+    arith_parsed.type_count
+  );
+  assert_eq!(
+    arith_parsed.data_bytes, 0,
+    "pure arithmetic module must elide static string/tag/descriptor/Ryū data, got {} bytes",
     arith_parsed.data_bytes
   );
   assert!(
-    !arith_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
-    "pure arithmetic must omit Ryū lookup table at {NUMBER_TABLE_BASE}, got offsets {:?}",
+    arith_parsed.data_offsets.is_empty(),
+    "pure arithmetic module must emit no active data segments, got {:?}",
     arith_parsed.data_offsets
   );
   assert!(
@@ -1667,6 +1675,11 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
   let fmt_wasm = compile_wasm_with_boundary(&fmt_dir, fmt_snapshot, "native");
   let fmt_bytes = fs::read(&fmt_wasm).expect("fmt wasm bytes should read");
   let fmt_parsed = parse_wasm_module(&fmt_bytes);
+  assert!(
+    fmt_parsed.num_func_imports < 11,
+    "fmt module must prune uncalled host imports below 11, got {}",
+    fmt_parsed.num_func_imports
+  );
   assert!(
     fmt_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
     "float formatting must retain Ryū lookup table at {NUMBER_TABLE_BASE}, got offsets {:?}",
@@ -1718,6 +1731,11 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
   let print_wasm = compile_wasm_with_boundary(&print_dir, print_snapshot, "native");
   let print_bytes = fs::read(&print_wasm).expect("print-only wasm bytes should read");
   let print_parsed = parse_wasm_module(&print_bytes);
+  assert!(
+    print_parsed.num_func_imports < 11,
+    "print-only module must prune uncalled host imports below 11, got {}",
+    print_parsed.num_func_imports
+  );
   assert!(
     print_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
     "print-only float fixture without `str` must retain Ryū table at {NUMBER_TABLE_BASE}, got {:?}",
