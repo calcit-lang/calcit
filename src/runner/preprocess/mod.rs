@@ -14489,8 +14489,16 @@ fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinem
       })
     })
     .collect();
+  let incomplete_impls: Vec<_> = parent
+    .keys()
+    .filter(|name| shadowed != Some(name.as_ref()) && after.has_incomplete_impls(name))
+    .cloned()
+    .collect();
   for (name, annotation) in widened {
     parent.annotate(name, annotation);
+  }
+  for name in incomplete_impls {
+    parent.mark_incomplete_impls(name);
   }
 }
 

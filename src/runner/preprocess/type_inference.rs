@@ -5087,21 +5087,24 @@ fn resolve_struct_value_inner(
         return (None, false);
       };
       let is_type_ref = matches!(t.as_ref(), CalcitTypeAnnotation::TypeRef(_, _));
-      let struct_def = match t.as_ref() {
+      let value = match t.as_ref() {
         // As above, only the explicit struct-construction path unwraps a
-        // StructDef into the nominal metadata of the instance being created.
+        // StructDef or EnumDef into the nominal metadata of the instance being created.
         // Share the bound definition object: a definition created inside a
         // function has no source `definition_ref`, so this lexical binding
         // is the only identity a same-scope annotation can be proven against.
-        CalcitTypeAnnotation::StructDef(struct_def) => struct_def.clone(),
+        CalcitTypeAnnotation::StructDef(struct_def) => CalcitStructValue {
+          values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
+          struct_ref: struct_def.clone(),
+        },
+        CalcitTypeAnnotation::EnumDef(enum_def) => enum_def.to_struct_prototype(),
         _ => match t.resolve_to_struct() {
-          Some(def) => Arc::new(def),
+          Some(def) => CalcitStructValue {
+            values: Arc::new(vec![Calcit::Nil; def.fields.len()]),
+            struct_ref: Arc::new(def),
+          },
           None => return (None, false),
         },
-      };
-      let value = CalcitStructValue {
-        values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
-        struct_ref: struct_def,
       };
       (Some(value), complete && !is_type_ref)
     }
@@ -7495,5 +7498,42 @@ mod tests {
       other => panic!("expected complete StructDef, got {other:?}"),
     }
     assert!(matching_complete);
+  }
+
+  #[test]
+  fn scoped_enum_def_symbol_resolves_struct_prototype_and_preserves_completeness() {
+    let mut choice_schema = CalcitStructDef::from_fields(EdnTag::from("Choice"), vec![EdnTag::from("item")]);
+    choice_schema.definition_ref = Some(Arc::from("tests.shadow-enum/Choice"));
+    let scoped_enum = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(choice_schema),
+        values: Arc::new(vec![Calcit::from(vec![CalcitTypeAnnotation::Number.to_calcit()])]),
+      })
+      .expect("valid EnumDef fixture"),
+    );
+
+    let sym = Calcit::Symbol {
+      sym: Arc::from("Choice"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.outer"),
+        at_def: Arc::from("use-choice"),
+      }),
+      location: None,
+    };
+
+    let mut complete_scope = ScopeTypes::new();
+    complete_scope.insert(Arc::from("Choice"), Arc::new(CalcitTypeAnnotation::EnumDef(scoped_enum.clone())));
+    let (resolved, is_complete) = resolve_struct_value_inner(&sym, &complete_scope, true);
+    let proto = resolved.expect("scoped EnumDef binding must resolve to struct prototype");
+    assert_eq!(&proto.struct_ref.name, scoped_enum.name());
+    assert_eq!(proto.struct_ref.fields.len(), 1);
+    assert!(is_complete);
+
+    let mut incomplete_scope = complete_scope;
+    incomplete_scope.mark_incomplete_impls(Arc::from("Choice"));
+    let (resolved_incomplete, incomplete_flag) = resolve_struct_value_inner(&sym, &incomplete_scope, true);
+    let proto_incomplete = resolved_incomplete.expect("incomplete scoped EnumDef must still resolve prototype");
+    assert_eq!(&proto_incomplete.struct_ref.name, scoped_enum.name());
+    assert!(!incomplete_flag);
   }
 }

@@ -2548,6 +2548,27 @@ defn def-set-mixed-if (flag)
     set! local (if flag (impl-traits Widget0 ParentImpl) Widget0)
     impl-traits local ChildImpl
     , &unit
+defn def-set-branch-if (flag)
+  let ((local Widget0))
+    if flag
+      set! local (impl-traits Widget0 ParentImpl)
+      , &unit
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-branch-match ()
+  let ((local Widget0))
+    match (Option :some 1)
+      (:some _) (set! local (impl-traits Widget0 ParentImpl))
+      (:none) &unit
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-branch-let ()
+  let ((local Widget0))
+    let ((_tmp 1))
+      set! local (impl-traits Widget0 ParentImpl)
+      , &unit
+    impl-traits local ChildImpl
+    , &unit
 defn main! ()
   def-if-join-let-deferred true
   def-if-join-forwarded true
@@ -2555,6 +2576,9 @@ defn main! ()
   enum-def-if-join-let-deferred true
   def-set-mixed-direct
   def-set-mixed-if true
+  def-set-branch-if true
+  def-set-branch-match
+  def-set-branch-let
   , &unit"#
     );
     let entries = prepare_def_valued(
@@ -2566,6 +2590,9 @@ defn main! ()
         ("enum-def-if-join-let-deferred", "Fn Bool (-> Unit)"),
         ("def-set-mixed-direct", "Fn (-> Unit)"),
         ("def-set-mixed-if", "Fn Bool (-> Unit)"),
+        ("def-set-branch-if", "Fn Bool (-> Unit)"),
+        ("def-set-branch-match", "Fn (-> Unit)"),
+        ("def-set-branch-let", "Fn (-> Unit)"),
       ],
     );
     run_check_only(&entries)
