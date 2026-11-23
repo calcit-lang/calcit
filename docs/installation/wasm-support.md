@@ -61,7 +61,7 @@ aliases:
 | `&read-dir` | unsupported | 旧目录原语仅用于 native 和配置了目录注入的 Node 宿主。在 WASI 使用 `FsPath .read-dir` 及其支持的文件系统边界 | `calcit.core/&read-dir#lists-sorted-paths-with-optional-recursion` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标 / WASI `--world http`） | core 目标报 `E_WASM_CAPABILITY`；`calcit wasi` 默认 `command` world 按所选边界支持，而 `--world http` 以 `E_WASI_HTTP_CAPABILITY` 拒绝这些仅限 `command` 的能力（仅保留 `println` / `eprintln` / `echo` 日志） | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |
-| `defwasm-import` / `defwasm-export` | supported-with-type-evidence | 显式 host ABI 边界（参数、rest 与返回值不得出现 `Dynamic`，否则在预处理期报告 `E_WASM_BOUNDARY_DYNAMIC`） | `scripts/wasm-validation.md`、`src/bin/cr_tests/type_fail.rs` |
+| `defwasm-import` / `defwasm-export` | supported-with-type-evidence | 显式 host ABI 边界（参数、rest 与返回值不得出现 `Dynamic`，否则在预处理期报告 `E_WASM_BOUNDARY_DYNAMIC`）；`calcit wasi --world http` 仅放行固定同步接口 `calcit:db/sql@0.1.0` 与 `calcit:db/kv@0.1.0`（签名与限制见 [WASI HTTP proxy](../run/cli-options.md#wasi-http-proxy---world-http)），`--world command` 则以 `E_WASM_CAPABILITY` 拒绝自定义导入 | `scripts/wasm-validation.md`、`src/bin/cr_tests/type_fail.rs`、`tests/wasi_http_db_cli.rs` |
 
 完整的逐测试清单是 `scripts/core-tests-exclusions.cirru` 的 `:wasm` 与 `:wasi` 部分，原因以 `unsupported`、`parity`、`host`、`replay` 开头；`node scripts/run-core-tests.mjs --backend wasm --report-unexpected-pass` 列出已经可以移出清单的测试。
 

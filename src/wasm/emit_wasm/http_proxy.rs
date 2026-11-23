@@ -282,6 +282,10 @@ pub(super) fn is_wasi_http_db_module(module: &str) -> bool {
   matches!(module, WASI_DB_SQL_MODULE | WASI_DB_KV_MODULE)
 }
 
+pub(super) fn format_wasi_http_db_import_error(context: &str, detail: &str) -> String {
+  format!("E_WASI_HTTP_DB_IMPORT: `{context}` violates the pinned `calcit:db@0.1.0` contract: {detail}")
+}
+
 fn pin_db_nominal_id<'a>(slot: &mut Option<&'a str>, id: &'a str, label: &str, context: &str) -> Result<(), String> {
   if let Some(expected) = *slot
     && expected != id
@@ -540,7 +544,7 @@ pub(super) fn validate_wasi_http_component_in_program(
   program_data: &program::CompiledProgram,
   init_ns: &str,
   init_def: &str,
-) -> Result<(), String> {
+) -> Result<Vec<ComponentImportAdapter>, String> {
   for namespace in deterministic_namespace_order(program_data, None) {
     let file = program_data.get(namespace.as_str()).expect("ordered namespace must exist");
     for (name, compiled) in deterministic_definition_order(file) {
@@ -579,9 +583,9 @@ pub(super) fn validate_wasi_http_component_in_program(
       "E_WASI_HTTP_ENTRY: `{qualified_init}` return schema must be `Result HttpResponse String`"
     ));
   }
-  let import_adapters = collect_component_import_adapters(program_data)?;
+  let import_adapters = collect_component_import_adapters_inner(program_data, true)?;
   validate_wasi_http_db_imports(&import_adapters)?;
-  Ok(())
+  Ok(import_adapters)
 }
 
 fn lookup_core_struct_def(program_data: &program::CompiledProgram, name: &str) -> Result<CalcitStructDef, String> {

@@ -294,6 +294,26 @@ fn http_db_validator_rejects_disallowed_worlds_unknown_symbols_async_and_shape_d
   assert!(!res.status.success());
   let err = String::from_utf8_lossy(&res.stderr);
   assert!(err.contains("E_WASI_HTTP_DB_IMPORT"), "{err}");
+
+  // Unsupported Component ABI type (e.g. Map) on a recognized DB import must still report
+  // E_WASI_HTTP_DB_IMPORT while preserving the underlying E_COMPONENT_ABI_* detail.
+  let unsupported_db_type = make_minimal_copy("unsupported-db-type.cirru");
+  edit_def(
+    &unsupported_db_type,
+    "app.main/kv-get",
+    "quote $ defwasm-import kv-get (key) |calcit:db/kv@0.1.0 |get",
+    "quote $ Fn String (-> (Result (Map String String) DbError))",
+  );
+  let res = calcit(
+    &[unsupported_db_type.to_str().unwrap(), "wasi", "--world", "http", "--check-only"],
+    out.path(),
+  );
+  assert!(!res.status.success());
+  let err = String::from_utf8_lossy(&res.stderr);
+  assert!(
+    err.contains("E_WASI_HTTP_DB_IMPORT") && err.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"),
+    "{err}"
+  );
 }
 
 #[tokio::test]
@@ -400,6 +420,7 @@ async fn http_db_service_end_to_end_sqlite_kv_default_deny_tx_and_memory_ceiling
     .await
     .expect("POST /tx/commit");
   assert_eq!(tx_commit.status, 200, "{}", String::from_utf8_lossy(&tx_commit.body));
+  assert_eq!(tx_commit.leaked_tx_rolled_back, 0);
   let tx_commit_json: Value = serde_json::from_slice(&tx_commit.body).expect("JSON tx-commit reply");
   assert_eq!(tx_commit_json["items"].as_array().expect("items").len(), 3);
 
@@ -409,6 +430,7 @@ async fn http_db_service_end_to_end_sqlite_kv_default_deny_tx_and_memory_ceiling
     .expect("POST /tx/rollback");
   assert_eq!(tx_rollback.status, 200);
   assert_eq!(String::from_utf8_lossy(&tx_rollback.body), "rolled-back");
+  assert_eq!(tx_rollback.leaked_tx_rolled_back, 0);
 
   let tx_leak = runner
     .handle_request(Method::POST, "/tx/leak", Vec::new(), Vec::new())
@@ -462,8 +484,9 @@ async fn http_db_service_end_to_end_sqlite_kv_default_deny_tx_and_memory_ceiling
   assert_eq!(kv_missing.status, 404);
   assert_eq!(String::from_utf8_lossy(&kv_missing.body), "missing");
 
+  // Use non-UTF-8 bytes so the HTTP adapter produces HttpBody :bytes and exercises kv-set denial.
   let kv_denied_set = runner
-    .handle_request(Method::POST, "/kv/denied", Vec::new(), vec![1, 2, 3])
+    .handle_request(Method::POST, "/kv/denied", Vec::new(), vec![0xff, 2, 3])
     .await
     .expect("POST /kv/denied set");
   assert_eq!(kv_denied_set.status, 403);
