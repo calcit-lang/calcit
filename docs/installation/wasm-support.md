@@ -139,6 +139,7 @@ write-file
 | `E_WASI_WORLD` | 未知的 `--world`，或 `--world http` 与 `--boundary native` 组合 | `--world` 仅支持 `command` 或 `http`，且 `http` 必须使用 `--boundary component` |
 | `E_WASI_HTTP_ENTRY` | HTTP 入口不是单参数函数，或缺少精确 `Fn HttpRequest (-> (Result HttpResponse String))` schema | 为 `:init-fn` 声明匹配的入参与返回值类型 |
 | `E_WASI_HTTP_EXPORT` | 在 `--world http` 下额外声明通用 `defwasm-export` | HTTP proxy world 只导出 `wasi:http/incoming-handler@0.2.12`，移除多余 `defwasm-export` |
+| `E_WASI_HTTP_DB_IMPORT` | `--world http` 下的 `calcit:db/sql@0.1.0` 或 `calcit:db/kv@0.1.0` 导入符号未知、使用异步调用模式、签名与固定 WIT 契约不匹配，或 `DbError`/`DbParam`/`DbExecResult`/`DbQueryResult` 结构不一致 | 对照固定 `calcit:db@0.1.0` 契约修正同步 `defwasm-import` 签名并共用按字母顺序定义的名义类型 |
 | `E_WASI_HTTP_CAPABILITY` | 在 `--world http` 可达闭包中调用仅限 `command` 的能力（如 CLI 参数、环境变量、filesystem、stdin、`quit!`、时钟、阻塞等待或安全随机数） | 保留在 `command` world 或改用纯 HTTP 请求/响应与 stdio 日志逻辑 |
 
 ## 维护

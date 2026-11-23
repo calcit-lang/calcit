@@ -363,11 +363,14 @@ fn emit_wasm_impl(
   } else {
     host_imports_for_target(target)
   };
-  let mut component_import_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
+  let mut component_import_adapters = if boundary == WasmBoundary::Component && (target == WasmTarget::Core || wasi_http_proxy) {
     collect_component_import_adapters(&program_data)?
   } else {
     Vec::new()
   };
+  if wasi_http_proxy && !component_import_adapters.is_empty() {
+    http_proxy::validate_wasi_http_db_imports(&component_import_adapters)?;
+  }
   if wasi_command_component {
     component_import_adapters.push(ComponentImportAdapter {
       definition: "calcit.core/get-args".into(),
@@ -1681,7 +1684,13 @@ fn emit_wasm_impl(
   let wasm_bytes = if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     match world {
       WasiWorld::Command => calcit_bindgen::package_wasi_command(&wasm_bytes)?,
-      WasiWorld::Http => calcit_bindgen::package_wasi_http_proxy(&wasm_bytes)?,
+      WasiWorld::Http => {
+        if component_import_adapters.is_empty() {
+          calcit_bindgen::package_wasi_http_proxy(&wasm_bytes)?
+        } else {
+          calcit_bindgen::package_wasi_http_service(&wasm_bytes)?
+        }
+      }
     }
   } else {
     wasm_bytes
@@ -1800,9 +1809,14 @@ fn validate_wasm_target_in_program(
         continue;
       }
       if is_wasm_import_def(&compiled.preprocessed_code) {
-        return Err(format!(
-          "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
-        ));
+        let allowed_http_db = world == WasiWorld::Http
+          && parse_wasm_import_def(&compiled.preprocessed_code)
+            .is_some_and(|(module, _, _)| http_proxy::is_wasi_http_db_module(&module));
+        if !allowed_http_db {
+          return Err(format!(
+            "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
+          ));
+        }
       }
       if def_name.as_ref() == "_start" {
         return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
