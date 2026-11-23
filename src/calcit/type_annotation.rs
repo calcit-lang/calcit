@@ -4339,6 +4339,11 @@ impl CalcitTypeAnnotation {
       if let Some(builtin) = Self::builtin_type_from_symbol_name(sym).filter(|_| !Self::generics_contains(generics, sym)) {
         return Arc::new(builtin);
       }
+      // Qualified names in a type position refer to definitions. Preserve
+      // them for runtime assertions as well as scoped static checks.
+      if !sym.starts_with('\'') && sym.contains('/') {
+        return Arc::new(CalcitTypeAnnotation::TypeRef(sym.clone(), Arc::new(vec![])));
+      }
       if sym.starts_with('\'') {
         let stripped = sym.trim_start_matches('\'');
         if let Some(slot_name) = stripped.strip_prefix('*')

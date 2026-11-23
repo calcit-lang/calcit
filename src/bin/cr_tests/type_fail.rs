@@ -2812,6 +2812,30 @@ fn retired_core_functions_report_preferred_spelling() {
 }
 
 #[test]
+fn assert_type_expands_qualified_function_alias_at_runtime() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut main =
+      snapshot::create_file_from_snippet("ns app.main\n  :require\n    app.lib :as lib\n\ndo (assert-type handler lib/Identity) &unit")
+        .expect("main fixture should parse");
+    let handler = snapshot::create_file_from_snippet("defn handler (x)\n  hint-fn $ Fn String (-> String)\n  , x")
+      .expect("handler fixture should parse");
+    main.defs.extend(handler.defs.into_iter().filter(|(name, _)| name == "handler"));
+    snapshot.files.insert("app.main".to_owned(), main);
+    snapshot.files.insert(
+      "app.lib".to_owned(),
+      snapshot::create_file_from_snippet("deftype Identity $ Fn String (-> String)").expect("alias fixture should parse"),
+    );
+    let entries = prepare_snapshot_entries(snapshot);
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("qualified function alias must pass static checking");
+    calcit::run_program(entries.init_ns, entries.init_def, &[]).expect("the same assertion must pass at runtime (#2913)");
+  });
+}
+
+#[test]
 fn assert_type_resolves_struct_through_as_alias() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
