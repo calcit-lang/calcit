@@ -290,12 +290,17 @@ fn emit_wasm_impl(
   }
   validate_wasm_target_in_program(&program_data, init_ns, init_def, target, world)?;
   validate_stdin_boundary(&program_data, init_ns, init_def, target, boundary, world)?;
-  if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
+  let mut http_db_import_adapters = if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     match world {
-      WasiWorld::Command => validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?,
+      WasiWorld::Command => {
+        validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
+        Vec::new()
+      }
       WasiWorld::Http => http_proxy::validate_wasi_http_component_in_program(&program_data, init_ns, init_def)?,
     }
-  }
+  } else {
+    Vec::new()
+  };
 
   // First pass: extract all function signatures from all namespaces
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
@@ -365,6 +370,8 @@ fn emit_wasm_impl(
   };
   let mut component_import_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
     collect_component_import_adapters(&program_data)?
+  } else if wasi_http_proxy {
+    std::mem::take(&mut http_db_import_adapters)
   } else {
     Vec::new()
   };
@@ -1681,7 +1688,13 @@ fn emit_wasm_impl(
   let wasm_bytes = if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     match world {
       WasiWorld::Command => calcit_bindgen::package_wasi_command(&wasm_bytes)?,
-      WasiWorld::Http => calcit_bindgen::package_wasi_http_proxy(&wasm_bytes)?,
+      WasiWorld::Http => {
+        if component_import_adapters.is_empty() {
+          calcit_bindgen::package_wasi_http_proxy(&wasm_bytes)?
+        } else {
+          calcit_bindgen::package_wasi_http_service(&wasm_bytes)?
+        }
+      }
     }
   } else {
     wasm_bytes
@@ -1728,7 +1741,7 @@ pub fn validate_wasm_boundary_with_world(
         return Err("E_WASI_WORLD: `--world http` requires `--boundary component`; WASI Preview 1 has no HTTP proxy world".into());
       }
       (WasiWorld::Http, WasmBoundary::Component) => {
-        http_proxy::validate_wasi_http_component_in_program(&program_data, init_ns, init_def)?;
+        let _ = http_proxy::validate_wasi_http_component_in_program(&program_data, init_ns, init_def)?;
       }
       (WasiWorld::Command, WasmBoundary::Component) => {
         validate_wasm_command_component_in_program(&program_data, init_ns, init_def)?;
@@ -1800,9 +1813,14 @@ fn validate_wasm_target_in_program(
         continue;
       }
       if is_wasm_import_def(&compiled.preprocessed_code) {
-        return Err(format!(
-          "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
-        ));
+        let allowed_http_db = world == WasiWorld::Http
+          && parse_wasm_import_def(&compiled.preprocessed_code)
+            .is_some_and(|(module, _, _)| http_proxy::is_wasi_http_db_module(&module));
+        if !allowed_http_db {
+          return Err(format!(
+            "E_WASM_CAPABILITY: `{ns}/{def_name}` declares a custom WASM import; the `wasi` target only permits registered capabilities"
+          ));
+        }
       }
       if def_name.as_ref() == "_start" {
         return Err("E_WASM_TARGET: `_start` is reserved for the generated WASI command entry".into());
@@ -2688,15 +2706,28 @@ fn component_numeric_flat_type(kind: CalcitNumericRefinement) -> ValType {
 }
 
 fn collect_component_import_adapters(program_data: &program::CompiledProgram) -> Result<Vec<ComponentImportAdapter>, String> {
+  collect_component_import_adapters_inner(program_data, false)
+}
+
+fn collect_component_import_adapters_inner(
+  program_data: &program::CompiledProgram,
+  wrap_http_db_errors: bool,
+) -> Result<Vec<ComponentImportAdapter>, String> {
   let mut adapters = Vec::new();
-  for (namespace, file) in program_data {
-    for (name, compiled) in &file.defs {
+  for namespace in deterministic_namespace_order(program_data, None) {
+    let file = program_data.get(namespace.as_str()).expect("ordered namespace must exist");
+    for (name, compiled) in deterministic_definition_order(file) {
       if !is_wasm_import_def(&compiled.preprocessed_code) {
         continue;
       }
       let definition = format!("{namespace}/{name}");
       let (module, symbol, args) = parse_wasm_import_def(&compiled.preprocessed_code)
         .ok_or_else(|| format!("E_COMPONENT_ABI_IMPORT: `{definition}` must use `defwasm-import name (args) |module |field`"))?;
+      if wrap_http_db_errors && !http_proxy::is_wasi_http_db_module(&module) {
+        return Err(format!(
+          "E_WASM_CAPABILITY: `{definition}` declares custom WASM import `{module}`; only `calcit:db/sql@0.1.0` and `calcit:db/kv@0.1.0` are permitted on `calcit wasi --world http`"
+        ));
+      }
       if matches!(
         module.as_str(),
         COMPONENT_ASYNC_ROOT_IMPORT_MODULE | COMPONENT_ASYNC_EXPORT_IMPORT_MODULE
@@ -2705,12 +2736,21 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
           "E_COMPONENT_ABI_RESERVED_IMPORT: `{definition}` cannot declare the compiler-reserved module `{module}`"
         ));
       }
+      let map_db_err = |err: String| {
+        if wrap_http_db_errors && http_proxy::is_wasi_http_db_module(&module) {
+          let context = format!("{definition} ({module}.{symbol})");
+          http_proxy::format_wasi_http_db_import_error(&context, &err)
+        } else {
+          err
+        }
+      };
       let source_arity = wasm_import_arity(&args)
-        .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))?;
+        .map_err(|reason| format!("E_COMPONENT_ABI_UNSUPPORTED_ARITY: `{definition}` at `logical_schema.parameters` {reason}"))
+        .map_err(&map_db_err)?;
       let (parameters, result, invocation) =
-        component_function_schema(compiled, &definition, source_arity as usize, program_data, false, false)?;
+        component_function_schema(compiled, &definition, source_arity as usize, program_data, false, false).map_err(&map_db_err)?;
       if invocation == ComponentAbiInvocation::Sync {
-        validate_component_flat_parameters(&parameters, &definition)?;
+        validate_component_flat_parameters(&parameters, &definition).map_err(&map_db_err)?;
       }
       adapters.push(ComponentImportAdapter {
         definition,
@@ -2725,7 +2765,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
     }
   }
   adapters.sort_unstable_by(|left, right| left.definition.cmp(&right.definition));
-  validate_component_import_symbols(&adapters)?;
+  validate_component_import_symbols_inner(&adapters, wrap_http_db_errors)?;
   Ok(adapters)
 }
 
@@ -3036,7 +3076,12 @@ fn validate_component_export_symbols(adapters: &[ComponentExportAdapter]) -> Res
   Ok(())
 }
 
+#[cfg(test)]
 fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Result<(), String> {
+  validate_component_import_symbols_inner(adapters, false)
+}
+
+fn validate_component_import_symbols_inner(adapters: &[ComponentImportAdapter], wrap_http_db_errors: bool) -> Result<(), String> {
   let mut symbol_owners = BTreeMap::<(&str, String), Vec<&str>>::new();
   for adapter in adapters {
     symbol_owners
@@ -3045,10 +3090,15 @@ fn validate_component_import_symbols(adapters: &[ComponentImportAdapter]) -> Res
       .push(adapter.definition.as_str());
   }
   if let Some(((module, symbol), owners)) = symbol_owners.into_iter().find(|(_, owners)| owners.len() > 1) {
-    return Err(format!(
+    let base_err = format!(
       "E_COMPONENT_ABI_SYMBOL_CONFLICT: import symbol `{module}/{symbol}` is declared by {}",
       owners.join(", ")
-    ));
+    );
+    if wrap_http_db_errors && http_proxy::is_wasi_http_db_module(module) {
+      let context = format!("{} ({module}.{symbol})", owners.join(", "));
+      return Err(http_proxy::format_wasi_http_db_import_error(&context, &base_err));
+    }
+    return Err(base_err);
   }
   Ok(())
 }

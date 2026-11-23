@@ -275,11 +275,276 @@ pub(super) fn validate_wasi_http_target_in_program(
   Ok(())
 }
 
+pub(super) const WASI_DB_SQL_MODULE: &str = "calcit:db/sql@0.1.0";
+pub(super) const WASI_DB_KV_MODULE: &str = "calcit:db/kv@0.1.0";
+
+pub(super) fn is_wasi_http_db_module(module: &str) -> bool {
+  matches!(module, WASI_DB_SQL_MODULE | WASI_DB_KV_MODULE)
+}
+
+pub(super) fn format_wasi_http_db_import_error(context: &str, detail: &str) -> String {
+  format!("E_WASI_HTTP_DB_IMPORT: `{context}` violates the pinned `calcit:db@0.1.0` contract: {detail}")
+}
+
+fn pin_db_nominal_id<'a>(slot: &mut Option<&'a str>, id: &'a str, label: &str, context: &str) -> Result<(), String> {
+  if let Some(expected) = *slot
+    && expected != id
+  {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` must reuse the shared `{label}` nominal type `{expected}`, got `{id}`"
+    ));
+  }
+  *slot = Some(id);
+  Ok(())
+}
+
+fn validate_db_error_type<'a>(abi_type: &'a ComponentAbiType, slot: &mut Option<&'a str>, context: &str) -> Result<(), String> {
+  const EXPECTED_VARIANTS: [&str; 8] = [
+    "backend",
+    "capability-denied",
+    "constraint-violation",
+    "decode-error",
+    "invalid-query",
+    "timeout",
+    "tx-error",
+    "unsupported",
+  ];
+  let ComponentAbiType::Enum(enum_type) = abi_type else {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` error type must be nominal enum `DbError`"
+    ));
+  };
+  let matches_shape = enum_type.variants.len() == EXPECTED_VARIANTS.len()
+    && enum_type
+      .variants
+      .iter()
+      .zip(EXPECTED_VARIANTS.iter())
+      .all(|(variant, expected_tag)| variant.tag == *expected_tag && matches!(variant.payload.as_slice(), [ComponentAbiType::String]));
+  if !matches_shape {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` `DbError` enum `{}` must define alphabetical variants `{}` each carrying `String`",
+      enum_type.id,
+      EXPECTED_VARIANTS.join(", ")
+    ));
+  }
+  pin_db_nominal_id(slot, &enum_type.id, "DbError", context)
+}
+
+fn validate_db_param_list<'a>(abi_type: &'a ComponentAbiType, slot: &mut Option<&'a str>, context: &str) -> Result<(), String> {
+  let ComponentAbiType::List(item) = abi_type else {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` SQL params argument must be `List DbParam`"
+    ));
+  };
+  let ComponentAbiType::Enum(enum_type) = item.as_ref() else {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` SQL params item type must be nominal enum `DbParam`"
+    ));
+  };
+  let v = &enum_type.variants;
+  let matches_shape = v.len() == 6
+    && v[0].tag == "bool-value"
+    && matches!(v[0].payload.as_slice(), [ComponentAbiType::Bool])
+    && v[1].tag == "bytes-value"
+    && matches!(v[1].payload.as_slice(), [ComponentAbiType::Buffer])
+    && v[2].tag == "float-value"
+    && matches!(
+      v[2].payload.as_slice(),
+      [ComponentAbiType::Numeric(CalcitNumericRefinement::Float64)]
+    )
+    && v[3].tag == "int-value"
+    && matches!(v[3].payload.as_slice(), [ComponentAbiType::Numeric(CalcitNumericRefinement::Int64)])
+    && v[4].tag == "null-value"
+    && v[4].payload.is_empty()
+    && v[5].tag == "text-value"
+    && matches!(v[5].payload.as_slice(), [ComponentAbiType::String]);
+  if !matches_shape {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` `DbParam` enum `{}` must define exact alphabetical variants `:bool-value Bool`, `:bytes-value Buffer`, `:float-value Float64`, `:int-value Int64`, `:null-value`, `:text-value String`",
+      enum_type.id
+    ));
+  }
+  pin_db_nominal_id(slot, &enum_type.id, "DbParam", context)
+}
+
+fn validate_db_exec_result<'a>(abi_type: &'a ComponentAbiType, slot: &mut Option<&'a str>, context: &str) -> Result<(), String> {
+  let ComponentAbiType::Struct(record) = abi_type else {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be nominal struct `DbExecResult`"
+    ));
+  };
+  let matches_shape = matches!(
+    record.fields.as_slice(),
+    [(f0, ComponentAbiType::Option(inner)), (f1, ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64))]
+      if f0 == "last-insert-id"
+        && matches!(inner.as_ref(), ComponentAbiType::Numeric(CalcitNumericRefinement::Int64))
+        && f1 == "rows-affected"
+  );
+  if !matches_shape {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` `DbExecResult` struct `{}` must define `(:last-insert-id (Option Int64)) (:rows-affected UInt64)`",
+      record.id
+    ));
+  }
+  pin_db_nominal_id(slot, &record.id, "DbExecResult", context)
+}
+
+fn validate_db_query_result<'a>(abi_type: &'a ComponentAbiType, slot: &mut Option<&'a str>, context: &str) -> Result<(), String> {
+  let ComponentAbiType::Struct(record) = abi_type else {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be nominal struct `DbQueryResult`"
+    ));
+  };
+  let matches_shape = matches!(
+    record.fields.as_slice(),
+    [(f0, ComponentAbiType::List(col)), (f1, ComponentAbiType::String)]
+      if f0 == "columns" && matches!(col.as_ref(), ComponentAbiType::String) && f1 == "rows-json"
+  );
+  if !matches_shape {
+    return Err(format!(
+      "E_WASI_HTTP_DB_IMPORT: `{context}` `DbQueryResult` struct `{}` must define `(:columns (List String)) (:rows-json String)`",
+      record.id
+    ));
+  }
+  pin_db_nominal_id(slot, &record.id, "DbQueryResult", context)
+}
+
+pub(super) fn validate_wasi_http_db_imports(adapters: &[ComponentImportAdapter]) -> Result<(), String> {
+  let mut db_error_id: Option<&str> = None;
+  let mut db_param_id: Option<&str> = None;
+  let mut db_exec_result_id: Option<&str> = None;
+  let mut db_query_result_id: Option<&str> = None;
+
+  for adapter in adapters {
+    if !is_wasi_http_db_module(&adapter.module) {
+      return Err(format!(
+        "E_WASM_CAPABILITY: `{}` declares custom WASM import `{}`; only `calcit:db/sql@0.1.0` and `calcit:db/kv@0.1.0` are permitted on `calcit wasi --world http`",
+        adapter.definition, adapter.module
+      ));
+    }
+    let context = format!("{} ({}.{})", adapter.definition, adapter.module, adapter.symbol);
+    if adapter.invocation != ComponentAbiInvocation::Sync {
+      return Err(format!(
+        "E_WASI_HTTP_DB_IMPORT: `{context}` must be a synchronous import; async Task imports are not supported on `calcit:db@0.1.0`"
+      ));
+    }
+    let ComponentAbiType::Result(ok_type, err_type) = &adapter.result else {
+      return Err(format!(
+        "E_WASI_HTTP_DB_IMPORT: `{context}` return schema must be `Result <Ok> DbError`"
+      ));
+    };
+    validate_db_error_type(err_type, &mut db_error_id, &context)?;
+
+    match (adapter.module.as_str(), adapter.symbol.as_str()) {
+      (WASI_DB_SQL_MODULE, sym @ ("query" | "exec")) => {
+        let [sql, params] = adapter.parameters.as_slice() else {
+          return Err(format!(
+            "E_WASI_HTTP_DB_IMPORT: `{context}` expects `(String, List DbParam)` parameters"
+          ));
+        };
+        if !matches!(sql, ComponentAbiType::String) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` first parameter must be `String`"));
+        }
+        validate_db_param_list(params, &mut db_param_id, &context)?;
+        if sym == "query" {
+          validate_db_query_result(ok_type, &mut db_query_result_id, &context)?;
+        } else {
+          validate_db_exec_result(ok_type, &mut db_exec_result_id, &context)?;
+        }
+      }
+      (WASI_DB_SQL_MODULE, "tx-begin") => {
+        if !adapter.parameters.is_empty() {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` expects 0 parameters"));
+        }
+        if !matches!(ok_type.as_ref(), ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64)) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be `UInt64`"));
+        }
+      }
+      (WASI_DB_SQL_MODULE, sym @ ("tx-query" | "tx-exec")) => {
+        let [tx_id, sql, params] = adapter.parameters.as_slice() else {
+          return Err(format!(
+            "E_WASI_HTTP_DB_IMPORT: `{context}` expects `(UInt64, String, List DbParam)` parameters"
+          ));
+        };
+        if !matches!(tx_id, ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64)) || !matches!(sql, ComponentAbiType::String) {
+          return Err(format!(
+            "E_WASI_HTTP_DB_IMPORT: `{context}` expects `(UInt64, String, List DbParam)` parameters"
+          ));
+        }
+        validate_db_param_list(params, &mut db_param_id, &context)?;
+        if sym == "tx-query" {
+          validate_db_query_result(ok_type, &mut db_query_result_id, &context)?;
+        } else {
+          validate_db_exec_result(ok_type, &mut db_exec_result_id, &context)?;
+        }
+      }
+      (WASI_DB_SQL_MODULE, "tx-commit" | "tx-rollback") => {
+        let [tx_id] = adapter.parameters.as_slice() else {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` expects `(UInt64)` parameter"));
+        };
+        if !matches!(tx_id, ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64)) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` parameter must be `UInt64`"));
+        }
+        if !matches!(ok_type.as_ref(), ComponentAbiType::Unit) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be `Unit`"));
+        }
+      }
+      (WASI_DB_KV_MODULE, "get") => {
+        let [key] = adapter.parameters.as_slice() else {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` expects `(String)` parameter"));
+        };
+        if !matches!(key, ComponentAbiType::String) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` parameter must be `String`"));
+        }
+        if !matches!(ok_type.as_ref(), ComponentAbiType::Option(inner) if matches!(inner.as_ref(), ComponentAbiType::Buffer)) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be `Option Buffer`"));
+        }
+      }
+      (WASI_DB_KV_MODULE, "set") => {
+        let [key, value, ttl_ms] = adapter.parameters.as_slice() else {
+          return Err(format!(
+            "E_WASI_HTTP_DB_IMPORT: `{context}` expects `(String, Buffer, Option UInt64)` parameters"
+          ));
+        };
+        let ttl_ok = matches!(
+          ttl_ms,
+          ComponentAbiType::Option(inner) if matches!(inner.as_ref(), ComponentAbiType::Numeric(CalcitNumericRefinement::UInt64))
+        );
+        if !matches!(key, ComponentAbiType::String) || !matches!(value, ComponentAbiType::Buffer) || !ttl_ok {
+          return Err(format!(
+            "E_WASI_HTTP_DB_IMPORT: `{context}` expects `(String, Buffer, Option UInt64)` parameters"
+          ));
+        }
+        if !matches!(ok_type.as_ref(), ComponentAbiType::Unit) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be `Unit`"));
+        }
+      }
+      (WASI_DB_KV_MODULE, "delete") => {
+        let [key] = adapter.parameters.as_slice() else {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` expects `(String)` parameter"));
+        };
+        if !matches!(key, ComponentAbiType::String) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` parameter must be `String`"));
+        }
+        if !matches!(ok_type.as_ref(), ComponentAbiType::Bool) {
+          return Err(format!("E_WASI_HTTP_DB_IMPORT: `{context}` ok result must be `Bool`"));
+        }
+      }
+      _ => {
+        return Err(format!(
+          "E_WASI_HTTP_DB_IMPORT: `{context}` is not part of the pinned `calcit:db@0.1.0` contract"
+        ));
+      }
+    }
+  }
+  Ok(())
+}
+
 pub(super) fn validate_wasi_http_component_in_program(
   program_data: &program::CompiledProgram,
   init_ns: &str,
   init_def: &str,
-) -> Result<(), String> {
+) -> Result<Vec<ComponentImportAdapter>, String> {
   for namespace in deterministic_namespace_order(program_data, None) {
     let file = program_data.get(namespace.as_str()).expect("ordered namespace must exist");
     for (name, compiled) in deterministic_definition_order(file) {
@@ -318,7 +583,9 @@ pub(super) fn validate_wasi_http_component_in_program(
       "E_WASI_HTTP_ENTRY: `{qualified_init}` return schema must be `Result HttpResponse String`"
     ));
   }
-  Ok(())
+  let import_adapters = collect_component_import_adapters_inner(program_data, true)?;
+  validate_wasi_http_db_imports(&import_adapters)?;
+  Ok(import_adapters)
 }
 
 fn lookup_core_struct_def(program_data: &program::CompiledProgram, name: &str) -> Result<CalcitStructDef, String> {
