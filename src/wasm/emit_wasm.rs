@@ -46,6 +46,7 @@ use crate::wasm::host::runner::preprocess::{
 mod component;
 mod edn_parse;
 mod http_proxy;
+mod link;
 mod memory;
 mod methods;
 mod number_format;
@@ -69,7 +70,7 @@ use memory::{
 };
 use methods::{emit_call_args, emit_method_invoke, emit_type_of_local};
 use runtime::{
-  HostImport, ModuleFunctionLayout, WasiComponentReadDirImports, WasiComponentReadImports, WasiComponentWriteImports,
+  HostImport, ModuleFunctionLayout, RuntimeFns, WasiComponentReadDirImports, WasiComponentReadImports, WasiComponentWriteImports,
   build_runtime_fns, build_utf8_valid_fn, build_wasi_component_get_env_fn, build_wasi_component_open_at_fn,
   build_wasi_component_random_get_fn, build_wasi_component_read_bytes_fn, build_wasi_component_read_dir_fn,
   build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_wait_fn,
@@ -620,7 +621,11 @@ fn emit_wasm_impl(
   let atom_count = atom_initial_values.len() as u32;
   let memory_layout = WasmMemoryLayout::compute(heap_start, atom_count);
   let global_layout = WasmGlobalLayout::compute(atom_count, boundary == WasmBoundary::Component);
-  let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
+  let RuntimeFns {
+    fns: mut compiled_fns,
+    fn_index: mut runtime_fn_index,
+    number_format_fn_count,
+  } = build_runtime_fns(
     num_imports,
     &memory_layout,
     &global_layout,
@@ -1678,6 +1683,7 @@ fn emit_wasm_impl(
     str_tag_id,
     ModuleFunctionLayout {
       runtime_fn_count,
+      number_format_fn_count,
       table_fn_count: fn_defs.len() as u32,
       memory_layout,
       global_layout,
@@ -1878,6 +1884,7 @@ fn validate_wasm_command_component_in_program(
 }
 
 /// Intermediate representation of a compiled function before encoding.
+#[derive(Clone)]
 struct CompiledFn {
   export_name: Option<String>,
   params: Vec<ValType>,
@@ -18468,6 +18475,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 0,
+        number_format_fn_count: 0,
         table_fn_count: 2,
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
@@ -18686,6 +18694,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 0,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
@@ -18709,6 +18718,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 0,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
@@ -18790,6 +18800,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 0,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
@@ -18947,6 +18958,7 @@ mod tests {
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 4,
+          number_format_fn_count: 0,
           table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
@@ -19065,6 +19077,7 @@ mod tests {
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 5,
+          number_format_fn_count: 0,
           table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
@@ -19242,6 +19255,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 5,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(heap_start, 0),
         global_layout,
@@ -19426,6 +19440,7 @@ mod tests {
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 6,
+          number_format_fn_count: 0,
           table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
@@ -19568,6 +19583,7 @@ mod tests {
         1,
         ModuleFunctionLayout {
           runtime_fn_count: 3,
+          number_format_fn_count: 0,
           table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(16384, 0),
           global_layout,
@@ -21029,6 +21045,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 3,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
@@ -21224,6 +21241,7 @@ mod tests {
       1,
       ModuleFunctionLayout {
         runtime_fn_count: 0,
+        number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE + 96, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
