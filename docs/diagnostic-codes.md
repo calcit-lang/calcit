@@ -16,7 +16,7 @@
 
 | 编码 | 源文件 |
 | --- | --- |
-| `E_AMBIGUOUS_TRAIT_METHOD` | `src/runner/preprocess/mod.rs` |
+| `E_AMBIGUOUS_TRAIT_METHOD` | `src/builtins/meta.rs`<br>`src/runner/preprocess/mod.rs` |
 | `E_ARITY` | `src/bin/cli_handlers/query.rs` |
 | `E_ASSERT_TRAITS_ARITY` | `src/runner/preprocess/mod.rs` |
 | `E_ASSERT_TYPE_ARITY` | `src/runner/preprocess/mod.rs` |
@@ -83,7 +83,7 @@
 | `E_DEFN_ARGS_NOT_SYMBOLS` | `src/runner/preprocess/mod.rs` |
 | `E_DEFN_HEADER` | `src/runner/preprocess/mod.rs` |
 | `E_DEFWASM_IMPORT_ARGS` | `src/runner/preprocess/mod.rs` |
-| `E_DUPLICATE_TRAIT_IMPL` | `src/builtins/meta.rs`<br>`src/program/impl_attach.rs`<br>`src/runner/preprocess/mod.rs` |
+| `E_DUPLICATE_TRAIT_IMPL` | `src/builtins/meta.rs`<br>`src/program/impl_attach.rs`<br>`src/program/tests.rs`<br>`src/runner/preprocess/mod.rs`<br>`src/runner/preprocess/type_inference.rs` |
 | `E_DYNAMIC_CALL` | `src/runner/preprocess/mod.rs` |
 | `E_DYNAMIC_METHOD_DISPATCH` | `src/runner/preprocess/mod.rs` |
 | `E_DYNAMIC_NOMINAL_ARGUMENT` | `src/runner/preprocess/mod.rs` |
@@ -136,7 +136,7 @@
 | `E_IF_ARITY` | `src/runner/preprocess/mod.rs` |
 | `E_IMPL_CALLABLE_GENERATED_COLLISION` | `src/runner/preprocess/mod.rs` |
 | `E_IMPL_CALLABLE_SYMBOL_COLLISION` | `src/runner/preprocess/mod.rs` |
-| `E_IMPL_MISSING_REQUIRED_TRAIT` | `src/builtins/meta.rs`<br>`src/runner/preprocess/mod.rs` |
+| `E_IMPL_MISSING_REQUIRED_TRAIT` | `src/builtins/meta.rs`<br>`src/runner/preprocess/type_inference.rs` |
 | `E_IMPLICIT_NIL_BRANCH` | `src/runner/preprocess/mod.rs` |
 | `E_INSPECT_TYPE_DYNAMIC` | `src/runner/preprocess/mod.rs` |
 | `E_INVALID_DEFINITION_ID` | `src/bin/strict_check.rs` |

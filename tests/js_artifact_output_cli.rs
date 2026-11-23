@@ -96,6 +96,39 @@ const impl = new first.CalcitImpl(first.ToString.name, [first.newTag("to-string"
 const definition = new first.CalcitStructDef(first.newTag("Duplicate"), [], [], [impl, impl]);
 const value = new first.CalcitStructValue(definition.name, definition.fields, [], definition);
 assert.throws(() => first._$n_trait_call(first.ToString, "to-string", value), /E_DUPLICATE_TRAIT_IMPL/);
+
+const dupTrait = new first.CalcitTrait(first.newTag("DupCheck"), [first.newTag("render")], [first.DYNAMIC]);
+const dupImplA = new first.CalcitImpl(dupTrait.name, [first.newTag("render")], [() => "A"], dupTrait);
+const dupImplB = new first.CalcitImpl(dupTrait.name, [first.newTag("render")], [() => "B"], dupTrait);
+const emptyStructDef = new first.CalcitStructDef(first.newTag("EmptyStruct"), [], []);
+const emptyStructVal = new first.CalcitStructValue(emptyStructDef.name, emptyStructDef.fields, [], emptyStructDef);
+const enumTag = first.newTag("item");
+const emptyTypes = new first.CalcitSliceList([]);
+const enumProto = new first.CalcitStructValue(first.newTag("Choice"), [enumTag], [emptyTypes], new first.CalcitStructDef(first.newTag("Choice"), [enumTag], [emptyTypes]));
+const emptyEnumDef = new first.CalcitEnumDef(enumProto);
+const emptyEnumVal = new first.CalcitEnumValue(enumTag, [], emptyEnumDef);
+
+assert.throws(() => first._$n_struct_def_$o_impl_traits(emptyStructDef, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
+assert.throws(() => first._$n_struct_$o_impl_traits(emptyStructVal, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
+assert.throws(() => first._$n_enum_def_$o_impl_traits(emptyEnumDef, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
+assert.throws(() => first._$n_enum_$o_impl_traits(emptyEnumVal, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
+
+const alpha = new first.CalcitTrait(first.newTag("Alpha"), [first.newTag("zap")], [first.DYNAMIC]);
+const beta = new first.CalcitTrait(first.newTag("Beta"), [first.newTag("zap")], [first.DYNAMIC]);
+const alphaImpl = new first.CalcitImpl(alpha.name, [first.newTag("zap")], [() => "alpha"], alpha);
+const betaImpl = new first.CalcitImpl(beta.name, [first.newTag("zap")], [() => "beta"], beta);
+const multiStructDef = first._$n_struct_def_$o_impl_traits(emptyStructDef, alphaImpl, betaImpl);
+const multiStructVal = new first.CalcitStructValue(multiStructDef.name, multiStructDef.fields, [], multiStructDef);
+const multiEnumDef = first._$n_enum_def_$o_impl_traits(emptyEnumDef, alphaImpl, betaImpl);
+const multiEnumVal = new first.CalcitEnumValue(enumTag, [], multiEnumDef);
+
+assert.throws(() => first.invoke_method("zap", multiStructVal), /E_AMBIGUOUS_TRAIT_METHOD/);
+assert.throws(() => first.invoke_method("zap", multiEnumVal), /E_AMBIGUOUS_TRAIT_METHOD/);
+assert.throws(() => first.invoke_method("to-string", value), /E_DUPLICATE_TRAIT_IMPL/);
+assert.equal(first._$n_trait_call(alpha, "zap", multiStructVal), "alpha");
+assert.equal(first._$n_trait_call(beta, "zap", multiEnumVal), "beta");
+assert.equal(typeof first.invoke_method("debug", multiStructVal), "string");
+assert.equal(first.invoke_method("empty?", multiStructVal), true);
 "#;
   for order in [["graph-a", "graph-b"], ["graph-b", "graph-a"]] {
     let output = Command::new("node")

@@ -48,6 +48,21 @@ related:
 | `try (json-parse s) ...` / `try (parse-cirru-edn s) ...` | `try-parse-json`（`.parse-json`）+ `try-decode-map-as` / `try-parse-cirru-edn-as` | WASM/WASI 上直接走闭合类型边界解码 |
 | `try (assert ...) ...` 等不变量故障测试 | 不在 WASI 中捕获 trap；将“正常返回”与“trap 验证”拆为独立 `:tests` | trap 验证留在 native / JS，常规与 `Result` 契约可在 WASI 回放 |
 
+## 0.46.0 Trait 挂载来源唯一性与运行期方法遮蔽消歧（#2841）
+
+本版本在加载期、预处理期以及 native / JS 运行时统一收紧了 trait 挂载与方法分发的一致性（Coherence），彻底取消“后挂载覆盖先挂载”的隐式遮蔽行为：
+
+- **同一 nominal trait 来源禁止重复挂载（`E_DUPLICATE_TRAIT_IMPL`）**：
+  - 顶层 `(:impls …)` 子句重复列出同一 trait（包括经别名或限定路径指向同一定义）会在程序加载时直接报错。
+  - 局部 `impl-traits` 及底层原语（`&struct-def:impl-traits`、`&struct:impl-traits`、`&enum-def:impl-traits`、`&enum:impl-traits`）在预处理期与 native / JS 运行时都会在挂载阶段立即检查来源唯一性；已持有 `impl` 的定义或值不能通过再次追加同一 trait 的实现来覆盖旧方法。
+- **运行期 `.method` 拒绝跨 trait 隐式遮蔽（`E_AMBIGUOUS_TRAIT_METHOD` / `E_DUPLICATE_TRAIT_IMPL`）**：
+  - 即便值经 `AnyStruct` / `AnyEnum` 等边界进入运行期 `invoke-method`，只要同一接收者携带多个声明了该方法的用户实现，native 与 JS 运行时都会在调用前直接拒绝，不再静默执行最后一个挂载的实现（不同 trait 来源冲突报 `E_AMBIGUOUS_TRAIT_METHOD`，同一来源报 `E_DUPLICATE_TRAIT_IMPL`）。
+  - 同一类型仍然合法实现多个共享同名方法的不同 trait；显式调用必须使用 `&trait-call Trait :method receiver ...` 选择目标来源。
+- **局部 `deftrait (requires …)` 与混合 `impl` 前置检查补全**：
+  - 函数体局部 `deftrait` 声明 `(requires Parent)` 时同样执行成员冲突检查（`E_TRAIT_REQUIRES`），静态 `impl-traits` 检查也会跳过前序无来源 method bag 并正确校验后续名义 impl 的前置父 trait（`E_IMPL_MISSING_REQUIRED_TRAIT`）。
+
+迁移方法：不要向已挂载某 trait 的 struct/enum 定义或实例再次叠加同一 trait 的第二个实现，应从干净的 `defstruct`/`defenum` 定义分别挂载所需变体；多 trait 同名方法冲突统一改用 `&trait-call Trait :method receiver ...`。
+
 ## 0.43.0 List 插入检查元素类型（#2735）
 
 `append`、`prepend` 及其 List 方法和底层原语会检查已知的元素类型。例如，向 `List<Number>` 插入 String 会在编译时报错。空列表可以从插入项推断元素类型。确实需要存放混合元素时，给列表声明 `List<Dynamic>`；读取后在具体使用处按实际类型检查。

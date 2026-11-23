@@ -259,6 +259,52 @@
           :code $ quote $ defenum DemoZap (:demo Dynamic) (:impls MyZapA MyZapB)
           :examples $ []
           :schema $ quote EnumDef
+          :tests $ [] $ %{} 'TestEntry
+            :name |runtime-ambiguous-method-rejects-dynamic-shadowing
+            :code $ quote $ let
+                CountTraitA $ deftrait CountTraitA $ .count
+                  Fn Self $ -> Number
+                CountTraitB $ deftrait CountTraitB $ .count
+                  Fn Self $ -> Number
+                Box0 $ defstruct Box0 $ :n Number
+                impl-struct-a $ defimpl Box0 CountTraitA $ .count
+                  fn (self) 11
+                impl-struct-b $ defimpl Box0 CountTraitB $ .count
+                  fn (self) 22
+                BoxCount $ impl-traits Box0 impl-struct-a impl-struct-b
+                struct-val $ BoxCount :n 0
+                ContainsTraitA $ deftrait ContainsTraitA $ .contains?
+                  Fn Self Number $ -> Bool
+                ContainsTraitB $ deftrait ContainsTraitB $ .contains?
+                  Fn Self Number $ -> Bool
+                Choice0 $ defenum Choice0 $ :n Number
+                impl-enum-a $ defimpl Choice0 ContainsTraitA $ .contains?
+                  fn (self _idx) false
+                impl-enum-b $ defimpl Choice0 ContainsTraitB $ .contains?
+                  fn (self _idx) true
+                ChoiceContains $ impl-traits Choice0 impl-enum-a impl-enum-b
+                enum-val $ ChoiceContains :n 0
+                call-struct-count $ fn (x)
+                  hint-fn $ Fn AnyStruct $ -> Number
+                  .count x
+                call-enum-contains $ fn (x)
+                  hint-fn $ Fn AnyEnum $ -> Bool
+                  .contains? x 0
+                struct-err $ try
+                  do (call-struct-count struct-val) |no-error
+                  fn (msg) msg
+                enum-err $ try
+                  do (call-enum-contains enum-val) |no-error
+                  fn (msg) msg
+              assert= true $ includes? struct-err "|ambiguous method"
+              assert= true $ includes? struct-err |&trait-call
+              assert= true $ includes? enum-err "|ambiguous method"
+              assert= true $ includes? enum-err |&trait-call
+              assert= 11 $ &trait-call CountTraitA :count struct-val
+              assert= 22 $ &trait-call CountTraitB :count struct-val
+              assert= false $ &trait-call ContainsTraitA :contains? enum-val 0
+              assert= true $ &trait-call ContainsTraitB :contains? enum-val 0
+            :tags $ #{} :trait :unit
         'DemoZap-MyZapA $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl DemoZap MyZapA (.zap myzap:a)
           :examples $ []
@@ -997,10 +1043,10 @@
               assert= :string $ type-of actual
             :tags $ #{} :result-contract-2386 :trait
         'open-contains-false $ %{} 'CodeEntry
-          :doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsFalseImpl last."
+          :doc "|Builds an OpenContainsBase value carrying OpenContainsFalseImpl."
           :code $ quote $ defn open-contains-false (item)
             let
-                T $ impl-traits OpenContainsBase OpenContainsTrueImpl OpenContainsFalseImpl
+                T $ impl-traits OpenContainsBase OpenContainsFalseImpl
               T :item item
           :examples $ []
           :schema $ quote $ Fn Number (-> OpenContainsBase)
@@ -1009,10 +1055,10 @@
           :examples $ []
           :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
         'open-contains-true-value $ %{} 'CodeEntry
-          :doc "|Builds a OpenContainsBase value carrying both impls, OpenContainsTrueImpl last."
+          :doc "|Builds an OpenContainsBase value carrying OpenContainsTrueImpl."
           :code $ quote $ defn open-contains-true-value (item)
             let
-                T $ impl-traits OpenContainsBase OpenContainsFalseImpl OpenContainsTrueImpl
+                T $ impl-traits OpenContainsBase OpenContainsTrueImpl
               T :item item
           :examples $ []
           :schema $ quote $ Fn Number (-> OpenContainsBase)
@@ -1898,6 +1944,46 @@
               assert= g $ assert-traits g Labeled
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+          :tests $ []
+            %{} 'TestEntry (:name |local-requires-parent-satisfied)
+              :code $ quote $ let
+                  LocalParent $ deftrait LocalParent $ .label
+                    Fn Self $ -> String
+                  LocalChild $ deftrait LocalChild (requires LocalParent)
+                    .greet $ Fn Self $ -> String
+                  Box0 $ defstruct Box0 $ :name String
+                  p-impl $ defimpl Box0 LocalParent $ .label
+                    fn (x) (:name x)
+                  c-impl $ defimpl Box0 LocalChild $ .greet
+                    fn (x)
+                      str |hi: $ :name x
+                  Box $ impl-traits Box0 p-impl c-impl
+                  v $ Box :name |Ada
+                assert= v $ assert-traits v LocalChild
+                assert= v $ assert-traits v LocalParent
+                assert= |Ada $ .label v
+                assert= |hi:Ada $ .greet v
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |decorated-typeref-runtime-requires)
+              :code $ quote $ let
+                  p-impl $ defimpl Person0 Labeled $ .label
+                    fn (x) (:name x)
+                  c-impl $ defimpl Person0 Greeting $ .greeting
+                    fn (x)
+                      str |hi: $ :name x
+                  attach-greeting $ fn (p)
+                    hint-fn $ Fn Person0 $ -> Person0
+                    &struct:impl-traits p c-impl
+                  decorated $ attach-greeting $ &struct:impl-traits (Person0 :name |Ada) p-impl
+                  err-msg $ try
+                    do
+                      attach-greeting $ Person0 :name |Bob
+                      , |ok
+                    fn (msg) msg
+                assert= decorated $ assert-traits decorated Labeled
+                assert= decorated $ assert-traits decorated Greeting
+                assert= true $ .includes? err-msg "|requires an impl of trait"
+              :tags $ #{} :trait :unit
         'throws-at-expansion? $ %{} 'CodeEntry
           :doc "|Evaluate macro rejection during expansion and emit only its boolean result for shared backend replay."
           :code $ quote $ defmacro throws-at-expansion? (form)

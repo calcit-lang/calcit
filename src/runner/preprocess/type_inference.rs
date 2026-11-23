@@ -2721,20 +2721,49 @@ pub(crate) fn check_trait_method_signatures(args: &CalcitList) -> Option<(String
   None
 }
 
-fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
+fn resolve_trait_parent_for_preprocess(item: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTrait>> {
+  match item {
+    Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
+    Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+      Some(Calcit::Trait(trait_def)) => {
+        if trait_def.definition_ref.is_some() {
+          Some(trait_def)
+        } else {
+          Some(Arc::new(trait_def.as_ref().clone().with_definition_ref(&import.ns, &import.def)))
+        }
+      }
+      _ => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
+    },
+    Calcit::Local(_) => resolve_type_value(item, scope_types)
+      .and_then(|annotation| annotation.as_trait_definition().cloned())
+      .map(Arc::new),
+    _ => None,
+  }
+}
+
+fn same_static_trait_origin(left: &CalcitTrait, right: &CalcitTrait) -> bool {
+  if left.has_same_origin(right) {
+    return true;
+  }
+  // Source-backed traits (`runtime_id: None`) and evaluated top-level traits
+  // (`runtime_id: Some(..)`) share their qualified `definition_ref`, whereas two
+  // distinct runtime traits never collapse by name.
+  if left.runtime_id.is_some() != right.runtime_id.is_some() && left.definition_ref.is_some() && right.definition_ref.is_some() {
+    return left.definition_ref == right.definition_ref;
+  }
+  false
+}
+
+fn infer_trait_value(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<CalcitTrait> {
   let mut args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
   // Parents are evaluated trait values at runtime; statically, resolve each
-  // imported reference to its source-backed trait with a definition origin.
+  // imported or local reference to its trait definition.
   if let Some(Calcit::List(parents)) = xs.get(3) {
     let resolved = parents
       .iter()
-      .filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List)))
-      .map(|item| match item {
-        Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
-          .map(|trait_def| Calcit::Trait(Arc::new(trait_def.with_definition_ref(&import.ns, &import.def)))),
-        Calcit::Trait(trait_def) => Some(Calcit::Trait(trait_def.to_owned())),
-        _ => None,
-      })
+      .filter(|item| !is_list_constructor(item))
+      .map(|item| resolve_trait_parent_for_preprocess(item, scope_types).map(Calcit::Trait))
       .collect::<Option<Vec<_>>>()?;
     args[2] = Calcit::from(CalcitList::from(resolved.as_slice()));
   }
@@ -2747,19 +2776,18 @@ fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
 /// Static declaration check for `&trait::new name members parents`: every
 /// parent resolves to a trait of the same kind (external-object or ordinary),
 /// the reachable set has no cycle and member names stay unique.
-pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str, def_name: &str) -> Option<String> {
+pub(crate) fn check_trait_requires_declaration(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+) -> Option<String> {
   let Some(Calcit::List(parents)) = args.get(2) else {
     return None;
   };
   let mut resolved = vec![];
-  for parent in parents.iter().filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List))) {
-    let trait_def = match parent {
-      Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
-      Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
-        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
-      _ => None,
-    };
-    match trait_def {
+  for parent in parents.iter().filter(|item| !is_list_constructor(item)) {
+    match resolve_trait_parent_for_preprocess(parent, scope_types) {
       Some(trait_def) => resolved.push(trait_def),
       None => {
         return Some(format!(
@@ -2768,10 +2796,32 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
       }
     }
   }
+  let arg_trait_name = match args.first() {
+    Some(Calcit::Tag(tag)) => Some(tag.ref_str()),
+    Some(Calcit::Symbol { sym, .. } | Calcit::Str(sym)) => Some(sym.as_ref()),
+    _ => None,
+  };
   // Source resolution also covers external-object field members, which the
-  // runtime constructor does not evaluate outside JS.
-  let mut child = lookup_source_backed_trait_def(file_ns, def_name)?.with_definition_ref(file_ns, def_name);
-  child.runtime_id = None;
+  // runtime constructor does not evaluate outside JS; local `deftrait` forms
+  // inside functions fall back to their normalized `&trait::new` arguments.
+  let mut child = match lookup_source_backed_trait_def(file_ns, def_name)
+    .filter(|source_child| arg_trait_name.is_none_or(|name| source_child.name.ref_str() == name))
+  {
+    Some(source_child) => {
+      let mut child = source_child.with_definition_ref(file_ns, def_name);
+      child.runtime_id = None;
+      child
+    }
+    None => {
+      let normalized = args.iter().take(2).map(normalize_static_metadata_form).collect::<Vec<_>>();
+      let Ok(Calcit::Trait(local_child)) = builtins::meta::trait_new(&normalized) else {
+        return None;
+      };
+      let mut child = local_child.as_ref().clone();
+      child.definition_ref = None;
+      child
+    }
+  };
   let child_external = trait_is_external_object(&child);
   for parent in resolved.iter() {
     if trait_is_external_object(parent) != child_external {
@@ -2794,34 +2844,97 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
   child.with_requires(resolved).err()
 }
 
-/// Static check for `impl-traits`: every attached impl needs impls of all
-/// traits its origin requires on the same type.
-pub(crate) fn check_impl_attachment_requires(args: &CalcitList, scope_types: &ScopeTypes) -> Option<String> {
-  let base = resolve_type_value(args.first()?, scope_types)?;
+/// Static coherence check for `impl-traits`: reject duplicate implementations of
+/// one nominal trait origin on the same type, and require impls of all traits
+/// each attached origin declares in `requires`.
+pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &ScopeTypes) -> Option<(&'static str, String)> {
+  let base_expr = args.first()?;
+  let base = resolve_type_value(base_expr, scope_types)?;
+  let mut base_impls_complete = true;
   let mut impls: Vec<Arc<CalcitImpl>> = match base.as_ref() {
     CalcitTypeAnnotation::StructDef(definition)
     | CalcitTypeAnnotation::Struct(definition, _)
     | CalcitTypeAnnotation::StructValue(definition) => definition.impls.to_vec(),
-    CalcitTypeAnnotation::EnumDef(definition) | CalcitTypeAnnotation::Enum(definition, _) => definition.impls().to_vec(),
+    CalcitTypeAnnotation::EnumDef(definition)
+    | CalcitTypeAnnotation::Enum(definition, _)
+    | CalcitTypeAnnotation::EnumValue(definition) => definition.impls().to_vec(),
+    CalcitTypeAnnotation::TypeRef(name, _) => {
+      // A `TypeRef` value (such as a parameter or return annotation) can carry
+      // extra instance-level impls at runtime, so its definition's impl table is
+      // complete only when the receiver expression itself is the nominal type
+      // definition (`defstruct` / `defenum`).
+      let source_definition = match base_expr {
+        Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def),
+        Calcit::Symbol { sym, info, .. } => program::lookup_def_code(&info.at_ns, sym),
+        _ => None,
+      };
+      base_impls_complete = source_definition.as_ref().is_some_and(code_resolves_to_nominal_type_def);
+      let reference = name.trim_start_matches('\'').trim_start_matches(':');
+      if let Some((ns, def)) = reference.rsplit_once('/')
+        && let Some(resolved) = resolve_program_value_for_preprocess(ns, def, None)
+      {
+        match resolved {
+          Calcit::StructDef(definition) => definition.impls.to_vec(),
+          Calcit::EnumDef(definition) => definition.impls().to_vec(),
+          _ => base
+            .resolve_to_struct()
+            .map(|definition| definition.impls)
+            .or_else(|| base.resolve_to_enum().map(|definition| definition.impls().to_vec()))?,
+        }
+      } else {
+        base
+          .resolve_to_struct()
+          .map(|definition| definition.impls)
+          .or_else(|| base.resolve_to_enum().map(|definition| definition.impls().to_vec()))?
+      }
+    }
     _ => return None,
   };
+  let mut all_resolved = true;
   for value in args.iter().skip(1) {
-    impls.push(resolve_impl_annotation(value, scope_types)?);
+    match resolve_impl_annotation(value, scope_types) {
+      Some(imp) => impls.push(imp),
+      None => all_resolved = false,
+    }
+  }
+  for (idx, imp) in impls.iter().enumerate() {
+    let Some(origin) = imp.origin() else { continue };
+    if impls[..idx].iter().any(|earlier| {
+      earlier
+        .origin()
+        .is_some_and(|earlier_origin| same_static_trait_origin(earlier_origin, origin))
+    }) {
+      return Some((
+        "E_DUPLICATE_TRAIT_IMPL",
+        format!(
+          "duplicate implementation of trait {} on the same type; a type has at most one implementation per nominal trait origin",
+          origin.origin_label()
+        ),
+      ));
+    }
+  }
+  if !all_resolved || !base_impls_complete {
+    return None;
   }
   for imp in impls.iter() {
-    let origin = imp.origin()?;
-    let reachable = origin.normalized_reachable_traits().ok()?;
-    for required in reachable.iter().filter(|required| !required.has_same_origin(origin)) {
+    let Some(origin) = imp.origin() else { continue };
+    let Ok(reachable) = origin.normalized_reachable_traits() else {
+      continue;
+    };
+    for required in reachable.iter().filter(|required| !same_static_trait_origin(required, origin)) {
       let attached = impls.iter().any(|candidate| {
         candidate
           .origin()
-          .is_some_and(|candidate_origin| candidate_origin.has_same_origin(required))
+          .is_some_and(|candidate_origin| same_static_trait_origin(candidate_origin, required))
       });
       if !attached {
-        return Some(format!(
-          "an impl of trait {} requires an impl of trait {} on the same type; attach one before or with it",
-          origin.origin_label(),
-          required.origin_label()
+        return Some((
+          "E_IMPL_MISSING_REQUIRED_TRAIT",
+          format!(
+            "an impl of trait {} requires an impl of trait {} on the same type; attach one before or with it",
+            origin.origin_label(),
+            required.origin_label()
+          ),
         ));
       }
     }
@@ -3194,7 +3307,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     return Some(core_option_type(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(definition)))));
   }
   if matches!(proc, CalcitProc::NativeTraitNew)
-    && let Some(trait_def) = infer_trait_value(xs)
+    && let Some(trait_def) = infer_trait_value(xs, scope_types)
   {
     return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(Arc::new(trait_def))))));
   }
