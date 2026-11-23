@@ -2280,9 +2280,211 @@ fn strict_type_fail_pass_callback_cannot_escape_non_pass_slot() {
       run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
     }
 
-    let ok_snippet = "defn run-now (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  cb 1\ndefn forward-ok (xs cb)\n  hint-fn $ Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  run-now cb\n  each xs cb\n  , &unit\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  forward-ok ([] 1 2) (fn (n) &unit)";
+    for (name, snippet, target_def, expected_code) in [
+      (
+        "escape-pass-via-captured-closure-fn",
+        "defn retain (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Unit)))\n  fn (x) (cb x)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_f (retain (fn (n) &unit)))) &unit",
+        "retain",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-captured-closure-dyn",
+        "defn retain (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> AnyFn)\n  fn (x) (cb x)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_f (retain (fn (n) &unit)))) &unit",
+        "retain",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-let-wrapped-closure",
+        "defn retain (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Unit)))\n  let ((wrapped (fn (x) (cb x))))\n    , wrapped\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_f (retain (fn (n) &unit)))) &unit",
+        "retain",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-hinted-captured-closure",
+        "defn retain (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Unit)))\n  fn (x)\n    hint-fn $ Fn Number (-> Unit)\n    cb x\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_f (retain (fn (n) &unit)))) &unit",
+        "retain",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-captured-closure-in-struct-fn",
+        "defstruct Holder (:f (Fn Number (-> Unit)))\ndefn stash (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Holder)\n  Holder :f (fn (x) (cb x))\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_h (stash (fn (n) &unit)))) &unit",
+        "stash",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-captured-closure-in-struct-anyfn",
+        "defstruct Holder (:f AnyFn)\ndefn stash (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Holder)\n  Holder :f (fn (x) (cb x))\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_h (stash (fn (n) &unit)))) &unit",
+        "stash",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+      (
+        "escape-pass-via-captured-closure-non-pass-arg",
+        "defn register (f)\n  hint-fn $ Fn (Fn Number (-> Unit)) (-> Unit)\n  , &unit\ndefn relay (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  register (fn (x) (cb x))\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  relay (fn (n) &unit)",
+        "relay",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{name} should preprocess with warning/error: {err}"));
+      assert!(
+        warnings.borrow().iter().any(|warning| warning.code() == Some(expected_code)),
+        "{name} should report {expected_code}: {:?}",
+        warnings.borrow()
+      );
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
+    }
+
+    let ok_snippet = "defn run-now (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  cb 1\ndefn forward-ok (xs cb)\n  hint-fn $ Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  run-now cb\n  run-now (fn (x) (cb (+ x 1)))\n  each xs (fn (x) (cb (+ x 1)))\n  let ((wrapped (fn (x) (hint-fn $ Fn Number (-> Unit)) (cb x))))\n    wrapped 1\n  , &unit\ndefn shadow-ok (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Number)))\n  fn (cb) (+ cb 1)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  forward-ok ([] 1 2) (fn (n) &unit)\n  let ((_s (shadow-ok (fn (n) &unit)))) &unit";
     let entries = load_snippet_entries(ok_snippet);
     run_check_only(&entries).unwrap_or_else(|err| panic!("forwarding :pass callback to :pass slots must pass: {err}"));
+  });
+}
+
+#[test]
+fn strict_type_fail_impl_completeness_across_set_if_join_and_pending_defs() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let base_defs = r#"defstruct Widget0 (:n Number)
+deftrait Parent (.label AnyFn)
+deftrait Child (requires Parent) (.greet AnyFn)
+def ParentImpl (defimpl Widget0 Parent (.label (fn (x) |parent)))
+def ChildImpl (defimpl Widget0 Child (.greet (fn (x) |child)))"#;
+
+    let prepare_with_schemas = |snippet: &str, extra_schemas: &[(&str, &str)]| {
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+      for (name, schema_src) in [
+        ("Parent", "Trait"),
+        ("Child", "Trait"),
+        ("ParentImpl", "Impl"),
+        ("ChildImpl", "Impl"),
+        ("Widget0", "StructDef"),
+      ]
+      .into_iter()
+      .chain(extra_schemas.iter().copied())
+      {
+        if let Some(entry) = file.defs.get_mut(name) {
+          let schema = cirru_parser::parse(schema_src)
+            .unwrap_or_else(|e| panic!("parse schema for {name}: {e}"))
+            .remove(0);
+          let schema = match schema {
+            cirru_parser::Cirru::List(mut items) if items.len() == 1 => items.remove(0),
+            other => other,
+          };
+          entry.schema =
+            snapshot::parse_schema_annotation_for_write(&schema).unwrap_or_else(|e| panic!("parse annotation for {name}: {e}"));
+        }
+      }
+      snapshot.files.insert("app.main".to_owned(), file);
+      prepare_snapshot_entries(snapshot)
+    };
+
+    // 1. `set!` preserves impl incompleteness when overwriting with an incomplete parameter or differing impls.
+    let set_incomplete_snippet = format!(
+      "{base_defs}\n{}",
+      r#"defn check-set-incomplete (w)
+  let ((local (Widget0 :n 1)))
+    set! local w
+    impl-traits local ChildImpl
+defn check-set-impl-mismatch ()
+  let ((local (Widget0 :n 1)) (decorated (impl-traits (Widget0 :n 2) ParentImpl)))
+    set! local decorated
+    impl-traits local ChildImpl
+defn main! () &unit"#
+    );
+    let entries = prepare_with_schemas(
+      &set_incomplete_snippet,
+      &[
+        ("check-set-incomplete", "Fn Widget0 (-> Widget0)"),
+        ("check-set-impl-mismatch", "Fn (-> Widget0)"),
+        ("main!", "Fn (-> Unit)"),
+      ],
+    );
+    for target in ["check-set-incomplete", "check-set-impl-mismatch"] {
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{target} should defer missing-parent check when set! writes incomplete/mismatched impls: {err}"));
+    }
+
+    // 2. `if` joins intersect differing impl tables: no false E_DUPLICATE_TRAIT_IMPL or E_IMPL_MISSING_REQUIRED_TRAIT,
+    //    while matching branches continue enforcing both diagnostics.
+    let if_join_ok_snippet = format!(
+      "{base_defs}\n{}",
+      r#"defn if-no-dup (flag)
+  let ((decorated (impl-traits (Widget0 :n 1) ParentImpl)) (plain (Widget0 :n 2)))
+    impl-traits (if flag decorated plain) ParentImpl
+defn if-no-missing (flag)
+  let ((decorated (impl-traits (Widget0 :n 1) ParentImpl)) (plain (Widget0 :n 2)))
+    impl-traits (if flag plain decorated) ChildImpl
+defn main! () &unit"#
+    );
+    let entries = prepare_with_schemas(
+      &if_join_ok_snippet,
+      &[
+        ("if-no-dup", "Fn Bool (-> Widget0)"),
+        ("if-no-missing", "Fn Bool (-> Widget0)"),
+        ("main!", "Fn (-> Unit)"),
+      ],
+    );
+    run_check_only(&entries).unwrap_or_else(|err| panic!("if-join with differing branch impls must defer/intersect safely: {err}"));
+
+    for (name, body, schema, expected_code) in [
+      (
+        "if-both-dup",
+        r#"defn if-both-dup (flag)
+  let ((a (impl-traits (Widget0 :n 1) ParentImpl)) (b (impl-traits (Widget0 :n 2) ParentImpl)))
+    impl-traits (if flag a b) ParentImpl
+defn main! ()
+  let ((_x (if-both-dup true))) &unit"#,
+        "Fn Bool (-> Widget0)",
+        "E_DUPLICATE_TRAIT_IMPL",
+      ),
+      (
+        "if-both-missing",
+        r#"defn if-both-missing (flag)
+  let ((a (Widget0 :n 1)) (b (Widget0 :n 2)))
+    impl-traits (if flag a b) ChildImpl
+defn main! ()
+  let ((_x (if-both-missing true))) &unit"#,
+        "Fn Bool (-> Widget0)",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+      ),
+    ] {
+      let snippet = format!("{base_defs}\n{body}");
+      let entries = prepare_with_schemas(&snippet, &[(name, schema), ("main!", "Fn (-> Unit)")]);
+      let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only with {expected_code}"));
+      assert!(err.contains(expected_code), "{name} should report {expected_code}: {err}");
+    }
+
+    // 3. Pending nominal definition with an in-progress impl attachment defers missing-parent check
+    //    while still reporting duplicate attachments.
+    let pending_def_snippet = r#"deftrait Parent (.label AnyFn)
+deftrait Child (requires Parent) (.greet AnyFn)
+defstruct Widget (:n Number) (:impls Parent)
+defimpl Widget Parent (.label (fn (x) (let ((child-impl (&impl::new Child $ :: .greet (fn (w) |child))) (_w (impl-traits Widget child-impl))) |parent)))
+defn main! ()
+  let ((_refs ([] Widget))) &unit"#;
+    let entries = prepare_with_schemas(pending_def_snippet, &[("Widget", "StructDef"), ("main!", "Fn (-> Unit)")]);
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Widget", &warnings, &CallStackList::default())
+      .unwrap_or_else(|err| panic!("pending nominal def impl compilation must defer missing-parent check: {err}"));
+
+    let pending_dup_snippet = r#"deftrait Parent (.label AnyFn)
+deftrait Child (requires Parent) (.greet AnyFn)
+defstruct Widget (:n Number) (:impls Parent)
+defimpl Widget Parent (.label (fn (x) (let ((child-impl (&impl::new Child $ :: .greet (fn (w) |child))) (_w (impl-traits (impl-traits Widget child-impl) child-impl))) |parent)))
+defn main! ()
+  let ((_refs ([] Widget))) &unit"#;
+    let entries = prepare_with_schemas(pending_dup_snippet, &[("Widget", "StructDef"), ("main!", "Fn (-> Unit)")]);
+    let err = run_check_only(&entries).expect_err("duplicate impl inside pending nominal def must still report E_DUPLICATE_TRAIT_IMPL");
+    assert!(
+      err.contains("E_DUPLICATE_TRAIT_IMPL"),
+      "pending nominal def must preserve duplicate check: {err}"
+    );
   });
 }
 
@@ -6389,6 +6591,106 @@ defn main! ()
     assert_eq!(
       found, wanted,
       "all aliased/spread/trait/method effect edges should match: {warnings:?}"
+    );
+  });
+}
+
+#[test]
+fn effect_features_track_computed_callees() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let snippet = r#"defn make-logger ()
+  fn (x)
+    hint-fn $ Fn Number (-> Unit) (:features :io)
+    println x
+defn make-logger-factory ()
+  , make-logger
+defn make-hof ()
+  fn (cb) (cb 1)
+defn computed-call-io ()
+  (make-logger) 1
+defn computed-nested-io ()
+  ((make-logger-factory)) 1
+defn computed-spread-io ()
+  let ((args ([] 1)))
+    (make-logger) & args
+defn computed-hof-io ()
+  (make-hof) (fn (x) (hint-fn $ Fn Number (-> Unit) (:features :io)) (println x))
+defn computed-hof-pure ()
+  (make-hof) (fn (x) (do x &unit))
+defn main! ()
+  computed-call-io
+  computed-nested-io
+  computed-spread-io
+  computed-hof-io
+  computed-hof-pure
+  , &unit"#;
+
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+    for (name, schema_src) in [
+      ("make-logger", "Fn (-> (Fn Number (-> Unit) (:features :io)))"),
+      ("make-logger-factory", "Fn (-> (Fn (-> (Fn Number (-> Unit) (:features :io)))))"),
+      ("make-hof", "Fn (-> (Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)))"),
+      ("computed-call-io", "Fn (-> Unit)"),
+      ("computed-nested-io", "Fn (-> Unit)"),
+      ("computed-spread-io", "Fn (-> Unit)"),
+      ("computed-hof-io", "Fn (-> Unit)"),
+      ("computed-hof-pure", "Fn (-> Unit)"),
+      ("main!", "Fn (-> Unit) (:features :io)"),
+    ] {
+      let schema = cirru_parser::parse(schema_src)
+        .unwrap_or_else(|e| panic!("parse schema for {name}: {e}"))
+        .remove(0);
+      file.defs.get_mut(name).unwrap_or_else(|| panic!("missing def {name}")).schema =
+        snapshot::parse_schema_annotation_for_write(&schema).unwrap_or_else(|e| panic!("parse annotation for {name}: {e}"));
+    }
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
+
+    program::configure_entry_feature_policy(&HashMap::from([
+      ("state".to_owned(), snapshot::FeaturePolicy::Error),
+      ("io".to_owned(), snapshot::FeaturePolicy::Error),
+      ("dbg".to_owned(), snapshot::FeaturePolicy::Error),
+    ]));
+    let _ = runner::preprocess::take_advisories();
+    let warnings = RefCell::new(vec![]);
+    for target in [
+      "computed-call-io",
+      "computed-nested-io",
+      "computed-spread-io",
+      "computed-hof-io",
+      "computed-hof-pure",
+    ] {
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("preprocess failed for {target}: {err}"));
+    }
+    let advisories = runner::preprocess::take_advisories();
+    program::configure_entry_feature_policy(&HashMap::new());
+
+    let mut found = advisories
+      .iter()
+      .filter_map(|advisory| {
+        let code = advisory.code()?;
+        matches!(code, "E_STATE_FEATURE_REQUIRED" | "E_IO_FEATURE_REQUIRED").then(|| {
+          let def = advisory.message().split_whitespace().nth(1).unwrap_or_default().to_owned();
+          (def, code.to_owned())
+        })
+      })
+      .collect::<Vec<_>>();
+    found.sort();
+
+    let mut wanted = vec![
+      ("app.main/computed-call-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/computed-nested-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/computed-spread-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/computed-hof-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+    ];
+    wanted.sort();
+    assert_eq!(
+      found, wanted,
+      "computed callees should charge returned and :pass callback effects: {warnings:?}"
     );
   });
 }

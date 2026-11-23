@@ -6782,7 +6782,32 @@ fn preprocess_list_call(
               ));
             }
             // A successful write invalidates read refinements of this local.
+            let is_nominal_type = |ty: &CalcitTypeAnnotation| {
+              matches!(
+                ty,
+                CalcitTypeAnnotation::Struct(_, _)
+                  | CalcitTypeAnnotation::StructValue(_)
+                  | CalcitTypeAnnotation::Enum(_, _)
+                  | CalcitTypeAnnotation::EnumValue(_)
+                  | CalcitTypeAnnotation::TypeRef(_, _)
+              )
+            };
+            let may_carry_nominal_impls = is_nominal_type(expected.as_ref()) || is_nominal_type(actual.as_ref());
+            let impls_differ = match (
+              type_inference::annotation_impls(expected.as_ref()),
+              type_inference::annotation_impls(actual.as_ref()),
+            ) {
+              (Some(expected_impls), Some(actual_impls)) => !type_inference::impl_tables_match(&expected_impls, &actual_impls),
+              (Some(_), None) | (None, Some(_)) => true,
+              (None, None) => false,
+            };
+            let keeps_incomplete_impls = scope_types.has_incomplete_impls(&local.sym)
+              || (may_carry_nominal_impls
+                && (impls_differ || !type_inference::expr_has_complete_impls(value, actual.as_ref(), scope_types)));
             scope_types.insert(local.sym.clone(), expected);
+            if keeps_incomplete_impls {
+              scope_types.mark_incomplete_impls(local.sym.clone());
+            }
             if explicit_open::invalidate_static_callee(local) {
               return Err(CalcitErr::use_msg_stack_location_with_code(
                 CalcitErrKind::Type,
@@ -16123,6 +16148,169 @@ fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpo
 }
 
 // Preserve both lexical binders and nominal declaration provenance on replay.
+fn annotation_contains_pass_callback_inner(annotation: &CalcitTypeAnnotation, file_ns: &str, depth: usize) -> bool {
+  if depth > 16 {
+    return false;
+  }
+  match annotation {
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.is_pass_callback() || annotation_contains_pass_callback_inner(signature.return_type.as_ref(), file_ns, depth + 1)
+    }
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Variadic(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _) => annotation_contains_pass_callback_inner(inner.as_ref(), file_ns, depth + 1),
+    CalcitTypeAnnotation::Map(key, value) => {
+      annotation_contains_pass_callback_inner(key.as_ref(), file_ns, depth + 1)
+        || annotation_contains_pass_callback_inner(value.as_ref(), file_ns, depth + 1)
+    }
+    CalcitTypeAnnotation::Tuple(items) => items
+      .iter()
+      .any(|item| annotation_contains_pass_callback_inner(item.as_ref(), file_ns, depth + 1)),
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => args
+      .iter()
+      .any(|arg| annotation_contains_pass_callback_inner(arg.as_ref(), file_ns, depth + 1)),
+    CalcitTypeAnnotation::TypeRef(_, args) => {
+      if args
+        .iter()
+        .any(|arg| annotation_contains_pass_callback_inner(arg.as_ref(), file_ns, depth + 1))
+      {
+        return true;
+      }
+      let qualified = resolve_namespace_type_refs_for_body(Arc::new(annotation.clone()), file_ns);
+      qualified.resolve_to_fn().is_some_and(|signature| {
+        signature.is_pass_callback() || annotation_contains_pass_callback_inner(signature.return_type.as_ref(), file_ns, depth + 1)
+      })
+    }
+    CalcitTypeAnnotation::TypeSlot(name) => calcit::resolve_type_slot(name)
+      .is_some_and(|resolved| annotation_contains_pass_callback_inner(resolved.as_ref(), file_ns, depth + 1)),
+    _ => false,
+  }
+}
+
+fn annotation_contains_pass_callback(annotation: &CalcitTypeAnnotation, file_ns: &str) -> bool {
+  annotation_contains_pass_callback_inner(annotation, file_ns, 0)
+}
+
+fn collect_pattern_local_names(pattern: &Calcit, out: &mut HashSet<Arc<str>>) {
+  let mut pending = vec![pattern];
+  while let Some(node) = pending.pop() {
+    match node {
+      Calcit::Local(local) => {
+        out.insert(local.sym.clone());
+      }
+      Calcit::List(items) => pending.extend(items.iter()),
+      _ => {}
+    }
+  }
+}
+
+fn expr_captures_pass_binding(expr: &Calcit, bound_names: &HashSet<Arc<str>>, outer_scope_types: &ScopeTypes, file_ns: &str) -> bool {
+  match expr {
+    Calcit::Local(local) => {
+      if bound_names.contains(&local.sym) {
+        return false;
+      }
+      if outer_scope_types
+        .get(&local.sym)
+        .is_some_and(|annotation| annotation_contains_pass_callback(annotation.as_ref(), file_ns))
+      {
+        return true;
+      }
+      !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic)
+        && annotation_contains_pass_callback(local.type_info.as_ref(), file_ns)
+    }
+    Calcit::Symbol { sym, .. } => {
+      !bound_names.contains(sym)
+        && outer_scope_types
+          .get(sym)
+          .is_some_and(|annotation| annotation_contains_pass_callback(annotation.as_ref(), file_ns))
+    }
+    Calcit::List(items) => {
+      if matches!(items.call_kind(), CalcitCallKind::TypedFnHint(_, _))
+        || matches!(
+          items.first(),
+          Some(Calcit::Syntax(
+            CalcitSyntax::Quote | CalcitSyntax::HintFn | CalcitSyntax::AssertType,
+            _
+          ))
+        )
+      {
+        return false;
+      }
+      match items.first() {
+        Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
+          let mut inner_bound = bound_names.clone();
+          if let Some(Calcit::List(binding)) = items.get(1) {
+            if let Some(init) = binding.get(1)
+              && expr_captures_pass_binding(init, bound_names, outer_scope_types, file_ns)
+            {
+              return true;
+            }
+            if let Some(Calcit::Local(local)) = binding.first() {
+              inner_bound.insert(local.sym.clone());
+            }
+          }
+          items
+            .iter()
+            .skip(2)
+            .any(|item| expr_captures_pass_binding(item, &inner_bound, outer_scope_types, file_ns))
+        }
+        Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+          if let Some(scrutinee) = items.get(1)
+            && expr_captures_pass_binding(scrutinee, bound_names, outer_scope_types, file_ns)
+          {
+            return true;
+          }
+          if let Some(branches) = type_inference::preprocessed_match_branches(items) {
+            branches.into_iter().any(|(pattern, body)| {
+              let mut branch_bound = bound_names.clone();
+              collect_pattern_local_names(pattern, &mut branch_bound);
+              expr_captures_pass_binding(body, &branch_bound, outer_scope_types, file_ns)
+            })
+          } else {
+            items
+              .iter()
+              .skip(2)
+              .any(|item| expr_captures_pass_binding(item, bound_names, outer_scope_types, file_ns))
+          }
+        }
+        Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::Defmacro, _)) => {
+          let mut inner_bound = bound_names.clone();
+          if let Some(Calcit::List(params)) = items.get(2) {
+            for param in params.iter() {
+              if let Calcit::Local(local) = param {
+                inner_bound.insert(local.sym.clone());
+              }
+            }
+          }
+          items
+            .iter()
+            .skip(3)
+            .any(|item| expr_captures_pass_binding(item, &inner_bound, outer_scope_types, file_ns))
+        }
+        _ => items
+          .iter()
+          .any(|item| expr_captures_pass_binding(item, bound_names, outer_scope_types, file_ns)),
+      }
+    }
+    _ => false,
+  }
+}
+
+fn captures_pass_binding(params: &[Calcit], body: &[Calcit], outer_scope_types: &ScopeTypes, file_ns: &str) -> bool {
+  let mut bound_names = HashSet::new();
+  for param in params {
+    if let Calcit::Local(local) = param {
+      bound_names.insert(local.sym.clone());
+    }
+  }
+  body
+    .iter()
+    .any(|item| expr_captures_pass_binding(item, &bound_names, outer_scope_types, file_ns))
+}
+
 fn checked_function_hint(
   items: Vec<Calcit>,
   signature: Arc<CalcitFnTypeAnnotation>,
@@ -17105,7 +17293,7 @@ pub fn preprocess_defn(
       } else {
         None
       };
-      let generated_fn_schema =
+      let mut generated_fn_schema =
         if matches!(def_schema.as_ref(), CalcitTypeAnnotation::Dynamic) && (strict_generated_by_macro || infer_contextual_callback) {
           effective_fn_schema.as_ref().map(|schema| {
             let mut schema = schema.as_ref().to_owned();
@@ -17150,6 +17338,78 @@ pub fn preprocess_defn(
         } else {
           None
         };
+      let captures_pass_callback = !source_top_level_definition
+        && matches!(head, CalcitSyntax::Defn)
+        && captures_pass_binding(&zs, &processed_body, ctx.scope_types, ctx.file_ns);
+      if captures_pass_callback {
+        let pass_tag = EdnTag::from(crate::calcit::PASS_EFFECTS_FEATURE);
+        let with_pass_feature = |signature: &CalcitFnTypeAnnotation| {
+          let mut updated = signature.clone();
+          let mut features = updated.features.as_ref().clone();
+          features.insert(pass_tag.clone());
+          updated.features = Arc::new(features);
+          Arc::new(updated)
+        };
+        let mut updated_existing_hint = false;
+        let update_typed_hint = |form: &mut Calcit, updated_flag: &mut bool| {
+          if let Calcit::List(items) = form
+            && let CalcitCallKind::TypedFnHint(signature, generated) = items.call_kind()
+          {
+            *updated_flag = true;
+            let updated = with_pass_feature(signature);
+            *form = checked_function_hint(
+              vec![
+                Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
+                updated.to_schema_calcit(),
+              ],
+              updated,
+              *generated,
+              ctx.file_ns,
+              ctx.scope_types,
+            );
+          }
+        };
+        for form in &mut processed_body {
+          update_typed_hint(form, &mut updated_existing_hint);
+        }
+        let mut updated_xs = vec![];
+        for form in xs.iter() {
+          let mut next = form.clone();
+          update_typed_hint(&mut next, &mut updated_existing_hint);
+          updated_xs.push(next);
+        }
+        xs = FingerVec::from(updated_xs);
+        if let Some(signature) = effective_fn_schema.as_ref() {
+          effective_fn_schema = Some(with_pass_feature(signature));
+        }
+        if let Some(schema) = generated_fn_schema.as_ref() {
+          generated_fn_schema = Some(with_pass_feature(schema));
+        } else if !updated_existing_hint {
+          let param_list = CalcitList::from(zs.as_slice());
+          let shape = analyze_def_schema_param_shape(&param_list);
+          let fixed_count = shape.required + shape.optional;
+          let arg_types = vec![calcit::DYNAMIC_TYPE.clone(); fixed_count];
+          let rest_type = shape.has_rest.then(|| calcit::DYNAMIC_TYPE.clone());
+          let runtime_arity = (shape.optional > 0 && shape.errors.is_empty()).then_some(calcit::ProcArity {
+            min: shape.required,
+            max: (!shape.has_rest).then_some(fixed_count),
+          });
+          let mut features = HashSet::new();
+          features.insert(pass_tag);
+          generated_fn_schema = Some(Arc::new(CalcitFnTypeAnnotation {
+            open_reason: Default::default(),
+            guard: None,
+            runtime_arity,
+            generics: Arc::new(vec![]),
+            where_bounds: Arc::new(vec![]),
+            arg_types,
+            return_type: detected_return_type.clone(),
+            fn_kind: SchemaKind::Fn,
+            rest_type,
+            features: Arc::new(features),
+          }));
+        }
+      }
       if let Some(fn_annot) = generated_fn_schema.as_ref() {
         let schema_hint = checked_function_hint(
           vec![

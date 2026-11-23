@@ -177,6 +177,11 @@ fn send_raw_http(child: &mut Child, addr: SocketAddr, raw_request: &[u8]) -> Htt
     }
   }
 
+  // Ensure the socket closes and give Wasmtime's pooled HTTP instance worker a brief moment
+  // to return the instance to the reuse pool before the next sequential request opens.
+  drop(stream);
+  thread::sleep(Duration::from_millis(20));
+
   let is_head = raw_request.starts_with(b"HEAD ");
   let header_end = response.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or_else(|| {
     panic!(
@@ -770,7 +775,6 @@ fn http_proxy_serves_routes_binary_errors_and_64_stress_turns_under_8mib_cap() {
     let prefix = format!("stress:{expected_hits}:");
     assert!(text.starts_with(&prefix), "step {step} expected {prefix}*, got {text:?}");
     expected_hits += 1;
-    std::thread::sleep(Duration::from_millis(10));
   }
 
   // Final health check confirms instance reuse remained alive across all 64 stress turns.

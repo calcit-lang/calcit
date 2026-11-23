@@ -482,6 +482,13 @@ impl Checker<'_> {
         self.charge_method_call_effects(method_name.as_ref(), receiver_hint, args, scope, near);
         return;
       }
+      Some(callee_expr @ Calcit::List(_)) => {
+        let mut collected = Vec::new();
+        self.collect_callback_effects(callee_expr, &HashMap::new(), &mut collected);
+        for (effect, label) in collected {
+          self.require(scope, effect, &format!("calls {label} that declares `:{}`", effect.feature()), near);
+        }
+      }
       _ => {}
     }
     self.charge_pass_slot_callbacks(head, args, scope, near);
@@ -1117,6 +1124,40 @@ impl Checker<'_> {
       }
       Calcit::List(lambda) if matches!(lambda.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
         return lambda_declared_signature(lambda);
+      }
+      Calcit::List(items) => {
+        if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))) && items.len() >= 3 {
+          let expr = head.expect("matched Some");
+          return super::type_inference::resolve_type_value(expr, &self.scope_types)
+            .filter(|ty| !matches!(ty.as_ref(), CalcitTypeAnnotation::Dynamic))
+            .and_then(|ty| resolve_fn_in_ns(self.ns, &ty));
+        }
+        if let Some(Calcit::Import(import)) = items.first()
+          && import.ns.as_ref() == crate::calcit::CORE_NS
+          && import.def.as_ref() == "do"
+        {
+          let tail = (items.len() >= 2).then(|| &items[items.len() - 1]);
+          return tail.and_then(|expr| {
+            super::type_inference::resolve_type_value(expr, &self.scope_types)
+              .filter(|ty| !matches!(ty.as_ref(), CalcitTypeAnnotation::Dynamic))
+              .and_then(|ty| resolve_fn_in_ns(self.ns, &ty))
+              .or_else(|| self.callee_signature(Some(expr)))
+          });
+        }
+        let expr = head.expect("matched Some");
+        if let Some(ty) = super::type_inference::resolve_type_value(expr, &self.scope_types)
+          .filter(|ty| !matches!(ty.as_ref(), CalcitTypeAnnotation::Dynamic))
+          && let Some(sig) = resolve_fn_in_ns(self.ns, &ty)
+        {
+          return Some(sig);
+        }
+        let call_head = if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CallSpread, _))) {
+          items.get(1)
+        } else {
+          items.first()
+        };
+        let return_type = self.callee_signature(call_head)?.return_type.clone();
+        return resolve_fn_in_ns(self.ns, &return_type);
       }
       Calcit::Fn { info, .. } => {
         return if info.def_ns.as_ref() == crate::calcit::CORE_NS {
