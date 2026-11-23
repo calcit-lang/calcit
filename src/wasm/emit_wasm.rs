@@ -51,7 +51,10 @@ mod memory;
 mod methods;
 mod number_format;
 mod runtime;
+mod static_data;
 mod structs;
+
+use static_data::*;
 
 use component::{
   ComponentListCodec, ComponentStructCodec, ComponentValueCodecs, ComponentVariantCodec, build_component_drop_fn,
@@ -303,7 +306,55 @@ fn emit_wasm_impl(
     Vec::new()
   };
 
-  // First pass: extract all function signatures from all namespaces
+  let wasi_command_component = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Command;
+  let wasi_http_proxy = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Http;
+  let wasi_http_stdio = wasi_http_proxy && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdio);
+  let wasi_command_file = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
+  let wasi_command_read_dir =
+    wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_read_dir);
+  let wasi_command_fs_common = wasi_command_file || wasi_command_read_dir;
+  let wasi_command_stdin = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
+  let wasi_command_clocks = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_clocks);
+  let wasi_command_wait = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_wait);
+  let wasi_command_random = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
+
+  let mut component_import_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
+    collect_component_import_adapters(&program_data)?
+  } else if wasi_http_proxy {
+    std::mem::take(&mut http_db_import_adapters)
+  } else {
+    Vec::new()
+  };
+  if wasi_command_component {
+    component_import_adapters.push(ComponentImportAdapter {
+      definition: "calcit.core/get-args".into(),
+      module: "wasi:cli/environment@0.3.1".into(),
+      symbol: "get-arguments".into(),
+      raw_index: 0,
+      source_arity: 0,
+      invocation: ComponentAbiInvocation::Sync,
+      parameters: vec![],
+      result: ComponentAbiType::List(Box::new(ComponentAbiType::String)),
+    });
+  }
+
+  let ReachableProgram {
+    defs: reachable_defs,
+    extra_exprs: reachable_extra_exprs,
+  } = collect_reachable_program_defs(
+    &program_data,
+    ReachabilityConfig {
+      init_ns,
+      init_def,
+      target,
+      extra_imports: &component_import_adapters,
+      wasi_command_component,
+      wasi_http_proxy,
+      wasi_command_read_dir,
+    },
+  );
+
+  // First pass: extract reachable function signatures from all namespaces.
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
 
   // Collect init_ns first, then other namespaces (ordering for export clarity)
@@ -314,6 +365,9 @@ fn emit_wasm_impl(
       continue;
     };
     for (def_name, compiled) in deterministic_definition_order(file_info) {
+      if !reachable_defs.contains(&(ns.to_string(), def_name.to_string())) {
+        continue;
+      }
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
@@ -342,21 +396,10 @@ fn emit_wasm_impl(
   if fn_defs.is_empty() {
     return Err(format!("namespace not found or no functions: {init_ns}"));
   }
-  let wasi_command_component = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Command;
-  let wasi_http_proxy = target == WasmTarget::Wasi && boundary == WasmBoundary::Component && world == WasiWorld::Http;
   let wasi_command_stdio = wasi_command_component
     && fn_defs.iter().any(|(namespace, name, _, body)| {
       (namespace != "calcit.core" || name.starts_with("&calcit:test:")) && body.iter().any(expr_uses_wasi_stdio)
     });
-  let wasi_http_stdio = wasi_http_proxy && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdio);
-  let wasi_command_file = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_file);
-  let wasi_command_read_dir =
-    wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_read_dir);
-  let wasi_command_fs_common = wasi_command_file || wasi_command_read_dir;
-  let wasi_command_stdin = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_stdin);
-  let wasi_command_clocks = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_clocks);
-  let wasi_command_wait = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_wait);
-  let wasi_command_random = wasi_command_component && reachable_wasi_effect(&program_data, init_ns, init_def, expr_uses_wasi_random);
   let wasi_command_stackful = wasi_command_stdio || wasi_command_fs_common || wasi_command_stdin || wasi_command_wait;
   // Build the import table before assigning user function indices. Built-in imports
   // stay first so internal lowering keeps its stable indices; user declarations
@@ -369,25 +412,6 @@ fn emit_wasm_impl(
   } else {
     host_imports_for_target(target)
   };
-  let mut component_import_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
-    collect_component_import_adapters(&program_data)?
-  } else if wasi_http_proxy {
-    std::mem::take(&mut http_db_import_adapters)
-  } else {
-    Vec::new()
-  };
-  if wasi_command_component {
-    component_import_adapters.push(ComponentImportAdapter {
-      definition: "calcit.core/get-args".into(),
-      module: "wasi:cli/environment@0.3.1".into(),
-      symbol: "get-arguments".into(),
-      raw_index: 0,
-      source_arity: 0,
-      invocation: ComponentAbiInvocation::Sync,
-      parameters: vec![],
-      result: ComponentAbiType::List(Box::new(ComponentAbiType::String)),
-    });
-  }
   let mut component_adapters = if boundary == WasmBoundary::Component && target == WasmTarget::Core {
     let provisional_fn_index = fn_defs
       .iter()
@@ -566,9 +590,9 @@ fn emit_wasm_impl(
   let num_imports = host_imports.len() as u32;
 
   // Collect tags early — needed to embed the string type tag in the __str_new helper.
-  // Layout collection includes registered definitions on every boundary, even
+  // Layout collection includes registered reachable definitions on every boundary, even
   // when their functions are not emitted. Their tags must use the same scope.
-  let tag_index = collect_all_tags_from(&fn_defs, Some(&program_data));
+  let tag_index = collect_all_tags_from(&fn_defs, Some(&program_data), Some(&reachable_defs), &reachable_extra_exprs);
   if write_output {
     eprintln!("[wasm] tag index: {tag_index:?}");
   }
@@ -584,6 +608,9 @@ fn emit_wasm_impl(
       continue;
     };
     for (def_name, compiled) in deterministic_definition_order(file_info) {
+      if !reachable_defs.contains(&(ns.to_string(), def_name.to_string())) {
+        continue;
+      }
       let qualified = format!("{ns}/{def_name}");
       if matches!(compiled.kind, program::CompiledDefKind::Value | program::CompiledDefKind::LazyValue) {
         value_imports.insert(qualified.clone(), compiled.preprocessed_code.to_owned());
@@ -602,20 +629,38 @@ fn emit_wasm_impl(
       }
     }
   }
+  let mut extra_pool_exprs: Vec<Calcit> = defref_defs.iter().filter_map(|(_, init)| init.clone()).collect();
+  extra_pool_exprs.extend(reachable_extra_exprs.iter().cloned());
+  let pool_options = detect_static_pool_options(
+    &fn_defs,
+    &value_imports,
+    &extra_pool_exprs,
+    target,
+    wasi_http_proxy,
+    wasi_command_stdio || wasi_http_stdio,
+    wasi_command_read_dir,
+  );
   let StaticDataAndAtoms {
     string_pool,
     mut string_data_segment,
     mut heap_start,
     atom_initial_values,
     atom_globals,
-  } = build_static_data_and_atoms(&fn_defs, &value_imports, &tag_index, target, &defref_defs);
+  } = build_static_data_and_atoms(
+    &fn_defs,
+    &value_imports,
+    &tag_index,
+    pool_options,
+    &defref_defs,
+    &reachable_extra_exprs,
+  );
 
   let component_types = if boundary == WasmBoundary::Component {
     collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)?
   } else {
     Vec::new()
   };
-  let mut struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index)?;
+  let mut struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index, Some(&reachable_defs))?;
   struct_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
 
   let atom_count = atom_initial_values.len() as u32;
@@ -16623,665 +16668,6 @@ fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::cod
   Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Tag collection
-// ---------------------------------------------------------------------------
-
-/// Collect all Tag values from function bodies (multi-namespace format) and build tag→id map.
-/// Tag IDs start at 1 (0 is unused/reserved).
-/// Builtin type tags always registered in tag_index, so `type-of` can return them
-/// and heap objects can carry them in their header slot.
-const BUILTIN_TYPE_TAGS: &[&str] = &[
-  "buf-list",
-  "list",
-  "map",
-  "set",
-  "enum",
-  "struct",
-  "number",
-  "bool",
-  "nil",
-  "unit",
-  "tag",
-  "fn",
-  "string",
-  "symbol",
-  "buffer",
-  "none",
-  "some",
-  "ok",
-  "err",
-  "total-limit",
-];
-
-fn collect_all_tags_from(
-  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
-  program_data: Option<&program::CompiledProgram>,
-) -> HashMap<String, u32> {
-  let mut tags: Vec<String> = Vec::new();
-  // Always include builtin type tags — used by `type-of` and heap headers.
-  for t in BUILTIN_TYPE_TAGS {
-    tags.push((*t).to_string());
-  }
-  for (_, _, _, body) in fn_defs {
-    for expr in body {
-      collect_tags_from_expr(expr, &mut tags);
-    }
-  }
-  if let Some(program_data) = program_data {
-    for (ns, file) in program_data {
-      for (name, compiled) in &file.defs {
-        if let Some(value @ (Calcit::StructDef(_) | Calcit::EnumDef(_))) = program::lookup_runtime_ready(ns, name) {
-          collect_tags_from_expr(&value, &mut tags);
-        }
-        for code in compiled
-          .source_code
-          .iter()
-          .chain([&compiled.preprocessed_code, &compiled.codegen_form])
-        {
-          // Match collect_struct_layouts, including references nested in
-          // compiled definitions outside the selected function bodies.
-          collect_tags_from_expr(code, &mut tags);
-          let struct_def = match code {
-            Calcit::StructDef(struct_def) => Some(struct_def.as_ref().clone()),
-            _ => {
-              try_parse_defrecord_form(code).or_else(|| {
-                match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
-                  Some(Calcit::StructDef(struct_def)) => Some(struct_def.as_ref().clone()),
-                  _ => None,
-                }
-              })
-            }
-          };
-          if let Some(struct_def) = struct_def {
-            tags.push(struct_def.name.ref_str().to_owned());
-            tags.extend(struct_def.fields.iter().map(|field| field.ref_str().to_owned()));
-          }
-          let enum_def = match code {
-            Calcit::EnumDef(enum_def) => Some(enum_def.clone()),
-            _ => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
-              Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
-              _ => None,
-            },
-          };
-          if let Some(enum_def) = enum_def {
-            tags.push(enum_identity_tag(&enum_def));
-            tags.extend(enum_def.variants().iter().map(|variant| variant.tag.ref_str().to_owned()));
-          }
-        }
-      }
-    }
-  }
-  tags.sort();
-  tags.dedup();
-  tags.into_iter().enumerate().map(|(i, t)| (t, (i + 1) as u32)).collect()
-}
-
-fn collect_tags_from_expr(expr: &Calcit, tags: &mut Vec<String>) {
-  if let Some(graph) = DataShapeGraph::from_calcit_handle(expr) {
-    for node in &graph.nodes {
-      match node {
-        DataShapeNode::Struct { nominal, fields, .. } => {
-          tags.push(nominal.name.ref_str().to_owned());
-          tags.extend(fields.iter().map(|(field, _)| field.ref_str().to_owned()));
-        }
-        DataShapeNode::Enum { variants, .. } => {
-          tags.extend(variants.iter().map(|(variant, _)| variant.ref_str().to_owned()));
-        }
-        _ => {}
-      }
-    }
-  }
-  match expr {
-    Calcit::Tag(t) => {
-      tags.push(t.to_string());
-    }
-    Calcit::Str(s) => {
-      collect_json_keys_from_str(s, tags);
-    }
-    Calcit::Local(local) => {
-      if let Some(enum_def) = expand_wasm_value_type(&local.type_info).resolve_to_enum() {
-        tags.push(enum_identity_tag(&enum_def));
-      }
-    }
-    Calcit::List(xs) => {
-      for x in xs.iter() {
-        collect_tags_from_expr(x, tags);
-      }
-    }
-    Calcit::StructDef(s) => {
-      tags.push(s.name.to_string());
-      for f in s.fields.iter() {
-        tags.push(f.to_string());
-      }
-    }
-    Calcit::EnumDef(e) => {
-      tags.push(enum_identity_tag(e));
-      for v in e.variants() {
-        tags.push(v.tag.to_string());
-      }
-    }
-    // When struct/enum refs are imports, resolve them to collect their tags
-    Calcit::Import(CalcitImport { ns, def, .. }) => {
-      if let Ok(struct_def) = resolve_struct_ref(expr) {
-        tags.push(struct_def.name.to_string());
-        for f in struct_def.fields.iter() {
-          tags.push(f.to_string());
-        }
-      } else if let Ok(enum_def) = resolve_enum_ref(expr) {
-        tags.push(enum_identity_tag(&enum_def));
-        for v in enum_def.variants() {
-          tags.push(v.tag.to_string());
-        }
-      }
-      // Also try to collect tags from the expression in case it's used as a value
-      let _ = (ns, def); // suppress unused warnings
-    }
-    _ => {}
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Struct operations
-// ---------------------------------------------------------------------------
-
-/// Build a string literal pool for WASM linear memory.
-///
-/// Scans all function bodies for `Calcit::Str` literals, deduplicates them,
-/// and lays them out in memory starting at `HEAP_BASE`.
-///
-/// Each string is stored as:
-///   `[magic:i32][type_tag("string"):i32][byte_len:f64][utf8_bytes... padded to 8]`
-///
-/// Returns:
-///   - `string_pool`: maps string content → logical pointer (offset of byte_len field)
-///   - `data_segment`: raw bytes for the WASM data section
-///   - `heap_start`: the new heap start offset (after all string data)
-#[cfg(test)]
-fn build_string_pool(
-  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
-  value_imports: &HashMap<String, Calcit>,
-  tag_index: &HashMap<String, u32>,
-  target: WasmTarget,
-) -> (HashMap<String, u32>, Vec<u8>, i32) {
-  build_string_pool_with_extras(fn_defs, value_imports, &[], tag_index, target)
-}
-
-fn build_string_pool_with_extras(
-  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
-  value_imports: &HashMap<String, Calcit>,
-  extra_exprs: &[Calcit],
-  tag_index: &HashMap<String, u32>,
-  target: WasmTarget,
-) -> (HashMap<String, u32>, Vec<u8>, i32) {
-  let mut strings: Vec<String> = Vec::new();
-  let mut needs_edn_format = false;
-  let mut needs_edn_parse = false;
-  let mut needs_json_format = false;
-  for (_, _, _, body) in fn_defs {
-    for expr in body {
-      collect_strings_from_expr(expr, &mut strings);
-      needs_edn_format |= expr_uses_cirru_edn_format(expr);
-      needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
-      needs_json_format |= expr_uses_json_format(expr);
-    }
-  }
-  for expr in value_imports.values().chain(extra_exprs.iter()) {
-    collect_strings_from_expr(expr, &mut strings);
-    needs_edn_format |= expr_uses_cirru_edn_format(expr);
-    needs_edn_parse |= expr_uses_typed_cirru_edn_parse(expr);
-    needs_json_format |= expr_uses_json_format(expr);
-  }
-  if target == WasmTarget::Wasi {
-    strings.push(" ".into());
-    strings.push("\n".into());
-    strings.push("E_WASM_CAPABILITY: recursive directory reads are not supported on WASI".into());
-    strings.push(http_proxy::HTTP_STATIC_CONTENT_TYPE_KEY.into());
-    strings.push(http_proxy::HTTP_STATIC_CONTENT_TYPE_TEXT_PLAIN.into());
-    strings.push(http_proxy::HTTP_STATIC_BAD_REQUEST_MSG.into());
-    strings.push(http_proxy::HTTP_STATIC_BODY_TOO_LARGE_MSG.into());
-    strings.push(http_proxy::HTTP_STATIC_INTERNAL_ERROR_MSG.into());
-  }
-  strings.push("true".into());
-  strings.push("false".into());
-  strings.push("E_WASM_EDN_SYNTAX: invalid JSON input".into());
-  strings.extend(tag_index.keys().cloned());
-  strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
-  if needs_json_format {
-    strings.extend(
-      [
-        "null", "true", "false", "[]", "{}", "[", "]", "{", "}", ",", ":", ": ", ",\n", "[\n", "{\n", "\n",
-      ]
-      .into_iter()
-      .map(String::from),
-    );
-    for depth in 0..=33 {
-      let indent = "  ".repeat(depth);
-      strings.push(format!("\n{indent}"));
-      strings.push(indent);
-    }
-  }
-  if needs_edn_format {
-    strings.extend(
-      [
-        "do ", "\n", "nil", "true", "false", "[]", "([]", "{}", "({}", "%{}", "(%{}", "%::", "(%::", ")", " ", " (",
-      ]
-      .into_iter()
-      .map(String::from),
-    );
-    strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
-    strings.extend(tag_index.keys().map(|tag| format!("'{tag}")));
-  }
-  if needs_edn_parse {
-    strings.extend(
-      [
-        "",
-        "[",
-        "]",
-        ".",
-        ".item",
-        ".key",
-        ".value",
-        ".payload[",
-        " at $",
-        "do ",
-        "nil",
-        "true",
-        "false",
-        "E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes",
-        "E_WASM_EDN_SYNTAX: invalid Cirru EDN scalar",
-        "E_WASM_EDN_RANGE: numeric value is outside the requested type",
-        "E_WASM_EDN_TAG: tag is not present in the compiled program",
-        "E_WASM_EDN_TOKEN_LIMIT: Cirru EDN list exceeds 4096 items",
-        "E_WASM_EDN_MAP_LIMIT: Cirru EDN map exceeds 2048 entries",
-        "E_WASM_EDN_ENUM: Cirru EDN enum type, variant, or payload does not match the requested type",
-      ]
-      .into_iter()
-      .map(String::from),
-    );
-    strings.extend(tag_index.keys().map(|tag| format!(":{tag}")));
-    strings.extend(tag_index.keys().map(|tag| format!("'{tag}")));
-  }
-  strings.sort();
-  strings.dedup();
-
-  if strings.is_empty() {
-    return (HashMap::new(), Vec::new(), HEAP_BASE);
-  }
-
-  let string_tag_id = *tag_index.get("string").expect("string type tag must exist") as i32;
-  let mut pool: HashMap<String, u32> = HashMap::new();
-  let mut data: Vec<u8> = Vec::new();
-  let mut offset = HEAP_BASE as u32; // current write position in linear memory
-
-  for s in &strings {
-    let byte_len = s.len() as u32;
-    // Write header: magic (i32) + type_tag (i32)
-    data.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
-    data.extend_from_slice(&(string_tag_id as u32).to_le_bytes());
-    // Logical pointer = offset + 8 (after header)
-    let logical_ptr = offset + 8;
-    pool.insert(s.clone(), logical_ptr);
-    // Write byte_len as f64
-    data.extend_from_slice(&(byte_len as f64).to_le_bytes());
-    // Write UTF-8 bytes
-    data.extend_from_slice(s.as_bytes());
-    // Pad to 8-byte alignment
-    let padded_len = (byte_len + 7) & !7;
-    data.extend(std::iter::repeat_n(0u8, (padded_len - byte_len) as usize));
-    // Advance offset: 8 (header) + 8 (byte_len f64) + padded_len
-    offset += 8 + 8 + padded_len;
-  }
-
-  let heap_start = offset as i32;
-  (pool, data, heap_start)
-}
-
-struct StaticDataAndAtoms {
-  string_pool: HashMap<String, u32>,
-  string_data_segment: Vec<u8>,
-  heap_start: i32,
-  atom_initial_values: Vec<f64>,
-  atom_globals: HashMap<String, u32>,
-}
-
-fn append_static_empty_container(
-  data_segment: &mut Vec<u8>,
-  heap_start: &mut i32,
-  tag_index: &HashMap<String, u32>,
-  tag_name: &str,
-  f64_slots: usize,
-) -> f64 {
-  let tag_id = *tag_index.get(tag_name).unwrap_or_else(|| panic!("{tag_name} type tag must exist"));
-  let logical_ptr = (*heap_start as u32) + 8;
-  data_segment.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
-  data_segment.extend_from_slice(&tag_id.to_le_bytes());
-  for _ in 0..f64_slots {
-    data_segment.extend_from_slice(&0.0f64.to_le_bytes());
-  }
-  *heap_start += 8 + (f64_slots as i32) * 8;
-  logical_ptr as f64
-}
-
-fn build_static_data_and_atoms(
-  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
-  value_imports: &HashMap<String, Calcit>,
-  tag_index: &HashMap<String, u32>,
-  target: WasmTarget,
-  defref_defs: &[(String, Option<Calcit>)],
-) -> StaticDataAndAtoms {
-  let extra_exprs: Vec<Calcit> = defref_defs.iter().filter_map(|(_, init)| init.clone()).collect();
-  let (string_pool, mut data_segment, mut heap_start) =
-    build_string_pool_with_extras(fn_defs, value_imports, &extra_exprs, tag_index, target);
-  let mut atom_initial_values: Vec<f64> = Vec::with_capacity(defref_defs.len());
-  let mut atom_globals: HashMap<String, u32> = HashMap::with_capacity(defref_defs.len());
-  let mut empty_list_ptr: Option<f64> = None;
-  let mut empty_set_ptr: Option<f64> = None;
-  let mut empty_map_ptr: Option<f64> = None;
-
-  for (qualified, init_opt) in defref_defs {
-    let global_idx = 1 + atom_initial_values.len() as u32;
-    atom_globals.insert(qualified.clone(), global_idx);
-    let mut current = init_opt.as_ref();
-    while let Some(Calcit::List(items)) = current
-      && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
-      && items.len() >= 2
-    {
-      current = Some(&items[1]);
-    }
-    let static_empty = match current {
-      Some(Calcit::Proc(CalcitProc::List)) => Some(("list", 1usize, &mut empty_list_ptr)),
-      Some(Calcit::Import(imp)) if imp.def.as_ref() == "[]" => Some(("list", 1, &mut empty_list_ptr)),
-      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::List))) => {
-        Some(("list", 1, &mut empty_list_ptr))
-      }
-      Some(Calcit::Proc(CalcitProc::Set)) => Some(("set", 1, &mut empty_set_ptr)),
-      Some(Calcit::Import(imp)) if imp.def.as_ref() == "#{}" => Some(("set", 1, &mut empty_set_ptr)),
-      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::Set))) => {
-        Some(("set", 1, &mut empty_set_ptr))
-      }
-      Some(Calcit::Proc(CalcitProc::NativeMap)) => Some(("map", 2, &mut empty_map_ptr)),
-      Some(Calcit::Import(imp)) if imp.def.as_ref() == "{}" => Some(("map", 2, &mut empty_map_ptr)),
-      Some(Calcit::List(xs)) if xs.len() == 1 && matches!(xs.first(), Some(Calcit::Proc(CalcitProc::NativeMap))) => {
-        Some(("map", 2, &mut empty_map_ptr))
-      }
-      _ => None,
-    };
-    let init_val = if let Some((tag_name, f64_slots, cache)) = static_empty {
-      *cache.get_or_insert_with(|| append_static_empty_container(&mut data_segment, &mut heap_start, tag_index, tag_name, f64_slots))
-    } else {
-      match current {
-        None | Some(Calcit::Nil) | Some(Calcit::Bool(false)) => 0.0,
-        Some(Calcit::Bool(true)) => 1.0,
-        Some(Calcit::Number(n)) => *n,
-        Some(Calcit::Tag(tag)) => tag_index.get(tag.ref_str()).copied().map_or(0.0, f64::from),
-        Some(Calcit::Str(s)) => string_pool.get(s.as_ref()).copied().map_or(0.0, f64::from),
-        _ => 0.0,
-      }
-    };
-    atom_initial_values.push(init_val);
-  }
-  debug_assert_eq!(heap_start % 8, 0);
-  StaticDataAndAtoms {
-    string_pool,
-    string_data_segment: data_segment,
-    heap_start,
-    atom_initial_values,
-    atom_globals,
-  }
-}
-
-/// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
-/// literal args (Tag, Str, Number, Bool, Nil, Unit), return its lispy string representation.
-/// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
-pub(crate) fn try_format_enum_literal(expr: &Calcit) -> Option<String> {
-  if let Calcit::List(list) = expr
-    && !list.is_empty()
-    && let Calcit::Proc(p) = &list[0]
-    && *p == CalcitProc::NativeEnum
-  {
-    let mut s = String::from("(%:: _ ");
-    for (i, item) in list.iter().skip(1).enumerate() {
-      if i > 0 {
-        s.push(' ');
-      }
-      match item {
-        Calcit::Tag(_) | Calcit::Str(_) | Calcit::Number(_) | Calcit::Bool(_) | Calcit::Nil | Calcit::Unit => {
-          use std::fmt::Write;
-          write!(s, "{item}").ok()?;
-        }
-        _ => return None,
-      }
-    }
-    s.push(')');
-    return Some(s);
-  }
-  None
-}
-
-fn collect_strings_from_data_shape(graph: &DataShapeGraph, strings: &mut Vec<String>) {
-  for node in &graph.nodes {
-    match node {
-      DataShapeNode::Struct { nominal, fields, .. } => {
-        strings.push(format!("'{}", nominal.name));
-        strings.push(format!(":{}", nominal.name));
-        for (field, _) in fields {
-          strings.push(format!(":{field}"));
-        }
-      }
-      DataShapeNode::Enum { nominal, variants, .. } => {
-        strings.push(format!("'{}", nominal.name()));
-        strings.push(format!(":{}", nominal.name()));
-        for (variant, _) in variants {
-          strings.push(format!("'{variant}"));
-          strings.push(format!(":{variant}"));
-        }
-      }
-      _ => {}
-    }
-  }
-}
-
-fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
-  if let Some(graph) = DataShapeGraph::from_calcit_handle(expr) {
-    collect_strings_from_data_shape(&graph, strings);
-  }
-  match expr {
-    Calcit::Number(number) => {
-      strings.push(crate::wasm::host::util::number::format_calcit_number(*number));
-    }
-    Calcit::Str(s) => {
-      strings.push(s.to_string());
-    }
-    // Intern tag names as strings so that emit_ptr_to_i32 can convert tags to string ptrs
-    // (used when literal tags are passed to string procs like starts-with?, ends-with?, etc.)
-    Calcit::Tag(t) => {
-      strings.push(t.to_string());
-    }
-    Calcit::List(xs) => {
-      if xs.len() == 1 && expr_uses_wasi_stdio(expr) {
-        strings.push(String::new());
-      }
-      // Pre-intern strings produced by `(format-to-lisp (quote X))` at compile time.
-      // The assert= macro expands to this pattern for the error message.
-      if xs.len() == 2
-        && let Calcit::Proc(p) = &xs[0]
-        && matches!(p.as_ref(), "format-to-lisp")
-        && let Calcit::List(inner) = &xs[1]
-        && inner.len() >= 2
-        && let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0]
-      {
-        let s = crate::wasm::host::calcit::format_to_lisp(&inner[1]);
-        strings.push(s);
-      }
-      // Pre-intern lispy strings for literal enum constructors (used by `str`/`to-string`).
-      if let Some(enum_str) = try_format_enum_literal(expr) {
-        strings.push(enum_str);
-      }
-      if matches!(xs.first(), Some(Calcit::Proc(CalcitProc::FormatCirruEdn)))
-        && let Some(value) = xs.get(1)
-      {
-        if let Some(formatted) = edn::try_format_cirru_edn_literal(value) {
-          strings.push(formatted);
-        }
-        if let Some(value_type) = infer_static_type_from_expr(value)
-          && let Ok(graph) = DataShapeGraph::build(value_type.as_ref(), "")
-        {
-          collect_strings_from_data_shape(&graph, strings);
-        }
-      }
-      for x in xs.iter() {
-        collect_strings_from_expr(x, strings);
-      }
-    }
-    _ => {}
-  }
-}
-
-fn expr_uses_cirru_edn_format(expr: &Calcit) -> bool {
-  match expr {
-    Calcit::List(xs) => {
-      matches!(xs.first(), Some(Calcit::Proc(CalcitProc::FormatCirruEdn))) || xs.iter().any(expr_uses_cirru_edn_format)
-    }
-    _ => false,
-  }
-}
-
-fn expr_uses_json_format(expr: &Calcit) -> bool {
-  match expr {
-    Calcit::Proc(CalcitProc::JsonStringify | CalcitProc::JsonPretty) => true,
-    Calcit::Import(CalcitImport { ns, def, .. }) => {
-      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "json-stringify" | "json-pretty")
-    }
-    Calcit::Symbol { sym, info, .. } => {
-      info.at_ns.as_ref() == "calcit.core" && matches!(sym.as_ref(), "json-stringify" | "json-pretty")
-    }
-    Calcit::List(xs) => xs.iter().any(expr_uses_json_format),
-    _ => false,
-  }
-}
-
-fn collect_json_keys_from_str(s: &str, tags: &mut Vec<String>) {
-  if !s.contains('"') || !s.contains(':') {
-    return;
-  }
-  let bytes = s.as_bytes();
-  let mut i = 0;
-  while i < bytes.len() {
-    if bytes[i] != b'"' {
-      i += 1;
-      continue;
-    }
-    i += 1;
-    let mut unescaped = String::new();
-    let mut closed = false;
-    let mut valid = true;
-    while i < bytes.len() {
-      let b = bytes[i];
-      if b == b'"' {
-        i += 1;
-        closed = true;
-        break;
-      }
-      if b == b'\\' {
-        i += 1;
-        if i >= bytes.len() {
-          break;
-        }
-        match bytes[i] {
-          b'"' => unescaped.push('"'),
-          b'\\' => unescaped.push('\\'),
-          b'/' => unescaped.push('/'),
-          b'b' => unescaped.push('\u{0008}'),
-          b'f' => unescaped.push('\u{000c}'),
-          b'n' => unescaped.push('\n'),
-          b'r' => unescaped.push('\r'),
-          b't' => unescaped.push('\t'),
-          b'u' => {
-            if i + 4 < bytes.len() && bytes[i + 1..i + 5].iter().all(|b| b.is_ascii_hexdigit()) {
-              if let Ok(code) = u32::from_str_radix(&s[i + 1..i + 5], 16) {
-                if (0xD800..=0xDBFF).contains(&code)
-                  && i + 10 < bytes.len()
-                  && bytes[i + 5] == b'\\'
-                  && bytes[i + 6] == b'u'
-                  && bytes[i + 7..i + 11].iter().all(|b| b.is_ascii_hexdigit())
-                  && let Ok(low) = u32::from_str_radix(&s[i + 7..i + 11], 16)
-                  && (0xDC00..=0xDFFF).contains(&low)
-                {
-                  let scalar = 0x10000 + (((code - 0xD800) << 10) | (low - 0xDC00));
-                  if let Some(ch) = char::from_u32(scalar) {
-                    unescaped.push(ch);
-                  } else {
-                    valid = false;
-                  }
-                  i += 10;
-                } else if let Some(ch) = char::from_u32(code) {
-                  unescaped.push(ch);
-                  i += 4;
-                } else {
-                  valid = false;
-                  i += 4;
-                }
-              } else {
-                valid = false;
-                i += 4;
-              }
-            } else {
-              valid = false;
-            }
-          }
-          _ => {
-            if let Some(ch) = s[i..].chars().next() {
-              unescaped.push(ch);
-              i += ch.len_utf8();
-              continue;
-            }
-            break;
-          }
-        }
-        i += 1;
-      } else {
-        let rest = &s[i..];
-        if let Some(ch) = rest.chars().next() {
-          unescaped.push(ch);
-          i += ch.len_utf8();
-        } else {
-          break;
-        }
-      }
-    }
-    if !closed {
-      break;
-    }
-    while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\n' | b'\r') {
-      i += 1;
-    }
-    if valid && i < bytes.len() && bytes[i] == b':' {
-      tags.push(unescaped);
-    }
-  }
-}
-
-fn expr_uses_typed_cirru_edn_parse(expr: &Calcit) -> bool {
-  match expr {
-    Calcit::List(xs) => {
-      matches!(
-        xs.first(),
-        Some(Calcit::Syntax(
-          CalcitSyntax::TryParseCirruEdnAs
-            | CalcitSyntax::ParseCirruEdnAs
-            | CalcitSyntax::DecodeMapAs
-            | CalcitSyntax::TryDecodeMapAs
-            | CalcitSyntax::EncodeMapAs,
-          _
-        ))
-      ) || xs.iter().any(expr_uses_typed_cirru_edn_parse)
-    }
-    Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_typed_cirru_edn_parse),
-    _ => false,
-  }
-}
-
 fn expr_uses_wasi_stdio(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(xs) => {
@@ -18564,7 +17950,7 @@ mod tests {
 
   #[test]
   fn builtin_scalar_and_component_tags_are_available_without_source_literals() {
-    let tags = super::collect_all_tags_from(&[], None);
+    let tags = super::collect_all_tags_from(&[], None, None, &[]);
     for tag in ["none", "some", "ok", "err", "number", "bool", "nil", "unit"] {
       assert!(tags.contains_key(tag), "missing built-in runtime tag {tag}");
     }

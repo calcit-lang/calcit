@@ -194,7 +194,11 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "rm-def", "test-wasm.main/test-to-tag"], { stdio: "pipe" });
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, `WASM should preserve unrelated exports\n${wasm.stdout}\n${wasm.stderr}`);
-  assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
+  assert.doesNotMatch(
+    wasm.stderr,
+    /calcit\.core\/to-tag/,
+    "unreachable calcit.core/to-tag should be pruned once test-to-tag is removed",
+  );
   const wasmModule = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
   const imports = {};
   for (const item of WebAssembly.Module.imports(wasmModule)) {

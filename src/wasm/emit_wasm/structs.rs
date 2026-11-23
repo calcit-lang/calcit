@@ -288,6 +288,7 @@ pub(super) fn collect_struct_layouts(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   component_types: &[ComponentAbiType],
   tags: &HashMap<String, u32>,
+  reachable_defs: Option<&HashSet<(String, String)>>,
 ) -> Result<StructLayouts, String> {
   fn record_kinds(
     identity: StructIdentity,
@@ -343,6 +344,11 @@ pub(super) fn collect_struct_layouts(
           visit(item, field_kinds);
         }
       }
+      Calcit::Fn { info, .. } => {
+        for item in &info.body {
+          visit(item, field_kinds);
+        }
+      }
       _ => {}
     }
   }
@@ -354,6 +360,11 @@ pub(super) fn collect_struct_layouts(
   }
   for (ns, file) in program_data.iter() {
     for (name, compiled) in &file.defs {
+      if let Some(reachable) = reachable_defs
+        && !reachable.contains(&(ns.to_string(), name.to_string()))
+      {
+        continue;
+      }
       if let Some(Calcit::StructDef(definition)) = program::lookup_runtime_ready(ns, name) {
         record_kinds(
           StructIdentity::from(definition.as_ref()),
@@ -371,6 +382,11 @@ pub(super) fn collect_struct_layouts(
   // Done with `or_insert_with` after `visit` so raw un-preprocessed declarations never widen compact structs.
   for (ns, file) in program_data.iter() {
     for (name, compiled) in &file.defs {
+      if let Some(reachable) = reachable_defs
+        && !reachable.contains(&(ns.to_string(), name.to_string()))
+      {
+        continue;
+      }
       for expression in [&compiled.preprocessed_code, &compiled.codegen_form] {
         let resolved =
           match expression {

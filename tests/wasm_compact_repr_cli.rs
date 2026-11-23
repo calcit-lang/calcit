@@ -118,6 +118,7 @@ struct ParsedModule {
   exports: HashMap<String, u32>,
   functions: HashMap<u32, ParsedFunction>,
   data_offsets: Vec<i32>,
+  data_bytes: usize,
 }
 
 fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
@@ -131,6 +132,7 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
   let mut exports = HashMap::new();
   let mut bodies = Vec::new();
   let mut data_offsets = Vec::new();
+  let mut data_bytes = 0usize;
 
   for payload in Parser::new(0).parse_all(bytes) {
     match payload.expect("valid wasm payload") {
@@ -167,6 +169,7 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
       Payload::DataSection(section) => {
         for segment in section {
           let segment = segment.expect("valid data segment");
+          data_bytes += segment.data.len();
           if let DataKind::Active { offset_expr, .. } = segment.kind {
             let mut ops = offset_expr.get_operators_reader();
             if let Ok(Operator::I32Const { value }) = ops.read() {
@@ -221,6 +224,7 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
     exports,
     functions,
     data_offsets,
+    data_bytes,
   }
 }
 
@@ -1598,7 +1602,22 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
 "#;
   let arith_wasm = compile_wasm_with_boundary(&arith_dir, arith_snapshot, "native");
   let arith_bytes = fs::read(&arith_wasm).expect("arith wasm bytes should read");
+  assert!(
+    arith_bytes.len() < 4096,
+    "pure arithmetic module must elide static core string/tag pool and stay under 4 KB, got {} bytes",
+    arith_bytes.len()
+  );
   let arith_parsed = parse_wasm_module(&arith_bytes);
+  assert!(
+    !arith_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
+    "pure arithmetic module must omit Ryū table at {NUMBER_TABLE_BASE}, got {:?}",
+    arith_parsed.data_offsets
+  );
+  assert!(
+    arith_parsed.data_bytes < 256,
+    "pure arithmetic module must elide static core string/tag pool data (< 256 B), got {} bytes",
+    arith_parsed.data_bytes
+  );
   assert!(
     !arith_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
     "pure arithmetic must omit Ryū lookup table at {NUMBER_TABLE_BASE}, got offsets {:?}",
@@ -1667,4 +1686,46 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
     .get_typed_func::<(), f64>(&mut fmt_store, "log-num")
     .expect("log-num export");
   assert_eq!(log_num.call(&mut fmt_store, ()).expect("log-num executes"), 1.0);
+
+  let print_dir = TestDirectory::create("wasm-selective-print-only");
+  let print_snapshot = r#"
+{}
+  :about "|Selective linking print-only float test"
+  :package |selective-print
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'selective-print.main/main!) (:mode :native) (:reload-fn 'selective-print.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'selective-print.main
+    %{} 'FileEntry
+      :defs $ {}
+        'print-float $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export print-float () (println (+ 0.5 0.25)) (+ 0.5 0.25)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (print-float)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns selective-print.main (:require)
+"#;
+  let print_wasm = compile_wasm_with_boundary(&print_dir, print_snapshot, "native");
+  let print_bytes = fs::read(&print_wasm).expect("print-only wasm bytes should read");
+  let print_parsed = parse_wasm_module(&print_bytes);
+  assert!(
+    print_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
+    "print-only float fixture without `str` must retain Ryū table at {NUMBER_TABLE_BASE}, got {:?}",
+    print_parsed.data_offsets
+  );
+  let (mut print_store, print_instance) = instantiate_core_with_limit(&print_wasm, EIGHT_MIB);
+  let print_float = print_instance
+    .get_typed_func::<(), f64>(&mut print_store, "print-float")
+    .expect("print-float export");
+  assert_eq!(print_float.call(&mut print_store, ()).expect("print-float executes"), 0.75);
 }
