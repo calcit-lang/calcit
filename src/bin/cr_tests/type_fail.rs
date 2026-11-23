@@ -2346,6 +2346,7 @@ fn strict_type_fail_pass_callback_cannot_escape_non_pass_slot() {
 #[test]
 fn strict_type_fail_impl_completeness_across_set_if_join_and_pending_defs() {
   run_with_large_stack(|| {
+    injection::inject_platform_apis();
     let _strict = StrictTypesReset::enabled();
     let base_defs = r#"defstruct Widget0 (:n Number)
 deftrait Parent (.label AnyFn)
@@ -2485,6 +2486,159 @@ defn main! ()
       err.contains("E_DUPLICATE_TRAIT_IMPL"),
       "pending nominal def must preserve duplicate check: {err}"
     );
+
+    // 4. Definition-valued (`StructDef` / `EnumDef`) joins routed through `let`, `do`, chained `impl-traits`,
+    //    diverging-branch `if`, constructor calls, and `set!` preserve incompleteness when branches diverge,
+    //    while still enforcing missing-parent / duplicate checks when branches agree or constructors are local.
+    let def_valued_base = r#"defstruct Widget0 (:n Number)
+defenum Choice0 (:n Number)
+deftrait Parent (.label AnyFn)
+deftrait Child (requires Parent) (.greet AnyFn)
+deftrait Helper (.helper AnyFn)
+def ParentImpl (defimpl Widget0 Parent (.label (fn (x) |parent)))
+def ChildImpl (defimpl Widget0 Child (.greet (fn (x) |child)))
+def HelperImpl (defimpl Widget0 Helper (.helper (fn (x) |helper)))
+def EnumParentImpl (defimpl Choice0 Parent (.label (fn (x) |parent)))
+def EnumChildImpl (defimpl Choice0 Child (.greet (fn (x) |child)))"#;
+
+    let prepare_def_valued = |snippet: &str, extra_schemas: &[(&str, &str)]| {
+      let mut all_schemas = vec![
+        ("Choice0", "EnumDef"),
+        ("Helper", "Trait"),
+        ("HelperImpl", "Impl"),
+        ("EnumParentImpl", "Impl"),
+        ("EnumChildImpl", "Impl"),
+        ("main!", "Fn (-> Unit)"),
+      ];
+      all_schemas.extend_from_slice(extra_schemas);
+      prepare_with_schemas(snippet, &all_schemas)
+    };
+
+    let def_valued_ok_snippet = format!(
+      "{def_valued_base}\n{}",
+      r#"defn def-if-join-let-deferred (flag)
+  let
+      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
+      _a $ impl-traits d ChildImpl
+      _b $ impl-traits d ParentImpl
+    , &unit
+defn def-if-join-forwarded (flag)
+  let
+      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
+      forwarded $ do &unit (impl-traits (if flag d (raise |unreachable)) HelperImpl)
+      _attached $ impl-traits forwarded ChildImpl
+    , &unit
+defn def-if-join-construct (flag)
+  let
+      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
+      _inst $ impl-traits (d :n 1) ChildImpl
+    , &unit
+defn enum-def-if-join-let-deferred (flag)
+  let
+      e $ if flag (impl-traits Choice0 EnumParentImpl) Choice0
+      _a $ impl-traits e EnumChildImpl
+    , &unit
+defn def-set-mixed-direct ()
+  let ((local Widget0))
+    set! local (impl-traits Widget0 ParentImpl)
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-mixed-if (flag)
+  let ((local Widget0))
+    set! local (if flag (impl-traits Widget0 ParentImpl) Widget0)
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-branch-if (flag)
+  let ((local Widget0))
+    if flag
+      set! local (impl-traits Widget0 ParentImpl)
+      , &unit
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-branch-match ()
+  let ((local Widget0))
+    match (Option :some 1)
+      (:some _) (set! local (impl-traits Widget0 ParentImpl))
+      (:none) &unit
+    impl-traits local ChildImpl
+    , &unit
+defn def-set-branch-let ()
+  let ((local Widget0))
+    let ((_tmp 1))
+      set! local (impl-traits Widget0 ParentImpl)
+      , &unit
+    impl-traits local ChildImpl
+    , &unit
+defn main! ()
+  def-if-join-let-deferred true
+  def-if-join-forwarded true
+  def-if-join-construct true
+  enum-def-if-join-let-deferred true
+  def-set-mixed-direct
+  def-set-mixed-if true
+  def-set-branch-if true
+  def-set-branch-match
+  def-set-branch-let
+  , &unit"#
+    );
+    let entries = prepare_def_valued(
+      &def_valued_ok_snippet,
+      &[
+        ("def-if-join-let-deferred", "Fn Bool (-> Unit)"),
+        ("def-if-join-forwarded", "Fn Bool (-> Unit)"),
+        ("def-if-join-construct", "Fn Bool (-> Unit)"),
+        ("enum-def-if-join-let-deferred", "Fn Bool (-> Unit)"),
+        ("def-set-mixed-direct", "Fn (-> Unit)"),
+        ("def-set-mixed-if", "Fn Bool (-> Unit)"),
+        ("def-set-branch-if", "Fn Bool (-> Unit)"),
+        ("def-set-branch-match", "Fn (-> Unit)"),
+        ("def-set-branch-let", "Fn (-> Unit)"),
+      ],
+    );
+    run_check_only(&entries)
+      .unwrap_or_else(|err| panic!("definition-valued incomplete joins through let/do/set! must defer safely: {err}"));
+
+    for (name, body, schema, expected_code) in [
+      (
+        "def-if-join-both-missing",
+        r#"defn def-if-join-both-missing (flag)
+  let
+      d $ if flag Widget0 Widget0
+      _a $ impl-traits d ChildImpl
+    , &unit
+defn main! () (def-if-join-both-missing true)"#,
+        "Fn Bool (-> Unit)",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+      ),
+      (
+        "def-if-join-both-dup",
+        r#"defn def-if-join-both-dup (flag)
+  let
+      d $ if flag (impl-traits Widget0 ParentImpl) (impl-traits Widget0 ParentImpl)
+      _a $ impl-traits d ParentImpl
+    , &unit
+defn main! () (def-if-join-both-dup true)"#,
+        "Fn Bool (-> Unit)",
+        "E_DUPLICATE_TRAIT_IMPL",
+      ),
+      (
+        "local-defenum-let-missing",
+        r#"defn local-defenum-let-missing ()
+  let
+      LocalChoice $ defenum LocalChoice (:n Number)
+      c-impl $ defimpl LocalChoice Child (.greet (fn (x) |hi))
+      _attached $ impl-traits LocalChoice c-impl
+    , &unit
+defn main! () (local-defenum-let-missing)"#,
+        "Fn (-> Unit)",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+      ),
+    ] {
+      let snippet = format!("{def_valued_base}\n{body}");
+      let entries = prepare_def_valued(&snippet, &[(name, schema)]);
+      let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only with {expected_code}"));
+      assert!(err.contains(expected_code), "{name} should report {expected_code}: {err}");
+    }
   });
 }
 

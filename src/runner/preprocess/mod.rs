@@ -6786,8 +6786,10 @@ fn preprocess_list_call(
               matches!(
                 ty,
                 CalcitTypeAnnotation::Struct(_, _)
+                  | CalcitTypeAnnotation::StructDef(_)
                   | CalcitTypeAnnotation::StructValue(_)
                   | CalcitTypeAnnotation::Enum(_, _)
+                  | CalcitTypeAnnotation::EnumDef(_)
                   | CalcitTypeAnnotation::EnumValue(_)
                   | CalcitTypeAnnotation::TypeRef(_, _)
               )
@@ -14487,8 +14489,16 @@ fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinem
       })
     })
     .collect();
+  let incomplete_impls: Vec<_> = parent
+    .keys()
+    .filter(|name| shadowed != Some(name.as_ref()) && after.has_incomplete_impls(name))
+    .cloned()
+    .collect();
   for (name, annotation) in widened {
     parent.annotate(name, annotation);
+  }
+  for name in incomplete_impls {
+    parent.mark_incomplete_impls(name);
   }
 }
 
@@ -15496,14 +15506,8 @@ fn process_match(
                 type_info: payload_type.clone(),
               });
 
-              let incomplete_payload = !matches!(
-                payload_type.as_ref(),
-                CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
-              );
               body_types.insert(sym.to_owned(), payload_type);
-              if incomplete_payload {
-                body_types.mark_incomplete_impls(sym.to_owned());
-              }
+              body_types.mark_incomplete_impls(sym.to_owned());
               processed_pattern.push(local);
             }
             other => {

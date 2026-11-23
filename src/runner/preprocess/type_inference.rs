@@ -771,19 +771,17 @@ fn infer_if_branches(xs: &CalcitList, scope_types: &ScopeTypes, track_completene
       }
       let (ty, branch_complete) = resolve_branch(false_expr);
       let complete = complete_arity
-        && ty.as_deref().is_some_and(|resolved| {
-          matches!(resolved, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_))
-            || (branch_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-        });
+        && ty
+          .as_deref()
+          .is_some_and(|resolved| branch_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
       return (ty, complete);
     }
     if expression_definitely_diverges(false_expr) {
       let (ty, branch_complete) = resolve_branch(true_expr);
       let complete = complete_arity
-        && ty.as_deref().is_some_and(|resolved| {
-          matches!(resolved, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_))
-            || (branch_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-        });
+        && ty
+          .as_deref()
+          .is_some_and(|resolved| branch_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
       return (ty, complete);
     }
     let (Some(true_type), true_complete) = resolve_branch(true_expr) else {
@@ -1096,12 +1094,7 @@ pub(super) fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
   match pattern {
     Calcit::Local(local) => {
       scope.insert(local.sym.clone(), local.type_info.clone());
-      if !matches!(
-        local.type_info.as_ref(),
-        CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
-      ) {
-        scope.mark_incomplete_impls(local.sym.clone());
-      }
+      scope.mark_incomplete_impls(local.sym.clone());
     }
     Calcit::List(items) => {
       for item in items.iter() {
@@ -3057,25 +3050,21 @@ fn is_impl_traits_call_head(head: &Calcit) -> bool {
 /// `impl-traits`, and struct field-update expressions traverse their inputs in a
 /// single linear pass.
 pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &ScopeTypes) -> (Option<Arc<CalcitTypeAnnotation>>, bool) {
-  let type_def_complete =
-    |resolved: &CalcitTypeAnnotation| matches!(resolved, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_));
   match expr {
     Calcit::Struct(_) | Calcit::Enum(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) => (resolve_type_value(expr, scope_types), true),
     Calcit::Local(local) => {
       let ty = resolve_type_value(expr, scope_types);
       let complete = ty.as_deref().is_some_and(|resolved| {
-        type_def_complete(resolved)
-          || (!scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
+        !scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _))
       });
       (ty, complete)
     }
     Calcit::Symbol { sym, info, .. } => {
       if scope_types.contains_key(sym) {
         let ty = resolve_type_value(expr, scope_types);
-        let complete = ty.as_deref().is_some_and(|resolved| {
-          type_def_complete(resolved)
-            || (!scope_types.has_incomplete_impls(sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-        });
+        let complete = ty
+          .as_deref()
+          .is_some_and(|resolved| !scope_types.has_incomplete_impls(sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
         (ty, complete)
       } else {
         resolve_named_nominal_completeness(&info.at_ns, sym, None, expr, scope_types)
@@ -3090,27 +3079,35 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         let inner_scope = core_let_scope(items, scope_types);
         let tail = &items[items.len() - 1];
         let (ty, tail_complete) = resolve_type_and_impl_completeness(tail, &inner_scope);
-        let complete = ty.as_deref().is_some_and(|resolved| {
-          type_def_complete(resolved) || (tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-        });
+        let complete = ty
+          .as_deref()
+          .is_some_and(|resolved| tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
         return (ty, complete);
       }
       if is_core_fn_head(head, "do") && items.len() >= 2 {
         let tail = &items[items.len() - 1];
         let (ty, tail_complete) = resolve_type_and_impl_completeness(tail, scope_types);
-        let complete = ty.as_deref().is_some_and(|resolved| {
-          type_def_complete(resolved) || (tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-        });
+        let complete = ty
+          .as_deref()
+          .is_some_and(|resolved| tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
         return (ty, complete);
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) {
         return infer_if_branches(items, scope_types, true);
       }
+      if matches!(head, Calcit::Proc(CalcitProc::NativeStructNew)) {
+        let ty = resolve_type_value(expr, scope_types);
+        let complete = matches!(ty.as_deref(), Some(CalcitTypeAnnotation::StructDef(_)));
+        return (ty, complete);
+      }
+      if matches!(head, Calcit::Proc(CalcitProc::NativeEnumNew)) {
+        let ty = resolve_type_value(expr, scope_types);
+        let complete = matches!(ty.as_deref(), Some(CalcitTypeAnnotation::EnumDef(_)));
+        return (ty, complete);
+      }
       if is_impl_traits_call_head(head) {
         let Some(inner_base) = items.get(1) else {
-          let ty = resolve_type_value(expr, scope_types);
-          let complete = ty.as_deref().is_some_and(type_def_complete);
-          return (ty, complete);
+          return (resolve_type_value(expr, scope_types), false);
         };
         let (Some(base), inner_complete) = resolve_type_and_impl_completeness(inner_base, scope_types) else {
           return (None, false);
@@ -3123,7 +3120,6 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         if let Some(impl_values) = impl_values
           && let Some(attached) = attach_impls_to_type(base.as_ref(), inner_base, impl_values)
         {
-          let complete = type_def_complete(attached.as_ref()) || inner_complete;
           let ty = if matches!(
             head,
             Calcit::Proc(
@@ -3140,12 +3136,13 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
           } else {
             resolve_type_value(expr, scope_types)
           };
-          let complete = ty.as_deref().is_some_and(|resolved| type_def_complete(resolved) || complete);
+          let complete = inner_complete
+            && ty
+              .as_deref()
+              .is_some_and(|resolved| !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
           return (ty, complete);
         }
-        let ty = resolve_type_value(expr, scope_types);
-        let complete = ty.as_deref().is_some_and(type_def_complete);
-        return (ty, complete);
+        return (resolve_type_value(expr, scope_types), false);
       }
       if matches!(head, Calcit::Proc(CalcitProc::NativeStruct)) {
         let Some(proto) = items.get(1) else {
@@ -3155,9 +3152,9 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         let Some(struct_value) = struct_value else {
           return (proc_signature_return_type(&CalcitProc::NativeStruct), false);
         };
-        let ty = infer_struct_value_literal_type_with_proto(items, struct_value, scope_types)
-          .or_else(|| proc_signature_return_type(&CalcitProc::NativeStruct));
-        let complete = ty.as_deref().is_some_and(type_def_complete) || proto_complete;
+        let inferred = infer_struct_value_literal_type_with_proto(items, struct_value, scope_types);
+        let complete = inferred.is_some() && proto_complete;
+        let ty = inferred.or_else(|| proc_signature_return_type(&CalcitProc::NativeStruct));
         return (ty, complete);
       }
       if matches!(head, Calcit::Proc(CalcitProc::NativeStructFromMap)) {
@@ -3181,9 +3178,11 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         let Some(enum_proto) = enum_proto else {
           return (proc_signature_return_type(&CalcitProc::NativeNamedEnumNew), false);
         };
-        let ty = infer_enum_annotation_with_proto(items, enum_proto, scope_types)
-          .or_else(|| proc_signature_return_type(&CalcitProc::NativeNamedEnumNew));
-        let complete = ty.as_deref().is_some_and(type_def_complete) || proto_complete;
+        let inferred = infer_enum_annotation_with_proto(items, enum_proto, scope_types);
+        let complete = inferred
+          .as_deref()
+          .is_some_and(|resolved| proto_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+        let ty = inferred.or_else(|| proc_signature_return_type(&CalcitProc::NativeNamedEnumNew));
         return (ty, complete);
       }
       if matches!(
@@ -3206,25 +3205,17 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
             } else {
               Some(record_type)
             };
-            let complete = ty.as_deref().is_some_and(|resolved| {
-              type_def_complete(resolved) || (recv_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)))
-            });
+            let complete = ty
+              .as_deref()
+              .is_some_and(|resolved| recv_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
             return (ty, complete);
           }
         }
-        let ty = resolve_type_value(expr, scope_types);
-        let complete = ty.as_deref().is_some_and(type_def_complete);
-        return (ty, complete);
+        return (resolve_type_value(expr, scope_types), false);
       }
-      let ty = resolve_type_value(expr, scope_types);
-      let complete = ty.as_deref().is_some_and(type_def_complete);
-      (ty, complete)
+      (resolve_type_value(expr, scope_types), false)
     }
-    _ => {
-      let ty = resolve_type_value(expr, scope_types);
-      let complete = ty.as_deref().is_some_and(type_def_complete);
-      (ty, complete)
-    }
+    _ => (resolve_type_value(expr, scope_types), false),
   }
 }
 
@@ -3302,9 +3293,6 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
     }
     _ => {}
   }
-  if matches!(resolved, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)) {
-    return true;
-  }
   match expr {
     Calcit::Struct(_) | Calcit::Enum(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) => true,
     Calcit::Local(local) => !scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)),
@@ -3320,6 +3308,12 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
       let Some(head) = items.first() else {
         return false;
       };
+      if matches!(head, Calcit::Proc(CalcitProc::NativeStructNew)) {
+        return matches!(resolved, CalcitTypeAnnotation::StructDef(_));
+      }
+      if matches!(head, Calcit::Proc(CalcitProc::NativeEnumNew)) {
+        return matches!(resolved, CalcitTypeAnnotation::EnumDef(_));
+      }
       if is_impl_traits_call_head(head) {
         return items
           .get(1)
@@ -4997,7 +4991,7 @@ fn resolve_enum_value_inner(target: &Calcit, scope_types: &ScopeTypes, track_com
   match target {
     Calcit::EnumDef(enum_def) => (Some(enum_def.as_ref().to_owned()), true),
     Calcit::Struct(struct_value) => (CalcitEnumDef::from_struct(struct_value.to_owned()).ok(), true),
-    Calcit::Symbol { sym, info, .. } => resolve_named_enum(&info.at_ns, sym, None),
+    Calcit::Symbol { sym, info, .. } if !scope_types.contains_key(sym) => resolve_named_enum(&info.at_ns, sym, None),
     Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_named_enum(ns, def, *def_id),
     _ => {
       let (ty, complete) = if track_completeness {
@@ -5081,7 +5075,7 @@ fn resolve_struct_value_inner(
         true,
       )
     }
-    Calcit::Symbol { sym, info, .. } => resolve_named_struct(&info.at_ns, sym, None),
+    Calcit::Symbol { sym, info, .. } if !scope_types.contains_key(sym) => resolve_named_struct(&info.at_ns, sym, None),
     Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_named_struct(ns, def, *def_id),
     _ => {
       let (ty, complete) = if track_completeness {
@@ -5093,21 +5087,24 @@ fn resolve_struct_value_inner(
         return (None, false);
       };
       let is_type_ref = matches!(t.as_ref(), CalcitTypeAnnotation::TypeRef(_, _));
-      let struct_def = match t.as_ref() {
+      let value = match t.as_ref() {
         // As above, only the explicit struct-construction path unwraps a
-        // StructDef into the nominal metadata of the instance being created.
+        // StructDef or EnumDef into the nominal metadata of the instance being created.
         // Share the bound definition object: a definition created inside a
         // function has no source `definition_ref`, so this lexical binding
         // is the only identity a same-scope annotation can be proven against.
-        CalcitTypeAnnotation::StructDef(struct_def) => struct_def.clone(),
+        CalcitTypeAnnotation::StructDef(struct_def) => CalcitStructValue {
+          values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
+          struct_ref: struct_def.clone(),
+        },
+        CalcitTypeAnnotation::EnumDef(enum_def) => enum_def.to_struct_prototype(),
         _ => match t.resolve_to_struct() {
-          Some(def) => Arc::new(def),
+          Some(def) => CalcitStructValue {
+            values: Arc::new(vec![Calcit::Nil; def.fields.len()]),
+            struct_ref: Arc::new(def),
+          },
           None => return (None, false),
         },
-      };
-      let value = CalcitStructValue {
-        values: Arc::new(vec![Calcit::Nil; struct_def.fields.len()]),
-        struct_ref: struct_def,
       };
       (Some(value), complete && !is_type_ref)
     }
@@ -7420,5 +7417,123 @@ mod tests {
       &CalcitTypeAnnotation::TypeRef(Arc::from("tests.pending-nominal/PendingWidget"), Arc::new(vec![])),
       &ScopeTypes::new()
     ));
+  }
+
+  #[test]
+  fn core_let_preserves_incompleteness_for_divergent_struct_def_if_join() {
+    let parent_trait = Arc::new(
+      CalcitTrait::new(
+        EdnTag::from("Parent"),
+        vec![EdnTag::from("label")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      )
+      .with_definition_ref("tests.let-join", "Parent"),
+    );
+    let parent_impl = Arc::new(CalcitImpl {
+      name: EdnTag::from("ParentImpl"),
+      origin: Some(parent_trait),
+      fields: Arc::new(vec![EdnTag::from("label")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+    let widget_def = Arc::new(CalcitStructDef::from_fields(EdnTag::from("Widget0"), vec![EdnTag::from("n")]));
+    let decorated_def = Calcit::from(CalcitList::from(&[
+      Calcit::Proc(CalcitProc::NativeStructImplTraits),
+      Calcit::StructDef(widget_def.clone()),
+      Calcit::Impl(parent_impl),
+    ]));
+    let d_name: Arc<str> = Arc::from("d");
+    let d_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&d_name),
+      sym: d_name,
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.let-join"),
+        at_def: Arc::from("check"),
+      }),
+      location: None,
+      type_info: Arc::new(CalcitTypeAnnotation::Dynamic),
+    });
+
+    let divergent_if = Calcit::from(CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.let-join")),
+        Calcit::Bool(true),
+        decorated_def,
+        Calcit::StructDef(widget_def.clone()),
+      ][..],
+    ));
+    let divergent_let = Calcit::from(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.let-join")),
+      Calcit::from(CalcitList::from(&[d_local.clone(), divergent_if])),
+      d_local.clone(),
+    ]));
+    let (divergent_ty, divergent_complete) = resolve_type_and_impl_completeness(&divergent_let, &ScopeTypes::new());
+    match divergent_ty.as_deref() {
+      Some(CalcitTypeAnnotation::StructDef(resolved_def)) => {
+        assert_eq!(resolved_def.name, widget_def.name);
+        assert!(resolved_def.impls.is_empty());
+      }
+      other => panic!("expected intersected StructDef, got {other:?}"),
+    }
+    assert!(!divergent_complete);
+
+    let matching_if = Calcit::from(CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.let-join")),
+        Calcit::Bool(true),
+        Calcit::StructDef(widget_def.clone()),
+        Calcit::StructDef(widget_def.clone()),
+      ][..],
+    ));
+    let matching_let = Calcit::from(CalcitList::from(&[
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.let-join")),
+      Calcit::from(CalcitList::from(&[d_local.clone(), matching_if])),
+      d_local,
+    ]));
+    let (matching_ty, matching_complete) = resolve_type_and_impl_completeness(&matching_let, &ScopeTypes::new());
+    match matching_ty.as_deref() {
+      Some(CalcitTypeAnnotation::StructDef(resolved_def)) => {
+        assert_eq!(resolved_def.name, widget_def.name);
+        assert!(resolved_def.impls.is_empty());
+      }
+      other => panic!("expected complete StructDef, got {other:?}"),
+    }
+    assert!(matching_complete);
+  }
+
+  #[test]
+  fn scoped_enum_def_symbol_resolves_struct_prototype_and_preserves_completeness() {
+    let mut choice_schema = CalcitStructDef::from_fields(EdnTag::from("Choice"), vec![EdnTag::from("item")]);
+    choice_schema.definition_ref = Some(Arc::from("tests.shadow-enum/Choice"));
+    let scoped_enum = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(choice_schema),
+        values: Arc::new(vec![Calcit::from(vec![CalcitTypeAnnotation::Number.to_calcit()])]),
+      })
+      .expect("valid EnumDef fixture"),
+    );
+
+    let sym = Calcit::Symbol {
+      sym: Arc::from("Choice"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.outer"),
+        at_def: Arc::from("use-choice"),
+      }),
+      location: None,
+    };
+
+    let mut complete_scope = ScopeTypes::new();
+    complete_scope.insert(Arc::from("Choice"), Arc::new(CalcitTypeAnnotation::EnumDef(scoped_enum.clone())));
+    let (resolved, is_complete) = resolve_struct_value_inner(&sym, &complete_scope, true);
+    let proto = resolved.expect("scoped EnumDef binding must resolve to struct prototype");
+    assert_eq!(&proto.struct_ref.name, scoped_enum.name());
+    assert_eq!(proto.struct_ref.fields.len(), 1);
+    assert!(is_complete);
+
+    let mut incomplete_scope = complete_scope;
+    incomplete_scope.mark_incomplete_impls(Arc::from("Choice"));
+    let (resolved_incomplete, incomplete_flag) = resolve_struct_value_inner(&sym, &incomplete_scope, true);
+    let proto_incomplete = resolved_incomplete.expect("incomplete scoped EnumDef must still resolve prototype");
+    assert_eq!(&proto_incomplete.struct_ref.name, scoped_enum.name());
+    assert!(!incomplete_flag);
   }
 }
