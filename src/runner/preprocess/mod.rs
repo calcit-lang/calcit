@@ -13981,7 +13981,27 @@ fn refined_impl_method_schema(
   let Some(implementation) = entry.as_function() else {
     return trait_schema;
   };
-  if annotation_dynamic_weight(entry) >= annotation_dynamic_weight(declared) || !entry.is_compatible_with(declared) {
+  let declared_weight = annotation_dynamic_weight(declared);
+  let entry_weight = annotation_dynamic_weight(entry);
+  // A trait method written with a bare `Self` receiver variable cannot expose
+  // container element relations (such as `Option<T>` -> `Fn T (-> U)`). Allow
+  // an equally closed implementation whose receiver specializes that type var,
+  // without mistaking unqualified legacy nominal names parsed as TypeVars.
+  let specializes_receiver = declared.as_function().is_some_and(|capability| {
+    capability.arg_types.first().is_some_and(|expected_receiver| {
+      matches!(
+        expected_receiver.as_ref(),
+        CalcitTypeAnnotation::TypeVar(name)
+          if crate::calcit::type_annotation::source_type_variable(name) == "Self"
+            && capability.generics.iter().any(|generic| generic == name)
+      )
+    })
+  }) && implementation
+    .arg_types
+    .first()
+    .is_some_and(|actual_receiver| !matches!(actual_receiver.as_ref(), CalcitTypeAnnotation::TypeVar(_)));
+  let refines = entry_weight < declared_weight || (entry_weight == declared_weight && specializes_receiver);
+  if !refines || !entry.is_compatible_with(declared) {
     return trait_schema;
   }
   let mut signature = implementation.clone();
@@ -17839,7 +17859,16 @@ pub fn preprocess_core_let(
         // Check openness and impl-table completeness against the outer scope
         // before the shadowing binding is inserted.
         initializer_is_open = is_explicitly_open_expression(&form, &body_types);
-        let incomplete_impls = !type_inference::expr_has_complete_impls(&form, &inferred_type, &body_types);
+        let incomplete_impls = !matches!(
+          inferred_type.as_ref(),
+          CalcitTypeAnnotation::StructDef(_)
+            | CalcitTypeAnnotation::EnumDef(_)
+            | CalcitTypeAnnotation::Struct(..)
+            | CalcitTypeAnnotation::StructValue(_)
+            | CalcitTypeAnnotation::Enum(..)
+            | CalcitTypeAnnotation::EnumValue(_)
+            | CalcitTypeAnnotation::TypeRef(..)
+        ) || !type_inference::expr_has_complete_impls(&form, &inferred_type, &body_types);
         body_types.insert(sym.to_owned(), inferred_type);
         if incomplete_impls {
           body_types.mark_incomplete_impls(sym.to_owned());
@@ -23598,6 +23627,68 @@ mod tests {
       refined_impl_method_schema(&receiver, Some(precise.clone()), Some(implementation)),
       Some(precise),
       "an implementation cannot replace a closed trait contract"
+    );
+
+    let elem_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let out_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let self_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self")));
+    let pass_features = Arc::new(HashSet::from([EdnTag::new("pass")]));
+    let mut pass_callback = CalcitTypeAnnotation::from_function_parts(vec![elem_var.clone()], out_var.clone())
+      .as_function()
+      .unwrap()
+      .clone();
+    pass_callback.features = pass_features;
+    let pass_callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(pass_callback)));
+    let mut self_trait = CalcitTypeAnnotation::from_function_parts(vec![self_var.clone(), pass_callback.clone()], self_var)
+      .as_function()
+      .unwrap()
+      .clone();
+    self_trait.generics = Arc::new(vec![Arc::from("Self"), Arc::from("T"), Arc::from("U")]);
+    let self_trait = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(self_trait)));
+
+    let option_t = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![elem_var]),
+    ));
+    let option_u = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![out_var]),
+    ));
+    let option_number = CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    );
+    let mut option_impl = CalcitTypeAnnotation::from_function_parts(vec![option_t, pass_callback], option_u)
+      .as_function()
+      .unwrap()
+      .clone();
+    option_impl.generics = Arc::new(vec![Arc::from("T"), Arc::from("U")]);
+    let option_impl = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(option_impl)));
+    assert_eq!(
+      refined_impl_method_schema(&option_number, Some(self_trait), Some(option_impl.clone())),
+      Some(option_impl),
+      "an equally closed implementation specializing a bare Self receiver refines the trait signature"
+    );
+
+    let legacy_fspath_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("FsPath")));
+    let result_string = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Result"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let qualified_result_string = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Result"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let fs_path_ref = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![])));
+    let fspath_trait = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![legacy_fspath_var], result_string));
+    let fspath_impl = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![fs_path_ref.clone()],
+      qualified_result_string,
+    ));
+    assert_eq!(
+      refined_impl_method_schema(&fs_path_ref, Some(fspath_trait.clone()), Some(fspath_impl)),
+      Some(fspath_trait),
+      "an equally closed non-Self TypeVar receiver stays on the trait contract"
     );
   }
 

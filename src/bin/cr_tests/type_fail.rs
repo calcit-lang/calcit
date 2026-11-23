@@ -2172,6 +2172,18 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
         "E_TRAIT_REQUIRES",
         "member `label` is declared by both",
       ),
+      (
+        "missing-parent-after-struct-assoc",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (&struct:assoc (Widget0 :n 1) :n 2) child-impl))) &unit",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "duplicate-on-if-joined-typeref",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndefenum Choice (:generics T) (:impls ParentT) (:empty) (:item T)\ndefimpl Choice ParentT $ .label $ fn (x) |ok\ndef extra-parent $ defimpl Choice ParentT $ .label $ fn (x) |dup\ndefn attach-on-if (flag)\n  hint-fn $ Fn Bool (-> (Choice Number))\n  let ((c (if flag (%:: Choice :empty) (%:: Choice :item 1)))) (impl-traits c extra-parent)\ndefn main! () (do (attach-on-if true) &unit)",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
     ] {
       let entries = load_snippet_entries(snippet);
       let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
@@ -2203,6 +2215,14 @@ fn strict_type_check_allows_trait_parent_alias_and_decorated_typeref_impl_attach
         "let-bound-decorated-typeref-param",
         "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-let (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  let\n      w1 $ &struct:impl-traits w helper-impl\n      w2 $ &struct:impl-traits w1 child-impl\n    , w2\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-let (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
       ),
+      (
+        "param-struct-assoc-defers-missing-parent",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-after-assoc (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits (&struct:assoc w :n 2) child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-after-assoc (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
+      ),
+      (
+        "if-joined-typeref-defers-missing-parent",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefenum Choice (:generics T) (:empty) (:item T)\ndef parent-impl $ defimpl Choice ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Choice ChildT $ .greet $ fn (x) |hi\ndefn attach-on-if (flag)\n  hint-fn $ Fn Bool (-> (Choice Number))\n  let\n      decorated $ impl-traits Choice parent-impl\n      joined $ if flag (decorated :empty) (decorated :item 1)\n    impl-traits joined child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((c (attach-on-if true))) &unit",
+      ),
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).unwrap_or_else(|err| panic!("{name} must pass strict check-only: {err}"));
@@ -2232,6 +2252,12 @@ fn strict_type_fail_pass_callback_cannot_escape_non_pass_slot() {
         "return-pass-as-pure-fn",
         "defn escape-ret (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Unit)))\n  , cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((f (escape-ret (fn (n) &unit)))) &unit",
         "escape-ret",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "return-pass-as-anyfn",
+        "defn escape-anyfn-ret (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> AnyFn)\n  , cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((f (escape-anyfn-ret (fn (n) &unit)))) &unit",
+        "escape-anyfn-ret",
         "E_FN_RETURN_TYPE_MISMATCH",
       ),
       (
@@ -6076,7 +6102,11 @@ deftrait Foldable
 deftrait CustomDeref
   .deref $ Fn Self (-> Number)
 
-defstruct Disk (:id Number) (:impls Store InlineStore)
+deftype IoCallback (Fn Number (-> Unit) (:features :io))
+
+deftype PureCallback (Fn Number (-> Unit))
+
+defstruct Disk (:id Number) (:impls Store InlineStore Foldable)
 
 defstruct Box (:v Number) (:impls CustomDeref)
 
@@ -6092,6 +6122,11 @@ defimpl Disk Store
 defimpl Disk InlineStore
   .persist! $ fn (d) (println d)
 
+defimpl Disk Foldable
+  .each-item $ fn (d cb)
+    hint-fn $ Fn Disk (Fn Number (-> Unit) (:features :pass)) (-> Unit)
+    cb 1
+
 defimpl Box CustomDeref
   .deref $ fn (b) (:v b)
 
@@ -6104,6 +6139,41 @@ defn alias-hof (xs)
     run xs $ fn (y)
       hint-fn $ Fn Number (-> Unit) (:features :io)
       println y
+
+defn sort-shadow-alias (xs)
+  let
+      run &list:sort-by
+      run run
+    run xs $ fn (y)
+      hint-fn $ Fn Number (-> Number) (:features :io)
+      println y
+      , y
+
+defn alias-param-call (cb)
+  cb 1
+
+defn alias-param-pass (xs cb)
+  each xs cb
+
+defn alias-pure-pass (xs cb)
+  each xs cb
+
+defn make-logger ()
+  fn (y)
+    hint-fn $ Fn Number (-> Unit) (:features :io)
+    println y
+
+defn make-pure-cb ()
+  fn (y) &unit
+
+defn call-ret-pass-direct (xs)
+  each xs $ make-logger
+
+defn call-ret-pass-if (flag xs)
+  each xs $ if flag (make-logger) pure-now
+
+defn call-ret-pass-pure (xs)
+  each xs $ make-pure-cb
 
 defn param-pass-hof (xs runner)
   runner xs $ fn (y)
@@ -6139,6 +6209,14 @@ defn trait-where-io (s)
 defn impl-inline-io (d)
   &trait-call InlineStore :persist! d
 
+defn impl-method-inline-io (d)
+  .persist! d
+
+defn impl-method-inline-pass (d)
+  .each-item d $ fn (n)
+    hint-fn $ Fn Number (-> Unit) (:features :io)
+    println n
+
 defn explicit-trait-call-io (d)
   &trait-call Store :save! d
 
@@ -6163,6 +6241,13 @@ defn match-shadow-pure (cb c)
 
 defn main! ()
   alias-hof $ [] 1
+  sort-shadow-alias $ [] 1
+  alias-param-call log-line
+  alias-param-pass ([] 1) log-line
+  alias-pure-pass ([] 1) pure-now
+  call-ret-pass-direct $ [] 1
+  call-ret-pass-if true $ [] 1
+  call-ret-pass-pure $ [] 1
   param-pass-hof ([] 1) each
   inline-pass-lambda
   compound-if-pass-cb true $ [] 1
@@ -6170,6 +6255,8 @@ defn main! ()
   spread-local-call log-line $ [] 1
   trait-where-io $ Disk :id 1
   impl-inline-io $ Disk :id 2
+  impl-method-inline-io $ Disk :id 4
+  impl-method-inline-pass $ Disk :id 5
   explicit-trait-call-io $ Disk :id 3
   deref-global-method
   deref-local-method
@@ -6184,6 +6271,15 @@ defn main! ()
       ("log-line", "Fn Number (-> Unit) (:features :io)"),
       ("pure-now", "Fn Number (-> Unit)"),
       ("alias-hof", "Fn (List Number) (-> Unit)"),
+      ("sort-shadow-alias", "Fn (List Number) (-> (List Number))"),
+      ("alias-param-call", "Fn IoCallback (-> Unit)"),
+      ("alias-param-pass", "Fn (List Number) IoCallback (-> Unit)"),
+      ("alias-pure-pass", "Fn (List Number) PureCallback (-> Unit)"),
+      ("make-logger", "Fn (-> (Fn Number (-> Unit) (:features :io)))"),
+      ("make-pure-cb", "Fn (-> (Fn Number (-> Unit)))"),
+      ("call-ret-pass-direct", "Fn (List Number) (-> Unit)"),
+      ("call-ret-pass-if", "Fn Bool (List Number) (-> Unit)"),
+      ("call-ret-pass-pure", "Fn (List Number) (-> Unit)"),
       (
         "param-pass-hof",
         "Fn (List Number) (Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)) (-> Unit)",
@@ -6197,6 +6293,8 @@ defn main! ()
       ),
       ("trait-where-io", "Fn T (-> Unit) (:generics T) (:where (T Store))"),
       ("impl-inline-io", "Fn Disk (-> Unit)"),
+      ("impl-method-inline-io", "Fn Disk (-> Unit)"),
+      ("impl-method-inline-pass", "Fn Disk (-> Unit)"),
       ("explicit-trait-call-io", "Fn Disk (-> Unit)"),
       ("trait-where-pass", "Fn T (-> Unit) (:generics T) (:where (T Foldable))"),
       ("deref-global-method", "Fn (-> Number)"),
@@ -6225,6 +6323,13 @@ defn main! ()
     let targets = [
       "main!",
       "alias-hof",
+      "sort-shadow-alias",
+      "alias-param-call",
+      "alias-param-pass",
+      "alias-pure-pass",
+      "call-ret-pass-direct",
+      "call-ret-pass-if",
+      "call-ret-pass-pure",
       "param-pass-hof",
       "inline-pass-lambda",
       "compound-if-pass-cb",
@@ -6232,6 +6337,8 @@ defn main! ()
       "spread-local-call",
       "trait-where-io",
       "impl-inline-io",
+      "impl-method-inline-io",
+      "impl-method-inline-pass",
       "explicit-trait-call-io",
       "trait-where-pass",
       "deref-global-method",
@@ -6260,6 +6367,11 @@ defn main! ()
 
     let mut wanted = vec![
       ("app.main/alias-hof".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/sort-shadow-alias".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/alias-param-call".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/alias-param-pass".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/call-ret-pass-direct".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/call-ret-pass-if".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/param-pass-hof".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/inline-pass-lambda".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/compound-if-pass-cb".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
@@ -6267,6 +6379,8 @@ defn main! ()
       ("app.main/spread-local-call".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/trait-where-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/impl-inline-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/impl-method-inline-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/impl-method-inline-pass".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/explicit-trait-call-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/trait-where-pass".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
       ("app.main/deref-global-method".to_owned(), "E_STATE_FEATURE_REQUIRED".to_owned()),

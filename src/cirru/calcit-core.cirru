@@ -4458,7 +4458,10 @@
           :tags $ #{} :data
         'Mappable $ %{} 'CodeEntry (:doc "|Core trait: Mappable")
           :code $ quote $ deftrait Mappable
-            .map $ Fn Self Fn $ -> Self
+            .map $ Fn Self
+              Fn T (-> U) (:features :pass)
+              -> Self
+              :generics T U
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait

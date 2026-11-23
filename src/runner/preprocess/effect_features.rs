@@ -29,8 +29,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use crate::calcit::{
-  Calcit, CalcitCallKind, CalcitFnTypeAnnotation, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation,
-  LocatedWarning, MethodKind, NodeLocation,
+  Calcit, CalcitCallKind, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTrait,
+  CalcitTypeAnnotation, LocatedWarning, MethodKind, NodeLocation,
 };
 use crate::program;
 use crate::snapshot::FeaturePolicy;
@@ -125,11 +125,29 @@ fn declared_effects(features: &HashSet<cirru_edn::EdnTag>) -> HashSet<Effect> {
   effects
 }
 
+fn resolve_fn_in_ns(ns: &str, schema: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  schema
+    .resolve_to_fn()
+    .or_else(|| super::resolve_namespace_type_refs_for_body(schema.clone(), ns).resolve_to_fn())
+}
+
+fn lookup_non_core_import_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
+  let source_schema = program::lookup_def_schema(ns, def);
+  let schema = if !matches!(source_schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    source_schema
+  } else {
+    program::lookup_compiled_def(ns, def)
+      .map(|compiled| compiled.schema)
+      .unwrap_or(source_schema)
+  };
+  super::resolve_namespace_type_refs_for_body(schema, ns)
+}
+
 fn schema_effects(schema: &CalcitTypeAnnotation) -> HashSet<Effect> {
-  match schema {
-    CalcitTypeAnnotation::Fn(signature) => declared_effects(&signature.features),
-    _ => HashSet::new(),
-  }
+  schema
+    .resolve_to_fn()
+    .map(|signature| declared_effects(&signature.features))
+    .unwrap_or_default()
 }
 
 /// One function scope whose declared features are checked.
@@ -212,12 +230,12 @@ pub(crate) fn check_definition(ns: &str, def: &str, resolved: &Calcit) -> Vec<Lo
   }
   // Only a structured `Fn` schema can declare features; eval snippets and
   // untyped helpers have none and are not checked.
-  let schema = program::lookup_def_schema(ns, def);
-  let CalcitTypeAnnotation::Fn(signature) = schema.as_ref() else {
+  let schema = super::resolve_namespace_type_refs_for_body(program::lookup_def_schema(ns, def), ns);
+  let Some(signature) = schema.resolve_to_fn() else {
     return vec![];
   };
   let mut scope_types = super::ScopeTypes::new();
-  scope_types.bind_function_generics(signature, ns);
+  scope_types.bind_function_generics(signature.as_ref(), ns);
   if let Some(Calcit::List(params)) = items.get(2) {
     for param in params.iter() {
       if let Calcit::Local(local) = param {
@@ -279,29 +297,7 @@ impl Checker<'_> {
           self.note_dbg(near);
           return;
         }
-        let core = import.ns.as_ref() == crate::calcit::CORE_NS;
-        let declared = if core {
-          core_def_effects(&import.def)
-        } else {
-          if scope.top
-            && let Some(summary) = self.summary.as_mut()
-          {
-            summary.deps.insert((import.ns.clone(), import.def.clone()));
-          }
-          schema_effects(program::lookup_def_schema(&import.ns, &import.def).as_ref())
-        };
-        self.via_dependency = !core;
-        for effect in [Effect::State, Effect::Io] {
-          if declared.contains(&effect) {
-            self.require(
-              scope,
-              effect,
-              &format!("uses {}/{}, which needs `:{}`", import.ns, import.def, effect.feature()),
-              near,
-            );
-          }
-        }
-        self.via_dependency = false;
+        self.charge_import_effects(import, scope, near);
       }
       Calcit::List(items) => self.walk_list(items, scope, near),
       _ => {}
@@ -329,11 +325,13 @@ impl Checker<'_> {
           && let (Some(Calcit::Local(local)), Some(init)) = (binding.first(), binding.get(1))
         {
           self.walk(init, scope, near);
+          // Read open-slot provenance before `shadow` clears same-named outer bindings.
+          let init_slots = self.open_callback_slots_for_expr(init);
           self.shadow(&local.sym);
           if is_ref_constructor(init) {
             self.local_refs.insert((local.sym.clone(), local.idx));
           }
-          if let Some(slots) = self.open_callback_slots_for_expr(init) {
+          if let Some(slots) = init_slots {
             self.local_open_callback_slots.insert((local.sym.clone(), local.idx), slots);
           }
           let init_type = if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
@@ -537,15 +535,14 @@ impl Checker<'_> {
   }
 
   fn local_schema_effects(&self, local: &CalcitLocal) -> HashSet<Effect> {
-    if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
-      self
-        .scope_types
-        .get(&local.sym)
-        .map(|scoped| schema_effects(scoped.as_ref()))
-        .unwrap_or_default()
+    let type_info = if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      self.scope_types.get(&local.sym).unwrap_or(&local.type_info)
     } else {
-      schema_effects(local.type_info.as_ref())
-    }
+      &local.type_info
+    };
+    resolve_fn_in_ns(self.ns, type_info)
+      .map(|signature| declared_effects(&signature.features))
+      .unwrap_or_default()
   }
 
   fn collect_callback_effects(&self, expr: &Calcit, let_effects: &BoundCallbackEffects, out: &mut Vec<(Effect, String)>) {
@@ -581,7 +578,10 @@ impl Checker<'_> {
           {
             let mut bound = Vec::new();
             let label = format!("`{}`", local.sym);
-            for effect in schema_effects(local.type_info.as_ref()) {
+            for effect in resolve_fn_in_ns(self.ns, &local.type_info)
+              .map(|signature| declared_effects(&signature.features))
+              .unwrap_or_default()
+            {
               bound.push((effect, label.clone()));
             }
             self.collect_callback_effects(init, let_effects, &mut bound);
@@ -598,7 +598,23 @@ impl Checker<'_> {
             self.collect_callback_effects(tail, let_effects, out);
           }
         }
-        _ => {}
+        _ => {
+          let call_head = if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CallSpread, _))) {
+            items.get(1)
+          } else {
+            items.first()
+          };
+          let result_type = super::type_inference::resolve_type_value(expr, &self.scope_types)
+            .filter(|resolved| !matches!(resolved.as_ref(), CalcitTypeAnnotation::Dynamic))
+            .or_else(|| self.callee_signature(call_head).map(|signature| signature.return_type.clone()));
+          if let Some(result_type) = result_type
+            && let Some(signature) = resolve_fn_in_ns(self.ns, &result_type)
+          {
+            for effect in declared_effects(&signature.features) {
+              out.push((effect, String::from("a callback returned by a call")));
+            }
+          }
+        }
       },
       _ => {}
     }
@@ -692,6 +708,34 @@ impl Checker<'_> {
     self.charge_pass_signature_callbacks(Some(signature.as_ref()), &[], args, scope, near);
   }
 
+  fn charge_import_effects(&mut self, import: &CalcitImport, scope: &Scope, near: Option<&NodeLocation>) {
+    let core = import.ns.as_ref() == crate::calcit::CORE_NS;
+    let has_source = !core && program::has_def_code(&import.ns, &import.def);
+    let declared = if core {
+      core_def_effects(&import.def)
+    } else {
+      if scope.top
+        && has_source
+        && let Some(summary) = self.summary.as_mut()
+      {
+        summary.deps.insert((import.ns.clone(), import.def.clone()));
+      }
+      schema_effects(lookup_non_core_import_schema(&import.ns, &import.def).as_ref())
+    };
+    self.via_dependency = has_source;
+    for effect in [Effect::State, Effect::Io] {
+      if declared.contains(&effect) {
+        self.require(
+          scope,
+          effect,
+          &format!("uses {}/{}, which needs `:{}`", import.ns, import.def, effect.feature()),
+          near,
+        );
+      }
+    }
+    self.via_dependency = false;
+  }
+
   fn charge_resolved_entry(&mut self, entry: &Calcit, args: &[&Calcit], scope: &Scope, near: Option<&NodeLocation>) {
     match entry {
       Calcit::Proc(proc) => {
@@ -705,29 +749,7 @@ impl Checker<'_> {
         }
       }
       Calcit::Import(import) => {
-        let core = import.ns.as_ref() == crate::calcit::CORE_NS;
-        let declared = if core {
-          core_def_effects(&import.def)
-        } else {
-          if scope.top
-            && let Some(summary) = self.summary.as_mut()
-          {
-            summary.deps.insert((import.ns.clone(), import.def.clone()));
-          }
-          schema_effects(program::lookup_def_schema(&import.ns, &import.def).as_ref())
-        };
-        self.via_dependency = !core;
-        for effect in [Effect::State, Effect::Io] {
-          if declared.contains(&effect) {
-            self.require(
-              scope,
-              effect,
-              &format!("uses {}/{}, which needs `:{}`", import.ns, import.def, effect.feature()),
-              near,
-            );
-          }
-        }
-        self.via_dependency = false;
+        self.charge_import_effects(import, scope, near);
       }
       Calcit::Fn { info, .. } => {
         let core = info.def_ns.as_ref() == crate::calcit::CORE_NS;
@@ -740,7 +762,7 @@ impl Checker<'_> {
           {
             summary.deps.insert((info.def_ns.clone(), info.name.clone()));
           }
-          let mut effects = schema_effects(program::lookup_def_schema(&info.def_ns, &info.name).as_ref());
+          let mut effects = schema_effects(lookup_non_core_import_schema(&info.def_ns, &info.name).as_ref());
           if let Some(hint_sig) = body_hint_signature(info.body.iter()) {
             effects.extend(declared_effects(&hint_sig.features));
           }
@@ -1082,15 +1104,16 @@ impl Checker<'_> {
   fn callee_signature(&self, head: Option<&Calcit>) -> Option<Arc<CalcitFnTypeAnnotation>> {
     let def = match head? {
       Calcit::Import(import) if import.ns.as_ref() != crate::calcit::CORE_NS => {
-        return program::lookup_def_schema(&import.ns, &import.def).resolve_to_fn();
+        return lookup_non_core_import_schema(&import.ns, &import.def).resolve_to_fn();
       }
       Calcit::Import(import) => import.def.to_string(),
       Calcit::Local(local) => {
-        return if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
-          self.scope_types.get(&local.sym).and_then(|t| t.resolve_to_fn())
+        let type_info = if matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
+          self.scope_types.get(&local.sym).unwrap_or(&local.type_info)
         } else {
-          local.type_info.resolve_to_fn()
+          &local.type_info
         };
+        return resolve_fn_in_ns(self.ns, type_info);
       }
       Calcit::List(lambda) if matches!(lambda.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
         return lambda_declared_signature(lambda);
@@ -1099,7 +1122,7 @@ impl Checker<'_> {
         return if info.def_ns.as_ref() == crate::calcit::CORE_NS {
           program::lookup_def_schema(crate::calcit::CORE_NS, &info.name).resolve_to_fn()
         } else {
-          program::lookup_def_schema(&info.def_ns, &info.name)
+          lookup_non_core_import_schema(&info.def_ns, &info.name)
             .resolve_to_fn()
             .or_else(|| body_hint_signature(info.body.iter()))
             .or_else(|| CalcitTypeAnnotation::from_calcit_fn(info).resolve_to_fn())

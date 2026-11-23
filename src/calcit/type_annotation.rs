@@ -6138,8 +6138,10 @@ impl CalcitTypeAnnotation {
       }
       // AnonymousEnum matches any other AnonymousEnum
       (Self::AnonymousEnum, Self::AnonymousEnum) => true,
-      // Function type matching: DynFn matches any Fn, specific Fn must match signature
-      (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => true,
+      // Function type matching: DynFn accepts non-`:pass` functions and satisfies concrete signatures;
+      // a `:pass` callback cannot escape into an erased `AnyFn` (`DynFn`) contract (#2841).
+      (Self::Fn(actual), Self::DynFn) => !actual.is_pass_callback(),
+      (Self::DynFn, Self::Fn(_)) => true,
       // Tags are callable in Calcit (as map key accessors), so they satisfy :fn requirements
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => true,
       (Self::Fn(a), Self::Fn(b)) => a.compatible_signature_with_bindings(b.as_ref(), bindings),
@@ -6543,7 +6545,13 @@ impl CalcitTypeAnnotation {
         None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
       },
       (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings(expected, bindings),
-      (Self::Fn(_), Self::DynFn) => Proven,
+      (Self::Fn(actual), Self::DynFn) => {
+        if actual.is_pass_callback() {
+          Mismatch
+        } else {
+          Proven
+        }
+      }
       (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
       // A trait name reference and its resolved trait denote the same nominal
@@ -7883,6 +7891,9 @@ mod tests {
     assert!(!pass.compatible_with_bindings(&pure, &mut TypeBindings::new()));
     assert!(!pass.compatible_with_bindings(&io, &mut TypeBindings::new()));
     assert!(!pass.compatible_with_bindings(&state_io, &mut TypeBindings::new()));
+    assert!(!pass.compatible_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()));
+    assert!(pure.compatible_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()));
+    assert!(io.compatible_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()));
     assert!(js_ffi.compatible_with_bindings(&pure, &mut TypeBindings::new()));
     assert!(!io.prove_with_bindings(&pure, &mut TypeBindings::new()).is_proven());
     assert!(io.prove_with_bindings(&pass, &mut TypeBindings::new()).is_proven());
@@ -7890,6 +7901,18 @@ mod tests {
     assert!(!pass.prove_with_bindings(&pure, &mut TypeBindings::new()).is_proven());
     assert!(!pass.prove_with_bindings(&io, &mut TypeBindings::new()).is_proven());
     assert!(!pass.prove_with_bindings(&state_io, &mut TypeBindings::new()).is_proven());
+    assert_eq!(
+      pass.prove_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()),
+      TypeProof::Mismatch
+    );
+    assert_eq!(
+      pure.prove_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()),
+      TypeProof::Proven
+    );
+    assert_eq!(
+      io.prove_with_bindings(&CalcitTypeAnnotation::DynFn, &mut TypeBindings::new()),
+      TypeProof::Proven
+    );
     assert_eq!(io.to_brief_string(), "fn(:number) -> :unit (:features :io)");
   }
   use crate::calcit::CalcitSymbolInfo;
@@ -12159,20 +12182,23 @@ impl CalcitFnTypeAnnotation {
     self.features.iter().any(|feature| feature.ref_str() == ASYNC_INVOCATION_FEATURE)
   }
 
+  /// Whether this callable signature carries `:pass` effect forwarding.
+  pub(crate) fn is_pass_callback(&self) -> bool {
+    self.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE)
+  }
+
   /// Effect features a callable may carry into a slot of this type (#2726).
   /// A slot marked `:pass` accepts any of them: the callee only calls the
   /// callback while it runs, so the caller that names or creates the callback
   /// is charged for its effects. A `:pass` callback value may only flow into
-  /// another `:pass` slot, never escape into a non-`:pass` `Fn` field,
-  /// parameter, or return contract. Any other slot accepts only the `:state` /
-  /// `:io` it declares itself.
+  /// another `:pass` slot, never escape into a non-`:pass` `Fn` or erased
+  /// `AnyFn` field, parameter, or return contract. Any other slot accepts only
+  /// the `:state` / `:io` it declares itself.
   pub(crate) fn accepts_effects_of(&self, actual: &CalcitFnTypeAnnotation) -> bool {
-    let has_pass =
-      |signature: &CalcitFnTypeAnnotation| signature.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE);
-    if has_pass(self) {
+    if self.is_pass_callback() {
       return true;
     }
-    if has_pass(actual) {
+    if actual.is_pass_callback() {
       return false;
     }
     EFFECT_FEATURES.iter().all(|effect| {
