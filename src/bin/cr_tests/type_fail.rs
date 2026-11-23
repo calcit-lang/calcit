@@ -2831,6 +2831,11 @@ fn assert_type_expands_qualified_function_alias_at_runtime() {
     let warnings = RefCell::new(vec![]);
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
       .expect("qualified function alias must pass static checking");
+    let alias = CalcitTypeAnnotation::TypeRef(Arc::from("app.lib/Identity"), Arc::new(vec![]));
+    assert!(
+      !calcit::calcit::value_matches_type_annotation(&Calcit::Number(1.0), &alias),
+      "a non-function must not pass the qualified function alias"
+    );
     calcit::run_program(entries.init_ns, entries.init_def, &[]).expect("the same assertion must pass at runtime (#2913)");
   });
 }
