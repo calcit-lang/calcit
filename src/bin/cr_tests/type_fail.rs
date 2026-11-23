@@ -2836,6 +2836,16 @@ fn assert_type_expands_qualified_function_alias_at_runtime() {
       !calcit::calcit::value_matches_type_annotation(&Calcit::Number(1.0), &alias),
       "a non-function must not pass the qualified function alias"
     );
+    let mut other = calcit::calcit::CalcitStructDef::from_fields(cirru_edn::EdnTag::new("Identity"), vec![]);
+    other.definition_ref = Some(Arc::from("app.other/Identity"));
+    let same_name = Calcit::Struct(calcit::calcit::CalcitStructValue {
+      struct_ref: Arc::new(other),
+      values: Arc::new(vec![]),
+    });
+    assert!(
+      !calcit::calcit::value_matches_type_annotation(&same_name, &alias),
+      "an unrelated same-named struct must not pass the function alias"
+    );
     calcit::run_program(entries.init_ns, entries.init_def, &[]).expect("the same assertion must pass at runtime (#2913)");
   });
 }
