@@ -15451,7 +15451,14 @@ fn process_match(
                 type_info: payload_type.clone(),
               });
 
+              let incomplete_payload = !matches!(
+                payload_type.as_ref(),
+                CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
+              );
               body_types.insert(sym.to_owned(), payload_type);
+              if incomplete_payload {
+                body_types.mark_incomplete_impls(sym.to_owned());
+              }
               processed_pattern.push(local);
             }
             other => {
@@ -17829,9 +17836,14 @@ pub fn preprocess_core_let(
           type_info: inferred_type.clone(),
         });
 
-        // Check openness against the outer scope before the shadowing binding is inserted.
+        // Check openness and impl-table completeness against the outer scope
+        // before the shadowing binding is inserted.
         initializer_is_open = is_explicitly_open_expression(&form, &body_types);
+        let incomplete_impls = !type_inference::expr_has_complete_impls(&form, &inferred_type, &body_types);
         body_types.insert(sym.to_owned(), inferred_type);
+        if incomplete_impls {
+          body_types.mark_incomplete_impls(sym.to_owned());
+        }
 
         Calcit::from(CalcitList::from(&[name, form]))
       }

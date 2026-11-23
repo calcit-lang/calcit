@@ -1984,6 +1984,68 @@
                 assert= decorated $ assert-traits decorated Greeting
                 assert= true $ .includes? err-msg "|requires an impl of trait"
               :tags $ #{} :trait :unit
+            %{} 'TestEntry
+              :name |nested-and-let-decorated-typeref-runtime-requires
+              :code $ quote $ let
+                  p-impl $ defimpl Person0 Labeled $ .label
+                    fn (x) (:name x)
+                  b-impl $ defimpl Person0 MyBar $ .bar
+                    fn (x)
+                      hint-fn $ Fn Person0 $ -> String
+                      str |bar: $ :name x
+                  c-impl $ defimpl Person0 Greeting $ .greeting
+                    fn (x)
+                      str |hi: $ :name x
+                  attach-nested $ fn (p)
+                    hint-fn $ Fn Person0 $ -> Person0
+                    let
+                        res $ &struct:impl-traits (&struct:impl-traits p b-impl) c-impl
+                      assert=
+                        str |bar: $ :name res
+                        .bar res
+                      assert=
+                        str |hi: $ :name res
+                        .greeting res
+                      , res
+                  attach-let $ fn (p)
+                    hint-fn $ Fn Person0 $ -> Person0
+                    let
+                        p1 $ &struct:impl-traits p b-impl
+                        res $ &struct:impl-traits p1 c-impl
+                      assert=
+                        str |bar: $ :name res
+                        .bar res
+                      assert=
+                        str |hi: $ :name res
+                        .greeting res
+                      , res
+                  nested-ok $ attach-nested $ &struct:impl-traits (Person0 :name |Ada) p-impl
+                  let-ok $ attach-let $ &struct:impl-traits (Person0 :name |Eve) p-impl
+                  nested-err $ try
+                    do
+                      attach-nested $ Person0 :name |Bob
+                      , |ok
+                    fn (msg) msg
+                  let-err $ try
+                    do
+                      attach-let $ Person0 :name |Bob
+                      , |ok
+                    fn (msg) msg
+                assert= nested-ok $ assert-traits nested-ok Labeled
+                assert= nested-ok $ assert-traits nested-ok MyBar
+                assert= nested-ok $ assert-traits nested-ok Greeting
+                assert= |Ada $ &trait-call Labeled :label nested-ok
+                assert= |bar:Ada $ &trait-call MyBar :bar nested-ok
+                assert= |hi:Ada $ &trait-call Greeting :greeting nested-ok
+                assert= let-ok $ assert-traits let-ok Labeled
+                assert= let-ok $ assert-traits let-ok MyBar
+                assert= let-ok $ assert-traits let-ok Greeting
+                assert= |Eve $ &trait-call Labeled :label let-ok
+                assert= |bar:Eve $ &trait-call MyBar :bar let-ok
+                assert= |hi:Eve $ &trait-call Greeting :greeting let-ok
+                assert= true $ .includes? nested-err "|requires an impl of trait"
+                assert= true $ .includes? let-err "|requires an impl of trait"
+              :tags $ #{} :trait :unit
         'throws-at-expansion? $ %{} 'CodeEntry
           :doc "|Evaluate macro rejection during expansion and emit only its boolean result for shared backend replay."
           :code $ quote $ defmacro throws-at-expansion? (form)

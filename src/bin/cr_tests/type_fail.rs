@@ -2097,6 +2097,7 @@ fn strict_type_fail_trait_requires_reports_declaration_and_attachment_codes() {
 #[test]
 fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
   run_with_large_stack(|| {
+    injection::inject_platform_apis();
     let _strict = StrictTypesReset::enabled();
     for (name, snippet, code, detail) in [
       (
@@ -2118,6 +2119,12 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
         "duplicate implementation of trait",
       ),
       (
+        "duplicate-nested-typeref-impl-traits",
+        "def HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndefn attach-again (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits (&struct:impl-traits w helper-impl) helper-impl\ndefn main! () (do (attach-again (Widget0 :n 1)) &unit)",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
+      (
         "duplicate-chained-impl-traits",
         "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box0 (:n Number)\ndef impl1 $ defimpl Box0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Box0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((B (impl-traits (impl-traits Box0 impl1) impl2))) &unit",
         "E_DUPLICATE_TRAIT_IMPL",
@@ -2126,6 +2133,18 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
       (
         "missing-parent-on-struct-value",
         "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (Widget0 :n 1) child-impl))) &unit",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "missing-parent-on-nested-struct-value",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (&struct:impl-traits (Widget0 :n 1) helper-impl) child-impl))) &unit",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "missing-parent-on-let-bound-struct-value",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      w1 $ &struct:impl-traits (Widget0 :n 1) helper-impl\n      w2 $ &struct:impl-traits w1 child-impl\n    , &unit",
         "E_IMPL_MISSING_REQUIRED_TRAIT",
         "requires an impl of trait",
       ),
@@ -2165,6 +2184,7 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
 #[test]
 fn strict_type_check_allows_trait_parent_alias_and_decorated_typeref_impl_attachment() {
   run_with_large_stack(|| {
+    injection::inject_platform_apis();
     let _strict = StrictTypesReset::enabled();
     for (name, snippet) in [
       (
@@ -2175,10 +2195,68 @@ fn strict_type_check_allows_trait_parent_alias_and_decorated_typeref_impl_attach
         "decorated-typeref-param",
         "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-child (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits w child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-child (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
       ),
+      (
+        "nested-decorated-typeref-param",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-nested (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  let\n      w2 $ &struct:impl-traits (&struct:impl-traits w helper-impl) child-impl\n      _h $ .helper w2\n      _g $ .greet w2\n    , w2\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-nested (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
+      ),
+      (
+        "let-bound-decorated-typeref-param",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-let (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  let\n      w1 $ &struct:impl-traits w helper-impl\n      w2 $ &struct:impl-traits w1 child-impl\n    , w2\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-let (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
+      ),
     ] {
       let entries = load_snippet_entries(snippet);
       run_check_only(&entries).unwrap_or_else(|err| panic!("{name} must pass strict check-only: {err}"));
     }
+  });
+}
+
+#[test]
+fn strict_type_fail_pass_callback_cannot_escape_non_pass_slot() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    for (name, snippet, target_def, expected_code) in [
+      (
+        "store-pass-into-pure-field",
+        "defstruct Handler (:on-click $ Fn Number (-> Unit))\ndefn keep (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Handler)\n  Handler :on-click cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((h (keep (fn (n) &unit)))) &unit",
+        "keep",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+      (
+        "store-pass-into-io-field",
+        "defstruct Handler (:on-click $ Fn Number (-> Unit) (:features :io))\ndefn keep (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Handler)\n  Handler :on-click cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((h (keep (fn (n) &unit)))) &unit",
+        "keep",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+      (
+        "return-pass-as-pure-fn",
+        "defn escape-ret (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Unit)))\n  , cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((f (escape-ret (fn (n) &unit)))) &unit",
+        "escape-ret",
+        "E_FN_RETURN_TYPE_MISMATCH",
+      ),
+      (
+        "pass-into-pure-hof-param",
+        "defn consume-pure (cb)\n  hint-fn $ Fn (Fn Number (-> Unit)) (-> Unit)\n  cb 1\ndefn forward-bad (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  consume-pure cb\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  forward-bad (fn (n) &unit)",
+        "forward-bad",
+        "E_FN_ARG_TYPE_MISMATCH",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target_def, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("{name} should report warning during preprocess: {err}"));
+      assert!(
+        warnings.borrow().iter().any(|warning| warning.code() == Some(expected_code)),
+        "{name} should report {expected_code}: {:?}",
+        warnings.borrow()
+      );
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
+    }
+
+    let ok_snippet = "defn run-now (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  cb 1\ndefn forward-ok (xs cb)\n  hint-fn $ Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  run-now cb\n  each xs cb\n  , &unit\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  forward-ok ([] 1 2) (fn (n) &unit)";
+    let entries = load_snippet_entries(ok_snippet);
+    run_check_only(&entries).unwrap_or_else(|err| panic!("forwarding :pass callback to :pass slots must pass: {err}"));
   });
 }
 
@@ -5975,6 +6053,229 @@ fn effect_features_follow_entry_policy() {
       .collect::<Vec<_>>();
     wanted.sort();
     assert_eq!(collect_with(HashMap::new()), wanted, "effect diagnostics without an entry policy");
+  });
+}
+
+#[test]
+fn effect_features_track_aliases_spread_and_trait_methods() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    builtins::effects::init_effects_states();
+    let snippet = r#"defref *counter 0
+
+deftrait Store
+  .save! $ Fn Self (-> Unit) (:features :io)
+
+deftrait InlineStore
+  .persist! $ Fn Self (-> Unit) (:features :io)
+
+deftrait Foldable
+  .each-item $ Fn Self (Fn Number (-> Unit) (:features :pass)) (-> Unit)
+
+deftrait CustomDeref
+  .deref $ Fn Self (-> Number)
+
+defstruct Disk (:id Number) (:impls Store InlineStore)
+
+defstruct Box (:v Number) (:impls CustomDeref)
+
+defenum Choice
+  :pure $ Fn Number (-> Unit)
+
+defn save-disk (d)
+  println d
+
+defimpl Disk Store
+  .save! save-disk
+
+defimpl Disk InlineStore
+  .persist! $ fn (d) (println d)
+
+defimpl Box CustomDeref
+  .deref $ fn (b) (:v b)
+
+defn log-line (x) (println x)
+
+defn pure-now (x) &unit
+
+defn alias-hof (xs)
+  let ((run each))
+    run xs $ fn (y)
+      hint-fn $ Fn Number (-> Unit) (:features :io)
+      println y
+
+defn param-pass-hof (xs runner)
+  runner xs $ fn (y)
+    hint-fn $ Fn Number (-> Unit) (:features :io)
+    println y
+
+defn inline-pass-lambda ()
+  (fn (cb) (hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)) (cb 1))
+    fn (y)
+      hint-fn $ Fn Number (-> Unit) (:features :io)
+      println y
+
+defn compound-if-pass-cb (flag xs)
+  each xs $ if flag
+    fn (y)
+      hint-fn $ Fn Number (-> Unit) (:features :io)
+      println y
+    fn (y) &unit
+
+defn compound-let-pass-cb (xs)
+  each xs $ let
+      cb $ fn (y)
+        hint-fn $ Fn Number (-> Unit) (:features :io)
+        println y
+    , cb
+
+defn spread-local-call (cb xs)
+  cb & xs
+
+defn trait-where-io (s)
+  .save! s
+
+defn impl-inline-io (d)
+  &trait-call InlineStore :persist! d
+
+defn explicit-trait-call-io (d)
+  &trait-call Store :save! d
+
+defn trait-where-pass (c)
+  .each-item c $ fn (n)
+    hint-fn $ Fn Number (-> Unit) (:features :io)
+    println n
+
+defn deref-global-method ()
+  .deref *counter
+
+defn deref-local-method ()
+  let ((r (ref 1)))
+    .deref r
+
+defn deref-custom-method (b)
+  .deref b
+
+defn match-shadow-pure (cb c)
+  match c
+    (:pure cb) (cb 1)
+
+defn main! ()
+  alias-hof $ [] 1
+  param-pass-hof ([] 1) each
+  inline-pass-lambda
+  compound-if-pass-cb true $ [] 1
+  compound-let-pass-cb $ [] 1
+  spread-local-call log-line $ [] 1
+  trait-where-io $ Disk :id 1
+  impl-inline-io $ Disk :id 2
+  explicit-trait-call-io $ Disk :id 3
+  deref-global-method
+  deref-local-method
+  deref-custom-method $ Box :v 1
+  match-shadow-pure log-line $ Choice :pure pure-now
+  , &unit
+"#;
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(snippet).expect("effect tracking fixture should parse");
+    let schemas = [
+      ("save-disk", "Fn Disk (-> Unit) (:features :io)"),
+      ("log-line", "Fn Number (-> Unit) (:features :io)"),
+      ("pure-now", "Fn Number (-> Unit)"),
+      ("alias-hof", "Fn (List Number) (-> Unit)"),
+      (
+        "param-pass-hof",
+        "Fn (List Number) (Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)) (-> Unit)",
+      ),
+      ("inline-pass-lambda", "Fn (-> Unit)"),
+      ("compound-if-pass-cb", "Fn Bool (List Number) (-> Unit)"),
+      ("compound-let-pass-cb", "Fn (List Number) (-> Unit)"),
+      (
+        "spread-local-call",
+        "Fn (Fn (Variadic Number) (-> Unit) (:features :io)) (List Number) (-> Unit)",
+      ),
+      ("trait-where-io", "Fn T (-> Unit) (:generics T) (:where (T Store))"),
+      ("impl-inline-io", "Fn Disk (-> Unit)"),
+      ("explicit-trait-call-io", "Fn Disk (-> Unit)"),
+      ("trait-where-pass", "Fn T (-> Unit) (:generics T) (:where (T Foldable))"),
+      ("deref-global-method", "Fn (-> Number)"),
+      ("deref-local-method", "Fn (-> Number)"),
+      ("deref-custom-method", "Fn Box (-> Number)"),
+      ("match-shadow-pure", "Fn (Fn Number (-> Unit) (:features :io)) Choice (-> Unit)"),
+      ("main!", "Fn (-> Unit) (:features :io :state)"),
+    ];
+    for (name, schema_src) in schemas {
+      let schema = cirru_parser::parse(schema_src)
+        .unwrap_or_else(|e| panic!("parse schema for {name}: {e}"))
+        .remove(0);
+      file.defs.get_mut(name).unwrap_or_else(|| panic!("missing def {name}")).schema =
+        snapshot::parse_schema_annotation_for_write(&schema).unwrap_or_else(|e| panic!("parse annotation for {name}: {e}"));
+    }
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
+
+    program::configure_entry_feature_policy(&HashMap::from([
+      ("state".to_owned(), snapshot::FeaturePolicy::Error),
+      ("io".to_owned(), snapshot::FeaturePolicy::Error),
+      ("dbg".to_owned(), snapshot::FeaturePolicy::Error),
+    ]));
+    let _ = runner::preprocess::take_advisories();
+    let warnings = RefCell::new(vec![]);
+    let targets = [
+      "main!",
+      "alias-hof",
+      "param-pass-hof",
+      "inline-pass-lambda",
+      "compound-if-pass-cb",
+      "compound-let-pass-cb",
+      "spread-local-call",
+      "trait-where-io",
+      "impl-inline-io",
+      "explicit-trait-call-io",
+      "trait-where-pass",
+      "deref-global-method",
+      "deref-local-method",
+      "deref-custom-method",
+      "match-shadow-pure",
+    ];
+    for target in targets {
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default())
+        .unwrap_or_else(|err| panic!("preprocess failed for {target}: {err}"));
+    }
+    let advisories = runner::preprocess::take_advisories();
+    program::configure_entry_feature_policy(&HashMap::new());
+
+    let mut found = advisories
+      .iter()
+      .filter_map(|advisory| {
+        let code = advisory.code()?;
+        matches!(code, "E_STATE_FEATURE_REQUIRED" | "E_IO_FEATURE_REQUIRED").then(|| {
+          let def = advisory.message().split_whitespace().nth(1).unwrap_or_default().to_owned();
+          (def, code.to_owned())
+        })
+      })
+      .collect::<Vec<_>>();
+    found.sort();
+
+    let mut wanted = vec![
+      ("app.main/alias-hof".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/param-pass-hof".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/inline-pass-lambda".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/compound-if-pass-cb".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/compound-let-pass-cb".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/spread-local-call".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/trait-where-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/impl-inline-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/explicit-trait-call-io".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/trait-where-pass".to_owned(), "E_IO_FEATURE_REQUIRED".to_owned()),
+      ("app.main/deref-global-method".to_owned(), "E_STATE_FEATURE_REQUIRED".to_owned()),
+    ];
+    wanted.sort();
+    assert_eq!(
+      found, wanted,
+      "all aliased/spread/trait/method effect edges should match: {warnings:?}"
+    );
   });
 }
 

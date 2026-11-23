@@ -922,6 +922,12 @@ pub(super) fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
   match pattern {
     Calcit::Local(local) => {
       scope.insert(local.sym.clone(), local.type_info.clone());
+      if !matches!(
+        local.type_info.as_ref(),
+        CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
+      ) {
+        scope.mark_incomplete_impls(local.sym.clone());
+      }
     }
     Calcit::List(items) => {
       for item in items.iter() {
@@ -940,7 +946,11 @@ fn core_let_scope(items: &CalcitList, scope_types: &ScopeTypes) -> ScopeTypes {
     && let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1))
   {
     let evidence = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    let incomplete = !expr_has_complete_impls(value, &evidence, scope_types);
     scope.insert(local.sym.clone(), evidence);
+    if incomplete {
+      scope.mark_incomplete_impls(local.sym.clone());
+    }
   }
   scope
 }
@@ -2844,13 +2854,125 @@ pub(crate) fn check_trait_requires_declaration(
   child.with_requires(resolved).err()
 }
 
+fn is_impl_traits_call_head(head: &Calcit) -> bool {
+  matches!(
+    head,
+    Calcit::Proc(
+      CalcitProc::NativeStructImplTraits
+        | CalcitProc::NativeEnumImplTraits
+        | CalcitProc::NativeStructValueImplTraits
+        | CalcitProc::NativeEnumValueImplTraits
+    )
+  ) || matches!(
+    head,
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "impl-traits"
+  ) || matches!(
+    head,
+    Calcit::Fn { info, .. } if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "impl-traits"
+  )
+}
+
+/// Whether `expr` denotes a value whose static impl table is known to contain
+/// every trait impl present at runtime. Parameters, pattern bindings, `TypeRef`
+/// values, opaque calls, and nested `impl-traits` calls built on incomplete bases
+/// may already carry extra runtime impls, so missing required parent checks are
+/// deferred to runtime while duplicate checks remain active.
+pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> bool {
+  if matches!(resolved, CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)) {
+    return true;
+  }
+  match expr {
+    Calcit::Struct(_) | Calcit::Enum(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) => true,
+    Calcit::Local(local) => !scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)),
+    Calcit::Symbol { sym, info, .. } => {
+      if scope_types.contains_key(sym) {
+        !scope_types.has_incomplete_impls(sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _))
+      } else {
+        program::lookup_def_code(&info.at_ns, sym)
+          .as_ref()
+          .is_some_and(code_resolves_to_nominal_type_def)
+      }
+    }
+    Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def)
+      .as_ref()
+      .is_some_and(code_resolves_to_nominal_type_def),
+    Calcit::List(items) => {
+      let Some(head) = items.first() else {
+        return false;
+      };
+      if is_impl_traits_call_head(head) {
+        let Some(inner_base) = items.get(1) else {
+          return false;
+        };
+        let Some(inner_resolved) = resolve_type_value(inner_base, scope_types) else {
+          return false;
+        };
+        return expr_has_complete_impls(inner_base, &inner_resolved, scope_types)
+          && items.iter().skip(2).all(|arg| resolve_impl_annotation(arg, scope_types).is_some());
+      }
+      if matches!(
+        head,
+        Calcit::Proc(CalcitProc::NativeStruct | CalcitProc::NativeStructFromMap | CalcitProc::NativeNamedEnumNew)
+      ) || matches!(
+        head,
+        Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%::"
+      ) {
+        let Some(proto) = items.get(1) else {
+          return false;
+        };
+        let Some(proto_type) = resolve_type_value(proto, scope_types) else {
+          return false;
+        };
+        return expr_has_complete_impls(proto, &proto_type, scope_types);
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _)) && items.len() >= 3 {
+        let inner_scope = core_let_scope(items, scope_types);
+        let tail = &items[items.len() - 1];
+        let Some(tail_resolved) = resolve_type_value(tail, &inner_scope) else {
+          return false;
+        };
+        return expr_has_complete_impls(tail, &tail_resolved, &inner_scope);
+      }
+      if matches!(
+        head,
+        Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "do"
+      ) && items.len() >= 2
+      {
+        let tail = &items[items.len() - 1];
+        let Some(tail_resolved) = resolve_type_value(tail, scope_types) else {
+          return false;
+        };
+        return expr_has_complete_impls(tail, &tail_resolved, scope_types);
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) && items.len() == 4 {
+        let mut saw_reachable = false;
+        for branch in [&items[2], &items[3]] {
+          if expression_definitely_diverges(branch) {
+            continue;
+          }
+          saw_reachable = true;
+          let Some(branch_resolved) = resolve_type_value(branch, scope_types) else {
+            return false;
+          };
+          if !expr_has_complete_impls(branch, &branch_resolved, scope_types) {
+            return false;
+          }
+        }
+        return saw_reachable;
+      }
+      false
+    }
+    _ => false,
+  }
+}
+
 /// Static coherence check for `impl-traits`: reject duplicate implementations of
 /// one nominal trait origin on the same type, and require impls of all traits
 /// each attached origin declares in `requires`.
 pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &ScopeTypes) -> Option<(&'static str, String)> {
   let base_expr = args.first()?;
   let base = resolve_type_value(base_expr, scope_types)?;
-  let mut base_impls_complete = true;
+  let base_impls_complete = expr_has_complete_impls(base_expr, &base, scope_types);
   let mut impls: Vec<Arc<CalcitImpl>> = match base.as_ref() {
     CalcitTypeAnnotation::StructDef(definition)
     | CalcitTypeAnnotation::Struct(definition, _)
@@ -2859,16 +2981,6 @@ pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &S
     | CalcitTypeAnnotation::Enum(definition, _)
     | CalcitTypeAnnotation::EnumValue(definition) => definition.impls().to_vec(),
     CalcitTypeAnnotation::TypeRef(name, _) => {
-      // A `TypeRef` value (such as a parameter or return annotation) can carry
-      // extra instance-level impls at runtime, so its definition's impl table is
-      // complete only when the receiver expression itself is the nominal type
-      // definition (`defstruct` / `defenum`).
-      let source_definition = match base_expr {
-        Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def),
-        Calcit::Symbol { sym, info, .. } => program::lookup_def_code(&info.at_ns, sym),
-        _ => None,
-      };
-      base_impls_complete = source_definition.as_ref().is_some_and(code_resolves_to_nominal_type_def);
       let reference = name.trim_start_matches('\'').trim_start_matches(':');
       if let Some((ns, def)) = reference.rsplit_once('/')
         && let Some(resolved) = resolve_program_value_for_preprocess(ns, def, None)

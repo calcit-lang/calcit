@@ -27,6 +27,9 @@ pub struct ScopeTypes {
   /// Parameter types of the innermost enclosing function, the contract a
   /// `recur` written here has to meet. `None` when its arity is not fixed.
   recur_parameters: Option<Arc<[Annotation]>>,
+  /// Bindings whose static type carries a nominal impl list that is not known
+  /// to include every runtime impl attached to that value.
+  incomplete_impl_bindings: FastSet<Arc<str>>,
 }
 
 impl ScopeTypes {
@@ -43,6 +46,7 @@ impl ScopeTypes {
       generic_capabilities: None,
       defn_parameters: FastSet::default(),
       recur_parameters: None,
+      incomplete_impl_bindings: FastSet::default(),
     }
   }
 
@@ -50,6 +54,7 @@ impl ScopeTypes {
     self.defn_parameters.remove(&name);
     self.parameter_shadowed_types.remove(&name);
     self.refinements.remove(&name);
+    self.incomplete_impl_bindings.remove(&name);
     self.values.insert(name, annotation)
   }
 
@@ -70,7 +75,22 @@ impl ScopeTypes {
   pub(super) fn bind_parameter(&mut self, name: Arc<str>, annotation: Annotation) {
     self.defn_parameters.remove(&name);
     self.refinements.remove(&name);
+    self.incomplete_impl_bindings.remove(&name);
+    if !matches!(
+      annotation.as_ref(),
+      CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
+    ) {
+      self.incomplete_impl_bindings.insert(name.clone());
+    }
     self.values.insert(name, annotation);
+  }
+
+  pub(super) fn mark_incomplete_impls(&mut self, name: Arc<str>) {
+    self.incomplete_impl_bindings.insert(name);
+  }
+
+  pub(crate) fn has_incomplete_impls(&self, name: &str) -> bool {
+    self.incomplete_impl_bindings.contains(name)
   }
 
   /// Marks `names` as the parameters of the top-level `defn` being checked.
@@ -257,6 +277,7 @@ impl ScopeTypes {
   {
     self.defn_parameters.remove(name);
     self.refinements.remove(name);
+    self.incomplete_impl_bindings.remove(name);
     self.values.remove(name)
   }
 
@@ -265,6 +286,7 @@ impl ScopeTypes {
     self.values.clear();
     self.parameter_shadowed_types.clear();
     self.refinements.clear();
+    self.incomplete_impl_bindings.clear();
     self.generics.clear();
     self.generic_capabilities = None;
   }
@@ -272,6 +294,7 @@ impl ScopeTypes {
   pub fn retain(&mut self, mut predicate: impl FnMut(&Arc<str>, &Annotation) -> bool) {
     self.values.retain(|name, annotation| predicate(name, annotation));
     self.refinements.retain(|name, _| self.values.contains_key(name));
+    self.incomplete_impl_bindings.retain(|name| self.values.contains_key(name));
   }
 }
 
@@ -293,6 +316,7 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
       generic_capabilities: None,
       defn_parameters: FastSet::default(),
       recur_parameters: None,
+      incomplete_impl_bindings: FastSet::default(),
     }
   }
 }

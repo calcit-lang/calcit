@@ -7876,11 +7876,20 @@ mod tests {
     // A slot that declares more effects accepts fewer.
     assert!(pure.compatible_with_bindings(&io, &mut TypeBindings::new()));
     assert!(io.compatible_with_bindings(&state_io, &mut TypeBindings::new()));
-    // `:pass` slots accept any effect; other features stay out of compatibility.
+    // `:pass` slots accept any effect; a `:pass` callback cannot escape into a
+    // non-`:pass` slot, and other features stay out of compatibility.
     assert!(state_io.compatible_with_bindings(&pass, &mut TypeBindings::new()));
+    assert!(pass.compatible_with_bindings(&pass, &mut TypeBindings::new()));
+    assert!(!pass.compatible_with_bindings(&pure, &mut TypeBindings::new()));
+    assert!(!pass.compatible_with_bindings(&io, &mut TypeBindings::new()));
+    assert!(!pass.compatible_with_bindings(&state_io, &mut TypeBindings::new()));
     assert!(js_ffi.compatible_with_bindings(&pure, &mut TypeBindings::new()));
     assert!(!io.prove_with_bindings(&pure, &mut TypeBindings::new()).is_proven());
     assert!(io.prove_with_bindings(&pass, &mut TypeBindings::new()).is_proven());
+    assert!(pass.prove_with_bindings(&pass, &mut TypeBindings::new()).is_proven());
+    assert!(!pass.prove_with_bindings(&pure, &mut TypeBindings::new()).is_proven());
+    assert!(!pass.prove_with_bindings(&io, &mut TypeBindings::new()).is_proven());
+    assert!(!pass.prove_with_bindings(&state_io, &mut TypeBindings::new()).is_proven());
     assert_eq!(io.to_brief_string(), "fn(:number) -> :unit (:features :io)");
   }
   use crate::calcit::CalcitSymbolInfo;
@@ -12153,13 +12162,18 @@ impl CalcitFnTypeAnnotation {
   /// Effect features a callable may carry into a slot of this type (#2726).
   /// A slot marked `:pass` accepts any of them: the callee only calls the
   /// callback while it runs, so the caller that names or creates the callback
-  /// is charged for its effects. Any other slot accepts only the `:state` /
+  /// is charged for its effects. A `:pass` callback value may only flow into
+  /// another `:pass` slot, never escape into a non-`:pass` `Fn` field,
+  /// parameter, or return contract. Any other slot accepts only the `:state` /
   /// `:io` it declares itself.
   pub(crate) fn accepts_effects_of(&self, actual: &CalcitFnTypeAnnotation) -> bool {
     let has_pass =
       |signature: &CalcitFnTypeAnnotation| signature.features.iter().any(|feature| feature.ref_str() == PASS_EFFECTS_FEATURE);
     if has_pass(self) {
       return true;
+    }
+    if has_pass(actual) {
+      return false;
     }
     EFFECT_FEATURES.iter().all(|effect| {
       !actual.features.iter().any(|feature| feature.ref_str() == *effect)
