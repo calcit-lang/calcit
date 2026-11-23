@@ -1,5 +1,4 @@
 use super::*;
-use std::collections::BTreeSet;
 use std::sync::LazyLock;
 use wasm_encoder::{BlockType, Ieee64};
 
@@ -24,8 +23,15 @@ pub(super) struct HostImport {
   pub(super) results: Vec<ValType>,
 }
 
+pub(super) struct RuntimeFns {
+  pub(super) fns: Vec<CompiledFn>,
+  pub(super) fn_index: HashMap<String, u32>,
+  pub(super) number_format_fn_count: u32,
+}
+
 pub(super) struct ModuleFunctionLayout {
   pub(super) runtime_fn_count: u32,
+  pub(super) number_format_fn_count: u32,
   pub(super) table_fn_count: u32,
   pub(super) memory_layout: WasmMemoryLayout,
   pub(super) global_layout: WasmGlobalLayout,
@@ -4354,6 +4360,8 @@ pub(super) fn build_wasm_module(
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = host_imports.len() as u32;
+  let linked = link::link_module(fns, num_imports, &layout);
+  let fns = &linked.fns;
   // Canonical types cover every arity a call_indirect uses (not just 0..8).
   let canonical_arity = fns
     .iter()
@@ -4399,18 +4407,9 @@ pub(super) fn build_wasm_module(
   module.section(&functions);
 
   // Table section: funcref table N serves function-value calls with N
-  // arguments. Table slot i → calcit fn at fn_defs[i] (function index:
-  // num_imports + runtime_fn_count + i), or its rest adapter for that arity.
-  // Omit the table section completely when no `call_indirect` is emitted so
-  // pooling hosts with a 1-table limit (such as `wasmtime serve`) stay compatible.
-  let used_tables: BTreeSet<u32> = fns
-    .iter()
-    .flat_map(|f| f.instructions.iter())
-    .filter_map(|instruction| match instruction {
-      Instruction::CallIndirect { table_index, .. } => Some(*table_index),
-      _ => None,
-    })
-    .collect();
+  // arguments. Populated from reachable table indices only so pooling hosts
+  // with a 1-table limit (such as `wasmtime serve`) stay compatible.
+  let used_tables = &linked.used_tables;
   if !used_tables.is_empty() {
     let table_count = used_tables.last().expect("non-empty used_tables") + 1;
     let mut tables = TableSection::new();
@@ -4535,14 +4534,17 @@ pub(super) fn build_wasm_module(
       );
     }
   }
-  globals.global(
-    GlobalType {
-      val_type: ValType::I32,
-      mutable: true,
-      shared: false,
-    },
-    &ConstExpr::i32_const(number_format::NUMBER_STACK_TOP),
-  );
+  if linked.needs_number_format {
+    debug_assert_eq!(globals.len(), layout.global_layout.number_stack);
+    globals.global(
+      GlobalType {
+        val_type: ValType::I32,
+        mutable: true,
+        shared: false,
+      },
+      &ConstExpr::i32_const(number_format::NUMBER_STACK_TOP),
+    );
+  }
   module.section(&globals);
 
   // Export section: memory, heap metadata globals, and named functions
@@ -4561,22 +4563,12 @@ pub(super) fn build_wasm_module(
   }
   module.section(&exports);
 
-  // Element section: populate the funcref table with user calcit function indices.
-  // table slot i → function index (num_imports + runtime_fn_count + i).
-  if layout.table_fn_count > 0 && !used_tables.is_empty() {
+  // Element section: populate each used funcref table with linked function indices.
+  if !linked.table_elements.is_empty() {
     let mut elements = ElementSection::new();
-    for &table in &used_tables {
-      let fn_indices: Vec<u32> = (0..layout.table_fn_count)
-        .map(|i| {
-          layout
-            .rest_adapters
-            .get(&(table, i))
-            .copied()
-            .unwrap_or(num_imports + layout.runtime_fn_count + i)
-        })
-        .collect();
+    for (table, fn_indices) in &linked.table_elements {
       elements.active(
-        Some(table),
+        Some(*table),
         &ConstExpr::i32_const(0),
         Elements::Functions(fn_indices.as_slice().into()),
       );
@@ -4617,14 +4609,16 @@ pub(super) fn build_wasm_module(
   module.section(&codes);
 
   // The Number lookup table occupies reserved low memory, disjoint from the
-  // Calcit string pool and bump allocator.
-  {
+  // Calcit string pool and bump allocator; omit it when formatting is unused.
+  if linked.needs_number_format || !string_data.is_empty() {
     let mut data = wasm_encoder::DataSection::new();
-    data.active(
-      0,
-      &ConstExpr::i32_const(number_format::NUMBER_TABLE_BASE),
-      number_format::number_table_data()?.iter().copied(),
-    );
+    if linked.needs_number_format {
+      data.active(
+        0,
+        &ConstExpr::i32_const(number_format::NUMBER_TABLE_BASE),
+        number_format::number_table_data()?.iter().copied(),
+      );
+    }
     if !string_data.is_empty() {
       data.active(0, &ConstExpr::i32_const(HEAP_BASE), string_data.iter().copied());
     }
@@ -4642,7 +4636,7 @@ pub(super) fn build_runtime_fns(
   tag_index: &HashMap<String, u32>,
   atom_is_scalar: &[bool],
   struct_layouts: &StructLayouts,
-) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
+) -> Result<RuntimeFns, String> {
   let require_tag = |name: &str| *tag_index.get(name).unwrap_or_else(|| panic!("{name} tag must exist")) as i32;
   let map_tag = require_tag("map");
   let list_tag = require_tag("list");
@@ -4655,6 +4649,7 @@ pub(super) fn build_runtime_fns(
   let number_tag = require_tag("number");
   let mut fn_index = HashMap::new();
   let (mut fns, _) = number_format::load_number_functions(base_index, global_layout.number_stack)?;
+  let number_format_fn_count = fns.len() as u32;
   fn_index.insert(String::from("__rt_ryu_format"), base_index);
 
   let copy_name = String::from("__rt_copy_f64_slots");
@@ -5287,7 +5282,11 @@ pub(super) fn build_runtime_fns(
   );
   fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
 
-  Ok((fns, fn_index))
+  Ok(RuntimeFns {
+    fns,
+    fn_index,
+    number_format_fn_count,
+  })
 }
 
 const RT_MAP_TABLE_KIND: f64 = 0.0;

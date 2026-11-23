@@ -7,7 +7,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wasmparser::{ExternalKind, Operator, Parser, Payload, TypeRef, ValType};
+use wasmparser::{DataKind, ExternalKind, Operator, Parser, Payload, TypeRef, ValType};
 use wasmtime::{Engine, ExternType, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder, Val as CoreVal};
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
@@ -117,6 +117,7 @@ struct ParsedFunction {
 struct ParsedModule {
   exports: HashMap<String, u32>,
   functions: HashMap<u32, ParsedFunction>,
+  data_offsets: Vec<i32>,
 }
 
 fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
@@ -129,6 +130,7 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
   let mut fn_type_indices = Vec::new();
   let mut exports = HashMap::new();
   let mut bodies = Vec::new();
+  let mut data_offsets = Vec::new();
 
   for payload in Parser::new(0).parse_all(bytes) {
     match payload.expect("valid wasm payload") {
@@ -161,6 +163,17 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
       }
       Payload::CodeSectionEntry(body) => {
         bodies.push(body);
+      }
+      Payload::DataSection(section) => {
+        for segment in section {
+          let segment = segment.expect("valid data segment");
+          if let DataKind::Active { offset_expr, .. } = segment.kind {
+            let mut ops = offset_expr.get_operators_reader();
+            if let Ok(Operator::I32Const { value }) = ops.read() {
+              data_offsets.push(value);
+            }
+          }
+        }
       }
       _ => {}
     }
@@ -204,7 +217,11 @@ fn parse_wasm_module(bytes: &[u8]) -> ParsedModule {
     );
   }
 
-  ParsedModule { exports, functions }
+  ParsedModule {
+    exports,
+    functions,
+    data_offsets,
+  }
 }
 
 #[test]
@@ -320,7 +337,10 @@ fn wasmparser_verifies_unboxed_signatures_locals_and_zero_heap_probes_on_closed_
     })
     .map(|(idx, _)| *idx)
     .collect();
-  assert!(!is_heap_ptr_fns.is_empty(), "__rt_is_heap_ptr helper must exist in module");
+  assert!(
+    is_heap_ptr_fns.is_empty(),
+    "closed module without heap probes should prune unused __rt_is_heap_ptr, found {is_heap_ptr_fns:?}"
+  );
 
   let export_idx = *parsed.exports.get("run-closed").expect("run-closed export index");
   let export_fn = &parsed.functions[&export_idx];
@@ -1547,4 +1567,104 @@ fn runtime_struct_store_field_unboxes_boxed_json_bool() {
     .get_typed_func::<(), f64>(&mut store, "verify-rt-bool-store")
     .expect("verify-rt-bool-store export");
   assert_eq!(verify.call(&mut store, ()).expect("verify-rt-bool-store executes"), 1.0);
+}
+
+#[test]
+fn selective_linking_elides_unused_number_format_and_preserves_formatting_semantics() {
+  const NUMBER_TABLE_BASE: i32 = 8192;
+
+  let arith_dir = TestDirectory::create("wasm-selective-arith");
+  let arith_snapshot = r#"
+{} (:package |selective-arith)
+  :about "|Selective linking pure arithmetic test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'selective-arith.main/add-nums) (:mode :native) (:reload-fn 'selective-arith.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'selective-arith.main
+    %{} 'FileEntry
+      :defs $ {}
+        'add-nums $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export add-nums (a b) (+ a b)
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns selective-arith.main
+"#;
+  let arith_wasm = compile_wasm_with_boundary(&arith_dir, arith_snapshot, "native");
+  let arith_bytes = fs::read(&arith_wasm).expect("arith wasm bytes should read");
+  let arith_parsed = parse_wasm_module(&arith_bytes);
+  assert!(
+    !arith_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
+    "pure arithmetic must omit Ryū lookup table at {NUMBER_TABLE_BASE}, got offsets {:?}",
+    arith_parsed.data_offsets
+  );
+  assert!(
+    arith_parsed.functions.len() < 16,
+    "pure arithmetic should prune unreachable runtime functions, kept {}",
+    arith_parsed.functions.len()
+  );
+  let (mut arith_store, arith_instance) = instantiate_core_with_limit(&arith_wasm, EIGHT_MIB);
+  let add_nums = arith_instance
+    .get_typed_func::<(f64, f64), f64>(&mut arith_store, "add-nums")
+    .expect("add-nums export");
+  assert_eq!(add_nums.call(&mut arith_store, (20.0, 22.0)).expect("add-nums executes"), 42.0);
+
+  let fmt_dir = TestDirectory::create("wasm-selective-fmt");
+  let fmt_snapshot = r#"
+{} (:package |selective-fmt)
+  :about "|Selective linking direct and indirect float formatting test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'selective-fmt.main/fmt-num) (:mode :native) (:reload-fn 'selective-fmt.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'selective-fmt.main
+    %{} 'FileEntry
+      :defs $ {}
+        'fmt-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export fmt-num () (str (+ 1.25 2.5))
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'log-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export log-num ()
+            do
+              println (+ 0.5 0.25)
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns selective-fmt.main
+"#;
+  let fmt_wasm = compile_wasm_with_boundary(&fmt_dir, fmt_snapshot, "native");
+  let fmt_bytes = fs::read(&fmt_wasm).expect("fmt wasm bytes should read");
+  let fmt_parsed = parse_wasm_module(&fmt_bytes);
+  assert!(
+    fmt_parsed.data_offsets.contains(&NUMBER_TABLE_BASE),
+    "float formatting must retain Ryū lookup table at {NUMBER_TABLE_BASE}, got offsets {:?}",
+    fmt_parsed.data_offsets
+  );
+  let (mut fmt_store, fmt_instance) = instantiate_core_with_limit(&fmt_wasm, EIGHT_MIB);
+  let fmt_num = fmt_instance
+    .get_typed_func::<(), f64>(&mut fmt_store, "fmt-num")
+    .expect("fmt-num export");
+  let str_ptr = fmt_num.call(&mut fmt_store, ()).expect("fmt-num executes") as usize;
+  let memory = fmt_instance.get_memory(&mut fmt_store, "memory").expect("memory export");
+  let mem = memory.data(&fmt_store);
+  let len = f64::from_le_bytes(mem[str_ptr..str_ptr + 8].try_into().unwrap()) as usize;
+  let text = std::str::from_utf8(&mem[str_ptr + 8..str_ptr + 8 + len]).expect("utf8 float text");
+  assert_eq!(text, "3.75");
+  let log_num = fmt_instance
+    .get_typed_func::<(), f64>(&mut fmt_store, "log-num")
+    .expect("log-num export");
+  assert_eq!(log_num.call(&mut fmt_store, ()).expect("log-num executes"), 1.0);
 }

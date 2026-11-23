@@ -818,3 +818,108 @@ fn wasi_and_wasm_retire_try_with_structured_diagnostic() {
   assert!(wasm_stderr.contains("Result"), "{wasm_stderr}");
   assert!(!output.join("program.wasm").exists());
 }
+
+#[test]
+fn wasi_command_selective_linking_prunes_unused_number_format_and_preserves_float_println() {
+  const NUMBER_TABLE_BASE: i32 = 8192;
+
+  fn component_core_data_offsets(bytes: &[u8]) -> Vec<i32> {
+    let mut offsets = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+      if let Ok(wasmparser::Payload::ModuleSection { unchecked_range, .. }) = payload {
+        let core = &bytes[unchecked_range.start as usize..unchecked_range.end as usize];
+        for inner in wasmparser::Parser::new(0).parse_all(core) {
+          if let Ok(wasmparser::Payload::DataSection(section)) = inner {
+            for segment in section {
+              if let wasmparser::DataKind::Active { offset_expr, .. } = segment.expect("valid data segment").kind {
+                let mut ops = offset_expr.get_operators_reader();
+                if let Ok(wasmparser::Operator::I32Const { value }) = ops.read() {
+                  offsets.push(value);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    offsets
+  }
+
+  let out_no_fmt = tempfile::tempdir().expect("temp dir");
+  let compile_no_fmt = calcit(
+    &["examples/wasi-command/calcit.cirru", "wasi", "--boundary", "component"],
+    out_no_fmt.path(),
+  );
+  assert!(
+    compile_no_fmt.status.success(),
+    "{}",
+    String::from_utf8_lossy(&compile_no_fmt.stderr)
+  );
+  let no_fmt_bytes = fs::read(out_no_fmt.path().join("program.wasm")).expect("read wasi-command wasm");
+  let no_fmt_offsets = component_core_data_offsets(&no_fmt_bytes);
+  assert!(
+    !no_fmt_offsets.contains(&NUMBER_TABLE_BASE),
+    "examples/wasi-command does not format f64 and must omit Ryū table {NUMBER_TABLE_BASE}, got {no_fmt_offsets:?}"
+  );
+
+  let out_fmt = tempfile::tempdir().expect("temp dir");
+  let float_snapshot = out_fmt.path().join("wasi-float.cirru");
+  fs::write(
+    &float_snapshot,
+    r#"
+{} (:package |wasi-float-test)
+  :about "|WASI 0.3 float println selective linking test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!) (:target :wasm)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'app.main
+    %{} 'FileEntry
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (println (str (+ 1.25 2.5))) &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+"#,
+  )
+  .expect("write float WASI snapshot");
+  let compile_fmt = calcit(
+    &[float_snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    out_fmt.path(),
+  );
+  assert!(compile_fmt.status.success(), "{}", String::from_utf8_lossy(&compile_fmt.stderr));
+  let fmt_bytes = fs::read(out_fmt.path().join("program.wasm")).expect("read float wasi component");
+  wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+    .validate_all(&fmt_bytes)
+    .expect("float WASI component must validate cleanly");
+  let fmt_offsets = component_core_data_offsets(&fmt_bytes);
+  assert!(
+    fmt_offsets.contains(&NUMBER_TABLE_BASE),
+    "WASI float println must keep Ryū table {NUMBER_TABLE_BASE}, got {fmt_offsets:?}"
+  );
+
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let run = Command::new(cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "-W",
+        "component-model-async-stackful=y",
+      ])
+      .arg(out_fmt.path().join("program.wasm"))
+      .output()
+      .expect("run float WASI 0.3 command");
+    assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "3.75\n");
+  }
+}
