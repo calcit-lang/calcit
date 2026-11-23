@@ -83,6 +83,8 @@ struct ReachabilityState<'a> {
   seen_impls: Vec<Arc<crate::wasm::host::calcit::CalcitImpl>>,
   seen_impl_ptrs: HashSet<usize>,
   visited_annotations: HashSet<usize>,
+  retained_annotations: Vec<Arc<CalcitTypeAnnotation>>,
+  active_alias_expansions: Vec<(Arc<str>, Vec<CalcitTypeAnnotation>)>,
   extra_exprs: Vec<Calcit>,
 }
 
@@ -111,6 +113,8 @@ impl<'a> ReachabilityState<'a> {
       seen_impls: Vec::new(),
       seen_impl_ptrs: HashSet::new(),
       visited_annotations: HashSet::new(),
+      retained_annotations: Vec::new(),
+      active_alias_expansions: Vec::new(),
       extra_exprs: Vec::new(),
     }
   }
@@ -296,9 +300,20 @@ impl<'a> ReachabilityState<'a> {
         for arg in args.iter() {
           self.visit_annotation(arg, current_ns);
         }
+        let key_args: Vec<CalcitTypeAnnotation> = args.iter().map(|arg| arg.as_ref().clone()).collect();
+        if self
+          .active_alias_expansions
+          .iter()
+          .any(|(active_name, active_args)| active_name == name && active_args == &key_args)
+        {
+          return;
+        }
         let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
         if !Arc::ptr_eq(&expanded, annotation) {
+          self.retained_annotations.push(expanded.clone());
+          self.active_alias_expansions.push((name.clone(), key_args));
           self.visit_annotation(&expanded, current_ns);
+          self.active_alias_expansions.pop();
         }
       }
       CalcitTypeAnnotation::Custom(val) => {

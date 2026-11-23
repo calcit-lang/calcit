@@ -1729,3 +1729,130 @@ fn selective_linking_elides_unused_number_format_and_preserves_formatting_semant
     .expect("print-float export");
   assert_eq!(print_float.call(&mut print_store, ()).expect("print-float executes"), 0.75);
 }
+
+#[test]
+fn native_wasi_export_name_preserves_qualification_when_uncalled_same_named_fn_is_pruned() {
+  let dir = TestDirectory::create("wasi-native-export-qualification");
+  let snapshot_path = dir.0.join("calcit.cirru");
+  let snapshot = r#"
+{}
+  :about "|Preserve qualified WASI native export name when uncalled collision is pruned"
+  :package |app
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'app.lib $ %{} 'FileEntry
+      :defs $ {}
+        'score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn score () 7
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.lib
+    'app.main $ %{} 'FileEntry
+      :defs $ {}
+        'score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export score () 42
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'unused-caller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn unused-caller () (lib/score)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (score)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+          :require
+            app.lib :as lib
+"#;
+  fs::write(&snapshot_path, snapshot).expect("test snapshot should write");
+  let out_dir = dir.0.join("out");
+  fs::create_dir(&out_dir).expect("wasi output directory should create");
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot_path)
+    .args(["wasi", "--boundary", "native", "--emit-path"])
+    .arg(&out_dir)
+    .output()
+    .expect("WASI (native) compilation command should run");
+  assert!(
+    compile.status.success(),
+    "WASI (native) compilation failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+  let bytes = fs::read(out_dir.join("program.wasm")).expect("wasi wasm bytes should read");
+  let parsed = parse_wasm_module(&bytes);
+  assert!(
+    parsed.exports.contains_key("app.main/score"),
+    "expected qualified export `app.main/score`, got {:?}",
+    parsed.exports.keys().collect::<Vec<_>>()
+  );
+  assert!(
+    !parsed.exports.contains_key("score"),
+    "short export `score` must not shadow qualified `app.main/score`"
+  );
+}
+
+#[test]
+fn recursive_and_nested_generic_deftype_aliases_do_not_overflow_reachability() {
+  let dir = TestDirectory::create("wasm-cyclic-nested-deftype");
+  let snapshot = r#"
+{}
+  :about "|Verify cyclic and nested generic deftype aliases terminate in reachability walk"
+  :package |aliascheck
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'aliascheck.main/main!) (:mode :native) (:reload-fn 'aliascheck.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'aliascheck.main $ %{} 'FileEntry
+      :defs $ {}
+        'BoxItem $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct BoxItem (:value Number)
+          :examples $ []
+        'Nodes $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Nodes (List Nodes)
+          :examples $ []
+        'Wrap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Wrap (:generics T) (List T)
+          :examples $ []
+        'check-cyclic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn check-cyclic (xs) 1
+          :examples $ []
+          :schema $ quote $ Fn Nodes (-> Number)
+        'check-nested $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn check-nested (xs) (count xs)
+          :examples $ []
+          :schema $ quote $ Fn (Wrap (Wrap BoxItem)) (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                a $ check-cyclic ([] )
+                b $ check-nested ([] )
+              + a b
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns aliascheck.main (:require)
+"#;
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _parsed = parse_wasm_module(&bytes);
+}

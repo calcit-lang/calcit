@@ -354,8 +354,11 @@ fn emit_wasm_impl(
     },
   );
 
-  // First pass: extract reachable function signatures from all namespaces.
+  // First pass: extract reachable function signatures from all namespaces,
+  // while counting pre-pruning fn_defs per bare name so Native export names
+  // stay qualified if an uncalled same-named dependency exists.
   let mut fn_defs: Vec<(String, String, CalcitFnArgs, Vec<Calcit>)> = Vec::new(); // (ns, def_name, args, body)
+  let mut native_export_name_counts: HashMap<String, usize> = HashMap::new();
 
   // Collect init_ns first, then other namespaces (ordering for export clarity)
   let ns_order = deterministic_namespace_order(&program_data, Some(init_ns));
@@ -365,20 +368,26 @@ fn emit_wasm_impl(
       continue;
     };
     for (def_name, compiled) in deterministic_definition_order(file_info) {
-      if !reachable_defs.contains(&(ns.to_string(), def_name.to_string())) {
-        continue;
-      }
       if compiled.kind != program::CompiledDefKind::Fn {
         continue;
       }
       if is_wasm_import_def(&compiled.preprocessed_code) {
-        parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
-          format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
-        })?;
+        if reachable_defs.contains(&(ns.to_string(), def_name.to_string())) {
+          parse_wasm_import_def(&compiled.preprocessed_code).ok_or_else(|| {
+            format!("[wasm] invalid import declaration {ns}/{def_name}: expected `defwasm-import name (args) |module |field`")
+          })?;
+        }
+        continue;
+      }
+      if !reachable_defs.contains(&(ns.to_string(), def_name.to_string())) {
+        if extract_fn_parts(&compiled.preprocessed_code).is_ok() {
+          *native_export_name_counts.entry(def_name.to_string()).or_insert(0) += 1;
+        }
         continue;
       }
       match extract_fn_parts(&compiled.preprocessed_code) {
         Ok((args, body)) => {
+          *native_export_name_counts.entry(def_name.to_string()).or_insert(0) += 1;
           fn_defs.push((ns.to_string(), def_name.to_string(), args, body));
         }
         Err(e) => {
@@ -1342,7 +1351,7 @@ fn emit_wasm_impl(
       .get(ns.as_str())
       .and_then(|file| file.defs.get(def_name.as_str()))
       .is_some_and(|compiled| is_wasm_export_def(&compiled.preprocessed_code));
-    let export_name = if export_name_counts.get(def_name).copied().unwrap_or(0) > 1 {
+    let export_name = if native_export_name_counts.get(def_name).copied().unwrap_or(0) > 1 {
       format!("{ns}/{def_name}")
     } else {
       def_name.clone()
