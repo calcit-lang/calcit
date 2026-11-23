@@ -2724,8 +2724,17 @@ pub(crate) fn check_trait_method_signatures(args: &CalcitList) -> Option<(String
 fn resolve_trait_parent_for_preprocess(item: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTrait>> {
   match item {
     Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
-    Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
-      .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
+    Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+      Some(Calcit::Trait(trait_def)) => {
+        if trait_def.definition_ref.is_some() {
+          Some(trait_def)
+        } else {
+          Some(Arc::new(trait_def.as_ref().clone().with_definition_ref(&import.ns, &import.def)))
+        }
+      }
+      _ => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def))),
+    },
     Calcit::Local(_) => resolve_type_value(item, scope_types)
       .and_then(|annotation| annotation.as_trait_definition().cloned())
       .map(Arc::new),
@@ -2839,7 +2848,9 @@ pub(crate) fn check_trait_requires_declaration(
 /// one nominal trait origin on the same type, and require impls of all traits
 /// each attached origin declares in `requires`.
 pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &ScopeTypes) -> Option<(&'static str, String)> {
-  let base = resolve_type_value(args.first()?, scope_types)?;
+  let base_expr = args.first()?;
+  let base = resolve_type_value(base_expr, scope_types)?;
+  let mut base_impls_complete = true;
   let mut impls: Vec<Arc<CalcitImpl>> = match base.as_ref() {
     CalcitTypeAnnotation::StructDef(definition)
     | CalcitTypeAnnotation::Struct(definition, _)
@@ -2848,6 +2859,16 @@ pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &S
     | CalcitTypeAnnotation::Enum(definition, _)
     | CalcitTypeAnnotation::EnumValue(definition) => definition.impls().to_vec(),
     CalcitTypeAnnotation::TypeRef(name, _) => {
+      // A `TypeRef` value (such as a parameter or return annotation) can carry
+      // extra instance-level impls at runtime, so its definition's impl table is
+      // complete only when the receiver expression itself is the nominal type
+      // definition (`defstruct` / `defenum`).
+      let source_definition = match base_expr {
+        Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def),
+        Calcit::Symbol { sym, info, .. } => program::lookup_def_code(&info.at_ns, sym),
+        _ => None,
+      };
+      base_impls_complete = source_definition.as_ref().is_some_and(code_resolves_to_nominal_type_def);
       let reference = name.trim_start_matches('\'').trim_start_matches(':');
       if let Some((ns, def)) = reference.rsplit_once('/')
         && let Some(resolved) = resolve_program_value_for_preprocess(ns, def, None)
@@ -2892,7 +2913,7 @@ pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &S
       ));
     }
   }
-  if !all_resolved {
+  if !all_resolved || !base_impls_complete {
     return None;
   }
   for imp in impls.iter() {

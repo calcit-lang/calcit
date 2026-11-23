@@ -1753,6 +1753,20 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
     changed_files.push((ns, info, file));
   }
 
+  // Stage `(:impls …)` attachments on a copy so any attachment error rejects
+  // the reload before live code, runtime values, or compiled caches are altered.
+  let mut staged_program = program_code.clone();
+  for (ns, file_info) in &added_files {
+    staged_program.insert(ns.to_owned(), file_info.to_owned());
+  }
+  for ns in &changes.removed {
+    staged_program.remove(ns);
+  }
+  for (ns, _, file) in &changed_files {
+    staged_program.insert((*ns).to_owned(), file.to_owned());
+  }
+  let staged_attachments = impl_attach::stage_source_impls(&staged_program)?;
+
   // Phase 2: commit.
   // Slot-only references are absent from runtime dependency edges. Rebuild
   // consumers when source changes, including transitive representative aliases.
@@ -1794,10 +1808,10 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   }
 
   // `defimpl Type Trait` attaches to its type's definition, which may live in
-  // a namespace this change did not touch. Re-attach across the program, then
+  // a namespace this change did not touch. Commit validated attachments and
   // rebuild every type whose attached code changed, with its dependents.
   let before = impl_attach::generated_attachments();
-  let after = impl_attach::attach_source_impls(&mut program_code)?;
+  let after = impl_attach::commit_staged_impls(&mut program_code, staged_attachments);
   let mut seed_ids: HashSet<DefId> = HashSet::new();
   for key in before.keys().chain(after.iter()) {
     let (ns, def) = key;

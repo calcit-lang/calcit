@@ -209,25 +209,52 @@ fn find_impl(program: &ProgramCodeData, type_key: &DefKey, trait_key: &DefKey) -
   found
 }
 
-/// Put back the code as written for definitions this module attached.
-fn restore_written_code(program: &mut ProgramCodeData) {
-  let mut written = WRITTEN_CODE.lock().expect("lock written type code");
-  written.retain(|(ns, def), (original, generated)| {
-    if let Some(entry) = program.get_mut(ns).and_then(|file| file.defs.get_mut(def))
-      && entry.code == *generated
-    {
-      original.clone_into(&mut entry.code);
+/// Follow simple top-level alias definitions (`def Alias Target`) to the underlying nominal trait key.
+fn resolve_trait_origin(program: &ProgramCodeData, start: &DefKey) -> DefKey {
+  let mut current = start.clone();
+  let mut visited = vec![start.clone()];
+  while let Some(file) = program.get(&current.0)
+    && let Some(entry) = file.defs.get(&current.1)
+  {
+    let target_form = match &entry.code {
+      Calcit::List(items) if items.len() == 3 && items.first().and_then(symbol_name) == Some("def") => items.get(2),
+      other => Some(other),
+    };
+    let Some(target) = target_form else { break };
+    let next = match target {
+      Calcit::Symbol { sym, .. } => resolve_in(program, &current.0, file, sym.as_ref()),
+      Calcit::Import(import) => Some((import.ns.clone(), import.def.clone())),
+      _ => None,
+    };
+    let Some(next_key) = next else { break };
+    if visited.contains(&next_key) {
+      break;
     }
-    false
-  });
+    visited.push(next_key.clone());
+    current = next_key;
+  }
+  current
 }
 
-/// Attach the implementations named by each type's `(:impls …)` clause.
-/// Returns the definitions whose code was rewritten.
-pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<DefKey>, String> {
-  restore_written_code(program);
+/// View the written form of a definition without mutating `program` before validation succeeds.
+fn effective_written_code<'a>(key: &DefKey, current: &'a Calcit, written: &'a HashMap<DefKey, (Calcit, Calcit)>) -> &'a Calcit {
+  match written.get(key) {
+    Some((original, generated)) if current == generated => original,
+    _ => current,
+  }
+}
 
-  let mut rewrites: Vec<(DefKey, Calcit)> = vec![];
+/// Validated `(:impls …)` rewrites waiting to be committed to live program state.
+pub(crate) struct StagedSourceImpls {
+  rewrites: HashMap<DefKey, (Calcit, Calcit)>,
+}
+
+/// Validate and stage all `(:impls …)` attachments on `program` without mutating
+/// `program` or global attachment state if any check fails.
+pub(crate) fn stage_source_impls(program: &ProgramCodeData) -> Result<StagedSourceImpls, String> {
+  let written = WRITTEN_CODE.lock().expect("lock written type code").clone();
+
+  let mut rewrites: HashMap<DefKey, (Calcit, Calcit)> = HashMap::new();
   let mut namespaces: Vec<&Arc<str>> = program.keys().collect();
   namespaces.sort();
   for ns in namespaces {
@@ -235,16 +262,18 @@ pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<D
     let mut defs: Vec<&Arc<str>> = file.defs.keys().collect();
     defs.sort();
     for def in defs {
-      let code = &file.defs[def].code;
+      let type_key: DefKey = (ns.to_owned(), def.to_owned());
+      let code = effective_written_code(&type_key, &file.defs[def].code, &written);
       if nominal_form(code).is_none() {
         continue;
       }
       let Some((traits, without_clause)) = take_impls_clause(code) else {
         continue;
       };
-      let type_key: DefKey = (ns.to_owned(), def.to_owned());
-      let mut refs = Vec::with_capacity(traits.len());
-      let mut seen_traits: Vec<DefKey> = Vec::with_capacity(traits.len());
+      // Check all listed entries for visibility and origin uniqueness before any
+      // `defimpl` lookup so errors stay independent of entry order.
+      let mut resolved_traits: Vec<(&str, DefKey)> = Vec::with_capacity(traits.len());
+      let mut seen_origins: Vec<DefKey> = Vec::with_capacity(traits.len());
       for trait_form in &traits {
         let Some(trait_name) = symbol_name(trait_form) else {
           return Err(format!(
@@ -256,13 +285,19 @@ pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<D
             "[{UNKNOWN_IMPLS_TRAIT_ERROR}] {ns}/{def}: `(:impls {trait_name})` does not name a trait visible in `{ns}`; import it or write `namespace/Trait`"
           ));
         };
-        if seen_traits.contains(&trait_key) {
+        let origin_key = resolve_trait_origin(program, &trait_key);
+        if seen_origins.contains(&origin_key) {
           return Err(format!(
             "[{DUPLICATE_TRAIT_IMPL_ERROR}] {ns}/{def} lists {}/{} more than once in `(:impls …)`; remove the duplicate trait entry",
-            trait_key.0, trait_key.1
+            origin_key.0, origin_key.1
           ));
         }
-        seen_traits.push(trait_key.clone());
+        seen_origins.push(origin_key);
+        resolved_traits.push((trait_name, trait_key));
+      }
+
+      let mut refs = Vec::with_capacity(resolved_traits.len());
+      for (trait_name, trait_key) in resolved_traits {
         let found = find_impl(program, &type_key, &trait_key);
         match found.as_slice() {
           [] => {
@@ -285,22 +320,44 @@ pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<D
       } else {
         attach(&without_clause, &refs)
       };
-      rewrites.push((type_key, generated));
+      rewrites.insert(type_key, (code.to_owned(), generated));
     }
   }
 
+  Ok(StagedSourceImpls { rewrites })
+}
+
+/// Commit staged `(:impls …)` rewrites to `program` and record the active
+/// written-source map. Previously attached definitions that no longer have an
+/// `(:impls …)` clause are restored to their written code unless already edited.
+pub(crate) fn commit_staged_impls(program: &mut ProgramCodeData, staged: StagedSourceImpls) -> Vec<DefKey> {
   let mut written = WRITTEN_CODE.lock().expect("lock written type code");
-  let mut attached = Vec::with_capacity(rewrites.len());
-  for (key, generated) in rewrites {
+  for ((ns, def), (original, old_generated)) in written.iter() {
+    if !staged.rewrites.contains_key(&(ns.to_owned(), def.to_owned()))
+      && let Some(entry) = program.get_mut(ns).and_then(|file| file.defs.get_mut(def))
+      && entry.code == *old_generated
+    {
+      original.clone_into(&mut entry.code);
+    }
+  }
+  let mut attached = Vec::with_capacity(staged.rewrites.len());
+  for (key, (_, generated)) in &staged.rewrites {
     let Some(entry) = program.get_mut(&key.0).and_then(|file| file.defs.get_mut(&key.1)) else {
       continue;
     };
-    let original = std::mem::replace(&mut entry.code, generated.to_owned());
-    written.insert(key.clone(), (original, generated));
-    attached.push(key);
+    generated.clone_into(&mut entry.code);
+    attached.push(key.to_owned());
   }
+  *written = staged.rewrites;
   attached.sort();
-  Ok(attached)
+  attached
+}
+
+/// Attach the implementations named by each type's `(:impls …)` clause.
+/// Returns the definitions whose code was rewritten.
+pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<DefKey>, String> {
+  let staged = stage_source_impls(program)?;
+  Ok(commit_staged_impls(program, staged))
 }
 
 /// Definitions currently carrying generated code, with that code.

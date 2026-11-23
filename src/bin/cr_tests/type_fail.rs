@@ -2124,10 +2124,16 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
         "duplicate implementation of trait",
       ),
       (
-        "missing-parent-on-typeref-param",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-child (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  impl-traits w child-impl\ndefn main! () (do (attach-child (Widget0 :n 1)) &unit)",
+        "missing-parent-on-struct-value",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (Widget0 :n 1) child-impl))) &unit",
         "E_IMPL_MISSING_REQUIRED_TRAIT",
         "requires an impl of trait",
+      ),
+      (
+        "imported-parent-alias-member-conflict",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ParentAlias ParentT\ndef ChildT $ deftrait ChildT (requires ParentAlias) $ .label $ Fn Self (-> String)\ndefn main! () (do ChildT &unit)",
+        "E_TRAIT_REQUIRES",
+        "member `label` is declared by both",
       ),
       (
         "missing-parent-on-enum-value",
@@ -2152,6 +2158,26 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
       let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
       assert!(err.contains(code), "{name} should report {code}: {err}");
       assert!(err.contains(detail), "{name} should explain `{detail}`: {err}");
+    }
+  });
+}
+
+#[test]
+fn strict_type_check_allows_trait_parent_alias_and_decorated_typeref_impl_attachment() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (name, snippet) in [
+      (
+        "parent-alias-satisfied",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ParentAlias ParentT\ndef ChildT $ deftrait ChildT (requires ParentAlias) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (impl-traits (Widget0 :n 1) parent-impl child-impl))) &unit",
+      ),
+      (
+        "decorated-typeref-param",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-child (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits w child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-child (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      run_check_only(&entries).unwrap_or_else(|err| panic!("{name} must pass strict check-only: {err}"));
     }
   });
 }

@@ -1944,25 +1944,46 @@
               assert= g $ assert-traits g Labeled
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
-          :tests $ [] $ %{} 'TestEntry (:name |local-requires-parent-satisfied)
-            :code $ quote $ let
-                LocalParent $ deftrait LocalParent $ .label
-                  Fn Self $ -> String
-                LocalChild $ deftrait LocalChild (requires LocalParent)
-                  .greet $ Fn Self $ -> String
-                Box0 $ defstruct Box0 $ :name String
-                p-impl $ defimpl Box0 LocalParent $ .label
-                  fn (x) (:name x)
-                c-impl $ defimpl Box0 LocalChild $ .greet
-                  fn (x)
-                    str |hi: $ :name x
-                Box $ impl-traits Box0 p-impl c-impl
-                v $ Box :name |Ada
-              assert= v $ assert-traits v LocalChild
-              assert= v $ assert-traits v LocalParent
-              assert= |Ada $ .label v
-              assert= |hi:Ada $ .greet v
-            :tags $ #{} :trait :unit
+          :tests $ []
+            %{} 'TestEntry (:name |local-requires-parent-satisfied)
+              :code $ quote $ let
+                  LocalParent $ deftrait LocalParent $ .label
+                    Fn Self $ -> String
+                  LocalChild $ deftrait LocalChild (requires LocalParent)
+                    .greet $ Fn Self $ -> String
+                  Box0 $ defstruct Box0 $ :name String
+                  p-impl $ defimpl Box0 LocalParent $ .label
+                    fn (x) (:name x)
+                  c-impl $ defimpl Box0 LocalChild $ .greet
+                    fn (x)
+                      str |hi: $ :name x
+                  Box $ impl-traits Box0 p-impl c-impl
+                  v $ Box :name |Ada
+                assert= v $ assert-traits v LocalChild
+                assert= v $ assert-traits v LocalParent
+                assert= |Ada $ .label v
+                assert= |hi:Ada $ .greet v
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |decorated-typeref-runtime-requires)
+              :code $ quote $ let
+                  p-impl $ defimpl Person0 Labeled $ .label
+                    fn (x) (:name x)
+                  c-impl $ defimpl Person0 Greeting $ .greeting
+                    fn (x)
+                      str |hi: $ :name x
+                  attach-greeting $ fn (p)
+                    hint-fn $ Fn Person0 $ -> Person0
+                    &struct:impl-traits p c-impl
+                  decorated $ attach-greeting $ &struct:impl-traits (Person0 :name |Ada) p-impl
+                  err-msg $ try
+                    do
+                      attach-greeting $ Person0 :name |Bob
+                      , |ok
+                    fn (msg) msg
+                assert= decorated $ assert-traits decorated Labeled
+                assert= decorated $ assert-traits decorated Greeting
+                assert= true $ .includes? err-msg "|requires an impl of trait"
+              :tags $ #{} :trait :unit
         'throws-at-expansion? $ %{} 'CodeEntry
           :doc "|Evaluate macro rejection during expansion and emit only its boolean result for shared backend replay."
           :code $ quote $ defmacro throws-at-expansion? (form)

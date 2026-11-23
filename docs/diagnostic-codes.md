@@ -83,7 +83,7 @@
 | `E_DEFN_ARGS_NOT_SYMBOLS` | `src/runner/preprocess/mod.rs` |
 | `E_DEFN_HEADER` | `src/runner/preprocess/mod.rs` |
 | `E_DEFWASM_IMPORT_ARGS` | `src/runner/preprocess/mod.rs` |
-| `E_DUPLICATE_TRAIT_IMPL` | `src/builtins/meta.rs`<br>`src/program/impl_attach.rs`<br>`src/runner/preprocess/mod.rs`<br>`src/runner/preprocess/type_inference.rs` |
+| `E_DUPLICATE_TRAIT_IMPL` | `src/builtins/meta.rs`<br>`src/program/impl_attach.rs`<br>`src/program/tests.rs`<br>`src/runner/preprocess/mod.rs`<br>`src/runner/preprocess/type_inference.rs` |
 | `E_DYNAMIC_CALL` | `src/runner/preprocess/mod.rs` |
 | `E_DYNAMIC_METHOD_DISPATCH` | `src/runner/preprocess/mod.rs` |
 | `E_DYNAMIC_NOMINAL_ARGUMENT` | `src/runner/preprocess/mod.rs` |

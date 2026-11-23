@@ -3409,4 +3409,44 @@ mod tests {
       "ambiguous runtime dispatch must not invoke any candidate"
     );
   }
+
+  #[test]
+  fn runtime_impl_traits_enforces_requires_on_struct_values() {
+    let parent = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Parent"),
+      vec![EdnTag::new("label")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let mut child_def = CalcitTrait::new_runtime(
+      EdnTag::new("Child"),
+      vec![EdnTag::new("greet")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    );
+    child_def.requires = Arc::new(vec![parent.clone()]);
+    let child = Arc::new(child_def);
+
+    let parent_impl = Calcit::Impl(Arc::new(CalcitImpl {
+      name: EdnTag::new("ParentImpl"),
+      origin: Some(parent),
+      fields: Arc::new(vec![EdnTag::new("label")]),
+      values: Arc::new(vec![constant_method("p")]),
+    }));
+    let child_impl = Calcit::Impl(Arc::new(CalcitImpl {
+      name: EdnTag::new("ChildImpl"),
+      origin: Some(child),
+      fields: Arc::new(vec![EdnTag::new("greet")]),
+      values: Arc::new(vec![constant_method("c")]),
+    }));
+
+    let plain_val = Calcit::Struct(CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Widget"), vec![])),
+      values: Arc::new(vec![]),
+    });
+
+    let err = record_impl_traits(&[plain_val.clone(), child_impl.clone()]).expect_err("plain struct without parent must fail");
+    assert_eq!(err.code(), Some("E_IMPL_MISSING_REQUIRED_TRAIT"), "{err:?}");
+
+    let decorated = record_impl_traits(&[plain_val, parent_impl]).expect("attach parent impl");
+    record_impl_traits(&[decorated, child_impl]).expect("decorated struct with parent impl attaches child impl");
+  }
 }

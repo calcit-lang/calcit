@@ -2346,11 +2346,108 @@ fn defimpl_type_trait_is_looked_up_only_in_the_type_and_trait_namespaces() {
   for repeated_source in [
     "defstruct P (:name String) (:impls t/Labeled t/Labeled)",
     "defstruct P (:name String) (:impls t/Labeled app.t/Labeled)",
+    "defstruct P (:name String) (:impls t/Labeled LabeledAlias)",
+    "defstruct P (:name String) (:impls LabeledAlias t/Labeled)",
   ] {
-    let mut repeated = impl_attach_program(repeated_source, &[("P-Labeled", "defimpl P t/Labeled (.label f)")], &[]);
+    let mut repeated = impl_attach_program(
+      repeated_source,
+      &[
+        ("LabeledAlias", "def LabeledAlias t/Labeled"),
+        ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ],
+      &[],
+    );
     let error = impl_attach::attach_source_impls(&mut repeated).expect_err("repeated trait in (:impls ...)");
     assert!(error.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{repeated_source}: {error}");
   }
+}
+
+#[test]
+fn reload_preserves_program_and_caches_when_impls_validation_fails() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let mut program = impl_attach_program(LISTED_TYPE, &[("P-Labeled", "defimpl P t/Labeled (.label f)")], &[]);
+  impl_attach::attach_source_impls(&mut program).expect("initial attach");
+  PROGRAM_CODE_DATA.write().expect("seed program code").extend(program);
+  let p_id = register_program_def_id("app.m", "P");
+  write_runtime_ready("app.m", "P", Calcit::Number(42.0)).expect("seed runtime value for P");
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled cache");
+    compiled.insert(
+      Arc::from("app.m"),
+      CompiledFileData {
+        defs: HashMap::from([(Arc::from("P"), compiled_def_for_test(p_id, vec![]))]),
+      },
+    );
+  }
+  let code = |def: &str| {
+    PROGRAM_CODE_DATA
+      .read()
+      .expect("read code")
+      .get("app.m")
+      .and_then(|file| file.defs.get(def))
+      .map(|entry| entry.code.to_string())
+  };
+  let initial_p = code("P").expect("initial P");
+
+  let mut invalid_changes = snapshot::ChangesDict::default();
+  let mut invalid_info = snapshot::FileChangeInfo {
+    ns: None,
+    added_defs: HashMap::new(),
+    removed_defs: HashSet::new(),
+    changed_defs: HashMap::new(),
+  };
+  let invalid_q = cirru_parser::parse("defstruct Q (:x Number) (:impls t/Labeled t/Labeled)")
+    .expect("parse invalid Q")
+    .remove(0);
+  invalid_info.added_defs.insert(String::from("Q"), invalid_q.into());
+  invalid_changes.changed.insert(Arc::from("app.m"), invalid_info);
+
+  let error = apply_code_changes(&invalid_changes).expect_err("duplicate (:impls ...) must fail reload");
+  assert!(error.contains("E_DUPLICATE_TRAIT_IMPL"), "{error}");
+  assert_eq!(code("Q"), None, "rejected definition must not be installed");
+  assert_eq!(
+    code("P").as_deref(),
+    Some(initial_p.as_str()),
+    "untouched attached type stays attached"
+  );
+  assert_eq!(
+    lookup_runtime_cell("app.m", "P"),
+    Some(RuntimeCell::Ready(Calcit::Number(42.0))),
+    "failed reload must leave runtime value intact"
+  );
+  assert!(
+    lookup_compiled_def("app.m", "P").is_some(),
+    "failed reload must leave compiled cache intact"
+  );
+
+  let mut valid_changes = snapshot::ChangesDict::default();
+  let mut valid_info = snapshot::FileChangeInfo {
+    ns: None,
+    added_defs: HashMap::new(),
+    removed_defs: HashSet::new(),
+    changed_defs: HashMap::new(),
+  };
+  let valid_q = cirru_parser::parse("defstruct Q (:x Number) (:impls t/Labeled)")
+    .expect("parse valid Q")
+    .remove(0);
+  let valid_impl = cirru_parser::parse("defimpl Q t/Labeled (.label f)")
+    .expect("parse valid impl")
+    .remove(0);
+  valid_info.added_defs.insert(String::from("Q"), valid_q.into());
+  valid_info.added_defs.insert(String::from("Q-Labeled"), valid_impl.into());
+  valid_changes.changed.insert(Arc::from("app.m"), valid_info);
+
+  apply_code_changes(&valid_changes).expect("corrected reload should succeed");
+  assert_eq!(
+    code("Q").as_deref(),
+    Some("([] 'calcit.core/impl-traits ([] 'defstruct 'Q ([] :x 'Number)) 'Q-Labeled)")
+  );
+  assert_eq!(
+    code("P").as_deref(),
+    Some(initial_p.as_str()),
+    "existing attached type remains attached"
+  );
 }
 
 #[test]
