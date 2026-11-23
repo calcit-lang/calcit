@@ -301,8 +301,19 @@ export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitVa
   return traitDef;
 };
 
-/** Every attached impl needs impls of all traits its origin requires on the same type. */
-let checkRequiredTraitImpls = (impls: (CalcitImpl | null | undefined)[], procName: string): void => {
+/** Reject duplicate nominal trait origins and require impls of all traits each origin requires on the same type. */
+let checkAttachedTraitImpls = (impls: (CalcitImpl | null | undefined)[], procName: string): void => {
+  const seenOrigins = new Set<CalcitTrait>();
+  for (const impl of impls) {
+    const origin = impl?.origin;
+    if (origin == null) continue;
+    if (seenOrigins.has(origin)) {
+      throw new Error(
+        `[E_DUPLICATE_TRAIT_IMPL] ${procName}: duplicate implementation of trait ${origin.name.toString()} on the same type; a type has at most one implementation per nominal trait origin`
+      );
+    }
+    seenOrigins.add(origin);
+  }
   for (const impl of impls) {
     const origin = impl?.origin;
     if (origin == null) continue;
@@ -310,7 +321,7 @@ let checkRequiredTraitImpls = (impls: (CalcitImpl | null | undefined)[], procNam
       if (required === origin) continue;
       if (!impls.some((candidate) => candidate?.origin === required)) {
         throw new Error(
-          `${procName}: an impl of trait ${origin.name.toString()} requires an impl of trait ${required.name.toString()} on the same type; attach one before or with it`
+          `[E_IMPL_MISSING_REQUIRED_TRAIT] ${procName}: an impl of trait ${origin.name.toString()} requires an impl of trait ${required.name.toString()} on the same type; attach one before or with it`
         );
       }
     }
@@ -799,7 +810,7 @@ export let _$n_enum_$o_impl_traits = function (x: CalcitValue, ...traits: Calcit
   if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
   if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:impl-traits expects an enum value");
   const impls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
-  checkRequiredTraitImpls([...(x.enumPrototype?.impls ?? []), ...impls], "&enum:impl-traits");
+  checkAttachedTraitImpls([...(x.enumPrototype?.impls ?? []), ...impls], "&enum:impl-traits");
   let proto = x.enumPrototype;
   if (proto == null) {
     const tagName = x.tag instanceof CalcitTag ? x.tag : newTag("tag");
@@ -945,7 +956,7 @@ export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
   if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
   const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
-  checkRequiredTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
+  checkAttachedTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
   const nextStruct = xs.structRef.withImpls(xs.structRef.impls.concat(impls));
   return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
@@ -955,7 +966,7 @@ export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits:
   if (!(xs instanceof CalcitStructDef)) throw new Error("&struct-def:impl-traits expected a struct definition");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
   const baseImpls = xs.impls ?? [];
-  checkRequiredTraitImpls(baseImpls.concat(addedImpls), "&struct-def:impl-traits");
+  checkAttachedTraitImpls(baseImpls.concat(addedImpls), "&struct-def:impl-traits");
   return xs.withImpls(baseImpls.concat(addedImpls));
 };
 
@@ -963,7 +974,7 @@ export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: C
   if (traits.length < 1) throw new Error("&enum-def:impl-traits takes 2+ arguments");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&enum-def:impl-traits"));
   if (xs instanceof CalcitEnumDef) {
-    checkRequiredTraitImpls([...(xs.impls ?? []), ...addedImpls], "&enum-def:impl-traits");
+    checkAttachedTraitImpls([...(xs.impls ?? []), ...addedImpls], "&enum-def:impl-traits");
     return xs.withImpls(addedImpls);
   }
   throw new Error("&enum-def:impl-traits expected an enum definition");
@@ -3308,17 +3319,77 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[
 }
 
 export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
+  if (
+    obj instanceof CalcitStructValue ||
+    obj instanceof CalcitEnumValue ||
+    obj instanceof CalcitStructDef ||
+    obj instanceof CalcitEnumDef
+  ) {
+    let userImpls: CalcitImpl[];
+    let builtinImpls: CalcitImpl[];
+    let tag: string;
+    if (obj instanceof CalcitStructValue) {
+      tag = obj.name.toString();
+      userImpls = obj.structRef.impls ?? [];
+      builtinImpls = normalize_builtin_impls(calcit_builtin_impls.struct) ?? [];
+    } else if (obj instanceof CalcitEnumValue) {
+      tag = obj.tag.toString();
+      userImpls = obj.impls ?? [];
+      builtinImpls = normalize_builtin_impls(calcit_builtin_impls.enum) ?? [];
+    } else if (obj instanceof CalcitStructDef) {
+      tag = obj.name.toString();
+      userImpls = obj.impls ?? [];
+      builtinImpls = normalize_builtin_impls(calcit_builtin_impls.struct) ?? [];
+    } else {
+      tag = obj.name();
+      userImpls = obj.impls ?? [];
+      builtinImpls = normalize_builtin_impls(calcit_builtin_impls.enum) ?? [];
+    }
+    const userMatches = userImpls.filter((klass) => klass != null && klass.getOrNil(p) != null);
+    if (userMatches.length === 1) {
+      const method = userMatches[0].getOrNil(p);
+      if (typeof method !== "function") {
+        throw new Error(`Method '.${p}' for '${tag}' is not a function: ${method}`);
+      }
+      return method(obj, ...args);
+    }
+    if (userMatches.length > 1) {
+      const firstOrigin = userMatches[0].origin;
+      const duplicateOrigin = firstOrigin != null && userMatches.every((m) => m.origin === firstOrigin);
+      const origins = userMatches
+        .map((m) => (m.origin != null ? m.origin.name.toString() : `<originless>/${m.name.toString()}`))
+        .join(", ");
+      if (duplicateOrigin) {
+        throw new Error(
+          `[E_DUPLICATE_TRAIT_IMPL] ambiguous method \`.${p}\` has multiple implementations of the same nominal trait origin: ${origins}; remove duplicate impl attachments`
+        );
+      }
+      throw new Error(
+        `[E_AMBIGUOUS_TRAIT_METHOD] ambiguous method \`.${p}\` has multiple nominal trait origins: ${origins}; use \`&trait-call Trait :${p} receiver ...\` to select a nominal trait origin`
+      );
+    }
+    for (let idx = 0; idx < builtinImpls.length; idx++) {
+      const klass = builtinImpls[idx];
+      if (klass != null) {
+        const method = klass.getOrNil(p);
+        if (method != null) {
+          if (typeof method !== "function") {
+            throw new Error(`Method '.${p}' for '${tag}' is not a function: ${method}`);
+          }
+          return method(obj, ...args);
+        }
+      }
+    }
+    throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.`);
+  }
   let pair = lookup_impls(obj);
   if (pair == null) {
     throw new Error(`No implementation for ${obj?.toString() || JSON.stringify(obj)} to lookup .${p}`);
   }
   let impls = pair[0];
   let tag = pair[1];
-  // builtin impl lists are ordered by priority in calcit-core.
-  // user-defined values use impl-traits append, so later impls override earlier ones.
-  let reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
-  let idx = reverse ? impls.length - 1 : 0;
-  while (reverse ? idx >= 0 : idx < impls.length) {
+  // Built-in impl lists are ordered by priority in calcit-core.
+  for (let idx = 0; idx < impls.length; idx++) {
     let klass = impls[idx];
     if (klass != null) {
       let method = klass.getOrNil(p);
@@ -3329,7 +3400,6 @@ export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[
         return method(obj, ...args);
       }
     }
-    idx += reverse ? -1 : 1;
   }
   throw new Error(`No method '.${p}' for '${tag}' object '${obj}'.`);
 }

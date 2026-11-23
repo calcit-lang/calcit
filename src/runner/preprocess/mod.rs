@@ -6933,13 +6933,23 @@ fn preprocess_list_call(
           );
           let requires_error = match proc {
             CalcitProc::NativeTraitNew => {
-              // `deftrait` expands inside `def`, so the enclosing definition
-              // comes from the call location rather than the macro context.
-              let trait_def_name = call_stack
-                .0
-                .iter()
-                .find(|frame| frame.ns.as_ref() == file_ns && !matches!(frame.kind, StackKind::Macro))
-                .map(|frame| frame.def.to_string())
+              // `deftrait` expands inside `def`, so prefer the active compiling
+              // definition, then the resolved proc call location or stack leaf.
+              let compiling_def = builtins::meta::current_compiling_key(file_ns)
+                .strip_prefix(&format!("{file_ns}/"))
+                .filter(|name| *name != "??" && *name != GENERATED_DEF)
+                .map(str::to_owned);
+              let trait_def_name = compiling_def
+                .or_else(|| {
+                  (proc_call_def.as_ref() != "??" && proc_call_def.as_ref() != GENERATED_DEF).then(|| proc_call_def.to_string())
+                })
+                .or_else(|| {
+                  call_stack
+                    .0
+                    .iter()
+                    .find(|frame| frame.ns.as_ref() == file_ns && !matches!(frame.kind, StackKind::Macro))
+                    .map(|frame| frame.def.to_string())
+                })
                 .unwrap_or_else(|| def_name.to_string());
               // Reachable declarations may be compiled beneath a caller frame;
               // quoted signature nodes still identify their owning CodeEntry.
@@ -6960,14 +6970,15 @@ fn preprocess_list_call(
                   .with_code("E_TRAIT_METHOD_SIGNATURE"),
                 );
               }
-              type_inference::check_trait_requires_declaration(&processed_args, file_ns, &trait_def_name)
+              type_inference::check_trait_requires_declaration(&processed_args, scope_types, file_ns, &signature_owner)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
             }
             CalcitProc::NativeStructImplTraits
             | CalcitProc::NativeEnumImplTraits
             | CalcitProc::NativeStructValueImplTraits
-            | CalcitProc::NativeEnumValueImplTraits => type_inference::check_impl_attachment_requires(&processed_args, scope_types)
-              .map(|message| (message, "E_IMPL_MISSING_REQUIRED_TRAIT")),
+            | CalcitProc::NativeEnumValueImplTraits => {
+              type_inference::check_impl_attachment_coherence(&processed_args, scope_types).map(|(code, message)| (message, code))
+            }
             _ => None,
           };
           if let Some((message, code)) = requires_error {
@@ -7808,12 +7819,12 @@ fn preprocess_known_function_call(
     );
     if info.def_ns.as_ref() == calcit::CORE_NS
       && info.name.as_ref() == "impl-traits"
-      && let Some(message) = type_inference::check_impl_attachment_requires(&current_args, scope_types)
+      && let Some((code, message)) = type_inference::check_impl_attachment_coherence(&current_args, scope_types)
     {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
         message,
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        code,
         call_stack,
         call_location.clone(),
       ));
@@ -12167,13 +12178,9 @@ fn try_inline_method_call(
         ImplMethodResolution::Selected(candidate) => candidate,
         ImplMethodResolution::Ambiguous(mut candidates) => {
           if strict_types_enabled() {
-            let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>().join(", ");
-            return Err(CalcitErr::use_msg_stack_location_with_code(
-              CalcitErrKind::Type,
-              format!(
-                "ambiguous strict method `.{method_name}` has candidates from {origins}; use `&trait-call Trait :{method_name} receiver ...` to select a nominal trait origin"
-              ),
-              "E_AMBIGUOUS_TRAIT_METHOD",
+            return Err(ambiguous_impl_method_error(
+              method_name.as_ref(),
+              &candidates,
               call_stack,
               head.get_location(),
             ));
@@ -12977,33 +12984,9 @@ fn validate_method_call(
       return Ok(());
     }
     ImplMethodResolution::Ambiguous(candidates) if strict_types_enabled() => {
-      let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>();
-      let duplicate_origin = candidates
-        .first()
-        .and_then(|candidate| candidate.impl_value.origin())
-        .is_some_and(|first_origin| {
-          candidates.iter().skip(1).all(|candidate| {
-            candidate
-              .impl_value
-              .origin()
-              .is_some_and(|origin| origin.has_same_origin(first_origin))
-          })
-        });
-      let (code, detail) = if duplicate_origin {
-        (
-          "E_DUPLICATE_TRAIT_IMPL",
-          "multiple implementations of the same nominal trait origin",
-        )
-      } else {
-        ("E_AMBIGUOUS_TRAIT_METHOD", "multiple nominal trait origins")
-      };
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        format!(
-          "ambiguous strict method `.{method_name}` has {detail}: {}; use `&trait-call Trait :{method_name} receiver ...` when the origins differ, and remove duplicate impl attachments when they are the same",
-          origins.join(", ")
-        ),
-        code,
+      return Err(ambiguous_impl_method_error(
+        method_str,
+        &candidates,
         call_stack,
         head.get_location(),
       ));
@@ -13776,6 +13759,44 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     _ => return false,
   };
   candidate.impl_value.is_inherent() && candidate.impl_value.name().ref_str() == expected_name
+}
+
+fn ambiguous_impl_method_error(
+  method_name: &str,
+  candidates: &[ImplMethodCandidate<'_>],
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> CalcitErr {
+  let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>();
+  let duplicate_origin = candidates
+    .first()
+    .and_then(|candidate| candidate.impl_value.origin())
+    .is_some_and(|first_origin| {
+      candidates.iter().skip(1).all(|candidate| {
+        candidate
+          .impl_value
+          .origin()
+          .is_some_and(|origin| origin.has_same_origin(first_origin))
+      })
+    });
+  let (code, detail) = if duplicate_origin {
+    (
+      "E_DUPLICATE_TRAIT_IMPL",
+      "multiple implementations of the same nominal trait origin",
+    )
+  } else {
+    ("E_AMBIGUOUS_TRAIT_METHOD", "multiple nominal trait origins")
+  };
+  CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "ambiguous strict method `.{method_name}` has {detail}: {}; use `&trait-call Trait :{method_name} receiver ...` when the origins differ, and remove duplicate impl attachments when they are the same",
+      origins.join(", ")
+    ),
+    code,
+    call_stack,
+    location,
+  )
 }
 
 fn impl_candidate_origin(candidate: &ImplMethodCandidate<'_>) -> String {
@@ -23711,6 +23732,64 @@ mod tests {
     .expect_err("strict dispatch must reject duplicate impl attachments");
     assert_eq!(error.code(), Some("E_DUPLICATE_TRAIT_IMPL"));
     assert!(error.msg.contains("app.shared/Show"), "error: {error}");
+  }
+
+  #[test]
+  fn coherence_check_does_not_stop_at_originless_impl() {
+    let parent = source_trait("app.shared", "Parent", "label");
+    let mut child = CalcitTrait::new(
+      EdnTag::new("Child"),
+      vec![EdnTag::new("greet")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    )
+    .with_definition_ref("app.shared", "Child");
+    child.requires = Arc::new(vec![parent]);
+    let child = Arc::new(child);
+
+    let originless = Arc::new(CalcitImpl {
+      name: EdnTag::new("LegacyBag"),
+      origin: None,
+      fields: Arc::new(vec![]),
+      values: Arc::new(vec![]),
+    });
+    let child_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("ChildImpl"),
+      origin: Some(child),
+      fields: Arc::new(vec![EdnTag::new("greet")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    });
+
+    let mut base_struct = CalcitStructDef::from_fields(EdnTag::new("Widget"), vec![]);
+    base_struct.impls = vec![originless];
+    let mut scope_types = ScopeTypes::new();
+    scope_types.insert(Arc::from("base"), Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(base_struct))));
+    scope_types.insert(
+      Arc::from("child_impl"),
+      Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Impl(child_impl)))),
+    );
+    let base_ref = method_test_receiver(Arc::new(CalcitTypeAnnotation::Dynamic));
+    let Calcit::Local(mut base_local) = base_ref else { unreachable!() };
+    base_local.sym = Arc::from("base");
+    let mut child_local = base_local.clone();
+    child_local.sym = Arc::from("child_impl");
+
+    let missing = type_inference::check_impl_attachment_coherence(
+      &CalcitList::from(&[Calcit::Local(base_local.clone()), Calcit::Local(child_local.clone())][..]),
+      &scope_types,
+    );
+    assert_eq!(missing.as_ref().map(|(code, _)| *code), Some("E_IMPL_MISSING_REQUIRED_TRAIT"));
+
+    let dup = type_inference::check_impl_attachment_coherence(
+      &CalcitList::from(
+        &[
+          Calcit::Local(base_local),
+          Calcit::Local(child_local.clone()),
+          Calcit::Local(child_local),
+        ][..],
+      ),
+      &scope_types,
+    );
+    assert_eq!(dup.as_ref().map(|(code, _)| *code), Some("E_DUPLICATE_TRAIT_IMPL"));
   }
 
   #[test]

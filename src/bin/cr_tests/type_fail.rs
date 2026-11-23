@@ -2095,6 +2095,68 @@ fn strict_type_fail_trait_requires_reports_declaration_and_attachment_codes() {
 }
 
 #[test]
+fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (name, snippet, code, detail) in [
+      (
+        "duplicate-struct-def",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box0 (:n Number)\ndef impl1 $ defimpl Box0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Box0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((B (impl-traits Box0 impl1 impl2))) &unit",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
+      (
+        "duplicate-enum-def",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefenum Choice0 (:n Number)\ndef impl1 $ defimpl Choice0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Choice0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((C (impl-traits Choice0 impl1 impl2))) &unit",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
+      (
+        "duplicate-typeref-param",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box (:n Number) (:impls ShowT)\ndefimpl Box ShowT $ .show $ fn (x) |a\ndefn attach-again (b)\n  hint-fn $ Fn Box (-> Box)\n  let ((impl2 (defimpl Box ShowT $ .show $ fn (x) |b))) (impl-traits b impl2)\ndefn main! () (do (attach-again (Box :n 1)) &unit)",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
+      (
+        "duplicate-chained-impl-traits",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box0 (:n Number)\ndef impl1 $ defimpl Box0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Box0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((B (impl-traits (impl-traits Box0 impl1) impl2))) &unit",
+        "E_DUPLICATE_TRAIT_IMPL",
+        "duplicate implementation of trait",
+      ),
+      (
+        "missing-parent-on-typeref-param",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-child (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  impl-traits w child-impl\ndefn main! () (do (attach-child (Widget0 :n 1)) &unit)",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "missing-parent-on-enum-value",
+        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefenum Choice0 (:n Number)\ndef child-impl $ defimpl Choice0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((c (impl-traits (%:: Choice0 :n 1) child-impl))) &unit",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "local-deftrait-missing-parent-impl",
+        "defn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      LocalParent $ deftrait LocalParent $ .label $ Fn Self (-> String)\n      LocalChild $ deftrait LocalChild (requires LocalParent) $ .greet $ Fn Self (-> String)\n      Box0 $ defstruct Box0 $ :n Number\n      c-impl $ defimpl Box0 LocalChild $ .greet $ fn (x) |hi\n      Box $ impl-traits Box0 c-impl\n    , &unit",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+      (
+        "local-deftrait-member-conflict",
+        "defn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      LocalParent $ deftrait LocalParent $ .label $ Fn Self (-> String)\n      LocalChild $ deftrait LocalChild (requires LocalParent) $ .label $ Fn Self (-> String)\n    , &unit",
+        "E_TRAIT_REQUIRES",
+        "member `label` is declared by both",
+      ),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only"));
+      assert!(err.contains(code), "{name} should report {code}: {err}");
+      assert!(err.contains(detail), "{name} should explain `{detail}`: {err}");
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_retired_methods_report_migration_guidance() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

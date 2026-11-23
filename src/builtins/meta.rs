@@ -1298,9 +1298,27 @@ fn collect_trait_impls(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitI
   Ok(traits)
 }
 
-/// After attachment, every impl must find impls for all traits its origin
-/// requires on the same type; a child impl alone never proves its parents.
-fn check_required_trait_impls(impls: &[Arc<CalcitImpl>], proc_name: &str) -> Result<(), CalcitErr> {
+/// After attachment, reject duplicate nominal trait origins and verify every
+/// impl finds impls for all traits its origin requires on the same type.
+fn check_attached_trait_impls(impls: &[Arc<CalcitImpl>], proc_name: &str) -> Result<(), CalcitErr> {
+  for (idx, imp) in impls.iter().enumerate() {
+    let Some(origin) = imp.origin() else { continue };
+    if impls[..idx].iter().any(|earlier| {
+      earlier
+        .origin()
+        .is_some_and(|earlier_origin| earlier_origin.has_same_origin(origin))
+    }) {
+      let mut error = CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "{proc_name}: duplicate implementation of trait {} on the same type; a type has at most one implementation per nominal trait origin",
+          origin.origin_label()
+        ),
+      );
+      error.code = Some(String::from("E_DUPLICATE_TRAIT_IMPL"));
+      return Err(error);
+    }
+  }
   for imp in impls {
     let Some(origin) = imp.origin() else { continue };
     let reachable = origin.normalized_reachable_traits().map_err(trait_requires_error)?;
@@ -1335,7 +1353,7 @@ pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Struct(struct_value) => {
       let mut impls = struct_value.struct_ref.impls.clone();
       impls.extend(collect_trait_impls(&xs[1..], "&struct:impl-traits")?);
-      check_required_trait_impls(&impls, "&struct:impl-traits")?;
+      check_attached_trait_impls(&impls, "&struct:impl-traits")?;
       let mut next_struct = (*struct_value.struct_ref).clone();
       next_struct.impls = impls;
 
@@ -1381,7 +1399,7 @@ pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       };
       next_sum_type.impls.extend(collect_trait_impls(&xs[1..], "&enum:impl-traits")?);
-      check_required_trait_impls(&next_sum_type.impls, "&enum:impl-traits")?;
+      check_attached_trait_impls(&next_sum_type.impls, "&enum:impl-traits")?;
       Ok(Calcit::Enum(CalcitEnumValue {
         tag: enum_value.tag.to_owned(),
         extra: enum_value.extra.to_owned(),
@@ -1408,7 +1426,7 @@ pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let mut next = struct_def.as_ref().clone();
       let mut next_impls = next.impls.clone();
       next_impls.extend(collect_trait_impls(&xs[1..], "&struct-def:impl-traits")?);
-      check_required_trait_impls(&next_impls, "&struct-def:impl-traits")?;
+      check_attached_trait_impls(&next_impls, "&struct-def:impl-traits")?;
       next.impls = next_impls;
       Ok(Calcit::StructDef(Arc::new(next)))
     }
@@ -1431,7 +1449,7 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::EnumDef(enum_def) => {
       let mut next = enum_def.as_ref().clone();
       next.impls.extend(collect_trait_impls(&xs[1..], "&enum-def:impl-traits")?);
-      check_required_trait_impls(&next.impls, "&enum-def:impl-traits")?;
+      check_attached_trait_impls(&next.impls, "&enum-def:impl-traits")?;
       Ok(Calcit::EnumDef(Arc::new(next)))
     }
     other => CalcitErr::err_str(
@@ -1650,7 +1668,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
   }
   use Calcit::*;
   match v0 {
-    // user-defined values: impl-traits appends, so later impls override earlier ones
+    // User-defined values: multiple user candidates with the same method name are ambiguous.
     Enum(enum_value) => {
       let user_impls = enum_value.impls();
       let has_user_method = user_impls.iter().any(|imp| imp.get(name).is_some());
@@ -1756,7 +1774,7 @@ fn method_call_impls(
   name: &str,
   method_args: &[Calcit],
   call_stack: &CallStackList,
-  last_wins: bool,
+  reject_ambiguity: bool,
 ) -> Result<Calcit, CalcitErr> {
   if impls.is_empty() {
     return Err(CalcitErr::use_msg_stack(
@@ -1765,11 +1783,49 @@ fn method_call_impls(
       call_stack,
     ));
   }
-  if last_wins {
-    for imp in impls.iter().rev() {
-      if imp.get(name).is_some() {
-        return invoke_impl_method(imp, v0, name, method_args, call_stack);
+  if reject_ambiguity {
+    let matching: Vec<&Arc<CalcitImpl>> = impls.iter().filter(|imp| imp.get(name).is_some()).collect();
+    match matching.as_slice() {
+      [only] => return invoke_impl_method(only, v0, name, method_args, call_stack),
+      [first, rest @ ..] => {
+        let origins = matching
+          .iter()
+          .map(|imp| {
+            imp
+              .origin()
+              .map(|origin| origin.origin_label())
+              .unwrap_or_else(|| format!("<originless>/{}", imp.name()))
+          })
+          .collect::<Vec<_>>();
+        let duplicate_origin = first
+          .origin()
+          .is_some_and(|first_origin| rest.iter().all(|c| c.origin().is_some_and(|o| o.has_same_origin(first_origin))));
+        let (code, message) = if duplicate_origin {
+          (
+            "E_DUPLICATE_TRAIT_IMPL",
+            format!(
+              "ambiguous method `.{name}` has multiple implementations of the same nominal trait origin: {}; remove duplicate impl attachments",
+              origins.join(", ")
+            ),
+          )
+        } else {
+          (
+            "E_AMBIGUOUS_TRAIT_METHOD",
+            format!(
+              "ambiguous method `.{name}` has multiple nominal trait origins: {}; use `&trait-call Trait :{name} receiver ...` to select a nominal trait origin",
+              origins.join(", ")
+            ),
+          )
+        };
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          message,
+          code,
+          call_stack,
+          v0.get_location(),
+        ));
       }
+      [] => {}
     }
   } else {
     for imp in impls.iter() {
@@ -3186,6 +3242,171 @@ mod tests {
     assert!(
       error.msg.contains("turn-symbol cannot convert to symbol"),
       "unexpected error: {error:?}"
+    );
+  }
+
+  #[test]
+  fn impl_traits_procs_reject_duplicate_nominal_origins() {
+    let _guard = crate::program::lock_program_test_state();
+    let show = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Show"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let first = Calcit::Impl(Arc::new(CalcitImpl {
+      name: EdnTag::new("FirstShow"),
+      origin: Some(show.clone()),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![constant_method("A")]),
+    }));
+    let second = Calcit::Impl(Arc::new(CalcitImpl {
+      name: EdnTag::new("SecondShow"),
+      origin: Some(show),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![constant_method("B")]),
+    }));
+
+    let struct_def = CalcitStructDef::from_fields(EdnTag::new("Box"), vec![]);
+    let struct_val = CalcitStructValue {
+      struct_ref: Arc::new(struct_def.clone()),
+      values: Arc::new(vec![]),
+    };
+    let mut proto = CalcitStructDef::from_fields(EdnTag::new("Choice"), vec![EdnTag::new("item")]);
+    proto.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+    let enum_def = CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(proto),
+      values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
+    })
+    .expect("enum def");
+    let enum_val = CalcitEnumValue {
+      tag: Arc::new(Calcit::tag("item")),
+      extra: vec![].into(),
+      sum_type: Some(Arc::new(enum_def.clone())),
+    };
+
+    for (label, res) in [
+      (
+        "struct-def",
+        struct_impl_traits(&[Calcit::StructDef(Arc::new(struct_def)), first.clone(), second.clone()]),
+      ),
+      (
+        "struct-val",
+        record_impl_traits(&[Calcit::Struct(struct_val), first.clone(), second.clone()]),
+      ),
+      (
+        "enum-def",
+        enum_impl_traits(&[Calcit::EnumDef(Arc::new(enum_def)), first.clone(), second.clone()]),
+      ),
+      ("enum-val", tuple_impl_traits(&[Calcit::Enum(enum_val), first, second])),
+    ] {
+      let err = res.expect_err(&format!("{label} must reject duplicate nominal trait origin"));
+      assert_eq!(err.code(), Some("E_DUPLICATE_TRAIT_IMPL"), "{label}: {err:?}");
+    }
+  }
+
+  #[test]
+  fn runtime_invoke_method_rejects_ambiguous_user_traits_without_executing_candidates() {
+    let _guard = crate::program::lock_program_test_state();
+    let trait_a = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Alpha"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let trait_b = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Beta"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let calls = Calcit::Ref(
+      Arc::from("test.meta/runtime-ambiguous-calls"),
+      Arc::new(Mutex::new((Calcit::Number(0.0), HashMap::new()))),
+    );
+    let Calcit::Fn { mut info, .. } = constant_method("unused") else {
+      unreachable!()
+    };
+    let method = Arc::make_mut(&mut info);
+    method.body = vec![Calcit::List(Arc::new(CalcitList::Vector(vec![
+      Calcit::Syntax(CalcitSyntax::Reset, Arc::from("test.meta")),
+      calls.clone(),
+      Calcit::List(Arc::new(CalcitList::Vector(vec![
+        Calcit::Proc(CalcitProc::NativeAdd),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![
+          Calcit::Proc(CalcitProc::AtomDeref),
+          calls.clone(),
+        ]))),
+        Calcit::Number(1.0),
+      ]))),
+    ])))];
+    let make_impl = |name: &str, origin: Arc<CalcitTrait>| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(origin),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![Calcit::Fn {
+          id: calcit::gen_core_id(),
+          info: info.clone(),
+        }]),
+      })
+    };
+    let make_struct = |impls: Vec<Arc<CalcitImpl>>| {
+      let mut def = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+      def.impls = impls;
+      Calcit::Struct(CalcitStructValue {
+        struct_ref: Arc::new(def),
+        values: Arc::new(vec![]),
+      })
+    };
+    let make_enum = |impls: Vec<Arc<CalcitImpl>>| {
+      let mut proto = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![EdnTag::new("card")]);
+      proto.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+      proto.impls = impls;
+      let def = CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(proto),
+        values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
+      })
+      .expect("enum def");
+      Calcit::Enum(CalcitEnumValue {
+        tag: Arc::new(Calcit::tag("card")),
+        extra: vec![].into(),
+        sum_type: Some(Arc::new(def)),
+      })
+    };
+
+    for (label, receiver) in [
+      (
+        "struct-distinct",
+        make_struct(vec![make_impl("AlphaA", trait_a.clone()), make_impl("BetaB", trait_b.clone())]),
+      ),
+      (
+        "enum-distinct",
+        make_enum(vec![make_impl("AlphaA", trait_a.clone()), make_impl("BetaB", trait_b)]),
+      ),
+    ] {
+      let err = invoke_method("render", &[receiver], &CallStackList::default())
+        .expect_err(&format!("{label} must fail with E_AMBIGUOUS_TRAIT_METHOD"));
+      assert_eq!(err.code(), Some("E_AMBIGUOUS_TRAIT_METHOD"), "{label}: {err:?}");
+      assert!(err.msg.contains("&trait-call"), "{label}: {err:?}");
+    }
+
+    for (label, receiver) in [
+      (
+        "struct-dup",
+        make_struct(vec![make_impl("Alpha1", trait_a.clone()), make_impl("Alpha2", trait_a.clone())]),
+      ),
+      (
+        "enum-dup",
+        make_enum(vec![make_impl("Alpha1", trait_a.clone()), make_impl("Alpha2", trait_a)]),
+      ),
+    ] {
+      let err = invoke_method("render", &[receiver], &CallStackList::default())
+        .expect_err(&format!("{label} must fail with E_DUPLICATE_TRAIT_IMPL"));
+      assert_eq!(err.code(), Some("E_DUPLICATE_TRAIT_IMPL"), "{label}: {err:?}");
+    }
+
+    assert_eq!(
+      builtins::refs::atom_deref(std::slice::from_ref(&calls)).unwrap(),
+      Calcit::Number(0.0),
+      "ambiguous runtime dispatch must not invoke any candidate"
     );
   }
 }

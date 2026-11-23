@@ -244,6 +244,7 @@ pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<D
       };
       let type_key: DefKey = (ns.to_owned(), def.to_owned());
       let mut refs = Vec::with_capacity(traits.len());
+      let mut seen_traits: Vec<DefKey> = Vec::with_capacity(traits.len());
       for trait_form in &traits {
         let Some(trait_name) = symbol_name(trait_form) else {
           return Err(format!(
@@ -255,6 +256,13 @@ pub(crate) fn attach_source_impls(program: &mut ProgramCodeData) -> Result<Vec<D
             "[{UNKNOWN_IMPLS_TRAIT_ERROR}] {ns}/{def}: `(:impls {trait_name})` does not name a trait visible in `{ns}`; import it or write `namespace/Trait`"
           ));
         };
+        if seen_traits.contains(&trait_key) {
+          return Err(format!(
+            "[{DUPLICATE_TRAIT_IMPL_ERROR}] {ns}/{def} lists {}/{} more than once in `(:impls …)`; remove the duplicate trait entry",
+            trait_key.0, trait_key.1
+          ));
+        }
+        seen_traits.push(trait_key.clone());
         let found = find_impl(program, &type_key, &trait_key);
         match found.as_slice() {
           [] => {

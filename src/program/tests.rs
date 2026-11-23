@@ -2342,6 +2342,15 @@ fn defimpl_type_trait_is_looked_up_only_in_the_type_and_trait_namespaces() {
   let mut unknown = impl_attach_program("defstruct P (:name String) (:impls Missing)", &[], &[]);
   let error = impl_attach::attach_source_impls(&mut unknown).expect_err("unknown trait");
   assert!(error.starts_with("[E_UNKNOWN_IMPLS_TRAIT] app.m/P"), "{error}");
+
+  for repeated_source in [
+    "defstruct P (:name String) (:impls t/Labeled t/Labeled)",
+    "defstruct P (:name String) (:impls t/Labeled app.t/Labeled)",
+  ] {
+    let mut repeated = impl_attach_program(repeated_source, &[("P-Labeled", "defimpl P t/Labeled (.label f)")], &[]);
+    let error = impl_attach::attach_source_impls(&mut repeated).expect_err("repeated trait in (:impls ...)");
+    assert!(error.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{repeated_source}: {error}");
+  }
 }
 
 #[test]

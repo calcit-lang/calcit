@@ -185,7 +185,7 @@ defimpl shape/Circle Area (.area circle:area)
 Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，编译器只在**类型所在的 ns** 和 **trait 所在的 ns** 里找 `defimpl Circle Area`，找到后挂到类型上，效果等同于手写 `impl-traits`，类型只有这一个定义。
 
 - 列出的 trait 两处都没有实现：`E_MISSING_TRAIT_IMPL`。写在第三个 ns 里的实现不会被找到。
-- 同一个 trait 有两个实现：`E_DUPLICATE_TRAIT_IMPL`。
+- 同一个 trait 有两个实现，或在 `(:impls …)` 中重复列出同一 trait（含别名指向同一来源）：`E_DUPLICATE_TRAIT_IMPL`。
 - `(:impls …)` 里的名字解析不到：`E_UNKNOWN_IMPLS_TRAIT`。
 - 类型没在 `(:impls …)` 里列出的 trait，旁边即使有 `defimpl` 也不会挂上。
 - `(:impls …)` 只用于顶层定义；`let` 里定义的 struct/enum 继续用 `impl-traits` 挂载。
@@ -194,7 +194,7 @@ Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，�
 
 ## Attach impls to struct/enum definitions
 
-`impl-traits` attaches impl records to a **struct/enum type defined inside a function** (`let`); a top-level definition uses `(:impls …)` instead, and writing `impl-traits` there fails with `E_LEGACY_IMPL_TRAITS`. Strict checking rejects a call as ambiguous when the candidates have different nominal trait origins. It also rejects attaching multiple implementations of the same nominal trait when the duplicated method is called; remove the duplicate rather than relying on attachment order.
+`impl-traits` attaches impl records to a **struct/enum type defined inside a function** (`let`); a top-level definition uses `(:impls …)` instead, and writing `impl-traits` there fails with `E_LEGACY_IMPL_TRAITS`. Attaching more than one implementation of the same nominal trait origin is rejected immediately with `E_DUPLICATE_TRAIT_IMPL` both during static analysis and at runtime across native and JS; do not attach a second impl of the same trait to override an earlier one. When distinct traits on the same type define the same method name, calling `.method` without disambiguation is rejected with `E_AMBIGUOUS_TRAIT_METHOD` statically and at runtime, while `&trait-call Trait :method receiver ...` selects one nominal origin explicitly.
 
 Constraints:
 
@@ -281,7 +281,7 @@ Key trait docs examples are mirrored by executable smoke cases in `calcit/test-d
 
 ## Method call vs explicit trait call
 
-Normal method invocation uses `.method` dispatch. In strict mode, one method name must resolve to exactly one nominal trait origin and one attached impl. If multiple traits provide it, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one origin report `E_DUPLICATE_TRAIT_IMPL`. Use `&trait-call` for the former and remove duplicate attachments for the latter.
+Normal method invocation uses `.method` dispatch. Both static checking and runtime `.method` dispatch (across native and JS) require a user method name to resolve to at most one nominal trait origin and one attached impl without falling back to last-wins shadowing. If multiple distinct traits provide that method name, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one nominal trait origin report `E_DUPLICATE_TRAIT_IMPL` (and are already rejected at attachment time in `(:impls …)` and `impl-traits`). Use `&trait-call` for multi-trait disambiguation and remove duplicate attachments for single-trait conflicts.
 
 Strict diagnostics are always on (`--compat-types` was removed in 0.41.0). The read-only `calcit analyze weak-types --only dynamic-method` report lists the remaining dynamic dispatches to migrate.
 
@@ -293,7 +293,7 @@ Usage: `&trait-call Trait :method receiver & args`
 
 `&trait-call` matches by the impl value's trait origin, not just by trait name text. This avoids accidental dispatch when two different trait values share the same printed name.
 
-选定 trait 来源后，接收者只能有一个该来源的实现。重复 attachment 会报 `E_DUPLICATE_TRAIT_IMPL`；native 与 JS runtime 都在执行方法前拒绝，不因接收者类型或 attachment 顺序选择候选。不同来源的同名方法仍可显式选择各自 trait；同一来源的重复实现则需删除或拆分为不同能力。
+无论是静态检查还是运行期 `.method` 与 `&trait-call` 分发，接收者对于同一个 trait 来源只能有一个实现。重复挂载或重复列出同一 trait 来源会直接报 `E_DUPLICATE_TRAIT_IMPL`，native 与 JS 运行时都会在挂载阶段及调用前拒绝，不再按挂载顺序覆盖或选择候选；不同 trait 来源的同名方法可以安全共存于同一类型并通过 `&trait-call Trait :method receiver ...` 显式调用，但运行期动态 `.method` 仍会以 `E_AMBIGUOUS_TRAIT_METHOD` 拒绝隐式遮蔽。
 
 重新求值 trait 定义会生成新的运行时身份。保留旧接收者时，需要同时保留与其 impl 匹配的旧 trait；使用新 trait 时则重新创建对应的 impl 和接收者。相同名称不会让旧 impl 自动满足新的 trait。
 
