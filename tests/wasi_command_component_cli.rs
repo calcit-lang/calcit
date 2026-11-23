@@ -1,3 +1,5 @@
+#![cfg(feature = "wasm")]
+
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -856,6 +858,11 @@ fn wasi_command_selective_linking_prunes_unused_number_format_and_preserves_floa
     String::from_utf8_lossy(&compile_no_fmt.stderr)
   );
   let no_fmt_bytes = fs::read(out_no_fmt.path().join("program.wasm")).expect("read wasi-command wasm");
+  assert!(
+    no_fmt_bytes.len() < 30_000,
+    "examples/wasi-command must prune unreachable core strings/tags below 30 KB (was ~61 KB before static data pruning), got {} bytes",
+    no_fmt_bytes.len()
+  );
   let no_fmt_offsets = component_core_data_offsets(&no_fmt_bytes);
   assert!(
     !no_fmt_offsets.contains(&NUMBER_TABLE_BASE),

@@ -12296,6 +12296,7 @@ fn pick_callable_from_method_entry(
 
 /// Resolve checked runtime dispatch through a fixed builtin method table, or
 /// a nominal receiver whose actual value proves its attached implementations.
+#[cfg(any(feature = "wasm", test))]
 pub(crate) fn resolve_runtime_method_callable(
   receiver_type: &CalcitTypeAnnotation,
   exact_impls: bool,
@@ -12313,11 +12314,13 @@ pub(crate) fn resolve_runtime_method_callable(
   let Some(impls) = get_impls_from_type(receiver_type) else {
     return Ok(None);
   };
-  // An already-checked open receiver uses runtime precedence, not the strict
-  // ambiguity policy for a nominal method written directly in source.
+  // Ambiguous method names across nominal traits on a receiver must fail consistently across backends
+  // instead of silently choosing the first attached implementation.
   let selected = match resolve_impl_method(receiver_type, &impls, method_name) {
     ImplMethodResolution::Selected(candidate) => candidate,
-    ImplMethodResolution::Ambiguous(mut candidates) => candidates.remove(0),
+    ImplMethodResolution::Ambiguous(candidates) => {
+      return Err(ambiguous_impl_method_error(method_name, &candidates, &CallStackList::default(), None).to_string());
+    }
     ImplMethodResolution::Missing => return Ok(None),
   };
   if let Calcit::Fn { info, .. } = selected.entry {
@@ -12344,6 +12347,7 @@ pub(crate) fn resolve_runtime_method_callable(
 /// Select a direct target for a trait call whose receiver type is proven at a
 /// static backend call site. The trait identity, not only the method name, is
 /// part of the dispatch evidence.
+#[cfg(any(feature = "wasm", test))]
 pub(crate) fn resolve_static_trait_callable(
   trait_expr: &Calcit,
   method_name: &str,
@@ -24178,6 +24182,42 @@ mod tests {
     let error = resolve_static_trait_callable(&Calcit::Trait(show), "render", &receiver_type, "tests.trait-origin")
       .expect_err("WASM must not choose between duplicate implementations");
     assert!(error.contains("multiple implementations of app.shared/Show"), "error: {error}");
+  }
+
+  #[test]
+  fn wasm_runtime_method_resolution_rejects_ambiguous_nominal_traits() {
+    let _guard = lock_preprocess_test_state();
+    let show = source_trait("app.shared", "Show", "render");
+    let debug = source_trait("app.debug", "Debug", "render");
+    let show_callable = Calcit::Proc(crate::calcit::CalcitProc::NativeStr);
+    let debug_callable = Calcit::Proc(crate::calcit::CalcitProc::TypeOf);
+    let show_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("ShowCard"),
+      origin: Some(show.clone()),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![show_callable.clone()]),
+    });
+    let debug_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("DebugCard"),
+      origin: Some(debug.clone()),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![debug_callable.clone()]),
+    });
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    nominal.impls = vec![show_impl, debug_impl];
+    let receiver_type = CalcitTypeAnnotation::StructValue(Arc::new(nominal));
+
+    let error = resolve_runtime_method_callable(&receiver_type, true, "render", "tests.trait-origin")
+      .expect_err("ambiguous nominal method resolution must fail rather than pick the first trait");
+    assert!(error.contains("E_AMBIGUOUS_TRAIT_METHOD"), "unexpected error: {error}");
+
+    let resolved_show = resolve_static_trait_callable(&Calcit::Trait(show), "render", &receiver_type, "tests.trait-origin")
+      .expect("explicit trait call to app.shared/Show should still resolve unambiguously");
+    assert_eq!(resolved_show, show_callable);
+
+    let resolved_debug = resolve_static_trait_callable(&Calcit::Trait(debug), "render", &receiver_type, "tests.trait-origin")
+      .expect("explicit trait call to app.debug/Debug should still resolve unambiguously");
+    assert_eq!(resolved_debug, debug_callable);
   }
 
   #[test]
