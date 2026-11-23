@@ -6563,3 +6563,64 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
     }
   });
 }
+
+#[test]
+fn union_slot_enum_literal_requires_a_unique_variant() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    for (remote, payload, expected_ok) in [
+      ("(:remote String)", "true", true),
+      ("(:states (List String) Bool)", "true", false),
+      ("(:remote String)", "|wrong", false),
+      ("(:remote String)", "true false", false),
+      ("(:remote String)", "(source)", false),
+    ] {
+      builtins::effects::init_effects_states();
+      let code = format!(
+        "def slot $ deftype-slot :op\n\ndefenum Local $ :states (List String) Bool\n\ndefenum Remote {remote}\n\ndef Ui $ defunion Ui Local Remote\n\ndefn source () true\n\ndef Handler $ fn (d!) &unit\n\ndefstruct Props $ :on-click $ quote (JsNullish app.main/Handler)\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , slot\n    Props :on-click $ fn (d!)\n      d! $ :: :states ([] |a) {payload}\n    , &unit"
+      );
+      let mut file = snapshot::create_file_from_snippet(&code).expect("fixture should parse");
+      let schema = cirru_parser::parse("Fn\n  Fn *op $ -> Unit\n  -> Unit").unwrap().remove(0);
+      file.defs.get_mut("Handler").unwrap().schema = snapshot::parse_schema_annotation_for_write(&schema).unwrap();
+      let open_schema = cirru_parser::parse("Fn (-> Dynamic) (:open :decode)").unwrap().remove(0);
+      file.defs.get_mut("source").unwrap().schema = snapshot::parse_schema_annotation_for_write(&open_schema).unwrap();
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert("app.main".to_owned(), file);
+      snapshot
+        .entries
+        .get_mut("default")
+        .unwrap()
+        .type_slots
+        .insert("op".to_owned(), "app.main/Ui".to_owned());
+      let entries = prepare_snapshot_entries(snapshot);
+      let result = run_check_only(&entries);
+      assert_eq!(result.is_ok(), expected_ok, "remote={remote}, payload={payload}: {result:?}");
+    }
+  });
+}
+
+#[test]
+fn union_argument_literal_checks_payload_for_named_functions() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+    for (payload, expected_ok) in [("true", true), ("|wrong", false), ("true false", false), ("(source)", false)] {
+      builtins::effects::init_effects_states();
+      let code = format!(
+        "defenum Local (:states Bool)\n\ndefenum Remote (:other String)\n\ndef Ui $ defunion Ui Local Remote\n\ndefn source () true\n\ndefn accept (value) &unit\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  accept $ :: :states {payload}\n  , &unit"
+      );
+      let mut file = snapshot::create_file_from_snippet(&code).expect("fixture should parse");
+      let schema = cirru_parser::parse("Fn Ui (-> Unit)").unwrap().remove(0);
+      file.defs.get_mut("accept").unwrap().schema = snapshot::parse_schema_annotation_for_write(&schema).unwrap();
+      let open_schema = cirru_parser::parse("Fn (-> Dynamic) (:open :decode)").unwrap().remove(0);
+      file.defs.get_mut("source").unwrap().schema = snapshot::parse_schema_annotation_for_write(&open_schema).unwrap();
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let result = run_check_only(&entries);
+      assert_eq!(result.is_ok(), expected_ok, "payload={payload}: {result:?}");
+    }
+  });
+}

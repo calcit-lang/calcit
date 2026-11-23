@@ -365,8 +365,25 @@ fn try_rewrite_single_enum_to_named_enum(
     return None;
   };
 
-  // Resolve the expected type to an enum definition + optional ns/def path
-  let (enum_def, ns_def_path) = expected_type.resolve_to_enum_with_ref()?;
+  // A union can supply the context only when exactly one member owns the tag.
+  // Do not guess for computed tags or overlapping variants, even if their
+  // payload arities differ: nominal identity must not depend on payload shape.
+  let (enum_def, ns_def_path) = if let Some(found) = expected_type.resolve_to_enum_with_ref() {
+    found
+  } else {
+    let Calcit::Tag(tag) = arg_list.get(1)? else { return None };
+    let members = expected_type.resolve_to_union()?.checked_members().ok()?;
+    let mut matches = members.iter().filter_map(|member| {
+      let (enum_def, path) = member.annotation.resolve_to_enum_with_ref()?;
+      enum_def.find_variant(tag)?;
+      Some((enum_def, path.or_else(|| member.definition.clone())))
+    });
+    let found = matches.next()?;
+    if matches.next().is_some() {
+      return None;
+    }
+    found
+  };
 
   // Validate: the enum literal needs at least a tag
   if arg_list.len() < 2 {
@@ -380,24 +397,6 @@ fn try_rewrite_single_enum_to_named_enum(
       check_warnings,
     );
     return None;
-  }
-
-  // Validate: check that the tag is a known variant of the enum
-  if let Some(Calcit::Tag(tag)) = arg_list.get(1) {
-    let tag_str = tag.ref_str();
-    let variants = enum_def.variants();
-    if !variants.iter().any(|v| v.tag.ref_str() == tag_str) {
-      let variant_names: Vec<&str> = variants.iter().map(|v| v.tag.ref_str()).collect();
-      gen_check_warning_code(
-        format!(
-          "[Error] Enum `{}` does not have variant `:{tag_str}`. Available variants: {variant_names:?}, at {file_ns}/{def_name}",
-          enum_def.name(),
-        ),
-        "E_ENUM_TAG_UNKNOWN",
-        file_ns,
-        check_warnings,
-      );
-    }
   }
 
   let enum_ref_node = build_enum_ref_node(enum_def, ns_def_path, file_ns, def_name);

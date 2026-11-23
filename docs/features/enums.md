@@ -429,11 +429,11 @@ let
 
 Requirements for the rewrite to trigger:
 
-- The function schema must reference a named enum type such as `'ns/EnumName`
-- The argument at the call site must be an anonymous enum literal (`%:: _`)
-- The enum definition must be resolvable at preprocess time
+- The function schema must reference a named enum or a union containing named enums; a bound type slot can supply this context.
+- The argument at the call site must be an anonymous enum literal (`%:: _`) with a literal tag.
+- The relevant definitions must be resolvable at preprocess time. For a union, exactly one member enum must declare that tag; overlapping tags are not guessed, even when payload arities differ.
 
-If any condition is not met, the argument is left unchanged (no error is raised). This makes the rewrite safe to use alongside existing code.
+The constructed variant's payload arity and types are checked. If no unique target is available, the literal is left unchanged; the ordinary argument type check can then reject it.
 
 ## 裸 tag 改写为零载荷分支
 

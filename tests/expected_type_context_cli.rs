@@ -297,3 +297,35 @@ fn collection_aliases_offer_member_types_without_weakening_checks() {
   assert!(!ok, "{text}");
   assert!(text.contains("E_ENUM_TAG_UNKNOWN") && text.contains("collection member"), "{text}");
 }
+
+#[test]
+fn union_slot_literal_constructs_the_same_nominal_event_in_native_and_js() {
+  let fixture = "tests/fixtures/union-slot-context.cirru";
+  let native = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--tips-level", "none", fixture])
+    .output()
+    .expect("native fixture should run");
+  assert!(native.status.success(), "{}", String::from_utf8_lossy(&native.stderr));
+  assert!(String::from_utf8_lossy(&native.stdout).contains("union-nominal-ok"));
+
+  let output = tempfile::tempdir_in("target").expect("temporary JS output directory");
+  let js = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(output.path())
+    .args([fixture, "js"])
+    .output()
+    .expect("JS fixture should compile");
+  assert!(js.status.success(), "{}", String::from_utf8_lossy(&js.stderr));
+  let module = fs::canonicalize(output.path().join("app.main.mjs")).expect("generated module exists");
+  let run = Command::new("node")
+    .args([
+      "--input-type=module",
+      "-e",
+      "import { pathToFileURL } from 'node:url'; import(pathToFileURL(process.env.UNION_TEST_MODULE).href).then(m => m.main_$x_())",
+    ])
+    .env("UNION_TEST_MODULE", &module)
+    .output()
+    .expect("node should run");
+  assert!(run.status.success(), "{}", String::from_utf8_lossy(&run.stderr));
+  assert!(String::from_utf8_lossy(&run.stdout).contains("union-nominal-ok"));
+}

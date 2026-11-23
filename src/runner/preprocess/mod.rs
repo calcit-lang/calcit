@@ -7089,7 +7089,21 @@ fn preprocess_list_call(
               try_rewrite_local_fn_enum_args_to_named_enums(&fn_annot, &local_sym, &processed_args, file_ns, &def_name, check_warnings)
           {
             ys = CalcitList::new_inner_from(&[ys.first().unwrap().to_owned()]);
-            for item in rewritten.iter() {
+            for (item, original) in rewritten.iter().zip(processed_args.iter()) {
+              if item != original
+                && let Calcit::List(constructor) = item
+                && matches!(constructor.first(), Some(Calcit::Proc(CalcitProc::NativeNamedEnumNew)))
+              {
+                let constructor_args = constructor.drop_left();
+                reject_strict_unproven_enum_payload(
+                  &constructor_args,
+                  scope_types,
+                  file_ns,
+                  call_stack,
+                  call_info.call_location.clone(),
+                )?;
+                check_enum_construction(&constructor_args, scope_types, file_ns, &def_name, check_warnings);
+              }
               ys = ys.push(item.to_owned());
             }
           }
@@ -7764,6 +7778,11 @@ fn preprocess_known_function_call(
           && let Calcit::List(constructor) = item
           && let Some(head) = constructor.first()
         {
+          if matches!(head, Calcit::Proc(CalcitProc::NativeNamedEnumNew)) {
+            let constructor_args = constructor.drop_left();
+            reject_strict_unproven_enum_payload(&constructor_args, scope_types, file_ns, call_stack, call_location.clone())?;
+            check_enum_construction(&constructor_args, scope_types, file_ns, def_name, check_warnings);
+          }
           check_struct_construction_fields(
             head,
             &constructor.drop_left(),

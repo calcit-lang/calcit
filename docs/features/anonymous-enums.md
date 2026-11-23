@@ -72,8 +72,10 @@ let
 ## Named Conversion
 
 When the expected function parameter type is a named enum, the preprocessor can
-rewrite `%:: _ :variant ...` to that named definition. Variant and payload
-validation then use the target `defenum` declaration.
+rewrite `%:: _ :variant ...` to that named definition. A union or bound type
+slot can also supply the context when exactly one member enum has that variant.
+Variant and payload validation then use the target `defenum` declaration;
+overlapping variant names are not resolved by guessing.
 
 ## Migration
 
