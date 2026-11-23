@@ -286,6 +286,7 @@ impl StructLayouts {
 pub(super) fn collect_struct_layouts(
   program_data: &program::CompiledProgram,
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  extra_exprs: &[Calcit],
   component_types: &[ComponentAbiType],
   tags: &HashMap<String, u32>,
   reachable_defs: Option<&HashSet<(String, String)>>,
@@ -357,6 +358,9 @@ pub(super) fn collect_struct_layouts(
     for expression in body {
       visit(expression, &mut field_kinds);
     }
+  }
+  for expression in extra_exprs {
+    visit(expression, &mut field_kinds);
   }
   for (ns, file) in program_data.iter() {
     for (name, compiled) in &file.defs {
@@ -1813,5 +1817,21 @@ mod tests {
         field.kind as u8
       );
     }
+  }
+
+  #[test]
+  fn collect_struct_layouts_includes_reachable_extra_exprs() {
+    use cirru_edn::EdnTag;
+
+    let anonymous_struct = Arc::new(CalcitStructDef::from_fields(EdnTag::new("MethodBox"), vec![EdnTag::new("value")]));
+    let extra_exprs = vec![Calcit::StructDef(anonymous_struct.clone())];
+    let tags = HashMap::from([("MethodBox".to_owned(), 101u32), ("value".to_owned(), 102u32)]);
+    let empty_program = HashMap::new();
+    let empty_reachable = HashSet::new();
+
+    let layouts = collect_struct_layouts(&empty_program, &[], &extra_exprs, &[], &tags, Some(&empty_reachable))
+      .expect("struct literal inside reached extra_exprs must register a layout");
+    let identity = StructIdentity::from(anonymous_struct.as_ref());
+    assert!(layouts.ids.contains_key(&identity), "expected struct layout id for {identity:?}");
   }
 }

@@ -669,7 +669,14 @@ fn emit_wasm_impl(
   } else {
     Vec::new()
   };
-  let mut struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index, Some(&reachable_defs))?;
+  let mut struct_layouts = collect_struct_layouts(
+    &program_data,
+    &fn_defs,
+    &reachable_extra_exprs,
+    &component_types,
+    &tag_index,
+    Some(&reachable_defs),
+  )?;
   struct_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
 
   let atom_count = atom_initial_values.len() as u32;
