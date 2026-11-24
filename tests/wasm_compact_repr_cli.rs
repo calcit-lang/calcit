@@ -1909,10 +1909,12 @@ fn map_equality_checks_key_presence_and_trim_rejects_non_ascii_patterns() {
             and
               = (trim |__1__ |_) |1
               = (trim "|  éxé  ") |éxé
+              = (trim |éxé |é) |x
+              = (trim "|😀x😀" "|😀") |x
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
-        'trim-utf8 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export trim-utf8 () (trim |éxé |é)
+        'trim-multi-utf8 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export trim-multi-utf8 () (trim |éxé |éa)
           :examples $ []
           :schema $ quote $ Fn (-> String)
         'trim-empty $ %{} 'CodeEntry (:doc |)
@@ -1955,14 +1957,14 @@ fn map_equality_checks_key_presence_and_trim_rejects_non_ascii_patterns() {
       .expect("check-trim executes"),
     1.0
   );
-  for trap_fn in ["trim-utf8", "trim-empty", "trim-multi"] {
+  for trap_fn in ["trim-multi-utf8", "trim-empty", "trim-multi"] {
     assert!(
       instance
         .get_typed_func::<(), f64>(&mut store, trap_fn)
         .expect(trap_fn)
         .call(&mut store, ())
         .is_err(),
-      "{trap_fn} must trap when trim pattern is not a single ASCII byte"
+      "{trap_fn} must trap when trim pattern is not a single Unicode scalar"
     );
   }
 }
