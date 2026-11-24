@@ -29,10 +29,11 @@ use crate::{
 use cirru_edn::EdnTag;
 
 use super::{
-  ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  get_impls_from_type, lookup_source_backed_trait_def, method_receiver_bindings, reachable_dispatch_traits,
-  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method,
-  tag_annotation, trait_is_external_object, trait_list_from_type,
+  ScopeTypes,
+  checked_call_contract::{resolve_checked_call_contract, select_fn_case},
+  find_method_entry_for_type, find_trait_field_type, get_impls_from_type, lookup_source_backed_trait_def, method_receiver_bindings,
+  reachable_dispatch_traits, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body,
+  resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -1336,6 +1337,44 @@ fn contract_return_captures_only_inputs<'a>(
   variables.iter().all(|name| captures.contains(name))
 }
 
+/// Before returning a `:cases` entry's narrowed return type in strict mode,
+/// verify call arity and that non-receiver concrete parameters are proven
+/// (e.g. `dissoc` on a `List` keeps `List T` only for a single proven `Number` index).
+fn case_args_proven_for_return(
+  case: &calcit::CalcitFnTypeAnnotation,
+  fn_ns: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> bool {
+  let arity = case.call_arity();
+  if args.len() < arity.min || arity.max.is_some_and(|max| args.len() > max) {
+    return false;
+  }
+  if !super::strict_types_enabled() {
+    return true;
+  }
+  for (idx, arg) in args.iter().enumerate().skip(1) {
+    let Some(expected) = case.arg_types.get(idx).or(case.rest_type.as_ref()) else {
+      break;
+    };
+    if matches!(
+      expected.as_ref(),
+      CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_) | CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn
+    ) || expected.contains_type_var()
+    {
+      continue;
+    }
+    let expected = resolve_namespace_type_refs_for_body(expected.clone(), fn_ns);
+    let Some(actual) = resolve_type_value(arg, scope_types) else {
+      return false;
+    };
+    if !actual.is_proven_for(expected.as_ref()) {
+      return false;
+    }
+  }
+  true
+}
+
 pub(crate) fn infer_return_type_from_compiled_callable(
   ns: &str,
   def: &str,
@@ -1427,8 +1466,21 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // source metadata would discard that contract after method lowering.
   let callable_schema = lookup_definition_value_schema(ns, def);
   let declared_schema = resolve_namespace_type_refs_for_body(callable_schema, ns);
-  let open_return = matches!(declared_schema.as_ref(), CalcitTypeAnnotation::Fn(info) if matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
+  let call_args = call_expr.drop_left();
+  let selected_case = match declared_schema.as_ref() {
+    CalcitTypeAnnotation::Fn(info) if !info.cases.is_empty() => {
+      select_fn_case(info, ns, &call_args, scope_types).filter(|case| case_args_proven_for_return(case, ns, &call_args, scope_types))
+    }
+    _ => None,
+  };
+  let open_return = match selected_case.as_deref() {
+    Some(case) => matches!(case.return_type.as_ref(), CalcitTypeAnnotation::Dynamic),
+    None => {
+      matches!(declared_schema.as_ref(), CalcitTypeAnnotation::Fn(info) if matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic))
+    }
+  };
   if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
+    && selected_case.is_none()
     && (crate::snapshot::schema_annotation_is_missing(&declared_schema) || open_return)
     && let Some(returned) = with_callable_return_inference(ns, def, || {
       // Open metadata is not evidence either way. During an audit, recover
@@ -1458,17 +1510,18 @@ pub(crate) fn infer_return_type_from_compiled_callable(
     return Some(returned);
   }
   if let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() {
+    let active = selected_case.as_deref().unwrap_or(info);
     let declared_return = resolve_generic_return_type_parts(
-      info.generics.as_ref(),
-      &info.arg_types,
-      info.rest_type.as_ref(),
-      &info.return_type,
+      active.generics.as_ref(),
+      &active.arg_types,
+      active.rest_type.as_ref(),
+      &active.return_type,
       call_expr.iter().skip(1),
       scope_types,
     )
     // An explicit Dynamic result is a known open contract, not missing
     // inference. Do not let the caller's concrete context fill that gap.
-    .or_else(|| (!info.return_type.contains_type_var()).then(|| info.return_type.clone()));
+    .or_else(|| (!active.return_type.contains_type_var()).then(|| active.return_type.clone()));
     if let Some(declared_return) = declared_return {
       // A public schema remains authoritative for the nominal shape and type
       // arguments, but an implementation can construct that same nominal
@@ -2487,6 +2540,30 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           {
             return Some(inferred);
           }
+          if !info.def_ns.is_empty()
+            && !info.name.is_empty()
+            && let schema = resolve_namespace_type_refs_for_body(lookup_definition_value_schema(&info.def_ns, &info.name), &info.def_ns)
+            && let CalcitTypeAnnotation::Fn(fn_annot) = schema.as_ref()
+            && !fn_annot.cases.is_empty()
+            && let call_args = xs.drop_left()
+            && let Some(case) = select_fn_case(fn_annot, &info.def_ns, &call_args, scope_types)
+              .filter(|case| case_args_proven_for_return(case, &info.def_ns, &call_args, scope_types))
+            && let Some(resolved) = resolve_generic_return_type_parts(
+              case.generics.as_ref(),
+              &case.arg_types,
+              case.rest_type.as_ref(),
+              &case.return_type,
+              xs.iter().skip(1),
+              scope_types,
+            )
+            .or_else(|| (!case.return_type.contains_type_var()).then(|| case.return_type.clone()))
+          {
+            return Some(invocation_return_type(
+              fn_annot,
+              resolved,
+              definition_marks_async(&info.def_ns, &info.name),
+            ));
+          }
           if info.return_type.contains_type_var()
             && let Some(resolved) = resolve_generic_return_type(info, xs.iter().skip(1), scope_types)
           {
@@ -2677,6 +2754,7 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
   mark_async_callable(
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: fn_annotation.open_reason,
+      cases: fn_annotation.cases.clone(),
       guard: None,
       runtime_arity,
       generics: fn_annotation.generics.clone(),
@@ -2741,6 +2819,7 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
     .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))?;
   Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: Arc::new(vec![]),
@@ -3703,6 +3782,7 @@ pub(super) fn checked_method_signature(
   }
   Some(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: info.generics.clone(),
@@ -4481,6 +4561,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       let return_type = returned.and_then(|body| resolve_type_value(body, &parameter_scope))?;
       let mut signature = CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -5289,6 +5370,7 @@ mod tests {
     let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
@@ -5342,6 +5424,7 @@ mod tests {
     let receiver = typed_local("items", Arc::new(CalcitTypeAnnotation::List(caller.clone())));
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T"), Arc::from("U")]),
@@ -5372,6 +5455,7 @@ mod tests {
   fn async_callable_alias_requires_await_for_its_logical_value() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -6173,6 +6257,7 @@ mod tests {
   fn apply_preserves_an_async_callable_pending_result() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -6199,6 +6284,7 @@ mod tests {
       "identity",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
@@ -6276,6 +6362,7 @@ mod tests {
       "collect",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
@@ -7052,6 +7139,7 @@ mod tests {
     let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
@@ -7137,6 +7225,7 @@ mod tests {
     let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let caller = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),

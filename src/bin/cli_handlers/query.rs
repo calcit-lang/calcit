@@ -712,6 +712,30 @@ fn write_intrinsic_checker_rules(out: &mut String, rules: &[&str]) {
   }
 }
 
+fn schema_cases_lines(schema: &CalcitTypeAnnotation) -> Result<Option<Vec<String>>, String> {
+  let CalcitTypeAnnotation::Fn(signature) = schema else {
+    return Ok(None);
+  };
+  if signature.cases.is_empty() {
+    return Ok(None);
+  }
+  let mut lines = Vec::with_capacity(signature.cases.len());
+  for case in signature.cases.iter() {
+    let case_annotation = CalcitTypeAnnotation::Fn(case.clone());
+    if let Some(cirru) = query_schema_cirru(&case_annotation, true)? {
+      lines.push(format_query_schema_oneline(&cirru)?);
+    }
+  }
+  Ok((!lines.is_empty()).then_some(lines))
+}
+
+fn write_schema_cases(out: &mut String, cases: &[String]) {
+  let _ = writeln!(out, "\n## Cases\n");
+  for case in cases {
+    let _ = writeln!(out, "- `{case}`");
+  }
+}
+
 fn format_schema_cirru_query_json(
   id: &str,
   source: &str,
@@ -5609,6 +5633,9 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str, entry: Optio
   } else {
     let _ = writeln!(&mut out, "_No explicit schema._");
   }
+  if let Some(cases) = schema_cases_lines(code_entry.schema.as_ref())? {
+    write_schema_cases(&mut out, &cases);
+  }
   if let Some(rules) = intrinsic_checker_rules(namespace, resolved_definition.as_str(), code_entry.schema.as_ref()) {
     write_intrinsic_checker_rules(&mut out, rules);
   }
@@ -5674,6 +5701,7 @@ fn handle_schema(
 
   let mut out = String::new();
 
+  let schema_cases = schema_cases_lines(code_entry.schema.as_ref())?;
   let checker_rules = intrinsic_checker_rules(namespace, resolved_definition.as_str(), code_entry.schema.as_ref());
   if structured {
     let id = format!("{namespace}/{resolved_definition}");
@@ -5684,14 +5712,18 @@ fn handle_schema(
       snapshot::definition_revision(code_entry)?,
       None,
     )?;
-    let text = match checker_rules {
-      Some(rules) => {
-        let mut envelope: serde_json::Value =
-          serde_json::from_str(&text).map_err(|error| format!("Failed to decode schema query JSON: {error}"))?;
-        envelope["data"]["checker_rules"] = serde_json::json!(rules);
-        serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode schema query JSON: {error}"))?
+    let text = if schema_cases.is_some() || checker_rules.is_some() {
+      let mut envelope: serde_json::Value =
+        serde_json::from_str(&text).map_err(|error| format!("Failed to decode schema query JSON: {error}"))?;
+      if let Some(cases) = &schema_cases {
+        envelope["data"]["cases"] = serde_json::json!(cases);
       }
-      None => text,
+      if let Some(rules) = checker_rules {
+        envelope["data"]["checker_rules"] = serde_json::json!(rules);
+      }
+      serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode schema query JSON: {error}"))?
+    } else {
+      text
     };
     format.print_json_text(&text)?;
     return Ok(());
@@ -5700,6 +5732,9 @@ fn handle_schema(
   if let Some(cirru) = definition_schema_cirru(&code_entry.schema, true)? {
     let _ = writeln!(&mut out, "# Schema for `{namespace}/{resolved_definition}`\n");
     out.push_str(&markdown_fenced_block("cirru", &format_query_schema_oneline(&cirru)?));
+    if let Some(cases) = &schema_cases {
+      write_schema_cases(&mut out, cases);
+    }
     if let Some(rules) = checker_rules {
       write_intrinsic_checker_rules(&mut out, rules);
     }

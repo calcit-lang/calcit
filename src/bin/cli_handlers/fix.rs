@@ -2621,6 +2621,7 @@ fn plan_value_to_zero_arg_fn(
 
   let rewritten_schema = std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: std::sync::Arc::new(vec![]),
@@ -5667,6 +5668,7 @@ mod tests {
 
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -6041,6 +6043,7 @@ mod tests {
     let direct_trait = Arc::new(CalcitTrait::new_reference("app.schema/Show"));
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),

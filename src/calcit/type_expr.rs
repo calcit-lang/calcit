@@ -366,6 +366,7 @@ struct FnParts {
   features: Option<Vec<Cirru>>,
   open: Option<Cirru>,
   guard: Option<Cirru>,
+  cases: Option<Vec<Cirru>>,
 }
 
 /// Clause heads come either from `->` or from a tag. Anything else is a parameter.
@@ -378,6 +379,10 @@ fn clause_head(node: &Cirru) -> Option<&str> {
 }
 
 fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cirru, String> {
+  desugar_fn_inner(items, outer_scope, kind, false)
+}
+
+fn desugar_fn_inner(items: &[Cirru], outer_scope: &[String], kind: Kind, is_case: bool) -> Result<Cirru, String> {
   let kind_name = kind.name();
   // Generics are collected first so parameters and the return type can see them.
   let mut parts = FnParts::default();
@@ -495,6 +500,29 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
         };
         parts.guard = Some(target.clone());
       }
+      ":cases" if kind == Kind::Fn => {
+        if is_case {
+          return Err(String::from("nested `:cases` inside a `:cases` entry is not allowed"));
+        }
+        if parts.cases.is_some() {
+          return Err(String::from("duplicate `:cases` clause in `Fn`"));
+        }
+        if body.is_empty() {
+          return Err(String::from("`:cases` needs at least one `Fn` signature"));
+        }
+        let mut cases = Vec::with_capacity(body.len());
+        for case_node in body {
+          let Cirru::List(case_items) = case_node else {
+            return Err(format!("`:cases` entry `{}` must be a `Fn` signature", describe(case_node)));
+          };
+          if case_items.first().and_then(leaf_text) != Some("Fn") {
+            return Err(format!("`:cases` entry `{}` must be a `Fn` signature", describe(case_node)));
+          }
+          // Each case is an independent signature; its generics do not shadow the outer Fn's own generics.
+          cases.push(desugar_fn_inner(&case_items[1..], outer_scope, Kind::Fn, true)?);
+        }
+        parts.cases = Some(cases);
+      }
       ":open" if kind == Kind::Fn => {
         if parts.open.is_some() {
           return Err(String::from("duplicate `:open` clause in `Fn`"));
@@ -538,7 +566,7 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
         return Err(match kind {
           Kind::Fn => {
             format!(
-              "unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async`, `:features`, `:open` or `:guard`"
+              "unknown `Fn` clause `{head}`; expected `(-> T)`, `:generics`, `:where`, `:async`, `:features`, `:open`, `:guard` or `:cases`"
             )
           }
           Kind::Macro => format!(
@@ -646,6 +674,9 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
   if parts.guard.is_some() && parts.args.is_empty() {
     return Err(String::from("`:guard` needs a first parameter"));
   }
+  if is_case && parts.args.is_empty() {
+    return Err(String::from("`:cases` entry needs at least one receiver parameter"));
+  }
   let mut args = vec![Cirru::leaf("[]")];
   args.extend(parts.args);
   let mut map = vec![Cirru::leaf("{}")];
@@ -704,6 +735,11 @@ fn desugar_fn(items: &[Cirru], outer_scope: &[String], kind: Kind) -> Result<Cir
   }
   if let Some(target) = parts.guard {
     map.push(Cirru::List(vec![Cirru::leaf(":guard"), desugar_type(&target, &scope)?]));
+  }
+  if let Some(cases) = parts.cases {
+    let mut list = vec![Cirru::leaf("[]")];
+    list.extend(cases);
+    map.push(Cirru::List(vec![Cirru::leaf(":cases"), Cirru::List(list)]));
   }
   Ok(Cirru::List(vec![Cirru::leaf("::"), quoted(kind_name), Cirru::List(map)]))
 }
@@ -791,9 +827,9 @@ fn print_macro(map: &EdnMapView, never_is_bound: bool) -> Result<Cirru, String> 
   Ok(Cirru::List(out))
 }
 
-fn print_fn(map: &EdnMapView, never_is_bound: bool) -> Result<Cirru, String> {
+fn print_fn(map: &EdnMapView, outer_never_is_bound: bool) -> Result<Cirru, String> {
   let get = |key: &str| map.0.get(&Edn::tag(key));
-  let never_is_bound = never_is_bound || has_never_binder(get("generics"));
+  let never_is_bound = outer_never_is_bound || has_never_binder(get("generics"));
   let print = |ty| print_type_in_scope(ty, never_is_bound);
   if get("kind").is_some() {
     return Err(String::from("macro schema"));
@@ -821,6 +857,15 @@ fn print_fn(map: &EdnMapView, never_is_bound: bool) -> Result<Cirru, String> {
   }
   if let Some(target) = get("guard") {
     out.push(Cirru::List(vec![Cirru::leaf(":guard"), print(target)?]));
+  }
+  if let Some(Edn::List(cases)) = get("cases")
+    && !cases.0.is_empty()
+  {
+    let mut clause = vec![Cirru::leaf(":cases")];
+    for case in &cases.0 {
+      clause.push(print_type_in_scope(case, outer_never_is_bound)?);
+    }
+    out.push(Cirru::List(clause));
   }
   Ok(Cirru::List(out))
 }
@@ -1019,6 +1064,52 @@ mod tests {
     assert_eq!(print_type_compact(&edn).expect("print"), compact);
     assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :other)")).is_err());
     assert!(desugar_type_expr(&parse_one("Fn AnyEnum (-> String) (:open :reflect) (:open :host)")).is_err());
+  }
+
+  #[test]
+  fn cases_clause_round_trips_and_validates() {
+    let source = "Fn Dynamic Dynamic\n  -> $ Option Dynamic\n  :open :intrinsic\n  :cases\n    Fn (Map K V) K (-> (Option V)) (:generics K V)\n    Fn (List T) Number (-> (Option T)) (:generics T)\n    Fn String Number (-> (Option String))";
+    let compact = parse_one(source);
+    let desugared = desugar_type_expr(&compact).expect("desugar :cases");
+    let edn = crate::snapshot::schema_cirru_to_edn(desugared);
+    assert_eq!(print_type_compact(&edn).expect("print :cases"), compact);
+    let parsed = crate::snapshot::parse_schema_annotation_for_write(&compact).expect("parse :cases schema");
+    assert_eq!(parsed.to_type_edn(), edn);
+    let crate::calcit::CalcitTypeAnnotation::Fn(sig) = parsed.as_ref() else {
+      panic!("expected Fn annotation");
+    };
+    assert_eq!(sig.cases.len(), 3);
+    assert_eq!(
+      sig.cases[0].generics.as_slice(),
+      &[std::sync::Arc::from("K"), std::sync::Arc::from("V")]
+    );
+    assert_eq!(sig.cases[1].generics.as_slice(), &[std::sync::Arc::from("T")]);
+    assert!(sig.cases[2].generics.is_empty());
+
+    // Outer generics do not collide with case-local generics of the same name.
+    let outer_generic =
+      parse_one("Fn C (Fn T (-> U)) (-> Dynamic) (:generics C T U) (:cases (Fn (List T) (Fn T (-> U)) (-> (List U)) (:generics T U)))");
+    let desugared_outer = desugar_type_expr(&outer_generic).expect("outer and case generics may share names");
+    let edn_outer = crate::snapshot::schema_cirru_to_edn(desugared_outer);
+    assert_eq!(print_type_compact(&edn_outer).expect("print outer generic"), outer_generic);
+
+    // Invalid :cases forms are rejected.
+    for (bad, expected) in [
+      ("Fn Dynamic (-> Dynamic) (:cases)", "at least one"),
+      ("Fn Dynamic (-> Dynamic) (:cases Number)", "must be a `Fn`"),
+      ("Fn Dynamic (-> Dynamic) (:cases (Fn (-> Unit)))", "receiver parameter"),
+      (
+        "Fn Dynamic (-> Dynamic) (:cases (Fn Number (-> Number) (:cases (Fn Number (-> Number)))))",
+        "nested `:cases`",
+      ),
+      (
+        "Fn Dynamic (-> Dynamic) (:cases (Fn Number (-> Number))) (:cases (Fn String (-> String)))",
+        "duplicate `:cases`",
+      ),
+    ] {
+      let err = desugar_text(bad).expect_err(bad);
+      assert!(err.contains(expected), "{bad}: expected `{expected}` in `{err}`");
+    }
   }
 
   #[test]

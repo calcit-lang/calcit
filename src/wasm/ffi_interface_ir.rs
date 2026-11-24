@@ -1937,6 +1937,7 @@ mod tests {
       code: Cirru::List(vec![]),
       schema: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3127,6 +3128,7 @@ mod tests {
   fn classifies_typed_and_untyped_callbacks_with_stable_paths() {
     let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3177,6 +3179,7 @@ mod tests {
   fn preserves_macro_kind_when_classifying_nested_function_annotations() {
     let macro_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),

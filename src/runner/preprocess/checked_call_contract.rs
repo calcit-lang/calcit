@@ -246,6 +246,161 @@ pub(crate) fn resolve_bound_type_slot_chain(mut type_value: Arc<CalcitTypeAnnota
   type_value
 }
 
+fn is_source_function_form(arg: &Calcit) -> bool {
+  matches!(
+    arg,
+    Calcit::List(items)
+      if matches!(items.first(), Some(Calcit::Syntax(calcit::CalcitSyntax::Defn, _)))
+        || matches!(
+          items.first(),
+          Some(Calcit::Import(import)) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "fn"
+        )
+        || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn")
+  )
+}
+
+fn receiver_matches_case(receiver_type: &CalcitTypeAnnotation, case: &calcit::CalcitFnTypeAnnotation, fn_ns: &str) -> bool {
+  let Some(expected_receiver) = case.arg_types.first() else {
+    return false;
+  };
+  let expected_receiver = super::resolve_namespace_type_refs_for_body(expected_receiver.clone(), fn_ns);
+  let actual_arc = Arc::new(receiver_type.clone());
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(
+    &case.generics,
+    std::slice::from_ref(&expected_receiver),
+    std::slice::from_ref(&actual_arc),
+  );
+  proof.prove(receiver_type, expected_receiver.as_ref()).is_proven()
+}
+
+/// Select the first `:cases` entry whose receiver (arg 0) matches the actual
+/// receiver type. Returns `None` when the receiver is unknown, `Dynamic`,
+/// `Never`, or no case matches — causing callers to fall back to the outer
+/// signature.
+pub(crate) fn select_fn_case(
+  signature: &calcit::CalcitFnTypeAnnotation,
+  fn_ns: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<calcit::CalcitFnTypeAnnotation>> {
+  use CalcitTypeAnnotation as T;
+
+  if signature.cases.is_empty() {
+    return None;
+  }
+  let receiver = args.first()?;
+  let receiver_type = resolve_type_value(receiver, scope_types).map(resolve_bound_type_slot_chain)?;
+  let expanded_receiver = CalcitTypeAnnotation::expand_schema_alias(&receiver_type);
+  if matches!(expanded_receiver.as_ref(), T::Dynamic | T::Never) {
+    return None;
+  }
+
+  // Macro bodies pass SyntaxList (`List Syntax`) to polymorphic core functions
+  // with untyped callbacks; keep them on the open fallback path.
+  if fn_ns == calcit::CORE_NS
+    && let T::List(item) = expanded_receiver.as_ref()
+    && is_syntax_member(item)
+  {
+    return None;
+  }
+
+  let collect_matches = |candidate: &CalcitTypeAnnotation| -> Vec<Arc<calcit::CalcitFnTypeAnnotation>> {
+    signature
+      .cases
+      .iter()
+      .filter(|case| receiver_matches_case(candidate, case, fn_ns))
+      .cloned()
+      .collect()
+  };
+
+  let mut matched = collect_matches(expanded_receiver.as_ref());
+  if matched.is_empty()
+    && let T::Tuple(slots) = expanded_receiver.as_ref()
+    && let Some(item) = T::homogeneous_tuple_item(slots)
+  {
+    matched = collect_matches(&T::List(item.clone()));
+  }
+
+  match matched.len() {
+    0 => None,
+    1 => Some(matched.remove(0)),
+    _ => {
+      // Multiple cases match arg 0 (e.g. `&list:sort-by` accepting a `Fn` or `Tag` selector).
+      // Disambiguate using arg 1 when available; if arg 1 is Dynamic or ambiguous, fall back.
+      let Some(arg1) = args.get(1) else {
+        return Some(matched.remove(0));
+      };
+      if is_source_function_form(arg1) {
+        return matched
+          .into_iter()
+          .find(|case| case.arg_types.get(1).is_some_and(|ty| matches!(ty.as_ref(), T::Fn(_) | T::DynFn)));
+      }
+      let arg1_type = resolve_type_value(arg1, scope_types).map(resolve_bound_type_slot_chain)?;
+      if matches!(arg1_type.as_ref(), T::Dynamic | T::Never) {
+        return None;
+      }
+      let expanded_arg1 = CalcitTypeAnnotation::expand_schema_alias(&arg1_type);
+      if matches!(expanded_arg1.as_ref(), T::Fn(_) | T::DynFn) {
+        return matched
+          .into_iter()
+          .find(|case| case.arg_types.get(1).is_some_and(|ty| matches!(ty.as_ref(), T::Fn(_) | T::DynFn)));
+      }
+      matched.into_iter().find(|case| {
+        let Some(expected_arg1) = case.arg_types.get(1) else {
+          return false;
+        };
+        let expected_arg1 = super::resolve_namespace_type_refs_for_body(expected_arg1.clone(), fn_ns);
+        let mut proof = crate::calcit::type_annotation::CallTypeProof::new(
+          &case.generics,
+          std::slice::from_ref(&expected_arg1),
+          std::slice::from_ref(&expanded_arg1),
+        );
+        proof.prove(expanded_arg1.as_ref(), expected_arg1.as_ref()).is_proven()
+      })
+    }
+  }
+}
+
+/// Bind a selected `:cases` entry's generics from arg 0 so later arguments
+/// (such as inline lambdas) receive concrete contextual parameter types.
+pub(crate) fn instantiate_fn_case_expected_types(
+  case: &calcit::CalcitFnTypeAnnotation,
+  fn_ns: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  use CalcitTypeAnnotation as T;
+
+  let receiver = args.first()?;
+  let receiver_type = resolve_type_value(receiver, scope_types).map(resolve_bound_type_slot_chain)?;
+  let expanded_receiver = CalcitTypeAnnotation::expand_schema_alias(&receiver_type);
+  let effective_receiver = match expanded_receiver.as_ref() {
+    T::Tuple(slots)
+      if !receiver_matches_case(expanded_receiver.as_ref(), case, fn_ns) && T::homogeneous_tuple_item(slots).is_some() =>
+    {
+      Arc::new(T::List(T::homogeneous_tuple_item(slots).unwrap().clone()))
+    }
+    _ => expanded_receiver,
+  };
+  let expected_receiver = super::resolve_namespace_type_refs_for_body(case.arg_types.first()?.clone(), fn_ns);
+  let mut bindings = std::collections::HashMap::new();
+  if !effective_receiver
+    .as_ref()
+    .prove_with_bindings(expected_receiver.as_ref(), &mut bindings)
+    .is_proven()
+  {
+    return None;
+  }
+  bindings.retain(|name, _| case.generics.contains(name));
+  Some(
+    case
+      .arg_types
+      .iter()
+      .map(|arg| super::resolve_namespace_type_refs_for_body(arg.substitute_type_vars(&bindings), fn_ns))
+      .collect(),
+  )
+}
+
 /// A non-empty write retains every proven Map prefix above an open payload.
 /// This proves only the result shape on success: unknown descendants still
 /// use the public walker and retain its runtime checks and failure behavior.
@@ -540,10 +695,13 @@ fn resolve_checked_call_contract_inner(
         lowering: None,
       })
     }
-    ("any?" | "every?", T::Map(_, _)) => Some(CheckedCallContract {
+    ("any?" | "every?", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![
         receiver_type.clone(),
-        fn_type(vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))], Arc::new(T::Bool)),
+        fn_type(
+          vec![Arc::new(T::Tuple(Arc::new(vec![key_type.clone(), value_type.clone()])))],
+          Arc::new(T::Bool),
+        ),
       ]),
       return_type: Arc::new(T::Bool),
       lowering: None,
@@ -560,11 +718,11 @@ fn resolve_checked_call_contract_inner(
         lowering: None,
       })
     }
-    ("each", T::Map(_, _)) => Some(CheckedCallContract {
+    ("each", T::Map(key_type, value_type)) => Some(CheckedCallContract {
       expected_types: Some(vec![
         receiver_type.clone(),
         fn_type(
-          vec![Arc::new(T::List(crate::calcit::DYNAMIC_TYPE.clone()))],
+          vec![Arc::new(T::Tuple(Arc::new(vec![key_type.clone(), value_type.clone()])))],
           crate::calcit::DYNAMIC_TYPE.clone(),
         ),
       ]),
@@ -1107,7 +1265,14 @@ mod tests {
     };
     assert!(matches!(
       callback.arg_types.as_slice(),
-      [pair] if matches!(pair.as_ref(), CalcitTypeAnnotation::List(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic))
+      [pair]
+        if matches!(
+          pair.as_ref(),
+          CalcitTypeAnnotation::Tuple(slots)
+            if slots.len() == 2
+              && matches!(slots[0].as_ref(), CalcitTypeAnnotation::Tag)
+              && matches!(slots[1].as_ref(), CalcitTypeAnnotation::Number)
+        )
     ));
   }
 

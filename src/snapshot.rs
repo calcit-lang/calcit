@@ -1610,6 +1610,7 @@ pub const VALID_SCHEMA_FIELDS: &[&str] = &[
   ":async",
   ":open",
   ":guard",
+  ":cases",
   ":legacy-origin",
 ];
 
@@ -2042,6 +2043,7 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
   let mut async_node: Option<&Cirru> = None;
   let mut open_node: Option<&Cirru> = None;
   let mut guard_node: Option<&Cirru> = None;
+  let mut cases_node: Option<&Cirru> = None;
 
   for pair in items.iter().skip(1) {
     if let Cirru::List(xs) = pair
@@ -2065,6 +2067,12 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
             return Err("`:guard` requires exactly one target type in a `Fn` schema".to_owned());
           }
           guard_node = Some(val);
+        }
+        ":cases" => {
+          if cases_node.is_some() || xs.len() != 2 {
+            return Err("`:cases` may appear at most once in a `Fn` schema".to_owned());
+          }
+          cases_node = Some(val);
         }
         ":open" => {
           if open_node.is_some() {
@@ -2168,6 +2176,22 @@ pub fn validate_schema_for_write(schema: &Cirru) -> Result<(), String> {
 
   if guard_node.is_some() && is_macro_schema {
     return Err("`:guard` is only allowed on `Fn` schemas".to_owned());
+  }
+
+  if let Some(cases_val) = cases_node {
+    if is_macro_schema {
+      return Err("`:cases` is only allowed on `Fn` schemas".to_owned());
+    }
+    let Cirru::List(case_items) = cases_val else {
+      return Err("`:cases` must be a list of `Fn` schemas".to_owned());
+    };
+    let start = usize::from(matches!(case_items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "[]"));
+    if case_items.len() <= start {
+      return Err("`:cases` needs at least one `Fn` signature".to_owned());
+    }
+    for case_node in &case_items[start..] {
+      validate_schema_for_write(case_node)?;
+    }
   }
 
   if open_node.is_some() && is_macro_schema {
@@ -3754,7 +3778,11 @@ pub fn schema_uses_intrinsic_reason(annotation: &CalcitTypeAnnotation) -> bool {
   let mut found = false;
   annotation.walk_components(&mut |annotation| {
     if let CalcitTypeAnnotation::Fn(signature) = annotation
-      && signature.open_reason.0 == Some(crate::calcit::FnOpenReason::Intrinsic)
+      && (signature.open_reason.0 == Some(crate::calcit::FnOpenReason::Intrinsic)
+        || signature
+          .cases
+          .iter()
+          .any(|case| case.open_reason.0 == Some(crate::calcit::FnOpenReason::Intrinsic)))
     {
       found = true;
     }
@@ -4826,6 +4854,7 @@ fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: Arc::new(vec![]),
@@ -6929,6 +6958,7 @@ mod tests {
   fn code_entry_json_round_trip_preserves_nested_function_schema() {
     let fn_schema = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
@@ -8950,6 +8980,7 @@ mod tests {
       DYNAMIC_TYPE.clone(),
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -8999,6 +9030,7 @@ mod tests {
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: std::sync::Arc::new(vec![]),

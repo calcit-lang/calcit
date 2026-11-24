@@ -19,7 +19,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use super::checked_call_contract::resolve_checked_call_contract;
+use super::checked_call_contract::{instantiate_fn_case_expected_types, resolve_checked_call_contract, select_fn_case};
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::union_def::UnionMemberKind;
@@ -324,14 +324,23 @@ fn specialize_core_expected_types_inner(
   scope_types: &ScopeTypes,
   expected_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if fn_info.def_ns.as_ref() == calcit::CORE_NS {
+    if let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types) {
+      return contract.expected_types;
+    }
+    if let Some(expected) = specialize_core_callback_expected_types(fn_info, args, scope_types, expected_types) {
+      return Some(expected);
+    }
+  }
+  if let CalcitTypeAnnotation::Fn(schema_fn) = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name).as_ref()
+    && !schema_fn.cases.is_empty()
+    && let Some(case) = select_fn_case(schema_fn, &fn_info.def_ns, args, scope_types)
+    && let Some(instantiated) = instantiate_fn_case_expected_types(&case, &fn_info.def_ns, args, scope_types)
+  {
+    return Some(instantiated);
+  }
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return None;
-  }
-  if let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types) {
-    return contract.expected_types;
-  }
-  if let Some(expected) = specialize_core_callback_expected_types(fn_info, args, scope_types, expected_types) {
-    return Some(expected);
   }
   if fn_info.name.as_ref() == "nil->option" {
     // The public schema takes any `T`; at a call site the argument may also
@@ -1766,10 +1775,13 @@ pub(crate) fn check_user_fn_arg_types(
     CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.as_ref()),
     _ => None,
   };
+  let selected_case = schema_fn_annot.and_then(|fn_annot| select_fn_case(fn_annot, &fn_info.def_ns, args, scope_types));
 
   let (fn_fixed_types, trailing_rest_type) = split_trailing_rest_type(&fn_info.arg_types);
 
-  let expected_types = if fn_fixed_types.is_empty() || fn_fixed_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
+  let expected_types = if let Some(case) = selected_case.as_deref() {
+    case.arg_types.as_slice()
+  } else if fn_fixed_types.is_empty() || fn_fixed_types.iter().all(|t| matches!(**t, CalcitTypeAnnotation::Dynamic)) {
     schema_fn_annot
       .map(|fn_annot| fn_annot.arg_types.as_slice())
       .unwrap_or(fn_fixed_types)
@@ -1777,7 +1789,9 @@ pub(crate) fn check_user_fn_arg_types(
     fn_fixed_types
   };
 
-  let where_bounds = if fn_info.where_bounds.is_empty() {
+  let where_bounds = if let Some(case) = selected_case.as_deref() {
+    case.where_bounds.as_slice()
+  } else if fn_info.where_bounds.is_empty() {
     schema_fn_annot
       .map(|fn_annot| fn_annot.where_bounds.as_slice())
       .unwrap_or(fn_info.where_bounds.as_ref())
@@ -1786,13 +1800,30 @@ pub(crate) fn check_user_fn_arg_types(
   };
 
   let declared_rest_type = fn_info.rest_type.as_ref().or(trailing_rest_type);
-  let rest_type = match declared_rest_type {
-    Some(rest_type) if !matches!(rest_type.as_ref(), CalcitTypeAnnotation::Dynamic) => Some(rest_type),
-    fallback => schema_fn_annot.and_then(|fn_annot| fn_annot.rest_type.as_ref()).or(fallback),
+  let rest_type = if let Some(case) = selected_case.as_deref() {
+    case.rest_type.as_ref()
+  } else {
+    match declared_rest_type {
+      Some(rest_type) if !matches!(rest_type.as_ref(), CalcitTypeAnnotation::Dynamic) => Some(rest_type),
+      fallback => schema_fn_annot.and_then(|fn_annot| fn_annot.rest_type.as_ref()).or(fallback),
+    }
   };
 
-  let specialized_expected_types = specialize_core_expected_types(fn_info, args, scope_types, expected_types);
-  let specialized_rest_type = specialize_core_rest_type(fn_info, args, scope_types);
+  let specialized_expected_types = if selected_case.is_some()
+    && fn_info.def_ns.as_ref() == calcit::CORE_NS
+    && let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types)
+  {
+    contract.expected_types
+  } else if selected_case.is_some() {
+    None
+  } else {
+    specialize_core_expected_types(fn_info, args, scope_types, expected_types)
+  };
+  let specialized_rest_type = if selected_case.is_some() {
+    None
+  } else {
+    specialize_core_rest_type(fn_info, args, scope_types)
+  };
   let effective_fixed_types = specialized_expected_types.as_deref().unwrap_or(expected_types);
   let effective_rest_type = specialized_rest_type.as_ref().or(rest_type);
   if effective_fixed_types.is_empty() && effective_rest_type.is_none() {
@@ -1816,7 +1847,9 @@ pub(crate) fn check_user_fn_arg_types(
     head_form,
     args,
     expected_types: expected_types.as_ref(),
-    generics: if fn_info.generics.is_empty() {
+    generics: if let Some(case) = selected_case.as_deref() {
+      case.generics.as_slice()
+    } else if fn_info.generics.is_empty() {
       schema_fn_annot.map_or(&[], |signature| signature.generics.as_slice())
     } else {
       &fn_info.generics

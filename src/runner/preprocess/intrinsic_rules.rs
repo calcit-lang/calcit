@@ -8,42 +8,17 @@
 //! test keeps this table and the marked core schemas in step.
 
 /// One line per receiver kind: `receiver: argument and result types`.
+/// Rules already declared as `:cases` data in `calcit-core.cirru` (#2736) are
+/// rendered directly from the schema and omitted here.
 pub fn intrinsic_rule_summary(def: &str) -> Option<&'static [&'static str]> {
   let lines: &'static [&'static str] = match def {
-    "first" | "last" => &[
-      "List T -> Option T",
-      "String -> Option String",
-      "enum value -> Option Dynamic (payload by position)",
-    ],
+    "first" | "last" => &["enum value -> Option Dynamic (payload by position)"],
     "nth" => &[
       "List T, Number -> Option T",
       "String, Number -> Option String",
       "Tuple: literal index -> that slot's type",
     ],
-    "get" => &[
-      "Map K V, K -> Option V",
-      "List T, Number -> Option T",
-      "String, Number -> Option String",
-      "enum value, Number -> Option Dynamic",
-    ],
-    "any?" | "every?" => &[
-      "List T | Set T, (Fn T (-> Bool)) -> Bool",
-      "Map K V, (Fn (List Dynamic) (-> Bool)) -> Bool",
-    ],
-    "each" => &[
-      "List T | Set T, (Fn T (-> R)) -> Unit",
-      "Map K V, (Fn (List Dynamic) (-> R)) -> Unit",
-    ],
-    "filter" => &[
-      "List T, (Fn T (-> Bool)) -> List T",
-      "Set T, (Fn T (-> Bool)) -> Set T",
-      "Map K V, (Fn (Tuple K V) (-> Bool)) -> Map K V",
-    ],
-    "map" => &[
-      "List T, (Fn T (-> U)) -> List U",
-      "Set T, (Fn T (-> U)) -> Set U",
-      "Map K V, (Fn (Tuple K V) (-> (Tuple K2 V2))) -> Map K2 V2",
-    ],
+    "get" => &["enum value, Number -> Option Dynamic"],
     "update" => &[
       "List T, Number, (Fn T (-> T)) -> List T",
       "Map K V, K, (Fn V (-> V)) -> Map K V",
@@ -55,12 +30,6 @@ pub fn intrinsic_rule_summary(def: &str) -> Option<&'static [&'static str]> {
       "Struct S, field tag, the field's type -> S",
       "enum value, Number, payload -> the same enum",
     ],
-    "dissoc" => &["Map K V, & K -> Map K V", "List T, Number -> List T"],
-    "includes?" => &[
-      "List T | Set T, T -> Bool",
-      "Map K V, V -> Bool (checks values)",
-      "String, String -> Bool",
-    ],
     "get-in" => &[
       "nested Map / List / Struct with a literal path -> Result of the leaf type and PathError",
       "otherwise -> Result Dynamic PathError",
@@ -69,9 +38,8 @@ pub fn intrinsic_rule_summary(def: &str) -> Option<&'static [&'static str]> {
     "assoc-in" => &["nested Map with a literal path, the leaf value type -> the same Map type"],
     "update-in" => &["nested Map with a literal path, (Fn (Option Leaf) (-> Leaf)) -> the same Map type"],
     "dissoc-in" => &["nested Map / List with a literal path -> the receiver's type"],
-    "pairs-map" => &["List (Tuple K V) -> Map K V", "List (List T) -> Map T T"],
     "apply" => &["(Fn A... (-> R)), a List literal or List of matching arguments -> R"],
-    "&list:sort-by" => &["List T, (Fn T (-> K)) -> List T", "List T, field tag -> List T"],
+    "&list:sort-by" => &["List T, field tag -> List T"],
     "&fs-read-dir" => &[
       "由已知 enum 定义和单 String 字段的路径 struct 推断结果，成功分支包含该 struct 的 List",
       "构造器不透明或形状无法证明时，返回 Dynamic",
@@ -90,8 +58,8 @@ mod tests {
   use crate::calcit::{CalcitTypeAnnotation, FnOpenReason};
   use std::collections::BTreeSet;
 
-  /// Every calcit.core signature marked `(:open :intrinsic)` has a rule
-  /// summary, and every summary belongs to a marked signature.
+  /// Every calcit.core signature marked `(:open :intrinsic)` has `:cases` data
+  /// or a rule summary, and every summary belongs to a marked signature.
   #[test]
   fn intrinsic_marks_and_rule_summaries_match() {
     let core_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cirru/calcit-core.cirru");
@@ -100,14 +68,18 @@ mod tests {
     let snapshot = crate::snapshot::load_snapshot_data(&edn, "calcit-core.cirru").expect("load core snapshot");
     let core = &snapshot.files[crate::calcit::CORE_NS];
     let mut marked = BTreeSet::new();
+    let mut with_cases = BTreeSet::new();
     for (name, entry) in &core.defs {
       if let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref()
         && signature.open_reason.0 == Some(FnOpenReason::Intrinsic)
       {
         marked.insert(name.as_str());
+        if !signature.cases.is_empty() {
+          with_cases.insert(name.as_str());
+        }
         assert!(
-          intrinsic_rule_summary(name).is_some(),
-          "calcit.core/{name} is marked `(:open :intrinsic)` but has no rule summary"
+          !signature.cases.is_empty() || intrinsic_rule_summary(name).is_some(),
+          "calcit.core/{name} is marked `(:open :intrinsic)` but has neither `:cases` nor a rule summary"
         );
       }
     }
@@ -119,23 +91,30 @@ mod tests {
         );
       }
     }
-    // Receiver-specialized collection contracts are all marked.
+    // Tier-1 pure-data collection contracts are declared via `:cases` (#2736).
     for name in [
       "first",
       "last",
-      "nth",
       "get",
       "any?",
       "every?",
       "each",
       "filter",
       "map",
-      "update",
-      "assoc-in",
-      "update-in",
+      "dissoc",
+      "includes?",
       "pairs-map",
+      "&list:sort-by",
     ] {
       assert!(marked.contains(name), "calcit.core/{name} should be marked `(:open :intrinsic)`");
+      assert!(with_cases.contains(name), "calcit.core/{name} should declare `:cases`");
+    }
+    // Fully migrated defs no longer duplicate prose in `intrinsic_rule_summary`.
+    for name in ["any?", "every?", "each", "filter", "map", "dissoc", "includes?", "pairs-map"] {
+      assert!(
+        intrinsic_rule_summary(name).is_none(),
+        "calcit.core/{name} is fully covered by `:cases` and should not duplicate prose in intrinsic_rule_summary"
+      );
     }
   }
 }

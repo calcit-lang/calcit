@@ -17588,6 +17588,7 @@ mod tests {
     // A signature proves call shape, not the target or its host capabilities.
     let callable = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
@@ -17901,6 +17902,7 @@ mod tests {
     let fn_type = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, rest: bool| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),

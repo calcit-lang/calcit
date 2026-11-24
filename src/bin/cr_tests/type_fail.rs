@@ -406,6 +406,7 @@ fn strict_fs_path_core_methods_bind_result_map_callback_payloads() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -479,6 +480,7 @@ fn strict_map_list_kv_preserves_key_value_and_result_types() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -524,6 +526,7 @@ fn strict_rejects_bare_zero_argument_enum_constructor_value_positions() {
     let main_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -585,6 +588,7 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
     let main_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -608,6 +612,7 @@ fn strict_accepts_invoked_enum_constructor_and_intentional_constructor_function(
 
     let constructor_type = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
@@ -1071,6 +1076,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
       let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
       let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -1084,6 +1090,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
       file.defs.get_mut("invoke").expect("invoke definition").schema =
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
           open_reason: Default::default(),
+          cases: Default::default(),
           guard: None,
           runtime_arity: None,
           generics: Arc::new(vec![Arc::from("T")]),
@@ -1098,6 +1105,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
         file.defs.get_mut(name).expect("entry definition").schema =
           Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
             open_reason: Default::default(),
+            cases: Default::default(),
             guard: None,
             runtime_arity: None,
             generics: Arc::new(vec![]),
@@ -1429,6 +1437,7 @@ fn strict_mode_accepts_macro_generated_closures_without_public_schemas() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -1451,6 +1460,7 @@ fn strict_mode_rejects_source_definition_reached_from_macro_expansion_without_pu
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -1479,6 +1489,7 @@ fn strict_mode_keeps_source_optional_parameter_validation_under_macro_ancestry()
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -1620,6 +1631,7 @@ fn public_check_reaches_unused_definitions_without_changing_entry_check_semantic
     let fn_schema = |return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -1676,6 +1688,7 @@ fn public_check_runs_default_proof_audit_after_ordinary_check() {
     let fn_schema = |arg_types, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -1738,6 +1751,7 @@ fn strict_mode_runs_definition_tests_with_generated_function_schemas() {
     let checked = file.defs.get_mut("checked").expect("checked should exist");
     checked.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -1805,6 +1819,7 @@ fn strict_type_fail_dynamic_nominal_argument_reports_decoder_migration() {
     let fn_schema = |args, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -1914,6 +1929,7 @@ fn strict_type_fail_unsupported_indexed_receiver_reports_stable_error_code() {
     let fn_schema = |args, return_type| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3300,6 +3316,7 @@ fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload()
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3442,6 +3459,7 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
     let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3456,6 +3474,7 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
 
     let generic_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
@@ -3548,6 +3567,7 @@ fn schema_alias_definitions_must_inhabit_their_schema_for_all_defs_checks() {
     let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3928,6 +3948,7 @@ fn strict_mode_rejects_implicit_option_and_result_stringification() {
     let _strict = StrictTypesReset::enabled();
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3960,6 +3981,7 @@ fn strict_mode_keeps_explicit_enum_representation_and_plain_stringification() {
     let _strict = StrictTypesReset::enabled();
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -4701,10 +4723,10 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         warning.message().contains("calcit.core/every?")
           && warning
             .message()
-            .contains("expects type `fn(list<dynamic>) -> :bool (:features :pass)`")
+            .contains("expects type `fn(tuple<:tag, :number>) -> :bool (:features :pass)`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
-      "every? should expose Map entries as heterogeneous List pairs: {iteration_warnings:?}"
+      "every? should expose Map entries as typed Tuple pairs: {iteration_warnings:?}"
     );
     assert!(
       iteration_warnings.iter().any(|warning| {
@@ -4826,7 +4848,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       sort_by_warnings[0]
         .message()
-        .contains("expects type `fn(:string) -> 'SortKey (:features :pass)`")
+        .contains("expects type `fn(:string) -> 'K (:features :pass)`")
         && sort_by_warnings[0].message().contains("got `fn(:number) -> :number`"),
       "sort-by should preserve the String member type while leaving its key type generic: {sort_by_warnings:?}"
     );
@@ -6295,6 +6317,7 @@ fn proof_dissoc_in_keeps_known_map_root() {
     let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -7136,6 +7159,7 @@ fn strict_bool_conditions_reject_non_bool_statically_and_at_runtime() {
       let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
           open_reason: Default::default(),
+          cases: Default::default(),
           guard: None,
           runtime_arity: None,
           generics: Arc::new(vec![]),
@@ -7329,6 +7353,7 @@ fn wasm_boundary_defs_reject_dynamic_schema_and_allow_zero_arg_unannotated_expor
     let fn_schema = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -7462,6 +7487,7 @@ fn stage1_open_dynamic_return_requires_proof_under_no_proof_audit() {
       |arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation, open_reason: calcit::calcit::FnOpenReasonNote| {
         Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
           open_reason,
+          cases: Default::default(),
           guard: None,
           runtime_arity: None,
           generics: Arc::new(vec![]),
