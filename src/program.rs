@@ -1219,7 +1219,11 @@ pub fn has_ns_code(ns: &str) -> bool {
 pub fn list_source_def_names(ns: &str) -> Vec<Arc<str>> {
   let program_code = PROGRAM_CODE_DATA.read().expect("read program code");
   match program_code.get(ns) {
-    Some(file) => file.defs.keys().cloned().collect(),
+    Some(file) => {
+      let mut names: Vec<Arc<str>> = file.defs.keys().cloned().collect();
+      names.sort_unstable();
+      names
+    }
     None => vec![],
   }
 }

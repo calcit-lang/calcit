@@ -2508,3 +2508,36 @@ fn reload_reattaches_when_a_defimpl_changes_in_another_namespace() {
   let error = apply_code_changes(&changes).expect_err("a listed trait without impl");
   assert!(error.contains("E_MISSING_TRAIT_IMPL"), "{error}");
 }
+
+#[test]
+fn list_source_def_names_returns_sorted_definition_names() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let empty_entry = |name: &str| {
+    (
+      Arc::from(name),
+      ProgramDefEntry {
+        tags: Default::default(),
+        code: Calcit::Nil,
+        schema: DYNAMIC_TYPE.clone(),
+        doc: Arc::from(""),
+        examples: vec![],
+        ffi: None,
+      },
+    )
+  };
+  PROGRAM_CODE_DATA.write().expect("seed sorted def list").insert(
+    Arc::from("tests.sorted-defs"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([empty_entry("zeta"), empty_entry("alpha"), empty_entry("mid")]),
+    },
+  );
+
+  assert_eq!(
+    list_source_def_names("tests.sorted-defs"),
+    vec![Arc::from("alpha"), Arc::from("mid"), Arc::from("zeta")]
+  );
+  assert!(list_source_def_names("tests.missing-defs").is_empty());
+}

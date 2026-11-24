@@ -1856,9 +1856,12 @@ fn validate_wasm_target_in_program(
   target: WasmTarget,
   world: WasiWorld,
 ) -> Result<(), String> {
-  for (namespace, file) in program_data {
-    for definition in file.defs.keys() {
-      if program::lookup_def_ffi(namespace, definition)
+  for namespace in deterministic_namespace_order(program_data, None) {
+    let Some(file) = program_data.get(namespace.as_str()) else {
+      continue;
+    };
+    for (definition, _) in deterministic_definition_order(file) {
+      if program::lookup_def_ffi(&namespace, definition)
         .as_ref()
         .is_some_and(|ffi| crate::wasm::host::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
       {

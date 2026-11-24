@@ -370,14 +370,17 @@ pub(super) fn collect_struct_layouts(
   for expression in extra_exprs {
     visit(expression, &mut field_kinds);
   }
-  for (ns, file) in program_data.iter() {
-    for (name, compiled) in &file.defs {
+  for ns in super::deterministic_namespace_order(program_data, None) {
+    let Some(file) = program_data.get(ns.as_str()) else {
+      continue;
+    };
+    for (name, compiled) in super::deterministic_definition_order(file) {
       if let Some(reachable) = reachable_defs
-        && !reachable.contains(&(ns.to_string(), name.to_string()))
+        && !reachable.contains(&(ns.clone(), name.to_string()))
       {
         continue;
       }
-      if let Some(Calcit::StructDef(definition)) = program::lookup_runtime_ready(ns, name) {
+      if let Some(Calcit::StructDef(definition)) = program::lookup_runtime_ready(&ns, name) {
         record_kinds(
           StructIdentity::from(definition.as_ref()),
           kinds_from_struct_def(definition.as_ref()),
@@ -392,10 +395,13 @@ pub(super) fn collect_struct_layouts(
   // Register compiled `defstruct` declarations (such as `calcit.core/HttpRequest`) that are only
   // consumed through Component / WASI HTTP boundaries without a source constructor call.
   // Done with `or_insert_with` after `visit` so raw un-preprocessed declarations never widen compact structs.
-  for (ns, file) in program_data.iter() {
-    for (name, compiled) in &file.defs {
+  for ns in super::deterministic_namespace_order(program_data, None) {
+    let Some(file) = program_data.get(ns.as_str()) else {
+      continue;
+    };
+    for (name, compiled) in super::deterministic_definition_order(file) {
       if let Some(reachable) = reachable_defs
-        && !reachable.contains(&(ns.to_string(), name.to_string()))
+        && !reachable.contains(&(ns.clone(), name.to_string()))
       {
         continue;
       }
@@ -414,7 +420,7 @@ pub(super) fn collect_struct_layouts(
           let definition = if definition.definition_ref.is_some() {
             definition
           } else {
-            definition.with_definition_ref(ns, name)
+            definition.with_definition_ref(&ns, name)
           };
           field_kinds
             .entry(StructIdentity::from(&definition))

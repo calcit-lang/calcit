@@ -5,7 +5,7 @@
 //! descriptors, tags, and static strings do not inflate emitted binaries.
 
 use super::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Builtin type tags always registered in `tag_index` so `type-of` can return
 /// them and heap objects can carry them in their header slot.
@@ -78,11 +78,11 @@ struct ReachabilityState<'a> {
   core_builtin_impls: Vec<Arc<crate::wasm::host::calcit::CalcitImpl>>,
   visited: HashSet<(String, String)>,
   pending: Vec<(String, String)>,
-  called_methods: HashSet<String>,
+  called_methods: BTreeSet<String>,
   wildcard_methods: bool,
   seen_impls: Vec<Arc<crate::wasm::host::calcit::CalcitImpl>>,
   seen_impl_ptrs: HashSet<usize>,
-  visited_annotations: HashSet<usize>,
+  visited_annotations: HashSet<(usize, String)>,
   retained_annotations: Vec<Arc<CalcitTypeAnnotation>>,
   active_alias_expansions: Vec<(Arc<str>, Vec<CalcitTypeAnnotation>)>,
   extra_exprs: Vec<Calcit>,
@@ -108,7 +108,7 @@ impl<'a> ReachabilityState<'a> {
       core_builtin_impls,
       visited: HashSet::new(),
       pending: Vec::new(),
-      called_methods: HashSet::new(),
+      called_methods: BTreeSet::new(),
       wildcard_methods: false,
       seen_impls: Vec::new(),
       seen_impl_ptrs: HashSet::new(),
@@ -240,10 +240,13 @@ impl<'a> ReachabilityState<'a> {
   }
 
   fn visit_annotation(&mut self, annotation: &Arc<CalcitTypeAnnotation>, current_ns: &str) {
-    let ptr = Arc::as_ptr(annotation) as usize;
-    if !self.visited_annotations.insert(ptr) {
+    let key = (Arc::as_ptr(annotation) as usize, current_ns.to_owned());
+    if !self.visited_annotations.insert(key) {
       return;
     }
+    // Keep every visited Arc alive for the lifetime of ReachabilityState so
+    // temporary annotations cannot be freed and reused at the same address.
+    self.retained_annotations.push(annotation.clone());
     match annotation.as_ref() {
       CalcitTypeAnnotation::List(inner)
       | CalcitTypeAnnotation::Set(inner)
@@ -310,7 +313,6 @@ impl<'a> ReachabilityState<'a> {
         }
         let expanded = CalcitTypeAnnotation::expand_schema_alias(annotation);
         if !Arc::ptr_eq(&expanded, annotation) {
-          self.retained_annotations.push(expanded.clone());
           self.active_alias_expansions.push((name.clone(), key_args));
           self.visit_annotation(&expanded, current_ns);
           self.active_alias_expansions.pop();
@@ -509,10 +511,14 @@ impl<'a> ReachabilityState<'a> {
         self.visit_expr(&type_def, &ns, false);
       }
 
-      for dep_id in &compiled.deps {
-        if let Some((dep_ns, dep_name)) = self.def_id_to_name.get(dep_id).cloned() {
-          self.enqueue(&dep_ns, &dep_name);
-        }
+      let mut dep_names: Vec<(String, String)> = compiled
+        .deps
+        .iter()
+        .filter_map(|dep_id| self.def_id_to_name.get(dep_id).cloned())
+        .collect();
+      dep_names.sort_unstable();
+      for (dep_ns, dep_name) in dep_names {
+        self.enqueue(&dep_ns, &dep_name);
       }
       if let Some(runtime_val) = runtime_val {
         self.visit_expr(&runtime_val, &ns, false);
@@ -548,15 +554,18 @@ pub(super) fn collect_reachable_program_defs(
   if config.target == WasmTarget::Core
     && let Some(file_info) = program_data.get(config.init_ns)
   {
-    for def_name in file_info.defs.keys() {
+    for (def_name, _) in super::deterministic_definition_order(file_info) {
       state.enqueue(config.init_ns, def_name.as_ref());
     }
   }
 
-  for (ns, file_info) in program_data {
-    for (def_name, compiled) in &file_info.defs {
+  for ns in super::deterministic_namespace_order(program_data, Some(config.init_ns)) {
+    let Some(file_info) = program_data.get(ns.as_str()) else {
+      continue;
+    };
+    for (def_name, compiled) in super::deterministic_definition_order(file_info) {
       if is_wasm_export_def(&compiled.preprocessed_code) || is_wasm_import_def(&compiled.preprocessed_code) {
-        state.enqueue(ns.as_ref(), def_name.as_ref());
+        state.enqueue(ns.as_str(), def_name.as_ref());
       }
     }
   }
@@ -617,14 +626,17 @@ pub(super) fn collect_all_tags_from(
     collect_tags_from_expr(expr, &mut tags);
   }
   if let Some(program_data) = program_data {
-    for (ns, file) in program_data {
-      for (name, compiled) in &file.defs {
+    for ns in super::deterministic_namespace_order(program_data, None) {
+      let Some(file) = program_data.get(ns.as_str()) else {
+        continue;
+      };
+      for (name, compiled) in super::deterministic_definition_order(file) {
         if let Some(reachable) = reachable_defs
-          && !reachable.contains(&(ns.to_string(), name.to_string()))
+          && !reachable.contains(&(ns.clone(), name.to_string()))
         {
           continue;
         }
-        if let Some(value @ (Calcit::StructDef(_) | Calcit::EnumDef(_))) = program::lookup_runtime_ready(ns, name) {
+        if let Some(value @ (Calcit::StructDef(_) | Calcit::EnumDef(_))) = program::lookup_runtime_ready(&ns, name) {
           collect_tags_from_expr(&value, &mut tags);
         }
         for code in compiled
@@ -1637,5 +1649,135 @@ mod tests {
 
     assert!(string_pool.contains_key("Enum .contains? expected a Number index"));
     assert!(!string_pool.contains_key("unused impl error message"));
+  }
+
+  #[test]
+  fn visit_annotation_retains_temporary_arcs_and_tracks_namespace() {
+    let mut program_data: program::CompiledProgram = HashMap::new();
+    program_data.insert(
+      Arc::from("app.a"),
+      program::CompiledFileData {
+        defs: HashMap::from([(
+          Arc::from("Helper"),
+          dummy_compiled_def(10, program::CompiledDefKind::Fn, Calcit::Nil),
+        )]),
+      },
+    );
+    program_data.insert(
+      Arc::from("app.b"),
+      program::CompiledFileData {
+        defs: HashMap::from([(
+          Arc::from("Helper"),
+          dummy_compiled_def(11, program::CompiledDefKind::Fn, Calcit::Nil),
+        )]),
+      },
+    );
+
+    let mut state = ReachabilityState::new(&program_data);
+    let shared = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Helper"), Arc::new(vec![])));
+    let weak_shared = Arc::downgrade(&shared);
+    state.visit_annotation(&shared, "app.a");
+    // Visiting the same Arc under another namespace must still traverse that namespace,
+    // while repeating the same (pointer, namespace) pair is deduplicated.
+    state.visit_annotation(&shared, "app.b");
+    state.visit_annotation(&shared, "app.b");
+    drop(shared);
+    assert!(
+      weak_shared.upgrade().is_some(),
+      "ReachabilityState must retain visited temporary Arc annotations so addresses cannot be reused"
+    );
+    assert_eq!(state.retained_annotations.len(), 2);
+
+    state.run();
+    assert!(state.visited.contains(&(String::from("app.a"), String::from("Helper"))));
+    assert!(state.visited.contains(&(String::from("app.b"), String::from("Helper"))));
+  }
+
+  #[test]
+  fn collect_reachable_program_defs_orders_extra_exprs_and_defs_deterministically() {
+    let make_program = |reverse: bool| -> program::CompiledProgram {
+      let mut helper_struct = CalcitStructDef::from_fields(EdnTag::new("Widget"), vec![EdnTag::new("id")]);
+      helper_struct.definition_ref = Some(Arc::from("app.types/Widget"));
+      helper_struct.impls = vec![Arc::new(CalcitImpl {
+        name: EdnTag::new("WidgetOps"),
+        origin: None,
+        fields: Arc::new(vec![EdnTag::new("zebra"), EdnTag::new("alpha")]),
+        values: Arc::new(vec![fn_import("app.helpers", "z-fn"), fn_import("app.helpers", "a-fn")]),
+      })];
+      let main_body = Calcit::from(vec![
+        Calcit::Method(Arc::from("zebra"), MethodKind::Invoke(DYNAMIC_TYPE.clone())),
+        Calcit::Method(Arc::from("alpha"), MethodKind::Invoke(DYNAMIC_TYPE.clone())),
+        Calcit::StructDef(Arc::new(helper_struct.clone())),
+      ]);
+      let mut main_def = dummy_compiled_def(20, program::CompiledDefKind::Fn, main_body);
+      main_def.deps = vec![program::DefId(22), program::DefId(21)];
+
+      let mut ns_entries = vec![
+        (
+          Arc::from("app.main"),
+          program::CompiledFileData {
+            defs: HashMap::from([(Arc::from("main!"), main_def)]),
+          },
+        ),
+        (
+          Arc::from("app.helpers"),
+          program::CompiledFileData {
+            defs: HashMap::from([
+              (
+                Arc::from("z-fn"),
+                dummy_compiled_def(21, program::CompiledDefKind::Fn, Calcit::Number(1.0)),
+              ),
+              (
+                Arc::from("a-fn"),
+                dummy_compiled_def(22, program::CompiledDefKind::Fn, Calcit::Number(2.0)),
+              ),
+            ]),
+          },
+        ),
+        (
+          Arc::from("app.types"),
+          program::CompiledFileData {
+            defs: HashMap::from([(
+              Arc::from("Widget"),
+              dummy_compiled_def(23, program::CompiledDefKind::Value, Calcit::StructDef(Arc::new(helper_struct))),
+            )]),
+          },
+        ),
+      ];
+      if reverse {
+        ns_entries.reverse();
+      }
+      ns_entries.into_iter().collect()
+    };
+
+    let cfg = ReachabilityConfig {
+      init_ns: "app.main",
+      init_def: "main!",
+      target: WasmTarget::Core,
+      extra_imports: &[],
+      wasi_command_component: false,
+      wasi_http_proxy: false,
+      wasi_command_read_dir: false,
+    };
+    let forward = collect_reachable_program_defs(&make_program(false), cfg);
+    let reverse = collect_reachable_program_defs(
+      &make_program(true),
+      ReachabilityConfig {
+        init_ns: "app.main",
+        init_def: "main!",
+        target: WasmTarget::Core,
+        extra_imports: &[],
+        wasi_command_component: false,
+        wasi_http_proxy: false,
+        wasi_command_read_dir: false,
+      },
+    );
+
+    let mut f_defs: Vec<_> = forward.defs.into_iter().collect();
+    let mut r_defs: Vec<_> = reverse.defs.into_iter().collect();
+    f_defs.sort();
+    r_defs.sort();
+    assert_eq!(f_defs, r_defs);
+    assert_eq!(forward.extra_exprs, reverse.extra_exprs);
   }
 }

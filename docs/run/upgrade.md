@@ -24,9 +24,9 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.46.0 严格 `Bool` 条件与 `Dynamic` 消费边界收紧（#2881）
+## 0.45.0 严格 `Bool` 条件与 `Dynamic` 消费边界收紧（#2881）
 
-本版本在预处理与各运行后端统一收紧布尔条件语义与开放 `Dynamic` 返回值的消费边界，以消除隐式 nil/truthiness 歧义并匹配 WASM 闭合类型模型：
+本版本合并原计划于后续小版本交付的静态 core 收口与 WASM/WASI 服务目标一并发布，在预处理与各运行后端统一收紧布尔条件语义与开放 `Dynamic` 返回值的消费边界，以消除隐式 nil/truthiness 歧义并匹配 WASM 闭合类型模型：
 
 - **条件严格要求 `Bool`（`E_NON_BOOL_CONDITION`）**：`if`、`when`、`when-not`、`if-not`、`and`、`or`、`not`、`assert` 以及 `calcit.test/is` 的条件位置在静态与运行时（native、JS、WASM/WASI）一律只接受 `Bool`。传入 `nil`、`&unit`、数字、字符串、集合、可空值或未证明的 `Dynamic` 会在预处理期失败，运行时强转也会抛出错误。
   - 可空值判断改用 `non-nil?` / `nil?`，集合或字符串判断改用 `empty?` / `blank?`，`Dynamic` 值先通过 `(bool? x)` 或 `(= x true)` 收窄。
@@ -35,7 +35,7 @@ related:
 - **WASM 边界拒绝 `Dynamic`（`E_WASM_BOUNDARY_DYNAMIC`）**：`defwasm-export` 与 `defwasm-import` 的参数、rest 或返回 schema 中不得包含 `Dynamic`（无 schema 的零参入口仍保留兼容）。请改为具体标量、容器或名义 `Struct`/`Enum`/`Option`/`Result`。
 - **非局部 `Fn ... (-> Dynamic)` 返回值消费收紧（`E_CALL_ARGUMENT_UNPROVEN`）**：调用非局部声明返回 `Dynamic` 的函数（带 `(:open :intrinsic)` 标记的底层内建除外）得到的开放值，在直接或经 `let` 绑定传入具体类型参数（含 `&+`、`not` 等有具体类型契约的调用）时，即使在 `CALCIT_PROOF_AUDIT=0` 下也必须先通过 `decode-map-as` / `try-decode-map-as`、`assert-type` 或类型谓词（如 `number?`、`bool?`）提供证明。
 
-## 0.46.0 业务错误流收敛至 `Result` 与 WASI 下 `try` 退役（#2882）
+## 0.45.0 业务错误流收敛至 `Result` 与 WASI 下 `try` 退役（#2882）
 
 本版本将可恢复错误处理进一步收敛为名义 `Result<T, E>` 契约，并明确将 `try` 从 WASM/WASI server 目标退役：
 
@@ -48,7 +48,7 @@ related:
 | `try (json-parse s) ...` / `try (parse-cirru-edn s) ...` | `try-parse-json`（`.parse-json`）+ `try-decode-map-as` / `try-parse-cirru-edn-as` | WASM/WASI 上直接走闭合类型边界解码 |
 | `try (assert ...) ...` 等不变量故障测试 | 不在 WASI 中捕获 trap；将“正常返回”与“trap 验证”拆为独立 `:tests` | trap 验证留在 native / JS，常规与 `Result` 契约可在 WASI 回放 |
 
-## 0.46.0 Trait 挂载来源唯一性与运行期方法遮蔽消歧（#2841）
+## 0.45.0 Trait 挂载来源唯一性与运行期方法遮蔽消歧（#2841）
 
 本版本在加载期、预处理期以及 native / JS 运行时统一收紧了 trait 挂载与方法分发的一致性（Coherence），彻底取消“后挂载覆盖先挂载”的隐式遮蔽行为：
 
@@ -62,6 +62,22 @@ related:
   - 函数体局部 `deftrait` 声明 `(requires Parent)` 时同样执行成员冲突检查（`E_TRAIT_REQUIRES`），静态 `impl-traits` 检查也会跳过前序无来源 method bag 并正确校验后续名义 impl 的前置父 trait（`E_IMPL_MISSING_REQUIRED_TRAIT`）。
 
 迁移方法：不要向已挂载某 trait 的 struct/enum 定义或实例再次叠加同一 trait 的第二个实现，应从干净的 `defstruct`/`defenum` 定义分别挂载所需变体；多 trait 同名方法冲突统一改用 `&trait-call Trait :method receiver ...`。
+
+## 0.45.0 WASM/WASI 闭合编解码、双区内存模型、紧凑值布局与 HTTP/DB 服务目标
+
+本版本同步包含原规划中的 WASM 后端与 WASI 服务演进能力，详细信息见 [WASM / WASI 编译支持范围与矩阵](../installation/wasm-support.md) 与 [CLI 选项与 WASI 目标指南](cli-options.md)：
+
+- **闭合 `DataShapeGraph` 与标量/集合键静态身份收紧（#2873, #2874）**：WASM/WASI 支持基于闭合类型图的 `encode-map-as` 与强类型 JSON 编解码（`parse-json-as` / `try-parse-json-as` / `format-json-as`）；同时收紧 `=` / `&=` / `not=` 与 `Map` / `Set` 在开放值与可空拼接下的静态身份证明（`E_WASM_NIL_TYPE_EVIDENCE`），避免 `Bool` / `Number` / `Nil` 表示碰撞。
+- **请求级 Arena 水位线重置与 `defref` 持久代晋升（#2875）**：WASM 线性内存划分为持久堆与 Request Scratch Arena；顶层 `defref` 更新时晋升至持久区并在需要时触发压缩，单次 `defwasm-export` 或 WASI HTTP 请求返回后重置暂存区水位线，解决长生命周期服务的内存单调增长问题。
+- **闭合标量/Struct 紧凑拆箱布局与按可达性选择性链接（#2876, #2897）**：静态证明为 `Bool`、`Tag`、`Unit`、精确整数（`Int8`..`UInt64`）与闭合名义 `Struct` 字段采用紧凑布局；编译器在代码生成前裁剪未使用的定义、tag、Struct descriptor 与静态字符串，并在链接阶段裁剪未调用宿主导入与重复签名，显著减小核心与组件产物体积。
+- **WASI 0.3 宿主能力与 WASI HTTP + DB 服务目标（#2855, #2877, #2878）**：`calcit wasi` 补齐 `monotonic-time-ms`、`unix-time-ms`、`wait-ms`、`secure-random-bytes` 与 `.read-dir` 等 0.3 Component 宿主能力；新增 `calcit wasi --world http` 导出 `wasi:http/incoming-handler@0.2.12`，并支持通过 `calcit:db/sql@0.1.0` 与 `calcit:db/kv@0.1.0` 强类型 WIT 导入连接数据库。
+
+```bash
+# 直接将强类型 HTTP 服务编译为可运行于 wasmtime serve 的 WASI Component
+calcit wasi calcit.cirru --entry http --world http --emit-path target/wasi-http-proxy
+```
+
+限制：`--world http` 要求入口函数显式声明 `Fn HttpRequest (-> (Result HttpResponse String))` 且仅放行固定签名的 `calcit:db/sql@0.1.0` 与 `calcit:db/kv@0.1.0` 导入；`wait-ms`、`unix-time-ms`、`monotonic-time-ms` 与 `secure-random-bytes` 仅支持于 `command` world 下的 WASI 0.3 Component 入口。
 
 ## 0.43.0 List 插入检查元素类型（#2735）
 
