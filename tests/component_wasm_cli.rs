@@ -1972,3 +1972,209 @@ WebAssembly.instantiate(module, { host }).then(async result => {
     String::from_utf8_lossy(&runtime.stderr)
   );
 }
+
+#[test]
+fn component_wasm_structural_equality_for_buffers_and_nested_sets() {
+  let source_dir = TestDirectory::create();
+  let output_dir = TestDirectory::create();
+  let snapshot_path = source_dir.0.join("calcit.cirru");
+  let snapshot = r#"
+{} (:about "|Buffer and nested Set structural equality in WASM") (:package |wasm-eq-test)
+  :entries $ {} $ :default
+    {} (:description "|Buffer and nested Set structural equality test.") (:init-fn 'wasm-eq-test.main/main!) (:mode :native) (:reload-fn 'wasm-eq-test.main/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'wasm-eq-test.main $ %{} 'FileEntry
+      :defs $ {}
+        'eq-buffers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export eq-buffers (a b) (= a b)
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'eq-buffers-native $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export eq-buffers-native (a b) (&= a b)
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'neq-buffers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export neq-buffers (a b) (not= a b)
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'eq-buffer-lists $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export eq-buffer-lists (a b) (= a b)
+          :examples $ []
+          :schema $ quote $ Fn (List Buffer) (List Buffer) (-> Bool)
+        'eq-buffer-maps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export eq-buffer-maps (a b)
+            =
+              {} (:k a)
+              {} (:k b)
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'map-lookup-by-buffer-key $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export map-lookup-by-buffer-key (k1 k2)
+            = (Some 42)
+              &map:get
+                {} (k1 42)
+                , k2
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'hash-buffers-equal $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export hash-buffers-equal (a b)
+            = (&hash a) (&hash b)
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer (-> Bool)
+        'set-buffer-ops $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-buffer-ops (a b c)
+            let
+                s1 $ #{} a b c
+                s2 $ #{} c b
+              and
+                = 2 (count s1)
+                .includes? s1 b
+                = s1 s2
+          :examples $ []
+          :schema $ quote $ Fn Buffer Buffer Buffer (-> Bool)
+        'buffer-vs-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export buffer-vs-string (a s) (&= (assert-type a Dynamic) s)
+          :examples $ []
+          :schema $ quote $ Fn Buffer String (-> Bool)
+        'nested-set-equality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export nested-set-equality ()
+            let
+                a $ #{} (#{} 1 2) (#{} 3 4)
+                b $ #{} (#{} 4 3) (#{} 2 1)
+                c $ #{} (#{} 1 2) (#{} 3 5)
+                deduped $ #{} (#{} 1 2) (#{} 2 1)
+              and
+                = a b
+                &= a b
+                not= a c
+                = 1 (count deduped)
+                .includes? a (#{} 2 1)
+                not (.includes? a (#{} 1 3))
+                = (#{} ([] 1 2) ([] 3 4)) (#{} ([] 3 4) ([] 1 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () nil
+          :examples $ []
+          :schema $ quote $ Fn (-> Nil)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns wasm-eq-test.main
+"#;
+  fs::write(&snapshot_path, snapshot).expect("temporary snapshot should write");
+
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot_path)
+    .args(["wasm", "--boundary", "component", "--emit-path"])
+    .arg(&output_dir.0)
+    .output()
+    .expect("Component WASM compile should run");
+  assert!(
+    compile.status.success(),
+    "Component WASM compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let wasm = output_dir.0.join("program.wasm");
+  let script = r#"
+const fs = require("fs");
+(async () => {
+  const bytes = fs.readFileSync(process.argv[1]);
+  const module = await WebAssembly.compile(bytes);
+  const inst = await WebAssembly.instantiate(module, {});
+  const e = inst.exports;
+  const allocBytes = (arr) => {
+    const data = Uint8Array.from(arr);
+    const ptr = e.cabi_realloc(0, 0, 1, data.length);
+    new Uint8Array(e.memory.buffer, ptr, data.length).set(data);
+    return [ptr, data.length];
+  };
+  const allocPairList = (pairs) => {
+    const ptr = e.cabi_realloc(0, 0, 4, pairs.length * 8);
+    const view = new DataView(e.memory.buffer);
+    pairs.forEach(([itemPtr, itemLen], index) => {
+      view.setUint32(ptr + index * 8, itemPtr, true);
+      view.setUint32(ptr + index * 8 + 4, itemLen, true);
+    });
+    return [ptr, pairs.length];
+  };
+  const check = (cond, msg) => {
+    if (!cond) throw new Error(msg);
+  };
+
+  const callWithTwoBuffers = (name, a, b) => {
+    const [p1, l1] = allocBytes(a);
+    const [p2, l2] = allocBytes(b);
+    if (a.length > 0 && b.length > 0) {
+      check(p1 !== p2, "expected distinct allocations");
+    }
+    return e[name](p1, l1, p2, l2);
+  };
+
+  // 1. Direct Buffer =, &=, not=, &hash across distinct allocations
+  check(callWithTwoBuffers("eq-buffers", [0, 255, 17, 128], [0, 255, 17, 128]) === 1, "equal buffers should be =");
+  check(callWithTwoBuffers("eq-buffers-native", [0, 255, 17, 128], [0, 255, 17, 128]) === 1, "equal buffers should be &=");
+  check(callWithTwoBuffers("neq-buffers", [0, 255, 17, 128], [0, 255, 17, 128]) === 0, "equal buffers should not be not=");
+  check(callWithTwoBuffers("hash-buffers-equal", [0, 255, 17, 128], [0, 255, 17, 128]) === 1, "equal buffers must have equal &hash");
+
+  check(callWithTwoBuffers("eq-buffers", [], []) === 1, "empty buffers should be =");
+  check(callWithTwoBuffers("hash-buffers-equal", [], []) === 1, "empty buffers must have equal &hash");
+
+  check(callWithTwoBuffers("eq-buffers", [0, 255, 17], [0, 255, 18]) === 0, "different byte content should not be =");
+  check(callWithTwoBuffers("eq-buffers-native", [0, 255, 17], [0, 255, 18]) === 0, "different byte content should not be &=");
+  check(callWithTwoBuffers("neq-buffers", [0, 255, 17], [0, 255, 18]) === 1, "different byte content should be not=");
+  check(callWithTwoBuffers("eq-buffers", [0, 255], [0, 255, 0]) === 0, "different lengths should not be =");
+
+  // 2. List<Buffer> structural equality
+  {
+    const [laPtr, laLen] = allocPairList([[0, 255], [17, 128]].map(allocBytes));
+    const [lbPtr, lbLen] = allocPairList([[0, 255], [17, 128]].map(allocBytes));
+    check(e["eq-buffer-lists"](laPtr, laLen, lbPtr, lbLen) === 1, "equal List<Buffer> should be =");
+  }
+  {
+    const [laPtr, laLen] = allocPairList([[0, 255], [17, 128]].map(allocBytes));
+    const [lcPtr, lcLen] = allocPairList([[0, 255], [17, 129]].map(allocBytes));
+    check(e["eq-buffer-lists"](laPtr, laLen, lcPtr, lcLen) === 0, "unequal List<Buffer> should not be =");
+  }
+
+  // 3. Map<Tag, Buffer> structural equality & Map<Buffer, Number> key lookup
+  check(callWithTwoBuffers("eq-buffer-maps", [1, 2, 3], [1, 2, 3]) === 1, "Map<Tag, Buffer> with equal buffers should be =");
+  check(callWithTwoBuffers("eq-buffer-maps", [1, 2, 3], [1, 2, 4]) === 0, "Map<Tag, Buffer> with unequal buffers should not be =");
+  check(callWithTwoBuffers("map-lookup-by-buffer-key", [1, 2, 3], [1, 2, 3]) === 1, "Map<Buffer, Number> lookup by equal Buffer key should succeed");
+  check(callWithTwoBuffers("map-lookup-by-buffer-key", [1, 2, 3], [1, 2, 4]) === 0, "Map<Buffer, Number> lookup by unequal Buffer key should return None");
+
+  // 4. Set<Buffer> dedup, .includes?, and equality
+  {
+    const [pa, la] = allocBytes([9, 8, 7]);
+    const [pb, lb] = allocBytes([9, 8, 7]);
+    const [pc, lc] = allocBytes([9, 8, 6]);
+    check(e["set-buffer-ops"](pa, la, pb, lb, pc, lc) === 1, "Set<Buffer> dedup, .includes?, and = should work structurally");
+  }
+
+  // 5. Buffer vs String with identical bytes must not be equal
+  check(callWithTwoBuffers("buffer-vs-string", [97, 98], [97, 98]) === 0, "Buffer and String with same bytes must not be =");
+
+  // 6. Nested Set<Set<Number>> and Set<List<Number>> equality, dedup, and .includes?
+  check(e["nested-set-equality"]() === 1, "nested Set<Set<Number>> equality and dedup should succeed");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"#;
+  let runtime = Command::new("node")
+    .args(["-e", script])
+    .arg(&wasm)
+    .output()
+    .expect("Node.js should validate and run the generated WASM module");
+  assert!(
+    runtime.status.success(),
+    "Buffer/Set structural equality WASM runtime test failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&runtime.stdout),
+    String::from_utf8_lossy(&runtime.stderr)
+  );
+}

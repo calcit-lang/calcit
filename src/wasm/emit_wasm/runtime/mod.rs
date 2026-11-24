@@ -573,6 +573,7 @@ pub(super) fn build_runtime_fns(
   let map_tag = require_tag("map");
   let list_tag = require_tag("list");
   let string_tag = require_tag("string");
+  let buffer_tag = require_tag("buffer");
   let enum_tag = require_tag("enum");
   let set_tag = require_tag("set");
   let struct_tag = require_tag("struct");
@@ -894,52 +895,9 @@ pub(super) fn build_runtime_fns(
 
   let set_find_name = String::from("__rt_set_find_elem");
   fn_index.insert(set_find_name, base_index + fns.len() as u32);
-  let set_find_instructions = vec![
-    Instruction::LocalGet(0),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
-    Instruction::LocalSet(2),
-    Instruction::I32Const(-1),
-    Instruction::LocalSet(4),
-    Instruction::I32Const(0),
-    Instruction::LocalSet(3),
-    Instruction::Block(wasm_encoder::BlockType::Empty),
-    Instruction::Loop(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(3),
-    Instruction::LocalGet(2),
-    Instruction::I32GeU,
-    Instruction::BrIf(1),
-    Instruction::LocalGet(0),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalGet(3),
-    Instruction::I32Const(8),
-    Instruction::I32Mul,
-    Instruction::I32Add,
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::LocalGet(1),
-    Instruction::Call(f64_value_eq_idx),
-    Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(3),
-    Instruction::LocalSet(4),
-    Instruction::Br(2),
-    Instruction::End,
-    Instruction::LocalGet(3),
-    Instruction::I32Const(1),
-    Instruction::I32Add,
-    Instruction::LocalSet(3),
-    Instruction::Br(0),
-    Instruction::End,
-    Instruction::End,
-    Instruction::LocalGet(4),
-  ];
-  fns.push(CompiledFn {
-    export_name: None,
-    params: vec![ValType::I32, ValType::F64],
-    results: vec![ValType::I32],
-    locals: vec![ValType::I32, ValType::I32, ValType::I32],
-    instructions: set_find_instructions,
-  });
+  let set_find_slot = fns.len();
+  // Filled once `__rt_value_equal` has its function index so set membership uses deep structural equality.
+  fns.push(build_rt_hash_f64());
 
   let hash_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_hash_f64"), hash_idx);
@@ -1172,15 +1130,25 @@ pub(super) fn build_runtime_fns(
   fns.push(build_rt_struct_store_field(is_heap_ptr_idx, bool_tag));
 
   // value-equal: __rt_value_equal(a: f64, b: f64) → i32 (1=equal, 0=not)
-  // Deep equality for strings, containers, and nominal payloads.
+  // Deep equality for strings, buffers, containers, and nominal payloads.
+  let value_tags = ValueRuntimeTags {
+    string: string_tag,
+    buffer: buffer_tag,
+    list: list_tag,
+    enum_tag,
+    map: map_tag,
+    set: set_tag,
+    struct_tag,
+    nil: nil_tag,
+    bool_tag,
+    number: number_tag,
+  };
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
   let set_equal_idx = value_equal_idx + 2;
   fn_index.insert(String::from("__rt_value_equal"), value_equal_idx);
   fns.push(build_rt_value_equal(
-    (
-      string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
-    ),
+    value_tags,
     (
       str_compare_idx,
       value_equal_idx,
@@ -1204,10 +1172,9 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
   fns.push(build_rt_set_equal(value_equal_idx));
 
+  fns[set_find_slot] = build_rt_set_find_elem(value_equal_idx);
   fns[value_hash_slot] = build_rt_value_hash(
-    (
-      string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag,
-    ),
+    value_tags,
     (
       hash_idx,
       map_key_hash_idx,
@@ -1639,21 +1606,37 @@ pub(super) fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32) -
   b.finish(vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64], vec![])
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct ValueRuntimeTags {
+  pub(super) string: i32,
+  pub(super) buffer: i32,
+  pub(super) list: i32,
+  pub(super) enum_tag: i32,
+  pub(super) map: i32,
+  pub(super) set: i32,
+  pub(super) struct_tag: i32,
+  pub(super) nil: i32,
+  pub(super) bool_tag: i32,
+  pub(super) number: i32,
+}
+
 pub(super) fn build_rt_value_hash(
-  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-  ),
+  tags: ValueRuntimeTags,
   (scalar_hash_idx, self_idx, map_linearize_idx, is_heap_ptr_idx, struct_load_field_idx): (u32, u32, u32, u32, u32),
   struct_layouts: &StructLayouts,
 ) -> CompiledFn {
+  let ValueRuntimeTags {
+    string: string_tag,
+    buffer: buffer_tag,
+    list: list_tag,
+    enum_tag,
+    map: map_tag,
+    set: set_tag,
+    struct_tag,
+    nil: nil_tag,
+    bool_tag,
+    number: number_tag,
+  } = tags;
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
   let tag = b.alloc_i32();
@@ -1710,7 +1693,7 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  for (index, kind) in [string_tag, list_tag, enum_tag, struct_tag, set_tag, map_tag]
+  for (index, kind) in [string_tag, buffer_tag, list_tag, enum_tag, struct_tag, set_tag, map_tag]
     .into_iter()
     .enumerate()
   {
@@ -1727,10 +1710,15 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  // Strings use byte content, not allocation identity.
+  // Strings and Buffers share `[byte_len: f64 @ 0][bytes: u8 @ 8..]` and hash by byte content,
+  // not allocation identity. Mix `buffer_tag` into Buffer hashes so identical bytes don't collide with Strings.
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::I32Const(string_tag));
   b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(buffer_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -1759,6 +1747,15 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::LocalSet(i));
   b.emit(Instruction::Br(0));
   b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(buffer_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::I32Const((buffer_tag as u32).wrapping_mul(0x0100_0193) as i32));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::LocalSet(hash));
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(hash));
   b.emit(Instruction::Return);
@@ -1967,27 +1964,29 @@ pub(super) fn build_rt_value_hash(
 ///
 /// Deep structural equality:
 /// - Numbers/booleans/nil: f64 equality.
-/// - Strings: byte-by-byte comparison via __rt_str_compare.
+/// - Strings and Buffers: byte-by-byte comparison via __rt_str_compare (tags already matched).
 /// - Lists: element-wise recursive comparison.
 /// - Enums (including Option/Result): variant and payload comparison.
 /// - Structs: definition/layout identity and recursive field comparison.
 /// - Maps and Sets: recursive structural comparison.
 /// - Other heap objects: pointer (f64) equality.
 fn build_rt_value_equal(
-  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag, nil_tag, bool_tag, number_tag): (
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-    i32,
-  ),
+  tags: ValueRuntimeTags,
   (str_compare_idx, self_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx, struct_load_field_idx): (u32, u32, u32, u32, u32, u32),
   struct_layouts: &StructLayouts,
 ) -> CompiledFn {
+  let ValueRuntimeTags {
+    string: string_tag,
+    buffer: buffer_tag,
+    list: list_tag,
+    enum_tag,
+    map: map_tag,
+    set: set_tag,
+    struct_tag,
+    nil: nil_tag,
+    bool_tag,
+    number: number_tag,
+  } = tags;
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
   let result = b.alloc_i32(); // 0=not-equal, 1=equal
@@ -2059,10 +2058,14 @@ fn build_rt_value_equal(
 
   // Same type: dispatch on tag
 
-  // String comparison
+  // String and Buffer comparison (both share `[byte_len: f64 @ 0][bytes: u8 @ 8..]`; tag_a == tag_b already holds)
   b.emit(Instruction::LocalGet(tag_a));
   b.emit(Instruction::I32Const(string_tag));
   b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(buffer_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   // str_compare returns f64: 0.0 = equal
   b.emit(Instruction::LocalGet(ptr_a));
