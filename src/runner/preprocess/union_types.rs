@@ -145,6 +145,11 @@ fn member_test(member: &UnionMember, value: &Calcit, file_ns: &str, def_name: &s
         file_ns,
       )
     }
+    UnionMemberKind::ExternalObject => generated_call(vec![
+      Calcit::Proc(CalcitProc::NativeEquals),
+      generated_call(vec![Calcit::Proc(CalcitProc::TypeOf), value.to_owned()]),
+      Calcit::tag("js-object"),
+    ]),
   }
 }
 
@@ -176,6 +181,10 @@ fn same_nominal_pattern(member: &UnionMember, pattern: &CalcitTypeAnnotation) ->
       .resolve_to_enum()
       .zip(member.annotation.resolve_to_enum())
       .is_some_and(|(actual, expected)| actual.same_nominal_definition(&expected)),
+    UnionMemberKind::ExternalObject => pattern
+      .resolve_to_external_object_trait_with_ref()
+      .zip(member.annotation.resolve_to_external_object_trait_with_ref())
+      .is_some_and(|((actual, _), (expected, _))| CalcitTypeAnnotation::trait_references_match(&actual, &expected)),
     _ => false,
   }
 }

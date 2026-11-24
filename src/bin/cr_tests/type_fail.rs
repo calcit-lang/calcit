@@ -7622,3 +7622,289 @@ fn union_argument_literal_checks_payload_for_named_functions() {
     }
   });
 }
+
+#[test]
+fn union_external_object_trait_accepts_and_narrows() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let host_lib = r#"
+defexternal BlobHost
+  :target :browser
+  :size Number
+  :type String
+
+defexternal FileHost
+  :target :browser
+  requires BlobHost
+  :name String
+"#;
+
+    let app_code = r#"
+ns app.main
+  :require
+    js-ffi.browser :refer $ BlobHost FileHost
+
+defunion UploadFile String js-ffi.browser/BlobHost
+
+defn describe-upload (file)
+  hint-fn $ Fn UploadFile (-> String) (:features :js-ffi)
+  match file
+    (String path) path
+    (BlobHost blob) (blob :type)
+
+defn describe-qualified (file)
+  hint-fn $ Fn UploadFile (-> String) (:features :js-ffi)
+  match file
+    (String path) path
+    (js-ffi.browser/BlobHost blob) (blob :type)
+
+defn accept-upload (file)
+  hint-fn $ Fn UploadFile (-> String)
+  match file
+    (String path) path
+    (BlobHost _blob) |blob
+
+defn pass-file-host (f)
+  hint-fn $ Fn FileHost (-> String)
+  accept-upload f
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  describe-upload |local.txt
+  describe-qualified |local.txt
+  accept-upload |local.txt
+  , pass-file-host
+  , &unit
+"#;
+
+    let build_snapshot = |target: Option<snapshot::SnapshotTarget>| {
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "js-ffi.browser".to_owned(),
+        snapshot::create_file_from_snippet(host_lib).expect("host lib should parse"),
+      );
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+      );
+      let entry = snap.entries.get_mut("default").expect("default entry");
+      entry.mode = snapshot::SnapshotRunMode::Js;
+      entry.target = target;
+      snap
+    };
+
+    struct CodegenModeReset(bool);
+    impl Drop for CodegenModeReset {
+      fn drop(&mut self) {
+        calcit::codegen::set_codegen_mode(self.0);
+      }
+    }
+    let _js_mode = {
+      let prev = calcit::codegen::codegen_mode();
+      calcit::codegen::set_codegen_mode(true);
+      CodegenModeReset(prev)
+    };
+
+    // Browser target: full check including browser-targeted external field access passes.
+    let browser_entries = prepare_snapshot_entries(build_snapshot(Some(snapshot::SnapshotTarget::Browser)));
+    run_check_only(&browser_entries).expect("browser entry should accept defunion with external-object trait and match narrowing");
+
+    // Node target: using UploadFile without invoking browser-only host operations passes (#2903).
+    let node_app = r#"
+ns app.main
+  :require
+    js-ffi.browser :refer $ BlobHost FileHost
+
+defunion UploadFile String js-ffi.browser/BlobHost
+
+defn accept-upload (file)
+  hint-fn $ Fn UploadFile (-> String)
+  match file
+    (String path) path
+    (BlobHost _blob) |blob
+
+defn pass-file-host (f)
+  hint-fn $ Fn FileHost (-> String)
+  accept-upload f
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  accept-upload |local.txt
+  , &unit
+"#;
+    builtins::effects::init_effects_states();
+    let mut node_snap = snapshot::Snapshot::default();
+    node_snap.files.insert(
+      "js-ffi.browser".to_owned(),
+      snapshot::create_file_from_snippet(host_lib).expect("host lib should parse"),
+    );
+    node_snap.files.insert(
+      "app.main".to_owned(),
+      snapshot::create_file_from_snippet(node_app).expect("node app should parse"),
+    );
+    let node_entry = node_snap.entries.get_mut("default").expect("default entry");
+    node_entry.mode = snapshot::SnapshotRunMode::Js;
+    node_entry.target = Some(snapshot::SnapshotTarget::Node);
+    let node_entries = prepare_snapshot_entries(node_snap);
+    run_check_only(&node_entries).expect("node entry should accept defunion referencing browser external-object trait");
+  });
+}
+
+#[test]
+fn union_external_object_trait_rejects_invalid_and_overlapping() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let host_lib = r#"
+defexternal BlobHost
+  :size Number
+  :type String
+
+defexternal FileHost
+  requires BlobHost
+  :name String
+
+defexternal OtherHost
+  :id String
+
+deftrait OrdinaryTrait
+  .label $ Fn Self (-> String)
+"#;
+
+    let check_case = |label: &str, app_code: &str, expected_code: &str| {
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "js-ffi.browser".to_owned(),
+        snapshot::create_file_from_snippet(host_lib).expect("host lib should parse"),
+      );
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+      );
+      let entries = prepare_snapshot_entries(snap);
+      if matches!(expected_code, "E_FN_ARG_TYPE_MISMATCH" | "E_HOST_VALUE_EQUALITY") {
+        let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+        let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+        let warnings = warnings.borrow();
+        assert!(
+          warnings.iter().any(|warning| warning.code() == Some(expected_code)),
+          "{label} should report {expected_code}: {warnings:?}"
+        );
+      } else {
+        let err = run_check_only(&entries).expect_err(label);
+        assert!(err.contains(expected_code), "{label} should report {expected_code}: {err}");
+      }
+    };
+
+    // 1. Ordinary non-external trait stays rejected.
+    check_case(
+      "ordinary trait in defunion",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ OrdinaryTrait\n\ndefunion Bad String OrdinaryTrait\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , Bad\n  , &unit",
+      "E_UNION_MEMBER_INVALID",
+    );
+
+    // 2. Two distinct external-object traits share runtime kind :js-object -> rejected.
+    check_case(
+      "two external-object traits",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost OtherHost\n\ndefunion TwoHosts BlobHost OtherHost\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , TwoHosts\n  , &unit",
+      "E_UNION_MEMBER_INVALID",
+    );
+
+    // 3. Parent + child external-object traits overlap -> rejected.
+    check_case(
+      "parent and child external-object traits",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost FileHost\n\ndefunion SubHosts BlobHost FileHost\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , SubHosts\n  , &unit",
+      "E_UNION_MEMBER_INVALID",
+    );
+
+    // 4. Nested union with another external-object trait -> rejected after flattening.
+    check_case(
+      "nested union overlapping external-object trait",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost OtherHost\n\ndefunion UploadFile String BlobHost\n\ndefunion Extended UploadFile OtherHost\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , Extended\n  , &unit",
+      "E_UNION_MEMBER_INVALID",
+    );
+
+    // 5. Unrelated external-object trait cannot flow into UploadFile.
+    check_case(
+      "unrelated external-object trait rejected",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost OtherHost\n\ndefunion UploadFile String BlobHost\n\ndefn take-upload (u)\n  hint-fn $ Fn UploadFile (-> Unit)\n  , &unit\n\ndefn bad (other)\n  hint-fn $ Fn OtherHost (-> Unit)\n  take-upload other\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      "E_FN_ARG_TYPE_MISMATCH",
+    );
+
+    // 6. Bare JsObject cannot flow into UploadFile without js-cast.
+    check_case(
+      "bare JsObject rejected",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost\n\ndefunion UploadFile String BlobHost\n\ndefn take-upload (u)\n  hint-fn $ Fn UploadFile (-> Unit)\n  , &unit\n\ndefn bad (raw)\n  hint-fn $ Fn JsObject (-> Unit)\n  take-upload raw\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      "E_FN_ARG_TYPE_MISMATCH",
+    );
+
+    // 7. Value equality on UploadFile is rejected as host value equality.
+    check_case(
+      "value equality on host union rejected",
+      "ns app.main\n  :require\n    js-ffi.browser :refer $ BlobHost\n\ndefunion UploadFile String BlobHost\n\ndefn same? (a b)\n  hint-fn $ Fn UploadFile UploadFile (-> Bool)\n  = a b\n\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , same?\n  , &unit",
+      "E_HOST_VALUE_EQUALITY",
+    );
+  });
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn union_external_object_trait_rejected_on_wasm() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let host_lib = r#"
+defexternal BlobHost
+  :size Number
+  :type String
+"#;
+    let app_code = r#"
+ns app.main
+  :require
+    js-ffi.browser :refer $ BlobHost
+
+defunion UploadFile String BlobHost
+
+defn describe-upload (file)
+  hint-fn $ Fn UploadFile (-> String)
+  match file
+    (String path) path
+    (BlobHost _blob) |blob
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  describe-upload |local.txt
+  , &unit
+"#;
+    builtins::effects::init_effects_states();
+    let mut snap = snapshot::Snapshot::default();
+    snap.files.insert(
+      "js-ffi.browser".to_owned(),
+      snapshot::create_file_from_snippet(host_lib).expect("host lib should parse"),
+    );
+    snap.files.insert(
+      "app.main".to_owned(),
+      snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+    );
+    let entries = prepare_snapshot_entries(snap);
+    run_check_only(&entries).expect("snapshot should preprocess cleanly before WASM target validation");
+
+    for target in [calcit::wasm::emit_wasm::WasmTarget::Core, calcit::wasm::emit_wasm::WasmTarget::Wasi] {
+      let err = calcit::wasm::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)
+        .expect_err("WASM/WASI target must reject union with external-object host trait member");
+      assert!(
+        err.contains("E_WASM_UNSUPPORTED_JS_FFI"),
+        "expected E_WASM_UNSUPPORTED_JS_FFI for {target:?}, got: {err}"
+      );
+    }
+  });
+}

@@ -45,11 +45,12 @@ defunion Label String Point
 - 写全元素类型的容器与函数：`List Number`、`Map Tag String`、`Set Tag`、`Ref Number`、`Fn Number (-> String)`、Tuple；
 - 具名 struct、具名 enum；
 - core 的 `Option U`，用来表示“这个位置的值可以缺失”，例如可选的子节点；
+- 具名 external-object 宿主 trait（`defexternal` 或带 `:ffi {:kind :external-object}` 的 `deftrait`），用于表达“Calcit 值或 JS 宿主对象”，例如 `defunion UploadFile String js-ffi.browser/BlobHost`；
 - 另一个 union，会被展开成它的成员。
 
 Symbol 字面量 `'team-id` 推断为 `Symbol`，所以在 `defunion RouteSegment String Symbol Tag` 下，`[] |team 'team-id :id` 可以直接作为 `List RouteSegment` 传入，不需要运行时解码。
 
-成员按运行时种类区分，每种种类至多出现一次：一个 union 里只能有一个 List（或 Tuple）成员、一个 Map 成员、一个 Fn 成员，struct 和 enum 按定义区分。这样运行时只需浅层判断就能选出唯一成员。
+成员按运行时种类区分，每种种类至多出现一次：一个 union 里只能有一个 List（或 Tuple）成员、一个 Map 成员、一个 Fn 成员、一个 external-object 宿主 trait 成员（共享 `:js-object` 运行时种类），struct 和 enum 按定义区分。这样运行时只需浅层判断就能选出唯一成员。
 
 下列成员会报 `E_UNION_MEMBER_INVALID`：
 
@@ -58,8 +59,8 @@ Symbol 字面量 `'team-id` 推断为 `Symbol`，所以在 `defunion RouteSegmen
 - 类型变量：第一版 union 不带类型参数；
 - 把自己直接列为成员，或者只经过其他 union 绕回自己，例如 `defunion A String A`；
 - core 的 `Result`；
-- 匿名 enum / struct、trait、`JsObject`；
-- 两个运行时种类相同的成员；
+- 匿名 enum / struct、普通（非 external-object）trait、裸 `JsObject`；
+- 两个运行时种类相同的成员（包括同一 union 或嵌套展开后的两个 external-object 宿主 trait）；
 - 两个模式名相同的成员，例如来自不同命名空间的同名 struct。
 
 这些规则在 `defunion` 声明处就会检查，即使还没有代码用到这个类型。
@@ -113,8 +114,8 @@ defn describe (g)
 规则：
 
 - 只有被匹配值的静态类型是 union 时才能写类型模式。Dynamic 或未知类型上写类型模式报 `E_UNION_MATCH_PATTERN`；union 上写 Tag 模式也报这个错，两类模式不混用。
-- 成员名是内置类型名（`String`、`Number`、`List`、`Map`、`Fn`、`Tuple` 等），或具名 struct / enum 成员的定义名。嵌套 union 会展平，模式使用展平后的具体成员名。例如 `defunion Text String Number` 和 `defunion Node Text Point` 中，`Node` 的分支使用 `String`、`Number` 和 `Point`。写 `(Text text)` 会报 `E_UNION_MATCH_PATTERN`。
-- struct / enum 的构造器别名及导入名也可以作为模式，按已有名义定义身份解析。别名与原定义覆盖同一成员，不能各写一个分支；同字段的其他定义不会因此成为成员。
+- 成员名是内置类型名（`String`、`Number`、`List`、`Map`、`Fn`、`Tuple` 等），或具名 struct / enum / external-object trait 成员的定义名。嵌套 union 会展平，模式使用展平后的具体成员名。例如 `defunion Text String Number` 和 `defunion Node Text Point` 中，`Node` 的分支使用 `String`、`Number` 和 `Point`。写 `(Text text)` 会报 `E_UNION_MATCH_PATTERN`。
+- struct / enum 的构造器别名及导入名，以及 external-object trait 的限定名或导入别名也可以作为模式，按已有名义定义身份解析。别名与原定义覆盖同一成员，不能各写一个分支；同字段的其他定义不会因此成为成员。
 - 分支要覆盖全部成员，否则报 `E_UNION_MATCH_NOT_EXHAUSTIVE`；`_` 可以兜住剩下的成员，所有成员都已覆盖时 `_` 会得到一条不可达警告。
 - 分支里的绑定带着成员的具体类型，后续方法调用和字段访问照常检查。
 
@@ -163,7 +164,7 @@ defn read-scale (props)
 
 `decode-map-as` 会把 map 解码成 struct：输入是 map 时，先试 union 里的 `Map` 成员，再依次试 struct 成员。`parse-cirru-edn-as` 的输入里 struct 写成 `%{} :Point …`，按名字选成员。
 
-受检解码要求每个成员都支持数据形状；含 `Fn` 成员的 union 在构建解码器时即报错，不依输入选择跳过不支持的成员。WASM 后端目前不支持 union 目标的解码，和其他受检解码器一样只在 Native 与 JS 上可用。
+受检解码要求每个成员都支持数据形状；含 `Fn` 或 external-object 宿主 trait 成员的 union 在构建解码器时即报错，不依输入选择跳过不支持的成员。宿主值应先在 `:js-ffi` 边界经 `js-cast` 转为对应的 external-object trait，再传入 union 位置（子 trait 通过 `requires` 继承父 trait 时也可直接传入）。WASM 后端目前不支持 union 目标的解码，和其他受检解码器一样只在 Native 与 JS 上可用。
 
 `Tuple` 成员按 list 种类选中，再检查长度和每个位置的类型，例如 `defunion TripleInput Number $ Tuple Number Number Number` 接受数字或恰好三个数字的 list，两项或四项的 list 返回解码错误。
 
@@ -182,7 +183,9 @@ union 值在 `match` 之前只能原样传递、放进容器或交给泛型函�
 
 ## 运行时表示
 
-`defunion` 求值得到一个 `UnionDef` 值，`type-of` 返回 `:union-def`。union 值本身就是成员的值，没有额外包装，Native 与 JS 后端表现一致。`match` 的类型模式会被预处理成按成员逐个判断的条件分支：内置类型用对应谓词，struct 用 `&struct:matches?` 判断定义，enum 比较 `&enum:definition`。
+`defunion` 求值得到一个 `UnionDef` 值，`type-of` 返回 `:union-def`。union 值本身就是成员的值，没有额外包装，Native 与 JS 后端表现一致。`match` 的类型模式会被预处理成按成员逐个判断的条件分支：内置类型用对应谓词，struct 用 `&struct:matches?` 判断定义，enum 比较 `&enum:definition`，external-object 宿主 trait 比较 `(= (type-of v) :js-object)`（匹配 JS 宿主对象，不含可调用 JS 函数；在 Native 上恒为 `false`，因此同 union 的值类型分支仍可正常匹配）。
+
+含 external-object 宿主 trait 成员的 union 同样不具备值相等与哈希语义，在 `=`、`not=`、`&=`、`Set` 成员或 `Map` 键位置使用会报 `E_HOST_VALUE_EQUALITY`。WASM / WASI 目标无法表示 JavaScript 宿主句柄，遇到含 external-object 宿主 trait 成员的 union 会直接报 `E_WASM_UNSUPPORTED_JS_FFI`。
 
 ## 相关文档
 

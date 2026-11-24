@@ -1849,6 +1849,89 @@ pub fn validate_wasm_boundary_with_world(
   Ok(())
 }
 
+fn find_external_object_union_in_union_def(
+  union_def: &crate::wasm::host::calcit::CalcitUnionDef,
+  visited: &mut HashSet<Arc<str>>,
+) -> Option<(String, String)> {
+  let union_name: Arc<str> = union_def
+    .definition_ref()
+    .cloned()
+    .unwrap_or_else(|| Arc::from(union_def.name.ref_str()));
+  if !visited.insert(union_name.clone()) {
+    return None;
+  }
+  let members = union_def.checked_members().ok()?;
+  for member in members {
+    if member.kind == crate::wasm::host::calcit::union_def::UnionMemberKind::ExternalObject {
+      return Some((union_name.to_string(), member.annotation.to_brief_string()));
+    }
+    if let Some(found) = find_external_object_union_in_annotation(member.annotation.as_ref(), visited) {
+      return Some(found);
+    }
+  }
+  None
+}
+
+fn find_external_object_union_in_annotation(
+  annotation: &CalcitTypeAnnotation,
+  visited: &mut HashSet<Arc<str>>,
+) -> Option<(String, String)> {
+  if let Some(union_def) = annotation.resolve_to_union() {
+    return find_external_object_union_in_union_def(union_def.as_ref(), visited);
+  }
+  match annotation {
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _)
+    | CalcitTypeAnnotation::Variadic(inner) => find_external_object_union_in_annotation(inner.as_ref(), visited),
+    CalcitTypeAnnotation::Map(key, value) => find_external_object_union_in_annotation(key.as_ref(), visited)
+      .or_else(|| find_external_object_union_in_annotation(value.as_ref(), visited)),
+    CalcitTypeAnnotation::Tuple(args)
+    | CalcitTypeAnnotation::Struct(_, args)
+    | CalcitTypeAnnotation::Enum(_, args)
+    | CalcitTypeAnnotation::TypeRef(_, args) => args
+      .iter()
+      .find_map(|arg| find_external_object_union_in_annotation(arg.as_ref(), visited)),
+    CalcitTypeAnnotation::Fn(signature) => signature
+      .arg_types
+      .iter()
+      .find_map(|arg| find_external_object_union_in_annotation(arg.as_ref(), visited))
+      .or_else(|| {
+        signature
+          .rest_type
+          .as_ref()
+          .and_then(|rest| find_external_object_union_in_annotation(rest.as_ref(), visited))
+      })
+      .or_else(|| find_external_object_union_in_annotation(signature.return_type.as_ref(), visited)),
+    _ => None,
+  }
+}
+
+fn find_external_object_union_in_expr(expr: &Calcit, visited: &mut HashSet<Arc<str>>) -> Option<(String, String)> {
+  match expr {
+    Calcit::Local(local) => find_external_object_union_in_annotation(local.type_info.as_ref(), visited),
+    Calcit::UnionDef(union_def) => find_external_object_union_in_union_def(union_def.as_ref(), visited),
+    Calcit::Method(
+      _,
+      MethodKind::Invoke(ty)
+      | MethodKind::ExternalAccess(ty)
+      | MethodKind::ExternalGet(ty)
+      | MethodKind::ExternalSet(ty)
+      | MethodKind::ExternalInvoke(ty),
+    ) => find_external_object_union_in_annotation(ty.as_ref(), visited),
+    Calcit::List(items) => items.iter().find_map(|item| find_external_object_union_in_expr(item, visited)),
+    Calcit::Fn { info, .. } => info.body.iter().find_map(|item| find_external_object_union_in_expr(item, visited)),
+    Calcit::Thunk(thunk) => find_external_object_union_in_expr(thunk.get_code(), visited),
+    Calcit::Map(map) => map
+      .iter()
+      .find_map(|(k, v)| find_external_object_union_in_expr(k, visited).or_else(|| find_external_object_union_in_expr(v, visited))),
+    Calcit::Set(set) => set.iter().find_map(|item| find_external_object_union_in_expr(item, visited)),
+    Calcit::Recur(args) => args.iter().find_map(|item| find_external_object_union_in_expr(item, visited)),
+    _ => None,
+  }
+}
+
 fn validate_wasm_target_in_program(
   program_data: &program::CompiledProgram,
   init_ns: &str,
@@ -1860,13 +1943,23 @@ fn validate_wasm_target_in_program(
     let Some(file) = program_data.get(namespace.as_str()) else {
       continue;
     };
-    for (definition, _) in deterministic_definition_order(file) {
+    for (definition, compiled) in deterministic_definition_order(file) {
       if program::lookup_def_ffi(&namespace, definition)
         .as_ref()
         .is_some_and(|ffi| crate::wasm::host::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
       {
         return Err(format!(
           "E_WASM_UNSUPPORTED_JS_FFI: `{namespace}/{definition}` has a JavaScript implementation; WASM cannot lower this definition"
+        ));
+      }
+      let mut visited = HashSet::new();
+      let self_ref = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{namespace}/{definition}")), Arc::new(vec![]));
+      if let Some((union_name, member_name)) = find_external_object_union_in_annotation(&self_ref, &mut visited)
+        .or_else(|| find_external_object_union_in_annotation(compiled.schema.as_ref(), &mut visited))
+        .or_else(|| find_external_object_union_in_expr(&compiled.preprocessed_code, &mut visited))
+      {
+        return Err(format!(
+          "E_WASM_UNSUPPORTED_JS_FFI: `{namespace}/{definition}` uses union `{union_name}` with external-object host trait member `{member_name}`; WASM/WASI cannot lower JavaScript host handles"
         ));
       }
     }
