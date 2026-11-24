@@ -2825,6 +2825,7 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   let padded = b.alloc_i32();
   let payload = b.alloc_i32();
   let managed_size = b.alloc_i64();
+  let zero_size = b.alloc_i64();
   let reserve_status = b.alloc_i32();
   let filestat_size = b.alloc_i64();
   let filestat = b.alloc_i32();
@@ -2846,7 +2847,9 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   b.emit(Instruction::End);
   b.emit(Instruction::I64Const(64));
   b.emit(Instruction::LocalSet(filestat_size));
-  rt_emit_try_reserve_managed(&mut b, filestat_size, reserve_status);
+  b.emit(Instruction::I64Const(0));
+  b.emit(Instruction::LocalSet(zero_size));
+  rt_emit_try_reserve_scratch(&mut b, filestat_size, zero_size, filestat, reserve_status);
   b.emit(Instruction::LocalGet(reserve_status));
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(fd));
@@ -2855,8 +2858,6 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::LocalSet(filestat));
   b.emit(Instruction::LocalGet(fd));
   b.emit(Instruction::LocalGet(filestat));
   b.emit(Instruction::Call(fd_filestat_get_idx));
@@ -3535,19 +3536,24 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_dir_fn(
   b.finish(vec![ValType::I32], vec![ValType::I32])
 }
 
-/// Reserve a temporary region at the top of linear memory without advancing
-/// the managed bump allocator. `managed_size_local` keeps allocations made
-/// while the adapter is active below the scratch region.
-pub(in crate::wasm::emit_wasm) fn rt_emit_reserve_scratch(
+/// Fallibly reserve a temporary region at the top of linear memory without
+/// advancing `HEAP_PTR_GLOBAL`. Sets `status_local` to 0 on success or 1 if
+/// address limits or `memory.grow` fail.
+pub(in crate::wasm::emit_wasm) fn rt_emit_try_reserve_scratch(
   builder: &mut RuntimeFnBuilder,
   size_local: u32,
   managed_size_local: u32,
   dst_local: u32,
+  status_local: u32,
 ) {
   let aligned_size = builder.alloc_i64();
   let memory_bytes = builder.alloc_i64();
   let required_bytes = builder.alloc_i64();
 
+  builder.emit(Instruction::I32Const(0));
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::I32Const(0));
+  builder.emit(Instruction::LocalSet(dst_local));
   builder.emit(Instruction::LocalGet(size_local));
   builder.emit(Instruction::I64Const(7));
   builder.emit(Instruction::I64Add);
@@ -3570,8 +3576,9 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_reserve_scratch(
   builder.emit(Instruction::I64Const(u32::MAX as i64));
   builder.emit(Instruction::I64GtU);
   builder.emit(Instruction::If(BlockType::Empty));
-  builder.emit(Instruction::Unreachable);
-  builder.emit(Instruction::End);
+  builder.emit(Instruction::I32Const(1));
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::Else);
   builder.emit(Instruction::LocalGet(required_bytes));
   builder.emit(Instruction::LocalGet(memory_bytes));
   builder.emit(Instruction::I64GtU);
@@ -3588,19 +3595,41 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_reserve_scratch(
   builder.emit(Instruction::I32Const(-1));
   builder.emit(Instruction::I32Eq);
   builder.emit(Instruction::If(BlockType::Empty));
-  builder.emit(Instruction::Unreachable);
-  builder.emit(Instruction::End);
+  builder.emit(Instruction::I32Const(1));
+  builder.emit(Instruction::LocalSet(status_local));
+  builder.emit(Instruction::Else);
   builder.emit(Instruction::MemorySize(0));
   builder.emit(Instruction::I64ExtendI32U);
   builder.emit(Instruction::I64Const(16));
   builder.emit(Instruction::I64Shl);
   builder.emit(Instruction::LocalSet(memory_bytes));
   builder.emit(Instruction::End);
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::LocalGet(status_local));
+  builder.emit(Instruction::I32Eqz);
+  builder.emit(Instruction::If(BlockType::Empty));
   builder.emit(Instruction::LocalGet(memory_bytes));
   builder.emit(Instruction::LocalGet(aligned_size));
   builder.emit(Instruction::I64Sub);
   builder.emit(Instruction::I32WrapI64);
   builder.emit(Instruction::LocalSet(dst_local));
+  builder.emit(Instruction::End);
+  builder.emit(Instruction::End);
+}
+
+/// Reserve a temporary region at the top of linear memory without advancing
+/// the managed bump allocator. `managed_size_local` keeps allocations made
+/// while the adapter is active below the scratch region.
+pub(in crate::wasm::emit_wasm) fn rt_emit_reserve_scratch(
+  builder: &mut RuntimeFnBuilder,
+  size_local: u32,
+  managed_size_local: u32,
+  dst_local: u32,
+) {
+  let status = builder.alloc_i32();
+  rt_emit_try_reserve_scratch(builder, size_local, managed_size_local, dst_local, status);
+  builder.emit(Instruction::LocalGet(status));
+  rt_emit_trap_on_errno(builder);
 }
 
 /// Ensure bounded managed allocations fit in memory without trapping.
@@ -4507,6 +4536,7 @@ mod tests {
       file_size: i64,
       closed_fds: Vec<i32>,
       filestat_calls: usize,
+      last_filestat_ptr: Option<i32>,
       fd_read_calls: usize,
     }
 
@@ -4561,7 +4591,7 @@ mod tests {
     )
     .expect("valid read_text module");
 
-    let run_case = |initial_heap_ptr: i32, file_size: i64| -> (i32, Vec<i32>, usize, usize, Option<String>) {
+    let run_case = |initial_heap_ptr: i32, file_size: i64| -> (i32, Vec<i32>, usize, Option<i32>, usize, Option<String>) {
       let engine = Engine::default();
       let module = Module::new(&engine, &bytes).expect("compile read_text");
       let state = HostState {
@@ -4569,6 +4599,7 @@ mod tests {
         file_size,
         closed_fds: Vec::new(),
         filestat_calls: 0,
+        last_filestat_ptr: None,
         fd_read_calls: 0,
       };
       let mut store = Store::new(&engine, state);
@@ -4577,6 +4608,7 @@ mod tests {
       let f_open = Func::wrap(&mut store, |_path: i32, _oflags: i32, _rights: i64| -> i32 { 42 });
       let f_filestat = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _fd: i32, stat_ptr: i32| -> i32 {
         c.data_mut().filestat_calls += 1;
+        c.data_mut().last_filestat_ptr = Some(stat_ptr);
         let sz = c.data().file_size;
         let Some(Extern::Memory(mem)) = c.get_export("memory") else {
           unreachable!()
@@ -4634,30 +4666,34 @@ mod tests {
         ptr,
         store.data().closed_fds.clone(),
         store.data().filestat_calls,
+        store.data().last_filestat_ptr,
         store.data().fd_read_calls,
         text,
       )
     };
 
     // (a) Filestat reservation exhaustion closes fd and returns 0 without trapping.
-    let (ptr_a, closed_a, stat_a, read_a, _) = run_case(initial_bytes as i32 - 16, 5);
+    let (ptr_a, closed_a, stat_a, stat_ptr_a, read_a, _) = run_case(initial_bytes as i32 - 16, 5);
     assert_eq!(ptr_a, 0);
     assert_eq!(closed_a, vec![42]);
     assert_eq!(stat_a, 0);
+    assert_eq!(stat_ptr_a, None);
     assert_eq!(read_a, 0);
 
     // (b) Read-buffer reservation exhaustion closes fd and returns 0 without trapping.
-    let (ptr_b, closed_b, stat_b, read_b, _) = run_case(initial_bytes as i32 - 128, 512);
+    let (ptr_b, closed_b, stat_b, stat_ptr_b, read_b, _) = run_case(initial_bytes as i32 - 128, 512);
     assert_eq!(ptr_b, 0);
     assert_eq!(closed_b, vec![42]);
     assert_eq!(stat_b, 1);
+    assert_eq!(stat_ptr_b, Some(initial_bytes as i32 - 64));
     assert_eq!(read_b, 0);
 
     // (c) Sufficient capacity succeeds and closes fd cleanly.
-    let (ptr_c, closed_c, stat_c, read_c, text_c) = run_case(HEAP_BASE, 5);
+    let (ptr_c, closed_c, stat_c, stat_ptr_c, read_c, text_c) = run_case(HEAP_BASE, 5);
     assert_ne!(ptr_c, 0);
     assert_eq!(closed_c, vec![42]);
     assert_eq!(stat_c, 1);
+    assert_eq!(stat_ptr_c, Some(initial_bytes as i32 - 64));
     assert_eq!(read_c, 1);
     assert_eq!(text_c.as_deref(), Some("hello"));
   }
