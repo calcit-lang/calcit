@@ -3,7 +3,7 @@
   :migrations $ []
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {}
         :failure "|Unicode_标量位置，缺失返回_none"
         :name |.get
@@ -38,7 +38,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {} (:name |.first)
         :provenance 'calcit.core/first
         :receiver |'String
@@ -65,7 +65,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {} (:name |.last)
         :provenance 'calcit.core/last
         :receiver |'String
@@ -92,7 +92,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {}
         :failure "|位置读取返回_Option_Number，缺失返回_none"
         :name |.get
@@ -127,7 +127,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {} (:name |.first)
         :provenance 'calcit.core/first
         :receiver "|:: 'List 'Number"
@@ -154,7 +154,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {} (:name |.last)
         :provenance 'calcit.core/last
         :receiver "|:: 'List 'Number"
@@ -181,7 +181,7 @@
           :return $ :: 'Option 'Dynamic
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
-      :version |0.46.0
+      :version |0.45.1
       :after $ {}
         :failure "|key_读取返回_Option_Number，缺失返回_none"
         :name |.get
