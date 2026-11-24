@@ -1874,3 +1874,95 @@ fn recursive_and_nested_generic_deftype_aliases_do_not_overflow_reachability() {
   let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
   let _parsed = parse_wasm_module(&bytes);
 }
+
+#[test]
+fn map_equality_checks_key_presence_and_trim_rejects_non_ascii_patterns() {
+  let dir = TestDirectory::create("wasm-map-eq-and-trim");
+  let snapshot = r#"
+{}
+  :about "|Verify map key presence in equality and strict ASCII trim pattern validation"
+  :package |maptrim
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'maptrim.main/main!) (:mode :native) (:reload-fn 'maptrim.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'maptrim.main
+    %{} 'FileEntry
+      :defs $ {}
+        'empty-tag-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ &{} :a 1
+          :examples $ []
+        'check-maps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-maps ()
+            and
+              not $ = (&{} 1 0) (&{} 2 0)
+              not $ = (&{} :a false) (&{} :b false)
+              = (&{} 1 0) (&{} 1 0)
+              not $ = (&{} :a 0 :b 1) (&{} :a 0 :c 1)
+              = (&{} :a 0 :b 1) (&{} :b 1 :a 0)
+              = (dissoc (&{} :a 1) :a) (dissoc empty-tag-num :a)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'check-trim $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-trim ()
+            and
+              = (trim |__1__ |_) |1
+              = (trim "|  éxé  ") |éxé
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'trim-utf8 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export trim-utf8 () (trim |éxé |é)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'trim-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export trim-empty () (trim |éxé |)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'trim-multi $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export trim-multi () (trim |éxé |ab)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (and (check-maps) (check-trim)) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns maptrim.main (:require)
+"#;
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _parsed = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "check-maps")
+      .expect("check-maps")
+      .call(&mut store, ())
+      .expect("check-maps executes"),
+    1.0
+  );
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "check-trim")
+      .expect("check-trim")
+      .call(&mut store, ())
+      .expect("check-trim executes"),
+    1.0
+  );
+  for trap_fn in ["trim-utf8", "trim-empty", "trim-multi"] {
+    assert!(
+      instance
+        .get_typed_func::<(), f64>(&mut store, trap_fn)
+        .expect(trap_fn)
+        .call(&mut store, ())
+        .is_err(),
+      "{trap_fn} must trap when trim pattern is not a single ASCII byte"
+    );
+  }
+}

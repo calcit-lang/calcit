@@ -1118,8 +1118,6 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_dissoc(
   b.emit(Instruction::LocalGet(found_idx));
   b.emit(Instruction::I32Const(2));
   b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(before_slots));
   b.emit(Instruction::LocalGet(dst));
   b.emit(Instruction::I32Const(8));
@@ -1170,14 +1168,18 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_dissoc(
 /// Returns 1 if maps a and b have the same key-value pairs, else 0.
 pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
   map_linearize_idx: u32,
-  map_get_value_idx: u32,
+  map_key_hash_idx: u32,
+  map_root_lookup_idx: u32,
   value_equal_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2); // a=0, b=1
   let count_a = b.alloc_i32();
   let count_b = b.alloc_i32();
   let flat = b.alloc_i32();
+  let root_b = b.alloc_i32();
   let i = b.alloc_i32();
+  let hash = b.alloc_i32();
+  let found = b.alloc_i32();
   let key = b.alloc_f64();
   let val_a = b.alloc_f64();
   let val_b = b.alloc_f64();
@@ -1210,10 +1212,14 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Else);
 
-  // linearize a → flat
+  // linearize a → flat; root_b = b[8] as i32
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::Call(map_linearize_idx));
   b.emit(Instruction::LocalSet(flat));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(root_b));
 
   // all_eq = 1, i = 0
   b.emit(Instruction::I32Const(1));
@@ -1252,11 +1258,25 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::LocalSet(val_a));
 
-  // val_b = __rt_map_get_value(b_ptr, key)
-  b.emit(Instruction::LocalGet(1));
+  // (found, val_b) = __rt_map_root_lookup(root_b, key, __rt_map_key_hash(key))
   b.emit(Instruction::LocalGet(key));
-  b.emit(Instruction::Call(map_get_value_idx));
+  b.emit(Instruction::Call(map_key_hash_idx));
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(root_b));
+  b.emit(Instruction::LocalGet(key));
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::Call(map_root_lookup_idx));
   b.emit(Instruction::LocalSet(val_b));
+  b.emit(Instruction::LocalSet(found));
+
+  // if found == 0 → all_eq = 0, break
+  b.emit(Instruction::LocalGet(found));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(all_eq));
+  b.emit(Instruction::Br(2));
+  b.emit(Instruction::End);
 
   // if val_a != val_b → all_eq = 0, break
   b.emit(Instruction::LocalGet(val_a));
@@ -1376,4 +1396,169 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_equal(value_equal_idx: u32) -> Co
   b.emit(Instruction::LocalGet(result));
   b.emit(Instruction::End); // count comparison
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+  use super::*;
+  use wasm_encoder::BlockType;
+  use wasmtime::{Engine, Instance, Module, Store};
+
+  #[test]
+  fn map_dissoc_prefix_copy_does_not_overwrite_past_flat_buffer() {
+    let copy_fn = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32, ValType::I32],
+      results: vec![],
+      locals: vec![ValType::I32],
+      instructions: vec![
+        Instruction::I32Const(0),
+        Instruction::LocalSet(3),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(3),
+        Instruction::LocalGet(2),
+        Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0),
+        Instruction::LocalGet(3),
+        Instruction::I32Const(8),
+        Instruction::I32Mul,
+        Instruction::I32Add,
+        Instruction::LocalGet(1),
+        Instruction::LocalGet(3),
+        Instruction::I32Const(8),
+        Instruction::I32Mul,
+        Instruction::I32Add,
+        Instruction::F64Load(mem_arg_f64(0)),
+        Instruction::F64Store(mem_arg_f64(0)),
+        Instruction::LocalGet(3),
+        Instruction::I32Const(1),
+        Instruction::I32Add,
+        Instruction::LocalSet(3),
+        Instruction::Br(0),
+        Instruction::End,
+        Instruction::End,
+      ],
+    };
+    let linearize_stub = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![
+        Instruction::LocalGet(0),
+        Instruction::F64Load(mem_arg_f64(8)),
+        Instruction::I32TruncF64U,
+      ],
+    };
+    let from_flat_stub = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::LocalGet(0)],
+    };
+    let key_equal_stub = CompiledFn {
+      export_name: None,
+      params: vec![ValType::F64, ValType::F64],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::F64Eq],
+    };
+    let mut dissoc_fn = build_rt_map_dissoc(0, 1, 2, 3);
+    dissoc_fn.export_name = Some("dissoc".into());
+
+    let bytes = build_wasm_module(
+      &[copy_fn, linearize_stub, from_flat_stub, key_equal_stub, dissoc_fn],
+      &[],
+      HEAP_BASE,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 4,
+        number_format_fn_count: 0,
+        table_fn_count: 0,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
+        rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid map_dissoc module");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("compile map_dissoc wasm");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate map_dissoc");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+    let heap_ptr = instance.get_global(&mut store, "__heap_ptr").expect("heap ptr global");
+    let dissoc = instance
+      .get_typed_func::<(i32, f64), i32>(&mut store, "dissoc")
+      .expect("dissoc export");
+
+    const CANARY: u64 = 0xDEADBEEF_CAFEBABEu64;
+    let fill_canary = |store: &mut Store<()>| {
+      heap_ptr.set(&mut *store, wasmtime::Val::I32(HEAP_BASE)).expect("reset heap_ptr");
+      for offset in (0..512usize).step_by(8) {
+        memory
+          .write(&mut *store, HEAP_BASE as usize + offset, &CANARY.to_le_bytes())
+          .expect("write canary");
+      }
+    };
+    let read_f64 = |store: &Store<()>, addr: usize| -> f64 {
+      let mut buf = [0u8; 8];
+      memory.read(store, addr, &mut buf).expect("read f64");
+      f64::from_le_bytes(buf)
+    };
+    let assert_canary_intact = |store: &Store<()>, start_addr: usize| {
+      for addr in (start_addr..HEAP_BASE as usize + 512).step_by(8) {
+        let mut buf = [0u8; 8];
+        memory.read(store, addr, &mut buf).expect("read canary");
+        assert_eq!(
+          u64::from_le_bytes(buf),
+          CANARY,
+          "dissoc wrote past allocated flat buffer at {addr:#x}"
+        );
+      }
+    };
+
+    // Case 1: removing the sole entry of a 1-entry map (`found_idx == 0`).
+    fill_canary(&mut store);
+    for (slot, val) in [1.0f64, 10.0, 100.0].into_iter().enumerate() {
+      memory.write(&mut store, 1024 + slot * 8, &val.to_le_bytes()).expect("flat");
+    }
+    for (slot, val) in [1.0f64, 1024.0].into_iter().enumerate() {
+      memory.write(&mut store, 2048 + slot * 8, &val.to_le_bytes()).expect("map");
+    }
+    let dst = dissoc.call(&mut store, (2048, 10.0)).expect("dissoc sole entry") as usize;
+    assert_eq!(dst, HEAP_BASE as usize + 8);
+    assert_eq!(read_f64(&store, dst), 0.0);
+    assert_canary_intact(&store, dst + 8);
+
+    // Case 2: removing the last entry of a 2-entry map (`found_idx == 1`).
+    fill_canary(&mut store);
+    for (slot, val) in [2.0f64, 10.0, 100.0, 20.0, 200.0].into_iter().enumerate() {
+      memory.write(&mut store, 1024 + slot * 8, &val.to_le_bytes()).expect("flat");
+    }
+    for (slot, val) in [2.0f64, 1024.0].into_iter().enumerate() {
+      memory.write(&mut store, 2048 + slot * 8, &val.to_le_bytes()).expect("map");
+    }
+    let dst_last = dissoc.call(&mut store, (2048, 20.0)).expect("dissoc last entry") as usize;
+    assert_eq!(dst_last, HEAP_BASE as usize + 8);
+    assert_eq!(read_f64(&store, dst_last), 1.0);
+    assert_eq!(read_f64(&store, dst_last + 8), 10.0);
+    assert_eq!(read_f64(&store, dst_last + 16), 100.0);
+    assert_canary_intact(&store, dst_last + 24);
+
+    // Case 3: removing the first entry of a 2-entry map (`found_idx == 0`).
+    fill_canary(&mut store);
+    let dst_first = dissoc.call(&mut store, (2048, 10.0)).expect("dissoc first entry") as usize;
+    assert_eq!(dst_first, HEAP_BASE as usize + 8);
+    assert_eq!(read_f64(&store, dst_first), 1.0);
+    assert_eq!(read_f64(&store, dst_first + 8), 20.0);
+    assert_eq!(read_f64(&store, dst_first + 16), 200.0);
+    assert_canary_intact(&store, dst_first + 24);
+  }
 }

@@ -2154,6 +2154,17 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_component_read_dir_fn(
   ] {
     b.emit(instruction);
   }
+  b.emit(Instruction::LocalGet(string_size));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(8));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_try_reserve_managed(&mut b, managed_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(valid));
+  b.emit(Instruction::Else);
   rt_emit_alloc_dynamic(&mut b, string_size, string, string_tag);
   for instruction in [
     Instruction::LocalGet(string),
@@ -2237,6 +2248,7 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_component_read_dir_fn(
     Instruction::I32Const(1),
     Instruction::I32Add,
     Instruction::LocalSet(count),
+    Instruction::End,
     Instruction::End,
     Instruction::End,
     Instruction::End,
@@ -2384,19 +2396,33 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_component_read_dir_fn(
     Instruction::LocalGet(event),
     Instruction::I32Const(8),
     Instruction::Call(free_idx),
-    Instruction::LocalGet(valid),
-    Instruction::If(BlockType::Empty),
-    Instruction::LocalGet(list),
-    Instruction::LocalGet(count),
-    Instruction::F64ConvertI32U,
-    Instruction::F64Store(mem_arg_f64(0)),
-    Instruction::LocalGet(list),
-    Instruction::Return,
-    Instruction::End,
-    Instruction::I32Const(0),
   ] {
     b.emit(instruction);
   }
+  b.emit(Instruction::LocalGet(valid));
+  b.emit(Instruction::If(BlockType::Empty));
+  // Reserve for caller-emitted `FsPath` structs and `Result :ok` wrapper
+  // against current `HEAP_PTR_GLOBAL` after any suspension during `future_read`.
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I64ExtendI32U);
+  b.emit(Instruction::I64Const(32));
+  b.emit(Instruction::I64Mul);
+  b.emit(Instruction::I64Const(64));
+  b.emit(Instruction::I64Add);
+  b.emit(Instruction::LocalSet(managed_size));
+  rt_emit_try_reserve_managed(&mut b, managed_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(0));
   b.finish(vec![ValType::I32], vec![ValType::I32])
 }
 
@@ -2799,8 +2825,7 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   let padded = b.alloc_i32();
   let payload = b.alloc_i32();
   let managed_size = b.alloc_i64();
-  let zero_size = b.alloc_i64();
-  let unused_scratch = b.alloc_i32();
+  let reserve_status = b.alloc_i32();
   let filestat_size = b.alloc_i64();
   let filestat = b.alloc_i32();
   let string = b.alloc_i32();
@@ -2821,9 +2846,17 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   b.emit(Instruction::End);
   b.emit(Instruction::I64Const(64));
   b.emit(Instruction::LocalSet(filestat_size));
-  b.emit(Instruction::I64Const(0));
-  b.emit(Instruction::LocalSet(zero_size));
-  rt_emit_reserve_scratch(&mut b, filestat_size, zero_size, filestat);
+  rt_emit_try_reserve_managed(&mut b, filestat_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  b.emit(Instruction::LocalSet(filestat));
   b.emit(Instruction::LocalGet(fd));
   b.emit(Instruction::LocalGet(filestat));
   b.emit(Instruction::Call(fd_filestat_get_idx));
@@ -2866,7 +2899,15 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_text_fn(
   b.emit(Instruction::I64Const(8));
   b.emit(Instruction::I64Add);
   b.emit(Instruction::LocalSet(managed_size));
-  rt_emit_reserve_scratch(&mut b, zero_size, managed_size, unused_scratch);
+  rt_emit_try_reserve_managed(&mut b, managed_size, reserve_status);
+  b.emit(Instruction::LocalGet(reserve_status));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(fd));
+  b.emit(Instruction::Call(fd_close_idx));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   rt_emit_alloc_dynamic(&mut b, payload, string, string_tag);
   b.emit(Instruction::LocalGet(string));
   b.emit(Instruction::LocalGet(file_size));
@@ -4126,4 +4167,498 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_component_get_env_fn(
   b.emit(Instruction::Call(free_idx));
   b.emit(Instruction::LocalGet(found));
   b.finish(vec![ValType::I32], vec![ValType::F64])
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+  use super::*;
+  use std::collections::BTreeSet;
+  use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store, StoreLimits, StoreLimitsBuilder, Val};
+
+  #[test]
+  fn wasi_component_read_dir_rechecks_heap_capacity_after_suspension() {
+    struct HostState {
+      limits: StoreLimits,
+      next_realloc: i32,
+      allocs: BTreeSet<(i32, i32)>,
+      entries_buf: i32,
+      stream_wait_done: bool,
+      stream_dropped: bool,
+      future_dropped: bool,
+      descriptor_dropped: bool,
+      waitable_set_dropped: bool,
+    }
+
+    let imports = vec![
+      HostImport {
+        module: "test".into(),
+        name: "open".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "read-directory".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "stream-read".into(),
+        params: vec![ValType::I32; 3],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "stream-drop".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "future-read".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "future-drop".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "descriptor-drop".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "free".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "realloc".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "waitable-set-new".into(),
+        params: vec![],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "waitable-join".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "waitable-set-wait".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "waitable-set-drop".into(),
+        params: vec![ValType::I32],
+        results: vec![],
+      },
+    ];
+    let canonical = ComponentAsyncCanonicalImports {
+      waitable_set_new: 9,
+      waitable_set_wait: 11,
+      waitable_set_drop: 12,
+      waitable_join: 10,
+      subtask_drop: 0,
+    };
+    let utf8_valid = build_utf8_valid_fn();
+    let str_compare = build_rt_str_compare();
+    let mut read_dir = build_wasi_component_read_dir_fn(
+      WasiComponentReadDirImports {
+        open: 0,
+        read_directory: 1,
+        stream_read: 2,
+        stream_drop: 3,
+        future_read: 4,
+        future_drop: 5,
+        descriptor_drop: 6,
+        utf8_valid: 13,
+        str_compare: 14,
+        free: 7,
+        realloc: 8,
+        list_tag: 2,
+        string_tag: 1,
+      },
+      &canonical,
+    );
+    read_dir.export_name = Some("read_dir".into());
+
+    let memory_layout = WasmMemoryLayout::compute(HEAP_BASE, 0);
+    let initial_bytes = (memory_layout.initial_pages as usize) * 65_536;
+    let bytes = build_wasm_module(
+      &[utf8_valid, str_compare, read_dir],
+      &imports,
+      HEAP_BASE,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 2,
+        number_format_fn_count: 0,
+        table_fn_count: 0,
+        memory_layout: memory_layout.clone(),
+        global_layout: WasmGlobalLayout::compute(0, false),
+        rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid component read_dir module");
+
+    let run_case = |max_memory_bytes: usize| -> (i32, Vec<String>, bool) {
+      let engine = Engine::default();
+      let module = Module::new(&engine, &bytes).expect("compile component read_dir");
+      let state = HostState {
+        limits: StoreLimitsBuilder::new().memory_size(max_memory_bytes).build(),
+        next_realloc: 2048,
+        allocs: BTreeSet::new(),
+        entries_buf: 0,
+        stream_wait_done: false,
+        stream_dropped: false,
+        future_dropped: false,
+        descriptor_dropped: false,
+        waitable_set_dropped: false,
+      };
+      let mut store = Store::new(&engine, state);
+      store.limiter(|s| &mut s.limits);
+
+      let f_open = Func::wrap(
+        &mut store,
+        |mut c: Caller<'_, HostState>, _path: i32, _of: i32, _df: i32, out: i32| -> i32 {
+          let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+            unreachable!()
+          };
+          mem.write(&mut c, out as usize, &9i32.to_le_bytes()).expect("fd");
+          1
+        },
+      );
+      let f_read_dir = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _fd: i32, pair: i32| {
+        let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+          unreachable!()
+        };
+        mem.write(&mut c, pair as usize, &101i32.to_le_bytes()).expect("stream");
+        mem.write(&mut c, pair as usize + 4, &202i32.to_le_bytes()).expect("future");
+      });
+      let f_stream_read = Func::wrap(
+        &mut store,
+        |mut c: Caller<'_, HostState>, _stream: i32, buf: i32, _cnt: i32| -> i32 {
+          c.data_mut().entries_buf = buf;
+          -1
+        },
+      );
+      let f_stream_drop = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _stream: i32| {
+        c.data_mut().stream_dropped = true;
+      });
+      let f_future_read = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _future: i32, res: i32| -> i32 {
+        let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+          unreachable!()
+        };
+        mem.write(&mut c, res as usize, &[0u8]).expect("ok future");
+        0
+      });
+      let f_future_drop = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _future: i32| {
+        c.data_mut().future_dropped = true;
+      });
+      let f_desc_drop = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _fd: i32| {
+        c.data_mut().descriptor_dropped = true;
+      });
+      let f_free = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, ptr: i32, len: i32| {
+        assert!(c.data_mut().allocs.remove(&(ptr, len)), "unexpected free ({ptr}, {len})");
+      });
+      let f_realloc = Func::wrap(
+        &mut store,
+        |mut c: Caller<'_, HostState>, _old: i32, _old_size: i32, align: i32, new_size: i32| -> i32 {
+          let ptr = (c.data().next_realloc + align - 1) & !(align - 1);
+          c.data_mut().next_realloc = ptr + new_size;
+          c.data_mut().allocs.insert((ptr, new_size));
+          ptr
+        },
+      );
+      let f_ws_new = Func::wrap(&mut store, || -> i32 { 303 });
+      let f_ws_join = Func::wrap(&mut store, |_w: i32, _s: i32| {});
+      let f_ws_wait = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _ws: i32, event: i32| -> i32 {
+        let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+          unreachable!()
+        };
+        assert!(!c.data().stream_wait_done);
+        c.data_mut().stream_wait_done = true;
+
+        // Allocate two directory entry names cleanly through tracked host storage.
+        let mut alloc_name = |name: &str| -> (i32, i32) {
+          let ptr = c.data().next_realloc;
+          let len = name.len() as i32;
+          c.data_mut().next_realloc = ptr + len;
+          c.data_mut().allocs.insert((ptr, len));
+          mem.write(&mut c, ptr as usize, name.as_bytes()).expect("entry name bytes");
+          (ptr, len)
+        };
+        let (p0, l0) = alloc_name("z.txt");
+        let (p1, l1) = alloc_name("a.txt");
+        let buf = c.data().entries_buf as usize;
+        for (idx, (p, l)) in [(p0, l0), (p1, l1)].into_iter().enumerate() {
+          let base = buf + idx * 24;
+          mem.write(&mut c, base, &[2u8]).expect("regular file");
+          mem.write(&mut c, base + 16, &p.to_le_bytes()).expect("name ptr");
+          mem.write(&mut c, base + 20, &l.to_le_bytes()).expect("name len");
+        }
+        mem.write(&mut c, event as usize, &101i32.to_le_bytes()).expect("event stream");
+        mem
+          .write(&mut c, event as usize + 4, &((2i32 << 4) | 1).to_le_bytes())
+          .expect("event eof status");
+
+        // Advance __heap_ptr during suspension so only 8 bytes remain in the initial 64 KiB page.
+        let near_end = mem.data_size(&c) as i32 - 8;
+        let Some(Extern::Global(heap_ptr)) = c.get_export("__heap_ptr") else {
+          unreachable!()
+        };
+        heap_ptr.set(&mut c, Val::I32(near_end)).expect("advance heap ptr");
+        2
+      });
+      let f_ws_drop = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _ws: i32| {
+        c.data_mut().waitable_set_dropped = true;
+      });
+
+      let instance = Instance::new(
+        &mut store,
+        &module,
+        &[
+          f_open.into(),
+          f_read_dir.into(),
+          f_stream_read.into(),
+          f_stream_drop.into(),
+          f_future_read.into(),
+          f_future_drop.into(),
+          f_desc_drop.into(),
+          f_free.into(),
+          f_realloc.into(),
+          f_ws_new.into(),
+          f_ws_join.into(),
+          f_ws_wait.into(),
+          f_ws_drop.into(),
+        ],
+      )
+      .expect("instantiate read_dir");
+      let mem = instance.get_memory(&mut store, "memory").expect("memory");
+      mem.write(&mut store, 1024, &9.0f64.to_le_bytes()).expect("path len");
+      mem.write(&mut store, 1032, b"workspace").expect("path bytes");
+      // Initial single-page capacity (65,536 bytes) vs post-suspension growth.
+      let _initial_pages = mem.size(&store);
+      let read_dir_fn = instance
+        .get_typed_func::<i32, i32>(&mut store, "read_dir")
+        .expect("read_dir export");
+      let list_ptr = read_dir_fn.call(&mut store, 1024).expect("read_dir executes without trapping");
+
+      assert!(store.data().stream_dropped);
+      assert!(store.data().future_dropped);
+      assert!(store.data().descriptor_dropped);
+      assert!(store.data().waitable_set_dropped);
+      assert!(store.data().allocs.is_empty(), "leaked allocs: {:?}", store.data().allocs);
+
+      let mut items = Vec::new();
+      if list_ptr != 0 {
+        let mut buf = [0u8; 8];
+        mem.read(&store, list_ptr as usize, &mut buf).expect("list count");
+        let count = f64::from_le_bytes(buf) as usize;
+        for idx in 0..count {
+          mem.read(&store, list_ptr as usize + (idx + 1) * 8, &mut buf).expect("item ptr");
+          let str_ptr = f64::from_le_bytes(buf) as usize;
+          mem.read(&store, str_ptr, &mut buf).expect("str len");
+          let len = f64::from_le_bytes(buf) as usize;
+          let mut raw = vec![0u8; len];
+          mem.read(&store, str_ptr + 8, &mut raw).expect("str bytes");
+          items.push(String::from_utf8(raw).expect("valid utf8"));
+        }
+      }
+      let grew = mem.size(&store) > memory_layout.initial_pages;
+      (list_ptr, items, grew)
+    };
+
+    // (a) When memory can grow after suspension, re-checking capacity grows memory and returns sorted entries.
+    let (ok_ptr, items, grew) = run_case(initial_bytes + 65_536);
+    assert_ne!(ok_ptr, 0);
+    assert!(grew, "post-suspension allocation must grow memory rather than overflowing");
+    assert_eq!(items, vec!["workspace/a.txt", "workspace/z.txt"]);
+
+    // (b) When memory growth is exhausted, post-suspension re-check returns 0 and cleans up without trapping.
+    let (fail_ptr, fail_items, fail_grew) = run_case(initial_bytes);
+    assert_eq!(fail_ptr, 0);
+    assert!(fail_items.is_empty());
+    assert!(!fail_grew);
+  }
+
+  #[test]
+  fn wasi_read_text_returns_zero_and_closes_fd_when_reservation_fails() {
+    struct HostState {
+      limits: StoreLimits,
+      file_size: i64,
+      closed_fds: Vec<i32>,
+      filestat_calls: usize,
+      fd_read_calls: usize,
+    }
+
+    let imports = vec![
+      HostImport {
+        module: "test".into(),
+        name: "open-path".into(),
+        params: vec![ValType::I32, ValType::I32, ValType::I64],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "fd-filestat-get".into(),
+        params: vec![ValType::I32; 2],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "fd-read".into(),
+        params: vec![ValType::I32; 4],
+        results: vec![ValType::I32],
+      },
+      HostImport {
+        module: "test".into(),
+        name: "fd-close".into(),
+        params: vec![ValType::I32],
+        results: vec![ValType::I32],
+      },
+    ];
+    let utf8_valid = build_utf8_valid_fn();
+    let mut read_text = build_wasi_read_text_fn(0, 1, 2, 3, 4, 1);
+    read_text.export_name = Some("read_text".into());
+
+    let memory_layout = WasmMemoryLayout::compute(HEAP_BASE, 0);
+    let initial_bytes = (memory_layout.initial_pages as usize) * 65_536;
+    let bytes = build_wasm_module(
+      &[utf8_valid, read_text],
+      &imports,
+      HEAP_BASE,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 1,
+        number_format_fn_count: 0,
+        table_fn_count: 0,
+        memory_layout,
+        global_layout: WasmGlobalLayout::compute(0, false),
+        rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid read_text module");
+
+    let run_case = |initial_heap_ptr: i32, file_size: i64| -> (i32, Vec<i32>, usize, usize, Option<String>) {
+      let engine = Engine::default();
+      let module = Module::new(&engine, &bytes).expect("compile read_text");
+      let state = HostState {
+        limits: StoreLimitsBuilder::new().memory_size(initial_bytes).build(),
+        file_size,
+        closed_fds: Vec::new(),
+        filestat_calls: 0,
+        fd_read_calls: 0,
+      };
+      let mut store = Store::new(&engine, state);
+      store.limiter(|s| &mut s.limits);
+
+      let f_open = Func::wrap(&mut store, |_path: i32, _oflags: i32, _rights: i64| -> i32 { 42 });
+      let f_filestat = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, _fd: i32, stat_ptr: i32| -> i32 {
+        c.data_mut().filestat_calls += 1;
+        let sz = c.data().file_size;
+        let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+          unreachable!()
+        };
+        mem.write(&mut c, stat_ptr as usize + 32, &sz.to_le_bytes()).expect("filestat size");
+        0
+      });
+      let f_read = Func::wrap(
+        &mut store,
+        |mut c: Caller<'_, HostState>, _fd: i32, iovs: i32, _cnt: i32, nread: i32| -> i32 {
+          c.data_mut().fd_read_calls += 1;
+          let Some(Extern::Memory(mem)) = c.get_export("memory") else {
+            unreachable!()
+          };
+          let mut buf = [0u8; 4];
+          mem.read(&c, iovs as usize, &mut buf).expect("iov base");
+          let dst = u32::from_le_bytes(buf) as usize;
+          mem.write(&mut c, dst, b"hello").expect("write payload");
+          mem.write(&mut c, nread as usize, &5i32.to_le_bytes()).expect("nread");
+          0
+        },
+      );
+      let f_close = Func::wrap(&mut store, |mut c: Caller<'_, HostState>, fd: i32| -> i32 {
+        c.data_mut().closed_fds.push(fd);
+        0
+      });
+
+      let instance = Instance::new(
+        &mut store,
+        &module,
+        &[f_open.into(), f_filestat.into(), f_read.into(), f_close.into()],
+      )
+      .expect("instantiate read_text");
+      let mem = instance.get_memory(&mut store, "memory").expect("memory");
+      mem.write(&mut store, 1024, &8.0f64.to_le_bytes()).expect("path len");
+      mem.write(&mut store, 1032, b"test.txt").expect("path bytes");
+      let heap_ptr = instance.get_global(&mut store, "__heap_ptr").expect("heap ptr");
+      heap_ptr.set(&mut store, Val::I32(initial_heap_ptr)).expect("set initial heap ptr");
+
+      let func = instance
+        .get_typed_func::<i32, i32>(&mut store, "read_text")
+        .expect("read_text export");
+      let ptr = func.call(&mut store, 1024).expect("read_text must return 0 rather than trap");
+      let text = if ptr != 0 {
+        let mut buf = [0u8; 8];
+        mem.read(&store, ptr as usize, &mut buf).expect("str len");
+        let len = f64::from_le_bytes(buf) as usize;
+        let mut raw = vec![0u8; len];
+        mem.read(&store, ptr as usize + 8, &mut raw).expect("str bytes");
+        Some(String::from_utf8(raw).expect("valid utf8"))
+      } else {
+        None
+      };
+      (
+        ptr,
+        store.data().closed_fds.clone(),
+        store.data().filestat_calls,
+        store.data().fd_read_calls,
+        text,
+      )
+    };
+
+    // (a) Filestat reservation exhaustion closes fd and returns 0 without trapping.
+    let (ptr_a, closed_a, stat_a, read_a, _) = run_case(initial_bytes as i32 - 16, 5);
+    assert_eq!(ptr_a, 0);
+    assert_eq!(closed_a, vec![42]);
+    assert_eq!(stat_a, 0);
+    assert_eq!(read_a, 0);
+
+    // (b) Read-buffer reservation exhaustion closes fd and returns 0 without trapping.
+    let (ptr_b, closed_b, stat_b, read_b, _) = run_case(initial_bytes as i32 - 128, 512);
+    assert_eq!(ptr_b, 0);
+    assert_eq!(closed_b, vec![42]);
+    assert_eq!(stat_b, 1);
+    assert_eq!(read_b, 0);
+
+    // (c) Sufficient capacity succeeds and closes fd cleanly.
+    let (ptr_c, closed_c, stat_c, read_c, text_c) = run_case(HEAP_BASE, 5);
+    assert_ne!(ptr_c, 0);
+    assert_eq!(closed_c, vec![42]);
+    assert_eq!(stat_c, 1);
+    assert_eq!(read_c, 1);
+    assert_eq!(text_c.as_deref(), Some("hello"));
+  }
 }

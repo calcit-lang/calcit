@@ -698,22 +698,40 @@ pub(super) fn build_rt_trim_ws(str_tag: i32) -> CompiledFn {
 
 /// `__rt_trim_char(s: f64, c: f64) → f64`
 ///
-/// Strips the first byte of the `c` string from both ends of `s`.
+/// Strips single ASCII byte pattern `c` (`byte_len == 1 && byte < 0x80`) from
+/// both ends of `s`, trapping on empty, multi-byte UTF-8, or multi-char patterns
+/// to match `builtins::strings::trim`.
 #[allow(clippy::vec_init_then_push)]
 pub(super) fn build_rt_trim_char(str_tag: i32) -> CompiledFn {
   // params: 0=s(f64), 1=c(f64) (char string ptr)
   // locals: 2=ptr(i32), 3=byte_len(i32), 4=content(i32), 5=start(i32),
   //         6=end(i32), 7=new_len(i32), 8=raw_base(i32), 9=new_ptr(i32),
-  //         10=padded(i32), 11=ch(i32), 12=b(i32)
+  //         10=padded(i32), 11=ch(i32), 12=b/c_ptr(i32)
   let mut b: Vec<Instruction> = Vec::new();
 
-  // ch = first byte of char string c
+  // Validate that pattern `c` is a single ASCII byte so valid UTF-8 in `s` cannot split.
   b.push(Instruction::LocalGet(1));
   b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalTee(12));
+  b.push(Instruction::F64Load(mem_arg_f64(0)));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Ne);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
+
+  // ch = single ASCII byte of char string c
+  b.push(Instruction::LocalGet(12));
   b.push(Instruction::I32Const(8));
   b.push(Instruction::I32Add);
   b.push(Instruction::I32Load8U(mem_arg_byte(0)));
-  b.push(Instruction::LocalSet(11));
+  b.push(Instruction::LocalTee(11));
+  b.push(Instruction::I32Const(0x80));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
 
   // ptr = i32(s)
   b.push(Instruction::LocalGet(0));

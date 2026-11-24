@@ -1194,7 +1194,12 @@ pub(super) fn build_runtime_fns(
 
   // Map values can contain nested Options and Enums, so use the same deep comparator.
   fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
-  fns.push(build_rt_map_equal(map_linearize_idx, map_get_value_idx, value_equal_idx));
+  fns.push(build_rt_map_equal(
+    map_linearize_idx,
+    map_key_hash_idx,
+    map_root_lookup_idx,
+    value_equal_idx,
+  ));
 
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
   fns.push(build_rt_set_equal(value_equal_idx));
