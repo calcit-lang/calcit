@@ -10,6 +10,7 @@ use super::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub(super) struct LinkedModule {
+  pub(super) kept_import_indices: Vec<usize>,
   pub(super) fns: Vec<CompiledFn>,
   pub(super) used_tables: BTreeSet<u32>,
   pub(super) table_elements: Vec<(u32, Vec<u32>)>,
@@ -87,6 +88,7 @@ pub(super) fn link_module(fns: &[CompiledFn], num_imports: u32, layout: &ModuleF
     let table_elements = build_table_elements(&used_tables, num_imports, layout, None);
     let needs_number_format = layout.number_format_fn_count > 0 || touches_number_stack(fns, layout.global_layout.number_stack);
     return LinkedModule {
+      kept_import_indices: (0..num_imports as usize).collect(),
       fns: fns.to_vec(),
       used_tables,
       table_elements,
@@ -125,15 +127,22 @@ pub(super) fn link_module(fns: &[CompiledFn], num_imports: u32, layout: &ModuleF
     }
   }
 
-  let mut old_to_new: HashMap<u32, u32> = HashMap::with_capacity(num_imports as usize + reachable.len());
-  for import_idx in 0..num_imports {
-    old_to_new.insert(import_idx, import_idx);
+  let kept_import_indices: Vec<usize> = if layout.prune_unused_imports {
+    (0..num_imports as usize).filter(|&i| reachable.contains(&(i as u32))).collect()
+  } else {
+    (0..num_imports as usize).collect()
+  };
+  let new_num_imports = kept_import_indices.len() as u32;
+
+  let mut old_to_new: HashMap<u32, u32> = HashMap::with_capacity(kept_import_indices.len() + reachable.len());
+  for (new_idx, &old_idx) in kept_import_indices.iter().enumerate() {
+    old_to_new.insert(old_idx as u32, new_idx as u32);
   }
   let mut kept_indices = Vec::new();
   for i in 0..fns.len() {
     let old_idx = num_imports + i as u32;
     if reachable.contains(&old_idx) {
-      let new_idx = num_imports + kept_indices.len() as u32;
+      let new_idx = new_num_imports + kept_indices.len() as u32;
       old_to_new.insert(old_idx, new_idx);
       kept_indices.push(i);
     }
@@ -159,6 +168,7 @@ pub(super) fn link_module(fns: &[CompiledFn], num_imports: u32, layout: &ModuleF
   let needs_number_format = ryu_fn_reachable || touches_number_stack(&kept_fns, layout.global_layout.number_stack);
 
   LinkedModule {
+    kept_import_indices,
     fns: kept_fns,
     used_tables,
     table_elements,
@@ -178,6 +188,7 @@ mod tests {
       memory_layout: WasmMemoryLayout::compute(16384, 0),
       global_layout: WasmGlobalLayout::compute(0, false),
       rest_adapters: HashMap::new(),
+      prune_unused_imports: false,
     }
   }
 
@@ -293,5 +304,49 @@ mod tests {
     let linked = link_module(&fns, 0, &layout);
     assert_eq!(linked.fns.len(), 2);
     assert!(!linked.needs_number_format);
+  }
+
+  #[test]
+  fn pruning_unused_imports_compacts_import_and_function_indices() {
+    // Old imports: 0 (unused), 1 (called by exported entry), 2 (unused), 3 (called by indirect target).
+    // Old local 4 (0): dead runtime helper
+    // Old local 5 (1): table slot 0 (user fn 0, unexported) -> calls import 3
+    // Old local 6 (2): exported entry -> calls import 1 and CallIndirect { table_index: 1 }
+    let mut layout = empty_layout(1, 0, 1);
+    layout.prune_unused_imports = true;
+    let fns = vec![
+      fn_with(None, vec![Instruction::Unreachable]),
+      fn_with(None, vec![Instruction::Call(3)]),
+      fn_with(
+        Some("entry"),
+        vec![
+          Instruction::Call(1),
+          Instruction::CallIndirect {
+            type_index: 1,
+            table_index: 1,
+          },
+        ],
+      ),
+    ];
+
+    let linked = link_module(&fns, 4, &layout);
+    // Kept imports: [1, 3] -> new indices 0 and 1.
+    assert_eq!(linked.kept_import_indices, vec![1, 3]);
+    // Kept locals: old 5 -> new 2 (table slot 0), old 6 -> new 3 (entry).
+    assert_eq!(linked.fns.len(), 2);
+    assert!(matches!(linked.fns[0].instructions[0], Instruction::Call(1)));
+    assert_eq!(linked.fns[1].export_name.as_deref(), Some("entry"));
+    assert!(matches!(linked.fns[1].instructions[0], Instruction::Call(0)));
+    assert_eq!(linked.table_elements, vec![(1, vec![2])]);
+  }
+
+  #[test]
+  fn preserving_imports_when_pruning_disabled_keeps_all_import_slots() {
+    let layout = empty_layout(0, 0, 0);
+    let fns = vec![fn_with(Some("entry"), vec![Instruction::Call(2)])];
+    let linked = link_module(&fns, 3, &layout);
+    assert_eq!(linked.kept_import_indices, vec![0, 1, 2]);
+    assert_eq!(linked.fns.len(), 1);
+    assert!(matches!(linked.fns[0].instructions[0], Instruction::Call(2)));
   }
 }

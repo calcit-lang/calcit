@@ -58,13 +58,7 @@ fn calcit_stdio_entry_emits_runnable_wasi_03_command_component() {
       .imports(&engine)
       .map(|(name, _)| name)
       .collect::<Vec<_>>(),
-    vec![
-      "wasi:cli/environment@0.3.1",
-      "wasi:cli/exit@0.3.1",
-      "wasi:cli/types@0.3.1",
-      "wasi:cli/stdout@0.3.1",
-      "wasi:cli/stderr@0.3.1",
-    ]
+    vec!["wasi:cli/types@0.3.1", "wasi:cli/stdout@0.3.1", "wasi:cli/stderr@0.3.1",]
   );
   assert!(
     component
@@ -406,7 +400,11 @@ fn quit_exits_with_the_requested_wasi_03_status_code() {
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
-  Component::new(&engine, &wasm).expect("valid command Component");
+  let component = Component::new(&engine, &wasm).expect("valid command Component");
+  let component_type = component.component_type();
+  let imports = component_type.imports(&engine).map(|(name, _)| name).collect::<Vec<_>>();
+  assert!(imports.contains(&"wasi:cli/exit@0.3.1"), "imports: {imports:?}");
+  assert!(!imports.contains(&"wasi:cli/environment@0.3.1"), "imports: {imports:?}");
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     let result = Command::new(cli)
@@ -458,7 +456,11 @@ fn command_arguments_preserve_order_and_utf8_content() {
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
-  Component::new(&engine, &wasm).expect("valid command Component");
+  let component = Component::new(&engine, &wasm).expect("valid command Component");
+  let component_type = component.component_type();
+  let imports = component_type.imports(&engine).map(|(name, _)| name).collect::<Vec<_>>();
+  assert!(imports.contains(&"wasi:cli/environment@0.3.1"), "imports: {imports:?}");
+  assert!(imports.contains(&"wasi:cli/exit@0.3.1"), "imports: {imports:?}");
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     for (argument, expected_status) in [("你好", 7), ("beta", 8)] {
@@ -645,7 +647,11 @@ fn command_environment_preserves_option_and_utf8_content() {
   config.wasm_component_model_async_stackful(true);
   let engine = Engine::new(&config).expect("Wasmtime engine");
   let wasm = fs::read(output.path().join("program.wasm")).expect("command Component");
-  Component::new(&engine, &wasm).expect("valid command Component");
+  let component = Component::new(&engine, &wasm).expect("valid command Component");
+  let component_type = component.component_type();
+  let imports = component_type.imports(&engine).map(|(name, _)| name).collect::<Vec<_>>();
+  assert!(imports.contains(&"wasi:cli/environment@0.3.1"), "imports: {imports:?}");
+  assert!(imports.contains(&"wasi:cli/exit@0.3.1"), "imports: {imports:?}");
 
   if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
     for (value, expected_status) in [(Some("你好"), 7), (Some("other"), 9), (Some(""), 9), (None, 8)] {

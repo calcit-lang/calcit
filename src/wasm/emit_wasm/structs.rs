@@ -246,6 +246,14 @@ impl StructLayouts {
   pub fn serialize_descriptor_table(&mut self, data_segment: &mut Vec<u8>, heap_start: &mut i32) {
     let max_id = self.ids.values().copied().max().unwrap_or(0);
     self.max_layout_id = max_id;
+    if max_id == 0 {
+      self.desc_table_base = 0;
+      while !data_segment.len().is_multiple_of(8) {
+        data_segment.push(0);
+      }
+      *heap_start = HEAP_BASE + data_segment.len() as i32;
+      return;
+    }
     let mut entries = Vec::with_capacity(max_id as usize + 1);
     entries.push((8u32, 0u32, 0u32));
     for id in 1..=max_id {
@@ -1833,5 +1841,26 @@ mod tests {
       .expect("struct literal inside reached extra_exprs must register a layout");
     let identity = StructIdentity::from(anonymous_struct.as_ref());
     assert!(layouts.ids.contains_key(&identity), "expected struct layout id for {identity:?}");
+  }
+
+  #[test]
+  fn struct_layouts_serialize_descriptor_table_skips_empty_table_when_no_structs() {
+    let mut empty_layouts = StructLayouts::default();
+    let mut empty_data = Vec::new();
+    let mut empty_heap_start = HEAP_BASE;
+    empty_layouts.serialize_descriptor_table(&mut empty_data, &mut empty_heap_start);
+    assert_eq!(empty_layouts.max_layout_id, 0);
+    assert_eq!(empty_layouts.desc_table_base, 0);
+    assert!(empty_data.is_empty());
+    assert_eq!(empty_heap_start, HEAP_BASE);
+
+    let mut padded_layouts = StructLayouts::default();
+    let mut padded_data = vec![0xAAu8; 3];
+    let mut padded_heap_start = HEAP_BASE + 3;
+    padded_layouts.serialize_descriptor_table(&mut padded_data, &mut padded_heap_start);
+    assert_eq!(padded_layouts.max_layout_id, 0);
+    assert_eq!(padded_layouts.desc_table_base, 0);
+    assert_eq!(padded_data.len(), 8);
+    assert_eq!(padded_heap_start, HEAP_BASE + 8);
   }
 }

@@ -1749,6 +1749,7 @@ fn emit_wasm_impl(
       memory_layout,
       global_layout,
       rest_adapters,
+      prune_unused_imports: true,
     },
   )?;
 
@@ -17882,6 +17883,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::from([((3, 0), 4), ((1, 0), 5)]),
+        prune_unused_imports: false,
       },
     )
     .expect("valid module");
@@ -18101,6 +18103,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(16, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid core module");
@@ -18125,6 +18128,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid route helper module");
@@ -18207,6 +18211,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid preopen selector module");
@@ -18365,6 +18370,7 @@ mod tests {
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
           rest_adapters: HashMap::new(),
+          prune_unused_imports: false,
         },
       )
       .expect("valid core command");
@@ -18484,6 +18490,7 @@ mod tests {
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
           rest_adapters: HashMap::new(),
+          prune_unused_imports: false,
         },
       )
       .expect("valid async open-at core command");
@@ -18662,6 +18669,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(heap_start, 0),
         global_layout,
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid file stream core command");
@@ -18847,6 +18855,7 @@ mod tests {
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
           rest_adapters: HashMap::new(),
+          prune_unused_imports: false,
         },
       )
       .expect("valid bounded file reader core command");
@@ -18990,6 +18999,7 @@ mod tests {
           memory_layout: WasmMemoryLayout::compute(16384, 0),
           global_layout,
           rest_adapters: HashMap::new(),
+          prune_unused_imports: false,
         },
       )
       .expect("valid bounded stdin core command");
@@ -20452,6 +20462,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid parse_float module");
@@ -20648,6 +20659,7 @@ mod tests {
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE + 96, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
         rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
       },
     )
     .expect("valid strict bool module");
