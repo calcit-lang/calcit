@@ -636,8 +636,43 @@ let
 
 与返回 `Result Dynamic String` 的 `try-parse-json` / `.parse-json` 不同，`JsonValue` 的对象键使用 `String`（`Map String JsonValue`），因此在 WASM/WASI 上也能解析编译期未知的任意 JSON 键名，并且不需要为动态 JSON 标量启用 boxed scalar ABI。
 
+## 封闭 Cirru EDN 值（EdnValue）
+
+`calcit.core/EdnValue` 是递归封闭的名义 Enum，用来在 Native、JavaScript 与 WASM/WASI 上无 `Dynamic` 地解析、匹配与格式化任意 Cirru EDN 数据：
+
+```cirru.no-check
+defenum EdnValue
+  :nil
+  :bool Bool
+  :number Number
+  :string String
+  :tag String
+  :symbol String
+  :list $ List EdnValue
+  :set $ Set EdnValue
+  :map $ Map EdnValue EdnValue
+```
+
+使用 `edn:parse` 解析 Cirru EDN 文本，返回 `Result EdnValue String`；语法错误、非有限数值或不支持的扩展语法返回 `Result :err String`。
+使用 `.to-edn`（或函数形式 `edn:format`）将 `EdnValue` 格式化为单行 Cirru EDN 文本：
+
+```cirru
+let
+    parsed $ edn:parse "|{} (:ok true) (:items ([] 1 |a nil)) (:tags (#{} :x :y))"
+  match parsed
+    (:ok value)
+      do
+        assert-type value EdnValue
+        assert= (Result :ok value) (edn:parse (.to-edn value))
+        assert= (Result :ok value) (edn:parse (edn:format value))
+    (:err msg) (raise msg)
+```
+
+与返回 `Result Dynamic String` 的 `try-parse-cirru-edn` / `.parse-cirru-edn` 不同，`EdnValue` 将 `:tag` 与 `:symbol` 的名称保存为 `String`，并支持递归 `Set EdnValue` 与 `Map EdnValue EdnValue`，因此在 WASM/WASI 上也能解析编译期未知的任意 tag/symbol 与嵌套集合。
+
 ### 限制
 
 - `json:parse` 在 WASM/WASI 上沿用现有 JSON 解析上限（输入 64 KiB、单数组 4096 项、单对象 2048 项、嵌套深度 32），超限时返回 `Result :err`。
 - `json:stringify` / `.to-json` 对 `JsonValue :number` 中的非有限浮点数沿用 `json-stringify` 的报错语义。
-- 同类的封闭递归 `EdnValue`（含 `Set EdnValue` 与 `Map EdnValue EdnValue`）依赖 WASM 对递归 Enum 集合元素/键比较的统一支持，将在后续迭代单独落地。
+- `edn:parse` 仅解码上述 9 种核心 Cirru EDN 值（不支持 `%{} `、`%::`、`::`、`quote`、`atom` 等扩展宿主构造）；在 WASM/WASI 上限制输入大小 64 KiB 与嵌套深度 32，超限时返回 `Result :err`。
+- `edn:format` / `.to-edn` 对 `EdnValue :number` 中的非有限浮点数沿用 `json-stringify` 的报错语义。

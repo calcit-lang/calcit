@@ -444,6 +444,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     FormatCirruOneLiner => meta::format_cirru_one_liner(args),
     ParseCirruEdn => meta::parse_cirru_edn(args),
     NativeTryParseCirruEdn => meta::try_parse_cirru_edn(args),
+    NativeTryParseEdnValue => meta::try_parse_edn_value(args),
     FormatCirruEdn => meta::format_cirru_edn(args),
     NativeCirruQuoteToList => meta::cirru_quote_to_list(args),
     NativeCirruQuoteLeafText => meta::cirru_quote_leaf_text(args),

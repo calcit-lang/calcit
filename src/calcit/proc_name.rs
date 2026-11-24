@@ -187,6 +187,8 @@ pub enum CalcitProc {
   ParseCirruEdn,
   #[strum(serialize = "&try-parse-cirru-edn")]
   NativeTryParseCirruEdn,
+  #[strum(serialize = "&try-parse-edn-value")]
+  NativeTryParseEdnValue,
   #[strum(serialize = "format-cirru-edn")]
   FormatCirruEdn,
   #[strum(serialize = "json-parse")]

@@ -577,6 +577,79 @@ export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValu
   return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView | TypedEdnMapView;
 };
 
+const EDN_NUMBER_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+export let extract_edn_value = (x: CirruEdnFormat, ednValueType: CalcitEnumDef): CalcitEnumValue => {
+  if (typeof x === "string") {
+    if (x === "nil") {
+      return new CalcitEnumValue(newTag("nil"), [], ednValueType);
+    }
+    if (x === "true") {
+      return new CalcitEnumValue(newTag("bool"), [true], ednValueType);
+    }
+    if (x === "false") {
+      return new CalcitEnumValue(newTag("bool"), [false], ednValueType);
+    }
+    if (x.length > 0 && (x[0] === "|" || x[0] === '"')) {
+      return new CalcitEnumValue(newTag("string"), [x.slice(1)], ednValueType);
+    }
+    if (x.length > 0 && x[0] === ":") {
+      return new CalcitEnumValue(newTag("tag"), [x.slice(1)], ednValueType);
+    }
+    if (x.length > 0 && x[0] === "'") {
+      return new CalcitEnumValue(newTag("symbol"), [x.slice(1)], ednValueType);
+    }
+    if (EDN_NUMBER_PATTERN.test(x)) {
+      const n = Number(x);
+      if (!Number.isFinite(n)) {
+        throw new Error(`edn:parse number must be finite, got: ${x}`);
+      }
+      return new CalcitEnumValue(newTag("number"), [n], ednValueType);
+    }
+    throw new Error(`unknown syntax for EDN: ${x}`);
+  }
+  if (Array.isArray(x)) {
+    if (x.length === 0) {
+      throw new Error("Cannot be empty form");
+    }
+    const notComment = (item: CirruEdnFormat) => !(Array.isArray(item) && item[0] === ";");
+    if (x[0] === "do" && x.length === 2) {
+      return extract_edn_value(x[1], ednValueType);
+    }
+    if (x[0] === "[]") {
+      const items = x
+        .slice(1)
+        .filter(notComment)
+        .map((item) => extract_edn_value(item, ednValueType));
+      return new CalcitEnumValue(newTag("list"), [new CalcitSliceList(items)], ednValueType);
+    }
+    if (x[0] === "#{}") {
+      const items = x
+        .slice(1)
+        .filter(notComment)
+        .map((item) => extract_edn_value(item, ednValueType));
+      return new CalcitEnumValue(newTag("set"), [new CalcitSet(items)], ednValueType);
+    }
+    if (x[0] === "{}") {
+      const entries: CalcitValue[] = [];
+      for (let idx = 1; idx < x.length; idx += 1) {
+        const pair = x[idx];
+        if (!Array.isArray(pair)) {
+          throw new Error(`Expected pairs for map, got: ${pair}`);
+        }
+        if (pair[0] === ";") continue;
+        if (pair.length !== 2) {
+          throw new Error(`Expected a pair, got: ${pair}`);
+        }
+        entries.push(extract_edn_value(pair[0], ednValueType), extract_edn_value(pair[1], ednValueType));
+      }
+      return new CalcitEnumValue(newTag("map"), [new CalcitSliceMap(entries)], ednValueType);
+    }
+    throw new Error(`edn:parse unsupported Cirru EDN construct: ${x[0]}`);
+  }
+  throw new Error(`Unexpected data from EDN: ${x}`);
+};
+
 export let format_cirru_edn = function (data: CalcitValue, useInline?: boolean): string {
   if (arguments.length < 2) useInline = true;
   if (typeof useInline !== "boolean") {

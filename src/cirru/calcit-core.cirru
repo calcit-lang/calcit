@@ -719,6 +719,415 @@
                     swap! *counted &+ $ option:unwrap $ nth ([] 0 1 2) idx
                   assert= 3 @*counted
               :tags $ #{} :core :unit
+        '&edn:attach-children $ %{} 'CodeEntry (:doc "|Internal helper: attach indented child Cirru nodes to a line's AST, descending into trailing $ tail lists.")
+          :code $ quote $ defn &edn:attach-children (nodes dollar-depth children)
+            if (&= 0 (&list:count children)) nodes
+              if (&> dollar-depth 0)
+                let
+                    n $ &list:count nodes
+                  if (&= n 0) (&list:concat nodes children)
+                    let
+                        last-idx $ &- n 1
+                        last-node $ &list:nth nodes last-idx
+                      match last-node
+                        (:list inner)
+                          let
+                              updated $ &edn:attach-children inner (&- dollar-depth 1) children
+                            &list:assoc nodes last-idx $ &edn:cirru-node :list updated
+                        (:leaf _) (&list:concat nodes children)
+                &list:concat nodes children
+          :examples $ []
+          :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number (List calcit.core/&edn:cirru-node)
+            -> $ List calcit.core/&edn:cirru-node
+          :tags $ #{} :internal
+        '&edn:cirru-node $ %{} 'CodeEntry (:doc "|Internal Cirru syntax tree node for pure-Calcit Cirru EDN parsing.")
+          :code $ quote $ def &edn:cirru-node
+            defenum &edn:cirru-node (:leaf String)
+              :list $ List calcit.core/&edn:cirru-node
+          :examples $ []
+          :schema $ quote EnumDef
+          :tags $ #{} :internal
+        '&edn:cirru-to-value $ %{} 'CodeEntry (:doc "|Internal helper: convert a parsed Cirru tree node into a closed EdnValue.")
+          :code $ quote $ defn &edn:cirru-to-value (node depth)
+            if (&> depth 32) (Result :err "|E_WASM_EDN_SYNTAX: Cirru EDN nesting exceeds depth limit")
+              match node
+                (:leaf text)
+                  if (= text |nil) (Result :ok (EdnValue :nil))
+                    if (= text |true) (Result :ok (EdnValue :bool true))
+                      if (= text |false) (Result :ok (EdnValue :bool false))
+                        if (&= 0 (&str:count text)) (Result :err "|E_WASM_EDN_SYNTAX: empty EDN token")
+                          let
+                              first-ch $ &str:slice text 0 1
+                            if (or (= first-ch ||) (= first-ch "|\""))
+                              Result :ok $ EdnValue :string (&str:rest text)
+                              if (= first-ch |:)
+                                Result :ok $ EdnValue :tag (&str:rest text)
+                                if (= first-ch |')
+                                  Result :ok $ EdnValue :symbol (&str:rest text)
+                                  match (&parse-float text)
+                                    (:some n)
+                                      if (&= 0 (&- n n))
+                                        Result :ok $ EdnValue :number n
+                                        Result :err $ str "|E_WASM_EDN_SYNTAX: non-finite number: " text
+                                    (:none)
+                                      Result :err $ str "|E_WASM_EDN_SYNTAX: unknown EDN token: " text
+                (:list xs)
+                  let
+                      n $ &list:count xs
+                    if (&= n 0) (Result :err "|E_WASM_EDN_SYNTAX: empty EDN form")
+                      match (&list:nth xs 0)
+                        (:list _) (Result :err "|E_WASM_EDN_SYNTAX: expected EDN form head token")
+                        (:leaf head)
+                          if (= head |do)
+                            if (&= n 2)
+                              &edn:cirru-to-value (&list:nth xs 1) (&+ depth 1)
+                              Result :err "|E_WASM_EDN_SYNTAX: do form expects exactly 1 value"
+                            if (= head |[])
+                              &edn:decode-list xs 1 n ([]) (&+ depth 1)
+                              if (= head |#{})
+                                &edn:decode-set xs 1 n (#{}) (&+ depth 1)
+                                if (= head |{})
+                                  &edn:decode-map xs 1 n ({}) (&+ depth 1)
+                                  Result :err $ str "|E_WASM_EDN_SYNTAX: unsupported EDN form: " head
+          :examples $ []
+          :schema $ quote $ Fn calcit.core/&edn:cirru-node Number
+            -> $ Result EdnValue String
+          :tags $ #{} :internal
+        '&edn:comment-node? $ %{} 'CodeEntry (:doc "|Internal helper: check whether a Cirru node is a (; ...) comment list.")
+          :code $ quote $ defn &edn:comment-node? (node)
+            match node
+              (:leaf _) false
+              (:list xs)
+                if (&= 0 (&list:count xs)) false
+                  match (&list:nth xs 0)
+                    (:leaf head) (= head |;)
+                    (:list _) false
+          :examples $ []
+          :schema $ quote $ Fn calcit.core/&edn:cirru-node (-> Bool)
+          :tags $ #{} :internal
+        '&edn:decode-list $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru list items into EdnValue :list.")
+          :code $ quote $ defn &edn:decode-list (xs idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :list acc
+              let
+                  item $ &list:nth xs idx
+                if (&edn:comment-node? item)
+                  recur xs (&+ idx 1) total acc depth
+                  match (&edn:cirru-to-value item depth)
+                    (:ok val)
+                      recur xs (&+ idx 1) total (&list:append acc val) depth
+                    (:err msg) (Result :err msg)
+          :examples $ []
+          :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (List EdnValue) Number
+            -> $ Result EdnValue String
+          :tags $ #{} :internal
+        '&edn:decode-map $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru map entry pairs into EdnValue :map.")
+          :code $ quote $ defn &edn:decode-map (xs idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :map acc
+              let
+                  entry $ &list:nth xs idx
+                if (&edn:comment-node? entry)
+                  recur xs (&+ idx 1) total acc depth
+                  match entry
+                    (:leaf _) (Result :err "|E_WASM_EDN_SYNTAX: map entry must be a key-value pair")
+                    (:list pair)
+                      if (not (&= 2 (&list:count pair)))
+                        Result :err "|E_WASM_EDN_SYNTAX: map entry must have 2 elements"
+                        match (&edn:cirru-to-value (&list:nth pair 0) depth)
+                          (:err msg) (Result :err msg)
+                          (:ok k)
+                            match (&edn:cirru-to-value (&list:nth pair 1) depth)
+                              (:err msg) (Result :err msg)
+                              (:ok v)
+                                recur xs (&+ idx 1) total (&map:assoc acc k v) depth
+          :examples $ []
+          :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (Map EdnValue EdnValue) Number
+            -> $ Result EdnValue String
+          :tags $ #{} :internal
+        '&edn:decode-set $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru set items into EdnValue :set.")
+          :code $ quote $ defn &edn:decode-set (xs idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :set acc
+              let
+                  item $ &list:nth xs idx
+                if (&edn:comment-node? item)
+                  recur xs (&+ idx 1) total acc depth
+                  match (&edn:cirru-to-value item depth)
+                    (:ok val)
+                      recur xs (&+ idx 1) total (&include acc val) depth
+                    (:err msg) (Result :err msg)
+          :examples $ []
+          :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (Set EdnValue) Number
+            -> $ Result EdnValue String
+          :tags $ #{} :internal
+        '&edn:fold-lines $ %{} 'CodeEntry (:doc "|Internal helper: fold indented Cirru line entries into nested Cirru nodes.")
+          :code $ quote $ defn &edn:fold-lines (lines idx total min-indent acc depth)
+            if (&> depth 32) (Result :err "|E_WASM_EDN_SYNTAX: Cirru indentation exceeds depth limit")
+              if (&>= idx total)
+                Result :ok $ &edn:fold-result :nodes acc :idx idx
+                let
+                    entry $ &list:nth lines idx
+                    indent $ :indent entry
+                  if (&< indent min-indent)
+                    Result :ok $ &edn:fold-result :nodes acc :idx idx
+                    if (&> indent min-indent)
+                      Result :err "|E_WASM_EDN_SYNTAX: unexpected Cirru indentation jump"
+                      match (&edn:fold-lines lines (&+ idx 1) total (&+ min-indent 1) ([]) (&+ depth 1))
+                        (:err msg) (Result :err msg)
+                        (:ok child-res)
+                          let
+                              merged $ &edn:attach-children (:nodes entry) (:dollar-depth entry) (:nodes child-res)
+                              next-acc $ if (:is-comma entry)
+                                &list:concat acc merged
+                                &list:append acc $ &edn:cirru-node :list merged
+                            recur lines (:idx child-res) total min-indent next-acc depth
+          :examples $ []
+          :schema $ quote $ Fn (List calcit.core/&edn:line-entry) Number Number Number (List calcit.core/&edn:cirru-node) Number
+            -> $ Result calcit.core/&edn:fold-result String
+          :tags $ #{} :internal
+        '&edn:fold-result $ %{} 'CodeEntry (:doc "|Internal struct carrying folded Cirru nodes and next line index.")
+          :code $ quote $ def &edn:fold-result
+            defstruct &edn:fold-result
+              :nodes $ List calcit.core/&edn:cirru-node
+              :idx Number
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :internal
+        '&edn:format-expr $ %{} 'CodeEntry (:doc "|Internal recursive formatter for closed EdnValue in nested Cirru EDN expression position.")
+          :code $ quote $ defn &edn:format-expr (value)
+            match value
+              (:nil) |nil
+              (:bool b) (if b |true |false)
+              (:number n) (json-stringify n)
+              (:string s) (&edn:format-leaf (&str:concat || s))
+              (:tag t) (&edn:format-leaf (&str:concat |: t))
+              (:symbol s) (&edn:format-leaf (&str:concat |' s))
+              (:list xs)
+                if (&list:empty? xs) "|([])"
+                  str "|([] "
+                    join-string
+                      &list:map xs $ fn (item)
+                        hint-fn $ Fn EdnValue (-> String)
+                        &edn:format-expr item
+                      , "| "
+                    , "|)"
+              (:set xs)
+                if (&= 0 (&set:count xs)) "|(#{})"
+                  str "|(#{} "
+                    join-string
+                      &list:map (&set:to-list xs) $ fn (item)
+                        hint-fn $ Fn EdnValue (-> String)
+                        &edn:format-expr item
+                      , "| "
+                    , "|)"
+              (:map m)
+                if (&map:empty? m) "|({})"
+                  str "|({} "
+                    join-string
+                      map-list-kv m $ fn (k v)
+                        hint-fn $ Fn EdnValue EdnValue (-> String)
+                        str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
+                      , "| "
+                    , "|)"
+          :examples $ []
+          :schema $ quote $ Fn EdnValue (-> String)
+          :tags $ #{} :internal
+        '&edn:format-leaf $ %{} 'CodeEntry (:doc "|Internal helper: format a Cirru EDN leaf token, quoting with JSON escapes when required.")
+          :code $ quote $ defn &edn:format-leaf (text)
+            let
+                n $ &str:count text
+              if (&= n 0) "|\"\""
+                let
+                    needs-quote $ &edn:leaf-needs-quote? text 0 n
+                  if needs-quote (json-stringify text) text
+          :examples $ []
+          :schema $ quote $ Fn String (-> String)
+          :tags $ #{} :internal
+        '&edn:leaf-needs-quote? $ %{} 'CodeEntry (:doc "|Internal helper: check whether a Cirru leaf string contains whitespace, parens, quotes, backslashes, or control characters.")
+          :code $ quote $ defn &edn:leaf-needs-quote? (text idx total)
+            if (&>= idx total) false
+              let
+                  ch $ &str:slice text idx (&+ idx 1)
+                  code $ get-char-code ch
+                if
+                  or (&<= code 32) (&= code 127) (= ch "|\"") (= ch "|(") (= ch "|)") (= ch "|\\")
+                  , true
+                  recur text (&+ idx 1) total
+          :examples $ []
+          :schema $ quote $ Fn String Number Number (-> Bool)
+          :tags $ #{} :internal
+        '&edn:line-entry $ %{} 'CodeEntry (:doc "|Internal struct for a parsed Cirru line with indentation level and trailing $ depth.")
+          :code $ quote $ def &edn:line-entry
+            defstruct &edn:line-entry (:indent Number) (:is-comma Bool) (:dollar-depth Number)
+              :nodes $ List calcit.core/&edn:cirru-node
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :internal
+        '&edn:parse-lines $ %{} 'CodeEntry (:doc "|Internal helper: parse Cirru source lines into indentation-annotated line entries.")
+          :code $ quote $ defn &edn:parse-lines (raw-lines idx total acc)
+            if (&>= idx total) (Result :ok acc)
+              let
+                  raw $ &list:nth raw-lines idx
+                  raw-len $ &str:count raw
+                  line $ if (and (&> raw-len 0) (= (&str:slice raw (&- raw-len 1) raw-len) "|\r"))
+                    &str:slice raw 0 (&- raw-len 1)
+                    , raw
+                  len $ &str:count line
+                  spaces $ &edn:skip-spaces line 0 len
+                if (&>= spaces len)
+                  recur raw-lines (&+ idx 1) total acc
+                  if (not (&= 0 (&number:rem spaces 2)))
+                    Result :err "|E_WASM_EDN_SYNTAX: odd Cirru indentation"
+                    let
+                        indent $ &/ spaces 2
+                      match (&edn:parse-seq line len spaces false ([]) 0)
+                        (:err msg) (Result :err msg)
+                        (:ok seq-res)
+                          let
+                              parsed-nodes $ :nodes seq-res
+                              node-count $ &list:count parsed-nodes
+                              first-is-comma $ if (&> node-count 0)
+                                match (&list:nth parsed-nodes 0)
+                                  (:leaf s) (= s |,)
+                                  (:list _) false
+                                , false
+                              final-nodes $ if first-is-comma (&list:rest parsed-nodes) parsed-nodes
+                              entry $ &edn:line-entry :indent indent :is-comma first-is-comma :dollar-depth (:dollar-depth seq-res) :nodes final-nodes
+                            recur raw-lines (&+ idx 1) total (&list:append acc entry)
+          :examples $ []
+          :schema $ quote $ Fn (List String) Number Number (List calcit.core/&edn:line-entry)
+            -> $ Result (List calcit.core/&edn:line-entry) String
+          :tags $ #{} :internal
+        '&edn:parse-pure $ %{} 'CodeEntry (:doc "|Pure-Calcit Cirru EDN parser into closed EdnValue, used by WASM/WASI lowering of edn:parse without Dynamic.")
+          :code $ quote $ defn &edn:parse-pure (source)
+            if (&> (&str:utf8-byte-count source) 65536)
+              Result :err "|E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes"
+              let
+                  raw-lines $ split-lines source
+                match (&edn:parse-lines raw-lines 0 (&list:count raw-lines) ([]))
+                  (:err msg) (Result :err msg)
+                  (:ok entries)
+                    let
+                        entry-count $ &list:count entries
+                      if (&= 0 entry-count)
+                        Result :err "|E_WASM_EDN_SYNTAX: empty Cirru EDN input"
+                        match (&edn:fold-lines entries 0 entry-count 0 ([]) 0)
+                          (:err msg) (Result :err msg)
+                          (:ok folded)
+                            let
+                                top-nodes $ :nodes folded
+                              if (not (&= 1 (&list:count top-nodes)))
+                                Result :err "|E_WASM_EDN_SYNTAX: expected a single top-level Cirru EDN expression"
+                                &edn:cirru-to-value (&list:nth top-nodes 0) 0
+          :examples $ []
+          :schema $ quote $ Fn String
+            -> $ Result EdnValue String
+          :tags $ #{} :internal
+        '&edn:parse-quoted $ %{} 'CodeEntry (:doc "|Internal helper: parse a double-quoted Cirru string token with backslash escapes.")
+          :code $ quote $ defn &edn:parse-quoted (line len pos acc)
+            if (&>= pos len)
+              Result :err "|E_WASM_EDN_SYNTAX: unclosed string literal"
+              let
+                  ch $ &str:slice line pos (&+ pos 1)
+                if (= ch "|\"")
+                  Result :ok $ &edn:parse-quoted-result :text acc :pos (&+ pos 1)
+                  if (= ch "|\\")
+                    if (&>= (&+ pos 1) len)
+                      Result :err "|E_WASM_EDN_SYNTAX: trailing backslash in string"
+                      let
+                          esc $ &str:slice line (&+ pos 1) (&+ pos 2)
+                          decoded $ if (= esc |n) "|\n"
+                            if (= esc |t) "|\t"
+                              if (= esc |r) "|\r"
+                                if (= esc "|\"") "|\""
+                                  if (= esc "|\\") "|\\" esc
+                        recur line len (&+ pos 2) (&str:concat acc decoded)
+                    recur line len (&+ pos 1) (&str:concat acc ch)
+          :examples $ []
+          :schema $ quote $ Fn String Number Number String
+            -> $ Result calcit.core/&edn:parse-quoted-result String
+          :tags $ #{} :internal
+        '&edn:parse-quoted-result $ %{} 'CodeEntry (:doc "|Internal struct carrying parsed quoted string text and next index.")
+          :code $ quote $ def &edn:parse-quoted-result
+            defstruct &edn:parse-quoted-result (:text String) (:pos Number)
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :internal
+        '&edn:parse-seq $ %{} 'CodeEntry (:doc "|Internal helper: parse a sequence of Cirru tokens on a single line or inside parentheses.")
+          :code $ quote $ defn &edn:parse-seq (line len pos in-paren acc depth)
+            if (&> depth 32)
+              Result :err "|E_WASM_EDN_SYNTAX: Cirru nesting exceeds depth limit"
+              let
+                  p $ &edn:skip-spaces line pos len
+                if (&>= p len)
+                  if in-paren
+                    Result :err "|E_WASM_EDN_SYNTAX: unclosed parenthesis"
+                    Result :ok $ &edn:parse-seq-result :nodes acc :pos p :dollar-depth 0
+                  let
+                      ch $ &str:slice line p (&+ p 1)
+                    if (= ch "|)")
+                      if in-paren
+                        Result :ok $ &edn:parse-seq-result :nodes acc :pos (&+ p 1) :dollar-depth 0
+                        Result :err "|E_WASM_EDN_SYNTAX: unexpected ')'"
+                      if (= ch "|(")
+                        match (&edn:parse-seq line len (&+ p 1) true ([]) (&+ depth 1))
+                          (:err msg) (Result :err msg)
+                          (:ok child)
+                            recur line len (:pos child) in-paren (&list:append acc (&edn:cirru-node :list (:nodes child))) depth
+                        if (= ch "|\"")
+                          match (&edn:parse-quoted line len (&+ p 1) |)
+                            (:err msg) (Result :err msg)
+                            (:ok q)
+                              recur line len (:pos q) in-paren (&list:append acc (&edn:cirru-node :leaf (:text q))) depth
+                          let
+                              end-p $ &edn:scan-token-end line p len
+                              tok $ &str:slice line p end-p
+                            if (= tok |$)
+                              match (&edn:parse-seq line len end-p in-paren ([]) (&+ depth 1))
+                                (:err msg) (Result :err msg)
+                                (:ok tail)
+                                  let
+                                      new-nodes $ &list:append acc (&edn:cirru-node :list (:nodes tail))
+                                      new-pos $ :pos tail
+                                      new-depth $ &+ 1 (:dollar-depth tail)
+                                    Result :ok $ &edn:parse-seq-result :nodes new-nodes :pos new-pos :dollar-depth new-depth
+                              recur line len end-p in-paren (&list:append acc (&edn:cirru-node :leaf tok)) depth
+          :examples $ []
+          :schema $ quote $ Fn String Number Number Bool (List calcit.core/&edn:cirru-node) Number
+            -> $ Result calcit.core/&edn:parse-seq-result String
+          :tags $ #{} :internal
+        '&edn:parse-seq-result $ %{} 'CodeEntry (:doc "|Internal struct carrying parsed Cirru sequence nodes, cursor position, and trailing $ depth.")
+          :code $ quote $ def &edn:parse-seq-result
+            defstruct &edn:parse-seq-result
+              :nodes $ List calcit.core/&edn:cirru-node
+              :pos Number
+              :dollar-depth Number
+          :examples $ []
+          :schema $ quote StructDef
+          :tags $ #{} :internal
+        '&edn:scan-token-end $ %{} 'CodeEntry (:doc "|Internal helper: scan to the end of an unquoted Cirru token.")
+          :code $ quote $ defn &edn:scan-token-end (line pos len)
+            if (&>= pos len) pos
+              let
+                  ch $ &str:slice line pos (&+ pos 1)
+                if (or (= ch "| ") (= ch "|\t") (= ch "|(") (= ch "|)") (= ch "|\""))
+                  , pos
+                  recur line (&+ pos 1) len
+          :examples $ []
+          :schema $ quote $ Fn String Number Number (-> Number)
+          :tags $ #{} :internal
+        '&edn:skip-spaces $ %{} 'CodeEntry (:doc "|Internal helper: skip ASCII space characters in a Cirru line.")
+          :code $ quote $ defn &edn:skip-spaces (line pos len)
+            if (&>= pos len) pos
+              let
+                  ch $ &str:slice line pos (&+ pos 1)
+                if (= ch "| ")
+                  recur line (&+ pos 1) len
+                  , pos
+          :examples $ []
+          :schema $ quote $ Fn String Number Number (-> Number)
+          :tags $ #{} :internal
         '&enum-def:has-variant? $ %{} 'CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -3827,6 +4236,13 @@
           :schema $ quote $ Fn EnumDef String
             -> $ Result (List CirruNode) String
           :tags $ #{} :builtin :internal
+        '&try-parse-edn-value $ %{} 'CodeEntry
+          :doc "|内部封闭 Cirru EDN 解析边界；显式接收 Result 与 EdnValue 原型，将语法失败收敛为 Result :err，供 edn:parse 与 backend lowering 使用。"
+          :code $ quote $ def &try-parse-edn-value &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef EnumDef String
+            -> $ Result EdnValue String
+          :tags $ #{} :builtin :internal
         '&try-parse-json $ %{} 'CodeEntry
           :doc "|内部 JSON 解析边界；显式接收 Result 原型，将语法失败收敛为 Result :err，供 try-parse-json 与 backend lowering 使用。"
           :code $ quote $ def &try-parse-json &runtime-implementation
@@ -4330,6 +4746,94 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+        'EdnValue $ %{} 'CodeEntry
+          :doc "|Closed recursive nominal Cirru EDN value ADT across Native, JS, and WASM/WASI without Dynamic. Variants: :nil, :bool Bool, :number Number, :string String, :tag String, :symbol String, :list (List EdnValue), :set (Set EdnValue), :map (Map EdnValue EdnValue). Tags and symbols carry String names so arbitrary runtime Cirru EDN data parses identically across all targets including WASM/WASI. Use `edn:parse` to parse Cirru EDN text into `Result EdnValue String`, and `.to-edn` (or `edn:format`) to format."
+          :code $ quote $ def EdnValue
+            impl-traits
+              defenum EdnValue (:nil) (:bool Bool) (:number Number) (:string String) (:tag String) (:symbol String)
+                :list $ List EdnValue
+                :set $ Set EdnValue
+                :map $ Map EdnValue EdnValue
+              , internal/&core-debug-impl internal/&core-eq-impl EdnValueOpsImpl
+          :examples $ []
+            quote $ edn:parse "|{} (:ok true) (:items ([] 1 |a nil))"
+            quote $ .to-edn $ EdnValue :list $ [] (EdnValue :tag |k) (EdnValue :number 1)
+          :schema $ quote EnumDef
+          :tags $ #{} :core :data
+          :tests $ []
+            %{} 'TestEntry (:name |constructs-matches-and-compares-recursive-edn-values)
+              :code $ quote $ let
+                  sample $ EdnValue :map
+                    {}
+                      (EdnValue :tag |name) (EdnValue :string |calcit)
+                      (EdnValue :tag |ok) (EdnValue :bool true)
+                      (EdnValue :tag |sym) (EdnValue :symbol |foo)
+                      (EdnValue :tag |items)
+                        EdnValue :list $ [] (EdnValue :number 1) (EdnValue :nil)
+                      (EdnValue :tag |tags)
+                        EdnValue :set $ #{} (EdnValue :tag |a) (EdnValue :number 0) (EdnValue :bool false)
+                      (EdnValue :list ([] (EdnValue :number 1))) (EdnValue :string |list-key)
+                do
+                  assert-type sample EdnValue
+                  assert= sample sample
+                  assert= false $ = sample (EdnValue :nil)
+                  assert= 6 $ match sample
+                    (:map m) (&map:count m)
+                    _ 0
+                  assert= (Result :ok sample) (edn:parse (.to-edn sample))
+                  assert= (Result :ok sample) (edn:parse (edn:format sample))
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |parses-and-formats-scalars-collections-and-multiline-cirru-edn)
+              :code $ quote $ do
+                assert= (Result :ok (EdnValue :nil)) (edn:parse "|do nil")
+                assert= (Result :ok (EdnValue :bool true)) (edn:parse "|do true")
+                assert= (Result :ok (EdnValue :bool false)) (edn:parse "|do false")
+                assert= (Result :ok (EdnValue :number -12.5)) (edn:parse "|do -12.5")
+                assert= (Result :ok (EdnValue :string "|hello world\n\"ok\"")) (edn:parse "|do \"|hello world\\n\\\"ok\\\"\"")
+                assert= (Result :ok (EdnValue :tag |unseen-dynamic-tag)) (edn:parse "|do :unseen-dynamic-tag")
+                assert= (Result :ok (EdnValue :symbol |unseen-symbol)) (edn:parse "|do 'unseen-symbol")
+                assert= (Result :ok (EdnValue :list ([]))) (edn:parse |[])
+                assert= (Result :ok (EdnValue :set (#{}))) (edn:parse |#{})
+                assert= (Result :ok (EdnValue :map ({}))) (edn:parse |{})
+                assert= "|do nil" $ .to-edn (EdnValue :nil)
+                assert= "|do :ok" $ .to-edn (EdnValue :tag |ok)
+                assert= "|do 'sym" $ .to-edn (EdnValue :symbol |sym)
+                assert= "|do \"|a b\"" $ .to-edn (EdnValue :string "|a b")
+                let
+                    multiline "|{}\n  ; comment\n  :a $ []\n    , 1\n    , |中文😀\n  :b $ #{} :x :y\n"
+                    expected $ EdnValue :map
+                      {}
+                        (EdnValue :tag |a)
+                          EdnValue :list $ [] (EdnValue :number 1) (EdnValue :string "|中文😀")
+                        (EdnValue :tag |b)
+                          EdnValue :set $ #{} (EdnValue :tag |x) (EdnValue :tag |y)
+                  do
+                    assert= (Result :ok expected) (edn:parse multiline)
+                    assert= (Result :ok expected) (&edn:parse-pure multiline)
+                    assert= (Result :ok expected) (edn:parse (.to-edn expected))
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-invalid-syntax-overflow-and-unsupported-forms)
+              :code $ quote $ do
+                assert= true $ .err? $ edn:parse |
+                assert= true $ .err? $ edn:parse "|("
+                assert= true $ .err? $ edn:parse "|do unknown-bare-word"
+                assert= true $ .err? $ edn:parse "|do 1e400"
+                assert= true $ .err? $ edn:parse "|{} :a"
+                assert= true $ .err? $ edn:parse "|%{} 'Point (:x 1)"
+                assert= true $ .err? $ &edn:parse-pure "|do 1e400"
+                assert= true $ .err? $ &edn:parse-pure "|("
+              :tags $ #{} :core :unit
+        'EdnValueOps $ %{} 'CodeEntry (:doc "|Internal method contract for closed EdnValue formatting.")
+          :code $ quote $ deftrait EdnValueOps
+            .to-edn $ Fn EdnValue (-> String)
+          :examples $ []
+          :schema $ quote Trait
+          :tags $ #{} :internal :trait
+        'EdnValueOpsImpl $ %{} 'CodeEntry (:doc "|Internal EdnValue method implementation.")
+          :code $ quote $ defimpl EdnValueOpsImpl EdnValueOps (.to-edn edn:format)
+          :examples $ []
+          :schema $ quote Impl
+          :tags $ #{} :internal :trait-impl
         'Emptyable $ %{} 'CodeEntry
           :doc "|产生与接收者保持同一类型的空值。Self 是方法自身声明的接收者泛型，不是新语法；泛型函数通过 Emptyable 约束调用 .empty。内建实现覆盖 Number、String、List、Map、Set。"
           :code $ quote $ deftrait Emptyable
@@ -8260,6 +8764,53 @@
                 each ([])
                   fn (x) (raise |empty-each-called-callback)
               :tags $ #{} :core :unit
+        'edn:format $ %{} 'CodeEntry
+          :doc "|Format a closed `EdnValue` into Cirru EDN text. User code can also call `.to-edn` on `EdnValue`."
+          :code $ quote $ defn edn:format (value)
+            match value
+              (:nil) "|do nil"
+              (:bool b) (if b "|do true" "|do false")
+              (:number n) (str "|do " (json-stringify n))
+              (:string s) (str "|do " (&edn:format-leaf (&str:concat || s)))
+              (:tag t) (str "|do " (&edn:format-leaf (&str:concat |: t)))
+              (:symbol s) (str "|do " (&edn:format-leaf (&str:concat |' s)))
+              (:list xs)
+                if (&list:empty? xs) |[]
+                  str "|[] "
+                    join-string
+                      &list:map xs $ fn (item)
+                        hint-fn $ Fn EdnValue (-> String)
+                        &edn:format-expr item
+                      , "| "
+              (:set xs)
+                if (&= 0 (&set:count xs)) |#{}
+                  str "|#{} "
+                    join-string
+                      &list:map (&set:to-list xs) $ fn (item)
+                        hint-fn $ Fn EdnValue (-> String)
+                        &edn:format-expr item
+                      , "| "
+              (:map m)
+                if (&map:empty? m) |{}
+                  str "|{} "
+                    join-string
+                      map-list-kv m $ fn (k v)
+                        hint-fn $ Fn EdnValue EdnValue (-> String)
+                        str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
+                      , "| "
+          :examples $ []
+            quote $ edn:format $ EdnValue :list $ [] (EdnValue :tag |a) (EdnValue :number 1)
+          :schema $ quote $ Fn EdnValue (-> String)
+          :tags $ #{} :core :data
+        'edn:parse $ %{} 'CodeEntry
+          :doc "|Parse Cirru EDN text into closed nominal `Result<EdnValue, String>` without `Dynamic`. Syntax, overflow, or unsupported-form errors return `Result :err String`. Works across Native, JS, and WASM/WASI."
+          :code $ quote $ defn edn:parse (source) (&try-parse-edn-value Result EdnValue source)
+          :examples $ []
+            quote $ edn:parse "|{} (:a 1) (:b ([] true nil))"
+            quote $ edn:parse "|("
+          :schema $ quote $ Fn String
+            -> $ Result EdnValue String
+          :tags $ #{} :core :data
         'either $ %{} 'CodeEntry
           :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
           :code $ quote $ defmacro either (& xs)

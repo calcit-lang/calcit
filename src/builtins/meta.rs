@@ -349,6 +349,77 @@ pub fn try_parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   result_from_parse(result_type, parsed)
 }
 
+fn edn_to_edn_value(edn_value_type: &Calcit, value: &cirru_edn::Edn) -> Result<Calcit, String> {
+  match value {
+    cirru_edn::Edn::Nil => new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("nil")]).map_err(|err| err.msg),
+    cirru_edn::Edn::Bool(b) => {
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("bool"), Calcit::Bool(*b)]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Number(n) => {
+      if !n.is_finite() {
+        return Err(format!("edn:parse number must be finite, got: {n}"));
+      }
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("number"), Calcit::Number(*n)]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Str(s) => {
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("string"), Calcit::Str(s.clone())]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Tag(t) => {
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("tag"), Calcit::Str(t.arc_str())]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Symbol(s) => {
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("symbol"), Calcit::Str(s.clone())]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::List(xs) => {
+      let mut items = Vec::with_capacity(xs.len());
+      for item in xs.iter() {
+        items.push(edn_to_edn_value(edn_value_type, item)?);
+      }
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("list"), Calcit::from(items)]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Set(xs) => {
+      let mut items = rpds::HashTrieSet::new_sync();
+      for item in xs.0.iter() {
+        items.insert_mut(edn_to_edn_value(edn_value_type, item)?);
+      }
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("set"), Calcit::Set(items)]).map_err(|err| err.msg)
+    }
+    cirru_edn::Edn::Map(xs) => {
+      let mut map = rpds::HashTrieMap::new_sync();
+      for (k, v) in xs.0.iter() {
+        map.insert_mut(edn_to_edn_value(edn_value_type, k)?, edn_to_edn_value(edn_value_type, v)?);
+      }
+      new_named_enum_value(&[edn_value_type.to_owned(), Calcit::tag("map"), Calcit::Map(map)]).map_err(|err| err.msg)
+    }
+    other => Err(format!("edn:parse unsupported Cirru EDN construct: {other}")),
+  }
+}
+
+/// Parse Cirru EDN text into a closed nominal `Result<EdnValue, String>` without throwing exceptions.
+pub fn try_parse_edn_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&try-parse-edn-value expected 3 arguments:", xs);
+  }
+  let [
+    result_type @ Calcit::EnumDef(_),
+    edn_value_type @ Calcit::EnumDef(_),
+    Calcit::Str(content),
+  ] = xs
+  else {
+    let msg = format!(
+      "&try-parse-edn-value expected Result enum, EdnValue enum, and a string, but received: {}, {}, and {}",
+      type_of(std::slice::from_ref(&xs[0]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[1]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[2]))?.lisp_str()
+    );
+    return CalcitErr::err_str(CalcitErrKind::Type, msg);
+  };
+  let parsed = cirru_edn::parse(content)
+    .map_err(|err| format!("edn:parse expected valid Cirru EDN string, got parse error: {err}"))
+    .and_then(|value| edn_to_edn_value(edn_value_type, &value));
+  result_from_parse(result_type, parsed)
+}
+
 pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let use_inline = match xs.get(1) {
     None => false,
@@ -3448,5 +3519,16 @@ mod tests {
 
     let decorated = record_impl_traits(&[plain_val, parent_impl]).expect("attach parent impl");
     record_impl_traits(&[decorated, child_impl]).expect("decorated struct with parent impl attaches child impl");
+  }
+
+  #[test]
+  fn try_parse_edn_value_rejects_wrong_arity_and_non_enum_args() {
+    let arity_err = try_parse_edn_value(&[Calcit::new_str("do 1")]).expect_err("wrong arity should fail");
+    assert_eq!(arity_err.kind, CalcitErrKind::Arity);
+    assert!(arity_err.msg.contains("&try-parse-edn-value expected 3 arguments"));
+
+    let type_err = try_parse_edn_value(&[Calcit::Nil, Calcit::Nil, Calcit::new_str("do 1")]).expect_err("non-enum args should fail");
+    assert_eq!(type_err.kind, CalcitErrKind::Type);
+    assert!(type_err.msg.contains("expected Result enum, EdnValue enum, and a string"));
   }
 }
