@@ -976,7 +976,7 @@ pub fn encode_map_as(
     None => {
       let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&expr[1], &[]);
       Arc::new(
-        crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), file_ns).map_err(|error| {
+        crate::calcit::data_shape::DataShapeGraph::build_for_encode(target.as_ref(), file_ns).map_err(|error| {
           CalcitErr::use_msg_stack_location(
             CalcitErrKind::Type,
             format!("encode-map-as cannot derive a runtime map encoder: {error}"),

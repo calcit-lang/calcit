@@ -20,7 +20,7 @@ related:
 # FFI Interface IR
 
 `calcit ffi export` 在不执行应用代码的前提下读取项目 Snapshot，并把 typed
-raw-binding boundary 导出为确定性的 Interface IR。native Interface IR v3 与 Component
+raw-binding boundary 导出为确定性的 Interface IR。native Interface IR v4 与 Component
 Interface IR v4 是当前 versioned contract；`calcit-bindgen` 必须先识别对应版本，才能生成
 Rust、Calcit、TypeScript 或 WIT。core 不生成业务层
 normalization API，也不把尚未完成的 component packaging 描述为可运行产物。
@@ -32,7 +32,8 @@ calcit calcit.cirru ffi export --json --ns app.ffi
 calcit calcit.cirru ffi export --boundary component
 ```
 
-默认 `--boundary native` 使用本文所述的 raw-binding Interface IR v3。
+默认 `--boundary native` 使用本文所述的 raw-binding Interface IR v4（schema 为
+[`schemas/ffi-interface-ir-v4.schema.json`](../../schemas/ffi-interface-ir-v4.schema.json)）。
 `--boundary component` 是独立的 Component Interface IR v4，只提取
 `defwasm-import` / `defwasm-export` 并默认输出 Cirru EDN；其方向语义、
 strict type closure 与 core/bindgen 职责见
@@ -194,9 +195,15 @@ definition 的 Snapshot binding 名称，因此支持顶层 `Foo0 = defstruct Fo
 
 ## 版本策略
 
-当前导出直接使用 native Interface IR v3 与 Component Interface IR v4，不提供并行的
-v2/v1 降级输出。consumer 必须先检查 `version` 再生成；遇到未知版本时应明确拒绝并升级，
-不能忽略新的数值 `kind` 或将其退化为 `number`。仓库保留早期 schema 仅供审计已经生成的
+V4 在 V3 基础上新增两类原生 FFI 表达能力：
+
+- **不透明原生资源（`FfiResource`）**：在类型节点中导出为 `{"kind": "ffi-resource"}`，对应 `resource-v1` 托管的不可序列化原生句柄（如结构体字段 `Regex.handle`）。
+- **具名联合类型（`defunion`）**：在类型节点中导出为 `{"kind": "union", "id": "<ns>/<Name>"}`，并在 `declarations` 中导出 `{"kind": "union", "id": ..., "namespace": ..., "name": ..., "members": [...]}`。少于 2 个成员、重复成员、非法成员（如 `Dynamic` / `Map` / callback）或错误的类型参数应用仍明确报错。
+- Component Interface IR v4 仍保持其独立的严格子集，继续对 `defunion` 与 native `FfiResource` 报告 `E_FFI_IR_UNSUPPORTED_TYPE`。
+
+当前导出直接使用 native Interface IR v4 与 Component Interface IR v4，不提供并行的
+v3/v2/v1 降级输出。consumer 必须先检查 `version` 再生成；遇到未知版本时应明确拒绝并升级，
+不能忽略新的数值或资源/联合 `kind`。仓库保留早期 schema 仅供审计已经生成的
 contract，不为尚未形成实际生态的 preview Component contract 维护读取或写入兼容层。
 
 Component Interface IR v4 增加单一、非泛化的 `readable-byte-stream` kind，对应 WIT

@@ -150,6 +150,13 @@ impl MapDecoder<'_> {
           Err(map_kind_mismatch(path, "cirru-quote", input))
         }
       }
+      DataShapeNode::FfiResource => {
+        if crate::calcit::type_annotation::is_native_ffi_resource_value(input) {
+          Ok(input.to_owned())
+        } else {
+          Err(map_kind_mismatch(path, "ffi-resource", input))
+        }
+      }
       DataShapeNode::MapOption { nominal, inner, .. } => {
         if let Calcit::Enum(enum_value) = input
           // Runtime values reconstructed from snapshots may carry a distinct Arc for the
@@ -424,7 +431,7 @@ impl Decoder<'_> {
     };
 
     match node {
-      DataShapeNode::Dynamic | DataShapeNode::MapOption { .. } => Err(EdnDecodeError::at(
+      DataShapeNode::Dynamic | DataShapeNode::FfiResource | DataShapeNode::MapOption { .. } => Err(EdnDecodeError::at(
         path,
         "internal decoder error: open runtime-map node is unavailable for Cirru EDN",
       )),
@@ -1072,5 +1079,29 @@ mod tests {
       .expect("derive unbound enum shape");
     value.sum_type = Some(Arc::new((*anonymous).clone()));
     assert!(decode_map(&anonymous_shape, &Calcit::Enum(value)).is_err());
+  }
+
+  #[test]
+  fn decode_map_accepts_ffi_resource_and_rejects_unmanaged_anyref_or_forged_values() {
+    extern "C" fn release_stub(_handle: u64, _generation: u64) -> i32 {
+      0
+    }
+
+    let shape = DataShapeGraph::build_open(&CalcitTypeAnnotation::FfiResource, "tests.edn").expect("derive ffi-resource shape");
+    let resource = Calcit::AnyRef(
+      crate::wasm::ffi_abi::new_test_resource_anyref("decode_test_lib", 21, 3, release_stub).expect("create test resource"),
+    );
+    let decoded = decode_map(&shape, &resource).expect("decode genuine FfiResource");
+    assert_eq!(decoded, resource);
+
+    let plain_anyref = Calcit::AnyRef(cirru_edn::EdnAnyRef::new(String::from("unmanaged")));
+    let err = decode_map(&shape, &plain_anyref).expect_err("unmanaged AnyRef must fail decode-map-as");
+    assert!(err.message.contains("expected ffi-resource, got any-ref"), "err: {err}");
+
+    let string_err = decode_map(&shape, &Calcit::new_str("token")).expect_err("string must fail decode-map-as");
+    assert!(
+      string_err.message.contains("expected ffi-resource, got string"),
+      "err: {string_err}"
+    );
   }
 }

@@ -2227,7 +2227,7 @@ export let _$n_try_parse_cirru_edn = (resultType: CalcitEnumDef, code: string): 
 };
 
 type DataShapeNode =
-  | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "dynamic" }
+  | { kind: "nil" | "unit" | "bool" | "number" | "string" | "symbol" | "tag" | "buffer" | "cirru-quote" | "ffi-resource" | "dynamic" }
   | { kind: "numeric"; target: string }
   | { kind: "list" | "set" | "ref"; inner: number }
   | { kind: "tuple"; items: number[] }
@@ -2279,6 +2279,7 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
       case "tag": return value instanceof CalcitTag;
       case "buffer": return value instanceof Uint8Array;
       case "cirru-quote": return value instanceof CalcitCirruQuote;
+      case "ffi-resource": return false;
       case "list": {
         if (!(value instanceof CalcitList || value instanceof CalcitSliceList)) return false;
         for (const item of value.items()) if (!check(item, node.inner, depth + 1)) return false;
@@ -2460,6 +2461,8 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     case "cirru-quote":
       if (input instanceof CalcitCirruQuote) return input;
       return fail(path, `expected cirru-quote, got ${typed_edn_kind(input)}`);
+    case "ffi-resource":
+      return fail(path, `expected ffi-resource, got ${typed_edn_kind(input)}`);
     case "list": {
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
         return fail(path, `expected list, got ${typed_edn_kind(input)}`);

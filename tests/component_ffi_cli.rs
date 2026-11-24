@@ -165,16 +165,16 @@ fn scoped_stream_contract_exports_the_builtin_failure_enum() {
 }
 
 #[test]
-fn native_json_keeps_the_v3_envelope_without_a_boundary_field() {
+fn native_json_keeps_the_v4_envelope_without_a_boundary_field() {
   let output = run_calcit(&["ffi", "export", "--json", "--ns", "test-wasm.main"]);
   let json: serde_json::Value = serde_json::from_str(&stdout(&output)).expect("native JSON stdout should stay parseable");
 
   assert!(
     json["interface_schema"]
       .as_str()
-      .is_some_and(|schema| schema.ends_with("ffi-interface-ir-v3.schema.json"))
+      .is_some_and(|schema| schema.ends_with("ffi-interface-ir-v4.schema.json"))
   );
-  assert_eq!(json["data"]["interface"]["version"], 3);
+  assert_eq!(json["data"]["interface"]["version"], 4);
   assert!(json["data"]["filters"].get("boundary").is_none());
 }
 
@@ -198,5 +198,227 @@ fn component_core_adapter_accepts_explicit_async_exports() {
     "async Component check failed\nstdout:\n{}\nstderr:\n{}",
     String::from_utf8_lossy(&output.stdout),
     String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[test]
+fn ffi_resource_and_named_union_end_to_end_check_export_and_wasm_rejection() {
+  let snapshot_text = r#"
+{} (:about "|FFI resource and named union end-to-end fixture") (:package |regex)
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'regex.core/main!) (:mode :native) (:reload-fn 'regex.core/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'regex.core $ %{} 'FileEntry
+      :defs $ {}
+        'Regex $ %{} 'CodeEntry (:doc "|Compiled regex holding an opaque native resource handle") (:schema $ quote StructDef)
+          :code $ quote
+            defstruct Regex
+              :source String
+              :handle FfiResource
+          :examples $ []
+          :tests $ []
+        'Pattern $ %{} 'CodeEntry (:doc "|String or compiled Regex") (:schema $ quote UnionDef)
+          :code $ quote
+            defunion Pattern String Regex
+          :examples $ []
+          :tests $ []
+        'decode-handle $ %{} 'CodeEntry (:doc "|Checked runtime projection from Dynamic FFI return to FfiResource")
+          :schema $ quote $ Fn Dynamic (-> (Result FfiResource String))
+          :code $ quote
+            defn decode-handle (raw)
+              try-decode-map-as raw FfiResource
+          :examples $ []
+          :tests $ []
+            %{} 'TestEntry (:name |rejects-non-resource-string)
+              :code $ quote
+                assert= true $ .err? $ decode-handle |not-a-handle
+            %{} 'TestEntry (:name |rejects-non-resource-nil)
+              :code $ quote
+                assert= true $ .err? $ decode-handle nil
+        'compile-regex $ %{} 'CodeEntry (:doc "|Compile a pattern into a Regex")
+          :ffi $ {} (:backend :native) (:symbol |compile_regex) (:invoke :sync) (:transport :edn-buffer-v1)
+          :schema $ quote $ Fn String (-> (Result Regex String))
+          :code $ quote
+            defn compile-regex (pattern)
+              let
+                  raw $ &call-dylib-edn |libregex |compile_regex pattern
+                match (try-decode-map-as raw (Result FfiResource String))
+                  (:ok inner)
+                    match inner
+                      (:ok handle) (Result :ok $ Regex :source pattern :handle handle)
+                      (:err msg) (Result :err msg)
+                  (:err err) (Result :err err)
+          :examples $ []
+          :tests $ []
+        'is-match $ %{} 'CodeEntry (:doc "|Test a Pattern against text")
+          :ffi $ {} (:backend :native) (:symbol |is_match) (:invoke :sync) (:transport :edn-buffer-v1)
+          :schema $ quote $ Fn Pattern String (-> Bool)
+          :code $ quote
+            defn is-match (pattern text)
+              match pattern
+                (String s) (= s text)
+                (Regex r) (= (:source r) text)
+          :examples $ []
+          :tests $ []
+            %{} 'TestEntry (:name |matches-string-member)
+              :code $ quote
+                assert= true $ is-match |abc |abc
+        'main! $ %{} 'CodeEntry (:doc "|Entry") (:schema $ quote $ Fn (-> Unit))
+          :code $ quote
+            defn main! ()
+              , &unit
+          :examples $ []
+          :tests $ []
+      :ns $ %{} 'NsEntry (:doc "|")
+        :code $ quote (ns regex.core)
+"#;
+
+  let dir = tempfile::tempdir().expect("tempdir");
+  let snapshot_path = dir.path().join("calcit.cirru");
+  std::fs::write(&snapshot_path, snapshot_text.trim_start()).expect("write fixture snapshot");
+  let snapshot_arg = snapshot_path.to_str().expect("utf8 path");
+
+  // 1. Static type-check across all definitions succeeds with no unsafe-coerce.
+  let check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none", snapshot_arg, "--check-only", "--all-defs"])
+    .output()
+    .expect("run calcit --check-only --all-defs");
+  assert!(
+    check.status.success(),
+    "check-only failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&check.stdout),
+    String::from_utf8_lossy(&check.stderr)
+  );
+
+  // 2. Calcit definition `:tests` pass.
+  let test_run = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none", snapshot_arg, "test", "--require-match"])
+    .output()
+    .expect("run calcit test");
+  assert!(
+    test_run.status.success(),
+    "calcit test failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&test_run.stdout),
+    String::from_utf8_lossy(&test_run.stderr)
+  );
+
+  // 3. `calcit ffi export --json --ns regex.core` exports IR v4 with Union + FfiResource.
+  let export = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      snapshot_arg,
+      "ffi",
+      "export",
+      "--json",
+      "--ns",
+      "regex.core",
+    ])
+    .output()
+    .expect("run calcit ffi export");
+  assert!(
+    export.status.success(),
+    "ffi export failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&export.stdout),
+    String::from_utf8_lossy(&export.stderr)
+  );
+  let json: serde_json::Value = serde_json::from_str(&stdout(&export)).expect("parse ffi export JSON");
+  assert_eq!(json["data"]["interface"]["version"], 4);
+  assert_eq!(json["data"]["summary"]["supported"], 2);
+  assert_eq!(json["data"]["summary"]["unsupported"], 0);
+  let declarations = json["data"]["interface"]["declarations"].as_array().expect("declarations array");
+  assert!(declarations.iter().any(|d| d["kind"] == "union" && d["id"] == "regex.core/Pattern"));
+  assert!(declarations.iter().any(|d| {
+    d["kind"] == "struct"
+      && d["id"] == "regex.core/Regex"
+      && d["fields"]
+        .as_array()
+        .is_some_and(|fields| fields.iter().any(|f| f["name"] == "handle" && f["type"]["kind"] == "ffi-resource"))
+  }));
+
+  // 4. WASM target rejects FfiResource explicitly (never silently erases to f64/Dynamic).
+  let wasm_check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none", snapshot_arg, "wasm", "--check-only"])
+    .output()
+    .expect("run calcit wasm --check-only");
+  assert!(!wasm_check.status.success(), "WASM check must fail when snapshot uses FfiResource");
+  let wasm_stderr = String::from_utf8_lossy(&wasm_check.stderr);
+  assert!(
+    wasm_stderr.contains("E_WASM_UNSUPPORTED_FFI_RESOURCE"),
+    "expected E_WASM_UNSUPPORTED_FFI_RESOURCE, got:\n{wasm_stderr}"
+  );
+
+  // 5. `encode-map-as` rejects FfiResource at compile time (non-serializable invariant).
+  let encode_check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "eval",
+      "--dep",
+      snapshot_arg,
+      "encode-map-as nil regex.core/Regex",
+    ])
+    .output()
+    .expect("run eval encode-map-as on Regex");
+  assert!(!encode_check.status.success(), "encode-map-as must reject Regex with FfiResource");
+  let encode_stderr = String::from_utf8_lossy(&encode_check.stderr);
+  assert!(
+    encode_stderr.contains("E_ENCODER_DERIVE")
+      || encode_stderr.contains("non-serializable")
+      || encode_stderr.contains("E_ENCODE_MAP_AS_TYPE_MISMATCH"),
+    "expected encoder rejection, got:\n{encode_stderr}"
+  );
+
+  // 6. `parse-cirru-edn-as` rejects FfiResource at compile time (non-serializable invariant).
+  let parse_check = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "eval",
+      "--dep",
+      snapshot_arg,
+      "parse-cirru-edn-as |nil FfiResource",
+    ])
+    .output()
+    .expect("run eval parse-cirru-edn-as on FfiResource");
+  assert!(
+    !parse_check.status.success(),
+    "parse-cirru-edn-as must reject non-serializable FfiResource"
+  );
+  let parse_stderr = String::from_utf8_lossy(&parse_check.stderr);
+  assert!(
+    parse_stderr.contains("E_DECODER_DERIVE") && parse_stderr.contains("non-serializable"),
+    "expected E_DECODER_DERIVE non-serializable error, got:\n{parse_stderr}"
+  );
+
+  // 7. Direct construction of Regex with String (or unchecked Dynamic) fails statically.
+  let bad_ctor = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args([
+      "--tips-level",
+      "none",
+      "eval",
+      "--dep",
+      snapshot_arg,
+      "regex.core/Regex :source |abc :handle |not-a-resource",
+    ])
+    .output()
+    .expect("run eval bad Regex ctor");
+  assert!(!bad_ctor.status.success(), "Regex constructor must reject String for :handle");
+  let bad_ctor_stderr = String::from_utf8_lossy(&bad_ctor.stderr);
+  assert!(
+    bad_ctor_stderr.contains("E_FN_ARG_TYPE_MISMATCH")
+      || bad_ctor_stderr.contains("ffi-resource")
+      || bad_ctor_stderr.contains("FfiResource"),
+    "expected static type mismatch for Regex :handle, got:\n{bad_ctor_stderr}"
   );
 }

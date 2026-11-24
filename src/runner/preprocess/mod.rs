@@ -19174,7 +19174,7 @@ pub fn preprocess_encode_map_as(
       value_form.get_location().or_else(|| source_type_form.get_location()),
     ));
   }
-  let encoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
+  let encoder = crate::calcit::data_shape::DataShapeGraph::build_for_encode(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("{head} cannot derive a runtime map encoder: {error}"),

@@ -1932,6 +1932,116 @@ fn find_external_object_union_in_expr(expr: &Calcit, visited: &mut HashSet<Arc<s
   }
 }
 
+fn annotation_contains_ffi_resource(annotation: &CalcitTypeAnnotation, visited: &mut HashSet<Arc<str>>) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::FfiResource => true,
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _)
+    | CalcitTypeAnnotation::Variadic(inner) => annotation_contains_ffi_resource(inner, visited),
+    CalcitTypeAnnotation::Tuple(items) => items.iter().any(|item| annotation_contains_ffi_resource(item, visited)),
+    CalcitTypeAnnotation::Map(k, v) => annotation_contains_ffi_resource(k, visited) || annotation_contains_ffi_resource(v, visited),
+    CalcitTypeAnnotation::Fn(signature) => {
+      signature.arg_types.iter().any(|arg| annotation_contains_ffi_resource(arg, visited))
+        || annotation_contains_ffi_resource(&signature.return_type, visited)
+        || signature
+          .rest_type
+          .as_deref()
+          .is_some_and(|rest| annotation_contains_ffi_resource(rest, visited))
+    }
+    CalcitTypeAnnotation::Struct(struct_def, args) => {
+      args.iter().any(|arg| annotation_contains_ffi_resource(arg, visited))
+        || struct_def
+          .field_types
+          .iter()
+          .any(|field| annotation_contains_ffi_resource(field, visited))
+    }
+    CalcitTypeAnnotation::StructValue(struct_def) | CalcitTypeAnnotation::StructDef(struct_def) => struct_def
+      .field_types
+      .iter()
+      .any(|field| annotation_contains_ffi_resource(field, visited)),
+    CalcitTypeAnnotation::Enum(enum_def, args) => {
+      args.iter().any(|arg| annotation_contains_ffi_resource(arg, visited))
+        || enum_def.variants().iter().any(|variant| {
+          variant
+            .payload_types()
+            .iter()
+            .any(|payload| annotation_contains_ffi_resource(payload, visited))
+        })
+    }
+    CalcitTypeAnnotation::EnumValue(enum_def) | CalcitTypeAnnotation::EnumDef(enum_def) => enum_def.variants().iter().any(|variant| {
+      variant
+        .payload_types()
+        .iter()
+        .any(|payload| annotation_contains_ffi_resource(payload, visited))
+    }),
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      if args.iter().any(|arg| annotation_contains_ffi_resource(arg, visited)) {
+        return true;
+      }
+      if !visited.insert(name.clone()) {
+        return false;
+      }
+      if let Some(struct_def) = annotation.resolve_to_struct() {
+        return struct_def
+          .field_types
+          .iter()
+          .any(|field| annotation_contains_ffi_resource(field, visited));
+      }
+      if let Some(enum_def) = annotation.resolve_to_enum() {
+        return enum_def.variants().iter().any(|variant| {
+          variant
+            .payload_types()
+            .iter()
+            .any(|payload| annotation_contains_ffi_resource(payload, visited))
+        });
+      }
+      if let Some(union_def) = annotation.resolve_to_union() {
+        return union_def
+          .members()
+          .iter()
+          .any(|member| annotation_contains_ffi_resource(member, visited));
+      }
+      false
+    }
+    _ => false,
+  }
+}
+
+fn def_uses_ffi_resource(compiled: &program::CompiledDef) -> bool {
+  let mut visited = HashSet::new();
+  if annotation_contains_ffi_resource(compiled.schema.as_ref(), &mut visited) {
+    return true;
+  }
+  if let Some(type_def) = crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(&compiled.preprocessed_code) {
+    match type_def {
+      Calcit::StructDef(struct_def) => {
+        return struct_def
+          .field_types
+          .iter()
+          .any(|field| annotation_contains_ffi_resource(field, &mut visited));
+      }
+      Calcit::EnumDef(enum_def) => {
+        return enum_def.variants().iter().any(|variant| {
+          variant
+            .payload_types()
+            .iter()
+            .any(|payload| annotation_contains_ffi_resource(payload, &mut visited))
+        });
+      }
+      Calcit::UnionDef(union_def) => {
+        return union_def
+          .members()
+          .iter()
+          .any(|member| annotation_contains_ffi_resource(member, &mut visited));
+      }
+      _ => {}
+    }
+  }
+  false
+}
+
 fn validate_wasm_target_in_program(
   program_data: &program::CompiledProgram,
   init_ns: &str,
@@ -1960,6 +2070,11 @@ fn validate_wasm_target_in_program(
       {
         return Err(format!(
           "E_WASM_UNSUPPORTED_JS_FFI: `{namespace}/{definition}` uses union `{union_name}` with external-object host trait member `{member_name}`; WASM/WASI cannot lower JavaScript host handles"
+        ));
+      }
+      if def_uses_ffi_resource(compiled) {
+        return Err(format!(
+          "E_WASM_UNSUPPORTED_FFI_RESOURCE: `{namespace}/{definition}` uses native `FfiResource`; WASM/WASI cannot lower native resource-v1 handles"
         ));
       }
     }
@@ -7405,6 +7520,7 @@ fn data_shape_node_to_annotation(graph: &DataShapeGraph, node_id: usize, depth: 
     DataShapeNode::Tag => Arc::new(CalcitTypeAnnotation::Tag),
     DataShapeNode::Buffer => Arc::new(CalcitTypeAnnotation::Buffer),
     DataShapeNode::CirruQuote => Arc::new(CalcitTypeAnnotation::CirruQuote),
+    DataShapeNode::FfiResource => Arc::new(CalcitTypeAnnotation::FfiResource),
     DataShapeNode::List(inner) => Arc::new(CalcitTypeAnnotation::List(data_shape_node_to_annotation(graph, *inner, depth + 1))),
     DataShapeNode::Tuple(items) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
       items
@@ -21422,5 +21538,28 @@ mod tests {
       .expect("spawn test thread")
       .join()
       .expect("test thread panicked");
+  }
+
+  #[test]
+  fn wasm_rejects_native_ffi_resource_explicitly() {
+    let direct = CalcitTypeAnnotation::FfiResource;
+    assert!(super::annotation_contains_ffi_resource(
+      &direct,
+      &mut std::collections::HashSet::new()
+    ));
+    let list_of_res = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::FfiResource));
+    assert!(super::annotation_contains_ffi_resource(
+      &list_of_res,
+      &mut std::collections::HashSet::new()
+    ));
+    let string_only = CalcitTypeAnnotation::String;
+    assert!(!super::annotation_contains_ffi_resource(
+      &string_only,
+      &mut std::collections::HashSet::new()
+    ));
+
+    let err = component_abi_type(&direct, "regex.core/use-handle", "logical_schema.parameters[0]")
+      .expect_err("Component ABI must reject native FfiResource");
+    assert!(err.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"), "err: {err}");
   }
 }

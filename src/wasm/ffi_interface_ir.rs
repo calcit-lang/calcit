@@ -3,15 +3,17 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use md5::{Digest, Md5};
 use serde::Serialize;
 
-use crate::wasm::host::calcit::{Calcit, CalcitEnumDef, CalcitNumericRefinement, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
+use crate::wasm::host::calcit::{
+  Calcit, CalcitEnumDef, CalcitNumericRefinement, CalcitStructDef, CalcitTypeAnnotation, CalcitUnionDef, SchemaKind,
+};
 use crate::wasm::host::data::cirru::code_to_calcit;
 use crate::wasm::host::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 
-pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
-pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
-pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../../schemas/ffi-interface-ir-v3.schema.json");
+pub const FFI_INTERFACE_IR_VERSION: u32 = 4;
+pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v4.schema.json";
+pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../../schemas/ffi-interface-ir-v4.schema.json");
 pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 4;
 pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v4.schema.json";
 pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../../schemas/component-interface-ir-v4.schema.json");
@@ -42,12 +44,18 @@ pub enum FfiTypeDeclarationIr {
     type_parameters: Vec<String>,
     variants: Vec<FfiEnumVariantIr>,
   },
+  Union {
+    id: String,
+    namespace: String,
+    name: String,
+    members: Vec<FfiTypeIr>,
+  },
 }
 
 impl FfiTypeDeclarationIr {
   fn id(&self) -> &str {
     match self {
-      Self::Struct { id, .. } | Self::Enum { id, .. } => id,
+      Self::Struct { id, .. } | Self::Enum { id, .. } | Self::Union { id, .. } => id,
     }
   }
 }
@@ -126,6 +134,7 @@ pub enum FfiTypeIr {
   Float64,
   String,
   Buffer,
+  FfiResource,
   ReadableByteStream,
   List {
     item: Box<FfiTypeIr>,
@@ -144,6 +153,9 @@ pub enum FfiTypeIr {
   Enum {
     id: String,
     arguments: Vec<FfiTypeIr>,
+  },
+  Union {
+    id: String,
   },
   TypeParameter {
     name: String,
@@ -302,9 +314,14 @@ enum LocalTypeDeclaration {
     namespace: String,
     nominal: CalcitEnumDef,
   },
-  /// A `defunion` declaration. Interface IR v3 has no union representation,
-  /// so it is only indexed to report "unsupported" instead of "missing".
-  Union { id: String, source_id: String, namespace: String },
+  /// A `defunion` declaration. Native FFI Interface IR v4 exports closed named
+  /// unions directly; Component Interface IR v4 still reports them unsupported.
+  Union {
+    id: String,
+    source_id: String,
+    namespace: String,
+    nominal: CalcitUnionDef,
+  },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,6 +375,7 @@ struct TypeConversionContext<'a> {
   current_namespace: &'a str,
   type_parameters: &'a BTreeSet<String>,
   allow_readable_byte_stream: bool,
+  allow_native_extensions: bool,
 }
 
 fn normalized_type_name(name: &str) -> &str {
@@ -415,24 +433,26 @@ fn resolve_local_declaration<'a>(
       candidates.extend(found);
     }
   }
-  if expected_kind.is_none()
-    && !candidates.is_empty()
-    && candidates
-      .iter()
-      .all(|candidate| candidate.kind() == LocalTypeDeclarationKind::Union)
-  {
-    let id = candidates[0].id();
-    return Err(Box::new(diagnostic(
-      definition,
-      path,
-      "E_FFI_IR_UNSUPPORTED_TYPE",
-      format!(
-        "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}` at `{path}`; the declaration exists, but unions are not part of the IR yet."
-      ),
-      "Keep union-typed values behind a handwritten adapter: match the union in Calcit and pass a generator-safe member type or a declared local Struct/Enum across the generated binding.",
-    )));
+  if !context.allow_native_extensions {
+    if expected_kind.is_none()
+      && !candidates.is_empty()
+      && candidates
+        .iter()
+        .all(|candidate| candidate.kind() == LocalTypeDeclarationKind::Union)
+    {
+      let id = candidates[0].id();
+      return Err(Box::new(diagnostic(
+        definition,
+        path,
+        "E_FFI_IR_UNSUPPORTED_TYPE",
+        format!(
+          "FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}` at `{path}`; the declaration exists, but unions are not part of the IR yet."
+        ),
+        "Keep union-typed values behind a handwritten adapter: match the union in Calcit and pass a generator-safe member type or a declared local Struct/Enum across the generated binding.",
+      )));
+    }
+    candidates.retain(|candidate| candidate.kind() != LocalTypeDeclarationKind::Union);
   }
-  candidates.retain(|candidate| candidate.kind() != LocalTypeDeclarationKind::Union);
   if let Some(kind) = expected_kind {
     candidates.retain(|candidate| candidate.kind() == kind);
   }
@@ -579,7 +599,7 @@ fn nominal_type(
   Ok(match kind {
     LocalTypeDeclarationKind::Struct => FfiTypeIr::Struct { id, arguments: converted },
     LocalTypeDeclarationKind::Enum => FfiTypeIr::Enum { id, arguments: converted },
-    LocalTypeDeclarationKind::Union => unreachable!("union declarations are rejected in resolve_local_declaration"),
+    LocalTypeDeclarationKind::Union => FfiTypeIr::Union { id },
   })
 }
 
@@ -607,6 +627,19 @@ fn convert_type(
     }),
     CalcitTypeAnnotation::String => Ok(FfiTypeIr::String),
     CalcitTypeAnnotation::Buffer => Ok(FfiTypeIr::Buffer),
+    CalcitTypeAnnotation::FfiResource => {
+      if context.allow_native_extensions {
+        Ok(FfiTypeIr::FfiResource)
+      } else {
+        Err(Box::new(diagnostic(
+          definition,
+          path,
+          "E_FFI_IR_UNSUPPORTED_TYPE",
+          format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent native FfiResource at `{path}` on this boundary."),
+          "Native FfiResource is tied to the native resource-v1 dylib protocol; keep Component boundaries on value types or wait for WIT resource lowering.",
+        )))
+      }
+    }
     CalcitTypeAnnotation::List(item) => Ok(FfiTypeIr::List {
       item: Box::new(convert_type(item, definition, &format!("{path}.item"), context)?),
     }),
@@ -690,6 +723,7 @@ fn convert_signature(
   declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
   allow_readable_byte_stream: bool,
+  allow_native_extensions: bool,
 ) -> Result<FfiFunctionSignatureIr, Vec<FfiInterfaceDiagnostic>> {
   let CalcitTypeAnnotation::Fn(signature) = entry.schema.as_ref() else {
     return Err(vec![diagnostic(
@@ -740,6 +774,7 @@ fn convert_signature(
     current_namespace: namespace,
     type_parameters: &type_parameters,
     allow_readable_byte_stream,
+    allow_native_extensions,
   };
   let mut parameters = Vec::with_capacity(signature.arg_types.len());
   for (position, annotation) in signature.arg_types.iter().enumerate() {
@@ -779,30 +814,11 @@ fn cirru_may_define_nominal_type(code: &Cirru) -> bool {
     return false;
   };
   match head.rsplit('/').next().unwrap_or(head) {
-    "defstruct" | "defenum" | "&struct-def:new" | "&enum-def:new" => true,
+    "defstruct" | "defenum" | "defunion" | "&struct-def:new" | "&enum-def:new" | "&union-def:new" => true,
     "def" => items.get(2).is_some_and(cirru_may_define_nominal_type),
     "impl-traits" => items.get(1).is_some_and(cirru_may_define_nominal_type),
     "quote" => items.get(1).is_some_and(cirru_may_define_nominal_type),
     _ => false,
-  }
-}
-
-/// Name of a `defunion` declaration, read from source without evaluating it.
-fn cirru_union_name(code: &Cirru) -> Option<&str> {
-  let Cirru::List(items) = code else {
-    return None;
-  };
-  let Some(Cirru::Leaf(head)) = items.first() else {
-    return None;
-  };
-  match head.rsplit('/').next().unwrap_or(head) {
-    "defunion" => match items.get(1) {
-      Some(Cirru::Leaf(name)) => Some(name.as_ref()),
-      _ => None,
-    },
-    "def" => items.get(2).and_then(cirru_union_name),
-    "quote" => items.get(1).and_then(cirru_union_name),
-    _ => None,
   }
 }
 
@@ -819,15 +835,6 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
   let mut declarations = BTreeMap::new();
   for (namespace, file) in &snapshot.files {
     for (definition, entry) in &file.defs {
-      if let Some(name) = cirru_union_name(&entry.code) {
-        let source = LocalTypeDeclaration::Union {
-          id: local_nominal_id(namespace, name),
-          source_id: format!("{namespace}/{definition}"),
-          namespace: namespace.clone(),
-        };
-        declarations.entry(source.id().to_owned()).or_insert_with(Vec::new).push(source);
-        continue;
-      }
       if !cirru_may_define_nominal_type(&entry.code) {
         continue;
       }
@@ -851,6 +858,15 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
         Calcit::EnumDef(nominal) => {
           let id = local_nominal_id(namespace, nominal.name().ref_str());
           LocalTypeDeclaration::Enum {
+            id,
+            source_id,
+            namespace: namespace.clone(),
+            nominal: nominal.as_ref().clone(),
+          }
+        }
+        Calcit::UnionDef(nominal) => {
+          let id = local_nominal_id(namespace, nominal.name.ref_str());
+          LocalTypeDeclaration::Union {
             id,
             source_id,
             namespace: namespace.clone(),
@@ -881,6 +897,7 @@ fn convert_declaration(
   owner_definition: &str,
   declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
+  allow_native_extensions: bool,
 ) -> Result<FfiTypeDeclarationIr, Vec<FfiInterfaceDiagnostic>> {
   let mut diagnostics = Vec::new();
   let parameters = declaration_type_parameters(source);
@@ -891,6 +908,7 @@ fn convert_declaration(
     current_namespace: source.namespace(),
     type_parameters: &type_parameters,
     allow_readable_byte_stream: false,
+    allow_native_extensions,
   };
 
   match source {
@@ -980,13 +998,66 @@ fn convert_declaration(
         Err(diagnostics)
       }
     }
-    LocalTypeDeclaration::Union { id, .. } => Err(vec![diagnostic(
-      owner_definition,
-      format!("declarations.{id}"),
-      "E_FFI_IR_UNSUPPORTED_TYPE",
-      format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}`."),
-      "Keep union-typed values behind a handwritten adapter.",
-    )]),
+    LocalTypeDeclaration::Union {
+      id, namespace, nominal, ..
+    } => {
+      if !allow_native_extensions {
+        return Err(vec![diagnostic(
+          owner_definition,
+          format!("declarations.{id}"),
+          "E_FFI_IR_UNSUPPORTED_TYPE",
+          format!("FFI Interface IR v{FFI_INTERFACE_IR_VERSION} cannot represent named union `{id}`."),
+          "Keep union-typed values behind a handwritten adapter.",
+        )]);
+      }
+      let parsed_members = nominal.members();
+      if parsed_members.len() < 2 {
+        diagnostics.push(diagnostic(
+          owner_definition,
+          format!("declarations.{id}.members"),
+          "E_FFI_IR_UNSUPPORTED_TYPE",
+          format!(
+            "Named union `{id}` must declare at least 2 members to export in FFI Interface IR v{FFI_INTERFACE_IR_VERSION}, got {}.",
+            parsed_members.len()
+          ),
+          "Declare at least two distinct member types in `defunion`, or use the single type directly.",
+        ));
+      }
+      let mut members = Vec::with_capacity(parsed_members.len());
+      for (index, annotation) in parsed_members.iter().enumerate() {
+        match convert_type(
+          annotation,
+          owner_definition,
+          &format!("declarations.{id}.members.{index}"),
+          &mut context,
+        ) {
+          Ok(type_ir) => {
+            if members.contains(&type_ir) {
+              diagnostics.push(diagnostic(
+                owner_definition,
+                format!("declarations.{id}.members.{index}"),
+                "E_FFI_IR_UNSUPPORTED_TYPE",
+                format!("Named union `{id}` repeats an identical member type at index {index}."),
+                "Keep every member of a `defunion` distinct.",
+              ));
+            } else {
+              members.push(type_ir);
+            }
+          }
+          Err(error) => diagnostics.push(*error),
+        }
+      }
+      if diagnostics.is_empty() {
+        Ok(FfiTypeDeclarationIr::Union {
+          id: id.clone(),
+          namespace: namespace.clone(),
+          name: nominal.name.ref_str().to_owned(),
+          members,
+        })
+      } else {
+        Err(diagnostics)
+      }
+    }
   }
 }
 
@@ -994,6 +1065,7 @@ fn convert_reachable_declarations(
   owner_definition: &str,
   declarations: &LocalTypeDeclarations,
   required: &mut BTreeSet<String>,
+  allow_native_extensions: bool,
 ) -> (Vec<FfiTypeDeclarationIr>, Vec<FfiInterfaceDiagnostic>) {
   let mut pending = required.iter().cloned().collect::<VecDeque<_>>();
   let mut visited = BTreeSet::new();
@@ -1047,7 +1119,7 @@ fn convert_reachable_declarations(
       ));
       continue;
     };
-    match convert_declaration(source, owner_definition, declarations, required) {
+    match convert_declaration(source, owner_definition, declarations, required, allow_native_extensions) {
       Ok(declaration) => {
         converted.insert(declaration.id().to_owned(), declaration);
       }
@@ -1379,7 +1451,7 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
     let id = format!("{namespace}/{name}");
     let definition_diagnostic_start = diagnostics.len();
     let mut required = BTreeSet::new();
-    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, false) {
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, false, true) {
       Ok(signature) => Some(signature),
       Err(errors) => {
         diagnostics.extend(errors);
@@ -1387,7 +1459,7 @@ pub fn export_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -> Result<F
       }
     };
     if signature.is_some() {
-      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
+      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required, true);
       if declaration_diagnostics.is_empty() {
         for declaration in declarations {
           interface_declarations.insert(declaration.id().to_owned(), declaration);
@@ -1503,6 +1575,7 @@ fn declaration_has_type_parameters(declaration: &FfiTypeDeclarationIr) -> bool {
     FfiTypeDeclarationIr::Struct { type_parameters, .. } | FfiTypeDeclarationIr::Enum { type_parameters, .. } => {
       !type_parameters.is_empty()
     }
+    FfiTypeDeclarationIr::Union { .. } => false,
   }
 }
 
@@ -1535,6 +1608,8 @@ fn type_contains_readable_byte_stream(type_ir: &FfiTypeIr) -> bool {
     | FfiTypeIr::Float64
     | FfiTypeIr::String
     | FfiTypeIr::Buffer
+    | FfiTypeIr::FfiResource
+    | FfiTypeIr::Union { .. }
     | FfiTypeIr::TypeParameter { .. } => false,
   }
 }
@@ -1638,7 +1713,7 @@ pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -
         "Expose a fixed-arity function and use an explicit Option or List parameter.",
       ));
     }
-    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, true) {
+    let mut signature = match convert_signature(entry, &id, namespace, &local_declarations, &mut required, true, false) {
       Ok(signature) => Some(signature),
       Err(errors) => {
         diagnostics.extend(errors.into_iter().map(componentize_diagnostic));
@@ -1657,7 +1732,7 @@ pub fn export_component_snapshot(snapshot: &Snapshot, namespace: Option<&str>) -
       }
     }
     if signature.is_some() {
-      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required);
+      let (declarations, declaration_diagnostics) = convert_reachable_declarations(&id, &local_declarations, &mut required, false);
       if !declaration_diagnostics.is_empty() {
         diagnostics.extend(declaration_diagnostics.into_iter().map(componentize_diagnostic));
         signature = None;
@@ -2555,35 +2630,168 @@ mod tests {
   }
 
   #[test]
-  fn named_union_is_reported_as_unsupported_not_missing() {
-    let value = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Value"), Arc::new(vec![])));
+  fn exports_named_union_and_opaque_ffi_resource_in_native_ir_v4() {
+    let pattern = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Pattern"), Arc::new(vec![])));
+    let regex_ref = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Regex"), Arc::new(vec![])));
+    let compile_result = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("Result"),
+      Arc::new(vec![regex_ref, Arc::new(CalcitTypeAnnotation::String)]),
+    ));
     let report = export_snapshot(
       &snapshot(vec![
-        ("Value", data_entry("defunion Value String Number")),
+        ("Regex", data_entry("defstruct Regex (:source String) (:handle FfiResource)")),
+        ("Pattern", data_entry("defunion Pattern String Regex")),
         (
-          "read-value",
-          function_entry(vec![value], Arc::new(CalcitTypeAnnotation::String), native_metadata("read_value")),
+          "compile-regex",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::String)],
+            compile_result,
+            native_metadata("compile_regex"),
+          ),
+        ),
+        (
+          "is-match",
+          function_entry(
+            vec![pattern, Arc::new(CalcitTypeAnnotation::String)],
+            Arc::new(CalcitTypeAnnotation::Bool),
+            native_metadata("is_match"),
+          ),
         ),
       ]),
       None,
     )
-    .expect("inventory union-typed signature");
+    .expect("export named union and opaque FfiResource");
 
-    assert_eq!(report.summary.unsupported, 1);
-    let codes = diagnostic_codes(&report);
-    assert!(codes.contains("E_FFI_IR_UNSUPPORTED_TYPE"), "unexpected diagnostics: {codes:?}");
-    assert!(
-      !codes.contains("E_FFI_IR_DECLARATION_MISSING"),
-      "union must not be reported as missing: {codes:?}"
+    assert_eq!(report.summary.supported, 2);
+    assert_eq!(report.summary.unsupported, 0);
+    assert!(report.diagnostics.is_empty(), "unexpected diagnostics: {:?}", report.diagnostics);
+
+    assert!(report.interface.declarations.iter().any(|decl| matches!(
+      decl,
+      FfiTypeDeclarationIr::Struct { id, name, fields, .. }
+        if id == "test.ffi/Regex"
+          && name == "Regex"
+          && matches!(
+            fields.as_slice(),
+            [
+              FfiStructFieldIr { name: f0, type_ir: FfiTypeIr::FfiResource },
+              FfiStructFieldIr { name: f1, type_ir: FfiTypeIr::String },
+            ] if f0 == "handle" && f1 == "source"
+          )
+    )));
+    assert!(report.interface.declarations.iter().any(|decl| matches!(
+      decl,
+      FfiTypeDeclarationIr::Union { id, name, members, .. }
+        if id == "test.ffi/Pattern"
+          && name == "Pattern"
+          && matches!(
+            members.as_slice(),
+            [
+              FfiTypeIr::String,
+              FfiTypeIr::Struct { id: struct_id, arguments }
+            ] if struct_id == "test.ffi/Regex" && arguments.is_empty()
+          )
+    )));
+    let is_match = report
+      .interface
+      .definitions
+      .iter()
+      .find(|def| def.name == "is-match")
+      .expect("is-match definition");
+    assert_eq!(
+      is_match.signature.as_ref().expect("supported signature").parameters[0].type_ir,
+      FfiTypeIr::Union {
+        id: "test.ffi/Pattern".to_owned()
+      }
     );
-    assert!(
+  }
+
+  #[test]
+  fn rejects_invalid_union_shapes_in_native_ir_v4() {
+    let single = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Single"), Arc::new(vec![])));
+    let dup = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Dup"), Arc::new(vec![])));
+    let bad_dyn = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/BadDyn"), Arc::new(vec![])));
+    let applied = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("test.ffi/ValidUnion"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    let report = export_snapshot(
+      &snapshot(vec![
+        ("Single", data_entry("defunion Single String")),
+        ("Dup", data_entry("defunion Dup String String")),
+        ("BadDyn", data_entry("defunion BadDyn String Dynamic")),
+        ("ValidUnion", data_entry("defunion ValidUnion String Number")),
+        (
+          "use-single",
+          function_entry(vec![single], Arc::new(CalcitTypeAnnotation::Unit), native_metadata("use_single")),
+        ),
+        (
+          "use-dup",
+          function_entry(vec![dup], Arc::new(CalcitTypeAnnotation::Unit), native_metadata("use_dup")),
+        ),
+        (
+          "use-bad-dyn",
+          function_entry(vec![bad_dyn], Arc::new(CalcitTypeAnnotation::Unit), native_metadata("use_bad_dyn")),
+        ),
+        (
+          "use-applied",
+          function_entry(vec![applied], Arc::new(CalcitTypeAnnotation::Unit), native_metadata("use_applied")),
+        ),
+      ]),
+      None,
+    )
+    .expect("inventory invalid union shapes");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 4);
+    let by_def = |name: &str| {
       report
-        .diagnostics
+        .interface
+        .definitions
         .iter()
-        .any(|diagnostic| diagnostic.message.contains("named union `test.ffi/Value`")),
-      "diagnostic should name the union: {:?}",
-      report.diagnostics
-    );
+        .find(|def| def.name == name)
+        .expect("definition")
+        .diagnostic_codes
+        .clone()
+    };
+    assert_eq!(by_def("use-single"), vec!["E_FFI_IR_UNSUPPORTED_TYPE"]);
+    assert_eq!(by_def("use-dup"), vec!["E_FFI_IR_UNSUPPORTED_TYPE"]);
+    assert_eq!(by_def("use-bad-dyn"), vec!["E_FFI_IR_DYNAMIC_TYPE"]);
+    assert_eq!(by_def("use-applied"), vec!["E_FFI_IR_TYPE_ARGUMENT_ARITY"]);
+  }
+
+  #[test]
+  fn component_ir_v4_still_rejects_named_union_and_native_ffi_resource() {
+    let value = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Value"), Arc::new(vec![])));
+    let report = export_component_snapshot(
+      &snapshot(vec![
+        ("Value", data_entry("defunion Value String Number")),
+        (
+          "read-value",
+          component_function_entry(
+            "defwasm-export read-value (v) |ok",
+            vec![value],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+        (
+          "take-resource",
+          component_function_entry(
+            "defwasm-export take-resource (r) |ok",
+            vec![Arc::new(CalcitTypeAnnotation::FfiResource)],
+            Arc::new(CalcitTypeAnnotation::String),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("inventory component union and resource rejections");
+
+    assert_eq!(report.summary.supported, 0);
+    assert_eq!(report.summary.unsupported, 2);
+    for def in &report.interface.definitions {
+      assert_eq!(def.diagnostic_codes, vec!["E_FFI_IR_UNSUPPORTED_TYPE"]);
+    }
   }
 
   #[test]

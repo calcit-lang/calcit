@@ -643,6 +643,33 @@ struct NativeFfiResource {
   lease: Arc<NativeFfiResourceLease>,
 }
 
+/// Returns `true` when `reference` wraps a host-managed `resource-v1` lease
+/// (`NativeFfiResource`), as opposed to an arbitrary Rust `AnyRef`.
+pub fn is_native_ffi_resource(reference: &EdnAnyRef) -> bool {
+  reference
+    .0
+    .read()
+    .is_ok_and(|guard| guard.as_any().downcast_ref::<NativeFfiResource>().is_some())
+}
+
+/// Construct a host-managed `resource-v1` `EdnAnyRef` for unit tests without loading a dylib.
+#[cfg(test)]
+pub fn new_test_resource_anyref(
+  lib_name: &str,
+  handle: u64,
+  generation: u64,
+  release: FfiResourceRelease,
+) -> Result<EdnAnyRef, String> {
+  let adapter = FfiResourceAdapter {
+    lib_name: Arc::from(lib_name),
+    release,
+    trace: None,
+    library: None,
+  };
+  let lease = intern_resource_lease(&adapter, handle, generation)?;
+  Ok(EdnAnyRef::new(NativeFfiResource { lease }))
+}
+
 impl PartialEq for NativeFfiResource {
   fn eq(&self, other: &Self) -> bool {
     self.lease.lib_name == other.lease.lib_name
