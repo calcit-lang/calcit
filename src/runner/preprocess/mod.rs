@@ -14641,7 +14641,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     return Ok(true_form.expect("live true branch was preprocessed"));
   }
   if prune_true {
-    return Ok(false_form.unwrap_or(Calcit::Nil));
+    return Ok(false_form.unwrap_or(Calcit::Unit));
   }
 
   let true_form = true_form.expect("live true branch was preprocessed");
@@ -14649,7 +14649,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   // P7: constant folding — eliminate dead branch only when condition is a Bool literal (#2881)
   match &cond_form {
     Calcit::Bool(true) => return Ok(true_form),
-    Calcit::Bool(false) => return Ok(false_form.unwrap_or(Calcit::Nil)),
+    Calcit::Bool(false) => return Ok(false_form.unwrap_or(Calcit::Unit)),
     _ => {}
   }
 
@@ -16092,7 +16092,7 @@ fn check_value_position_nil_branch(
     return Ok(());
   };
   let reason = match kind {
-    ImplicitNilBranch::MissingElse => "an `if` / `when` without an else yields nil when its condition is false",
+    ImplicitNilBranch::MissingElse => "an `if` / `when` without an else yields Unit when its condition is false",
     ImplicitNilBranch::NilJoin => "one branch is `nil` while another carries a value",
   };
   let message = format!(
@@ -18065,15 +18065,19 @@ pub fn preprocess_defn(
             ctx.call_location.clone().or_else(|| Some(definition_location.clone())),
           )?;
         }
-        // A declared nullable return (`JsNullish<T>`, legacy `Optional<T>`) already
-        // admits the nil exit, so only a concrete return is reported.
+        // A declared nullable return (`JsNullish<T>`, legacy `Optional<T>`) or
+        // explicit `-> Dynamic` return admits the branch, while an unannotated
+        // lambda returning an else-less `if` value is still reported.
+        let explicit_dynamic_return = matches!(return_type_hint.as_ref(), CalcitTypeAnnotation::Dynamic)
+          && (has_body_fn_hint || (source_top_level_definition && effective_fn_schema.is_some()));
         if !matches!(
           return_type_hint.as_ref(),
-          CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, _)
-        ) && let Some(returned_expr) = processed_body
-          .iter()
-          .rev()
-          .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+          CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(_, _)
+        ) && !explicit_dynamic_return
+          && let Some(returned_expr) = processed_body
+            .iter()
+            .rev()
+            .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
         {
           check_value_position_nil_branch(
             returned_expr,
@@ -19210,6 +19214,20 @@ fn preprocess_assert_type_with_obligation(
     })
   {
     assertion_proof = Some(TypeProof::Proven);
+  }
+  if !matches!(
+    asserted_type.as_ref(),
+    CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, _)
+  ) {
+    check_value_position_nil_branch(
+      &asserted_target,
+      "assert-type",
+      true,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.call_stack,
+      None,
+    )?;
   }
   if let Some(current_type) = &current_type
     && assertion_proof.is_some_and(TypeProof::is_mismatch)

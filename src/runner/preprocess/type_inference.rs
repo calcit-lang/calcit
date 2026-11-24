@@ -821,13 +821,14 @@ fn infer_if_branches(xs: &CalcitList, scope_types: &ScopeTypes, track_completene
         .is_some_and(|resolved| !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
     (joined, complete)
   } else {
+    let unit_type = Arc::new(CalcitTypeAnnotation::Unit);
+    if expression_definitely_diverges(true_expr) {
+      return (Some(unit_type), false);
+    }
     let Some(true_type) = resolve_branch(true_expr).0 else {
       return (None, false);
     };
-    (
-      Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Inferred))),
-      false,
-    )
+    (merge_if_branch_types(true_type, unit_type), false)
   }
 }
 
@@ -1041,7 +1042,7 @@ pub(crate) fn prove_function_value_exits(
         false_scope.insert(symbol, narrowed);
       }
       let left = prove_function_value_exits(items.get(2)?, &true_scope, parameters, prove)?;
-      let right = prove_function_value_exits(items.get(3).unwrap_or(&Calcit::Nil), &false_scope, parameters, prove)?;
+      let right = prove_function_value_exits(items.get(3).unwrap_or(&Calcit::Unit), &false_scope, parameters, prove)?;
       Some(left + right)
     }
     Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {

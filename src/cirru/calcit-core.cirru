@@ -333,6 +333,24 @@
                   assert= -1 $ &compare earlier later
                   assert= 0 $ &compare later $ &str:concat |a |z
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-unicode-scalars-for-strings)
+              :code $ quote $ let
+                  bmp-high $ char-from-code 57344
+                  astral "|😀"
+                do
+                  assert= -1 $ &compare bmp-high astral
+                  assert= 1 $ &compare astral bmp-high
+                  assert= 0 $ &compare astral "|😀"
+              :tags $ #{} :core :unicode :unit
+            %{} 'TestEntry (:name |orders-unicode-scalars-for-tags)
+              :code $ quote $ let
+                  bmp-tag $ turn-tag (char-from-code 57344)
+                  astral-tag $ turn-tag "|😀"
+                do
+                  assert= -1 $ &compare bmp-tag astral-tag
+                  assert= 1 $ &compare astral-tag bmp-tag
+                  assert= 0 $ &compare astral-tag $ turn-tag "|😀"
+              :tags $ #{} :core :unicode :unit
             %{} 'TestEntry (:name |orders-fractions-in-heap-address-range)
               :code $ quote $ do
                 assert= -1 $ &compare 16392.5 16392.75
@@ -10400,7 +10418,7 @@
               assert= 1 $ f1 1
             :tags $ #{} :core :unit
         'if $ %{} 'CodeEntry
-          :doc "|Conditional syntax requiring a Bool condition: only true selects the then branch and only false selects the else branch (or nil in 2-arg form when evaluated). Evaluates the condition once and only the selected branch."
+          :doc "|Conditional syntax requiring a Bool condition: only true selects the then branch and only false selects the else branch (or &unit in 2-arg form when evaluated). Evaluates the condition once and only the selected branch."
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ if (> x 0) |positive |non-positive
@@ -10441,7 +10459,19 @@
                   raise |unselected
                 assert= ([] |start |condition |then) (deref effects)
                 assert= |no $ if false (raise |unselected) |no
-                assert= nil $ if false $ raise |unselected
+                assert= &unit $ if false $ raise |unselected
+              :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |two-arg-if-returns-unit-when-false)
+              :code $ quote $ let
+                  run-if $ fn (flag)
+                    hint-fn $ Fn Bool $ -> Unit
+                    if flag $ do &unit
+                assert= &unit $ run-if true
+                assert= &unit $ run-if false
+                assert= &unit $ if (&= 1 2) (raise |unselected)
+                assert= &unit $ if false (do &unit)
+                assert-type (run-if false) Unit
+                assert-type (if (&= 1 2) (do &unit)) Unit
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |condition-and-selected-branch-errors-propagate)
               :code $ quote $ do
@@ -11848,11 +11878,11 @@
               :code $ quote $ let
                   from-if $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
-                    nil->option $ if (> x 0) x
+                    nil->option $ if (> x 0) x nil
                   from-local-join $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
                     let
-                        maybe $ if (> x 0) x
+                        maybe $ if (> x 0) x nil
                       nil->option maybe
                   from-branches $ fn (x)
                     hint-fn $ Fn Number $ -> (Option Number)
@@ -14173,6 +14203,24 @@
                   map ([] "| first " "| second ") trim
                 assert= |first $ trim |__first__ |_
               :tags $ #{} :core :optional-callable :unit
+            %{} 'TestEntry (:name |trims-unicode-single-scalar-pattern)
+              :code $ quote $ do
+                assert= |a $ trim "|ééaéé" "|é"
+                assert= | $ trim "|éé" "|é"
+                assert= |a $ trim "|😀😀a😀" "|😀"
+                assert= | $ trim "|😀😀" "|😀"
+                assert= |b $ trim |aabaa |a
+                assert= | $ trim |aaa |a
+              :tags $ #{} :core :unicode :unit
+            %{} 'TestEntry (:name |rejects-multi-scalar-trim-pattern)
+              :code $ quote $ do
+                assert= |rejected $ try
+                  do (trim |abc |ab) |ok
+                  fn (_msg) |rejected
+                assert= |rejected $ try
+                  do (trim "|éa" "|éa") |ok
+                  fn (_msg) |rejected
+              :tags $ #{} :core :unicode :unit
         'try $ %{} 'CodeEntry
           :doc "|Evaluate body and return its value on success. On failure, evaluate handler-fn and call it with the error message String. Syntax: (try body handler-fn). The handler is a one-argument function, not a (catch ...) form."
           :code $ quote &runtime-implementation

@@ -2219,7 +2219,7 @@ fn gen_if_code(
           let false_code = to_js_code_inline(false_node, ns, local_defs, file_imports, tags, None)?;
           expr.push_str(&false_code);
         } else {
-          expr.push_str("null");
+          expr.push_str("void 0");
         }
 
         for _ in 0..depth {
@@ -2256,7 +2256,7 @@ fn gen_if_code(
         let false_code = to_js_code(false_node, ns, local_defs, file_imports, tags, Some(return_label))?;
         write!(chunk, " else {{ {false_code} }}").expect("write");
       } else {
-        write!(chunk, " else {{ {return_label} null; }}").expect("write");
+        write!(chunk, " else {{ {return_label} void 0; }}").expect("write");
       }
       break;
     }

@@ -7633,11 +7633,11 @@ fn infer_wasm_evidence_in_scope(
         return if taken {
           infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, closures, visiting)
         } else {
-          infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, closures, visiting)
+          infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Unit), local_types, closures, visiting)
         };
       }
       let consequent = infer_wasm_evidence_in_scope(ctx, items.get(2)?, local_types, closures, visiting)?;
-      let alternative = infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Nil), local_types, closures, visiting)?;
+      let alternative = infer_wasm_evidence_in_scope(ctx, items.get(3).unwrap_or(&Calcit::Unit), local_types, closures, visiting)?;
       // A data-shape join may discard attached implementations. Preserve a
       // call-site identity only when both live branches carry identical evidence.
       if matches!(alternative.annotation.as_ref(), CalcitTypeAnnotation::Never) {

@@ -434,7 +434,7 @@ fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
       let mut result = Outcomes::default();
       for (path, branch) in [
         (condition.truthy, items.get(2).unwrap()),
-        (condition.falsey, items.get(3).unwrap_or(&Calcit::Nil)),
+        (condition.falsey, items.get(3).unwrap_or(&Calcit::Unit)),
       ] {
         if let Some(path) = path {
           let mut branch_scope = scope.clone();

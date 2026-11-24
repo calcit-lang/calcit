@@ -341,7 +341,7 @@
                   unsafe-coerce v Bool
               assert= 1 $ if true 1 2
               assert= 2 $ if false 1 2
-              assert= nil $ if false 1
+              assert= &unit $ if false 1
               assert= &unit $ if-not true 1
               assert= 2 $ if-not true 1 2
               assert= true $ try

@@ -692,7 +692,7 @@ pub fn syntax_if(
     Calcit::Bool(true) => runner::evaluate_expr(true_branch, scope, file_ns, call_stack),
     Calcit::Bool(false) => match expr.get(2) {
       Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
-      None => Ok(Calcit::Nil),
+      None => Ok(Calcit::Unit),
     },
     other => Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,

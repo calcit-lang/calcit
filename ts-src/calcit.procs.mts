@@ -1693,25 +1693,23 @@ export let _$n_parse_float = (x: string): CalcitValue => {
   const value = Number(x);
   return Number.isNaN(value) ? option_none() : option_some(value);
 };
-export let trim = (x: string, c: string): string => {
+export let trim = (x: string, c?: string): string => {
   if (c != null) {
-    if (c.length !== 1) {
-      throw new Error("Expected c of a character");
+    // Validate single Unicode scalar value (not UTF-16 code unit length) to match Native and WASM.
+    const scalars = Array.from(c);
+    if (scalars.length !== 1) {
+      throw new Error(`trim requires single character pattern, but received string of length: ${scalars.length}`);
     }
-    var buffer = x;
-    var size = buffer.length;
-    var idx = 0;
-    while (idx < size && buffer[idx] === c) {
-      idx = idx + 1;
+    const step = c.length;
+    let start = 0;
+    let end = x.length;
+    while (start + step <= end && x.startsWith(c, start)) {
+      start += step;
     }
-    buffer = buffer.substring(idx);
-    var size = buffer.length;
-    var idx = size;
-    while (idx > 1 && buffer[idx - 1] === c) {
-      idx = idx - 1;
+    while (end - step >= start && x.endsWith(c, end)) {
+      end -= step;
     }
-    buffer = buffer.substring(0, idx);
-    return buffer;
+    return x.slice(start, end);
   }
   return x.trim();
 };
