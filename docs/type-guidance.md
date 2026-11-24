@@ -372,8 +372,9 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 ```
 
 - **调用处分派**：检查器按顺序选取第一条第 1 个参数匹配接收者类型的 case，用来检查其余实参（包含内联 lambda 的上下文入参类型推导）并推导返回类型；若接收者是 `Dynamic`、未知或无任何 case 匹配，则回退到外层签名。每条 case 拥有独立的 `:generics`，不与外层签名的泛型名冲突。
+- **定义处逐 case 校验与谓词剪枝**：预处理非 `:open :intrinsic` 的 `defn` 时，检查器在通过外层签名检查后，还会将形参绑定为每条 case 声明的 `:args` / `:rest` 与词法 `:generics`，重新检查函数体并验证返回值满足该 case 的返回类型。在 `if` / `cond` 中，当形参已具备具体或泛型 case 类型时，`list?`、`map?`、`set?`、`string?`、`number?`、`bool?`、`nil?`、`non-nil?`、`tag?`、`symbol?`、`fn?`、`struct?`、`enum?`、`(&= (type-of x) :...)` 及其 `not` 组合会静态判定真假并剪除不可达分支，只校验当前 case 命中的分支；若某条 case 的返回值或分支内实参用法与声明冲突，检查器会报错并指明对应的 `:cases` 条目。
 - **查询渲染**：`calcit query peek` 与 `calcit query schema` 会直接从 schema 渲染 `## Cases` 段落（结构化输出中的 `data.cases`）；仅有剩余内建规则的 core 函数才额外展示 `## Checker rules`（`data.checker_rules`）。
-- **限制**：当前阶段仅在调用处执行 `:cases` 分派与类型推导，定义体按每条 case 逐分支流分析校验留作后续步骤；`:cases` 内不能嵌套 `:cases`，且每条 case 至少需要一个接收者参数。
+- **限制**：`:cases` 内不能嵌套 `:cases`，且每条 case 至少需要一个接收者参数；`calcit.core` 标注 `:open :intrinsic` 的底层内建函数因直接分派到内部原语与动态方法回退，豁免定义处逐 case 函数体校验，改由核心 `:tests` 覆盖。
 
 `calcit analyze weak-types` 把带 `:open` 理由的签名里的 Dynamic 归到 `intentional-open`，不计入 `unresolved`，也不让该定义的 coverage 降为 partial；`--intent intentional-open` 可以单独列出这些位置。
 

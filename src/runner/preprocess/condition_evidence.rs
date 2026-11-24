@@ -7,6 +7,8 @@ use super::*;
 pub(super) struct ConditionEvidence {
   pub when_true: ScopeTypes,
   pub when_false: ScopeTypes,
+  pub true_reachable: bool,
+  pub false_reachable: bool,
 }
 
 #[derive(Clone)]
@@ -82,6 +84,8 @@ fn following(prefix: &Path, suffix: Option<Path>) -> Option<Path> {
 pub(super) fn infer(expr: &Calcit, scope: &ScopeTypes) -> ConditionEvidence {
   let outcomes = visit::<false, false>(expr, scope, &HashMap::new(), &mut 4096, 0);
   ConditionEvidence {
+    true_reachable: outcomes.truthy.is_some(),
+    false_reachable: outcomes.falsey.is_some(),
     when_true: outcomes.truthy.map(|path| path.facts).unwrap_or_default(),
     when_false: outcomes.falsey.map(|path| path.facts).unwrap_or_default(),
   }
@@ -277,17 +281,38 @@ fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
   // Open WASM scalars can share their numeric representation. Equality
   // with a literal cannot establish portable kind evidence for callers.
   let direct = extract_predicate_bindings_with_literal_equality(expr, scope, !PORTABLE);
-  if !EFFECTS_ONLY && (direct.true_binding.is_some() || direct.false_binding.is_some()) {
-    return Outcomes {
-      truthy: Some(Path {
-        facts: direct.true_binding.into_iter().collect(),
-        preserves_locals: true,
-      }),
-      falsey: Some(Path {
-        facts: direct.false_binding.into_iter().collect(),
-        preserves_locals: true,
-      }),
-    };
+  if !EFFECTS_ONLY {
+    if let Some(static_truth) = static_type_predicate_truth(expr, scope) {
+      return if static_truth {
+        Outcomes {
+          truthy: Some(Path {
+            facts: direct.true_binding.into_iter().collect(),
+            preserves_locals: true,
+          }),
+          falsey: None,
+        }
+      } else {
+        Outcomes {
+          truthy: None,
+          falsey: Some(Path {
+            facts: direct.false_binding.into_iter().collect(),
+            preserves_locals: true,
+          }),
+        }
+      };
+    }
+    if direct.true_binding.is_some() || direct.false_binding.is_some() {
+      return Outcomes {
+        truthy: Some(Path {
+          facts: direct.true_binding.into_iter().collect(),
+          preserves_locals: true,
+        }),
+        falsey: Some(Path {
+          facts: direct.false_binding.into_iter().collect(),
+          preserves_locals: true,
+        }),
+      };
+    }
   }
 
   let Calcit::List(items) = expr else {
@@ -386,6 +411,18 @@ fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
       result
     }
     Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => {
+      let inner = visit::<EFFECTS_ONLY, PORTABLE>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
+      Outcomes {
+        truthy: inner.falsey,
+        falsey: inner.truthy,
+      }
+    }
+    Some(Calcit::Import(import))
+      if import.ns.as_ref() == calcit::CORE_NS
+        && import.def.as_ref() == "not"
+        && program::has_bundled_core_source()
+        && items.len() == 2 =>
+    {
       let inner = visit::<EFFECTS_ONLY, PORTABLE>(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
       Outcomes {
         truthy: inner.falsey,
