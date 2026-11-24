@@ -24,6 +24,16 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.46.0 双参数 `if` 假分支统一返回 `Unit` 与 Unicode 标量对齐（#2928）
+
+本版本统一了 native、JS 与 WASM 后端在双参数 `if` 假分支返回值以及 `trim` / `&compare` Unicode 标量语义上的差异：
+
+- **双参数 `if` 假分支统一返回 `&unit`（`Unit`）**：此前 native 返回 `nil`、JS 返回 `null`，而 WASM 返回 `&unit`。现在三端在运行时与静态常量折叠中一律对无 `else` 分支的 `if` 在条件为 `false` 时返回 `&unit`；类型推导将缺省 `else` 分支视为 `Unit`（不再推导为 `Nullable`）。
+  - 若双参数 `if` 用于副作用语句位置（真分支为 `Unit` 或发散），无需改动且现在可直接满足 `Unit` 返回签名。
+  - 若原本在值位置依赖双参数 `if` 在假分支返回 `nil`，请显式补齐三参数 `else` 分支（如 `if cond val nil`），或改用 `Option :some` / `Option :none`。
+- **`trim` 双参数模式按单个 Unicode 标量校验与裁剪**：native 与 JS 均改为按 Unicode 标量数校验单字符模式（与 WASM 一致），支持 `"é"`、`"😀"` 等多字节 / 非 BMP 单个 Unicode 标量，并拒绝多标量字符串。
+- **JS `&compare` 字符串与 Tag 按 Unicode 标量顺序比较**：JS 运行时在 `&compare` 比较 `String` 与 `Tag` 时改用 Unicode 码点顺序，与 native、WASM 保持一致（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
+
 ## 0.45.0 严格 `Bool` 条件与 `Dynamic` 消费边界收紧（#2881）
 
 本版本合并原计划于后续小版本交付的静态 core 收口与 WASM/WASI 服务目标一并发布，在预处理与各运行后端统一收紧布尔条件语义与开放 `Dynamic` 返回值的消费边界，以消除隐式 nil/truthiness 歧义并匹配 WASM 闭合类型模型：

@@ -2063,7 +2063,7 @@ pub(super) fn expression_is_proven_for(
             }
             return self.check(items.get(2).unwrap(), expected, &true_scope, aliases, async_invocation, depth + 1)
               && self.check(
-                items.get(3).unwrap_or(&Calcit::Nil),
+                items.get(3).unwrap_or(&Calcit::Unit),
                 expected,
                 &false_scope,
                 aliases,
@@ -2419,7 +2419,7 @@ fn refined_generic_return_is_proven(
           None => refined_generic_return_is_proven(true_branch, declared, &true_scope, identities, depth + 1),
         };
         return true_proven
-          && refined_generic_return_is_proven(items.get(3).unwrap_or(&Calcit::Nil), declared, &false_scope, identities, depth + 1);
+          && refined_generic_return_is_proven(items.get(3).unwrap_or(&Calcit::Unit), declared, &false_scope, identities, depth + 1);
       }
       Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
         if let Some(Calcit::List(pair)) = items.get(1)
@@ -2783,18 +2783,20 @@ pub(crate) fn check_function_return_type(
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
-    return if (audit || lexical_return) && !proven {
-      Err(
-        branch_type_mismatch(
-          last_expr,
-          declared_return_type,
-          async_invocation,
-          scope_types,
-          recur_parameters.unwrap_or_default(),
-          &info,
-        )
-        .unwrap_or_else(|| unproven("unknown")),
+    if !proven
+      && let Some(err) = branch_type_mismatch(
+        last_expr,
+        declared_return_type,
+        async_invocation,
+        scope_types,
+        recur_parameters.unwrap_or_default(),
+        &info,
       )
+    {
+      return Err(err);
+    }
+    return if (audit || lexical_return) && !proven {
+      Err(unproven("unknown"))
     } else {
       Ok(())
     };

@@ -34,11 +34,14 @@ pub fn trim(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), None) => Ok(Calcit::Str(s.trim().to_owned().into())),
     (Some(Calcit::Str(s)), Some(Calcit::Str(p))) => {
-      if p.len() == 1 {
-        let c: char = p.chars().next().expect("first char");
+      let mut chars = p.chars();
+      if let (Some(c), None) = (chars.next(), chars.next()) {
         Ok(Calcit::Str(s.trim_matches(c).to_owned().into()))
       } else {
-        let msg = format!("trim requires single character pattern, but received string of length: {}", p.len());
+        let msg = format!(
+          "trim requires single character pattern, but received string of length: {}",
+          p.chars().count()
+        );
         let hint = format_proc_examples_hint(&CalcitProc::Trim).unwrap_or_default();
         CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
       }

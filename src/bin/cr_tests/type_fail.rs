@@ -5398,10 +5398,10 @@ fn value_position_nil_branch_is_a_strict_error() {
 #[test]
 fn library_macro_wrapping_caller_form_reports_implicit_nil_at_the_caller() {
   run_with_large_stack(|| {
-    let library = "defmacro maybe (c x)\n  quasiquote $ if ~c ~x\n\ndefmacro quiet ()\n  quasiquote $ if (> 1 0) |a";
+    let library = "defmacro maybe (c x)\n  quasiquote $ if ~c ~x\n\ndefmacro maybe-nil (c x)\n  quasiquote $ if ~c ~x nil\n\ndefmacro quiet ()\n  quasiquote $ if (> 1 0) |a";
     let compile = |body: &str| {
       let snippet = format!(
-        "ns app.main $ :require $ lib.core :refer (maybe quiet)\n\nlet\n    probe $ fn (flag)\n      hint-fn $ Fn Bool (-> String)\n      , {body}\n  probe true"
+        "ns app.main $ :require $ lib.core :refer (maybe maybe-nil quiet)\n\nlet\n    probe $ fn (flag)\n      hint-fn $ Fn Bool (-> String)\n      , {body}\n  probe true"
       );
       let entries = load_snippet_entries_with_library("lib.core", library, &snippet);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -5420,7 +5420,7 @@ fn library_macro_wrapping_caller_form_reports_implicit_nil_at_the_caller() {
     assert_eq!(location.ns.as_ref(), "app.main", "{err:?}");
 
     for (label, body) in [
-      ("nil-option-fix", "(str |x (.unwrap-or (nil->option (maybe flag |b)) |))"),
+      ("nil-option-fix", "(str |x (.unwrap-or (nil->option (maybe-nil flag |b)) |))"),
       ("wholly-generated", "(str |x (quiet))"),
     ] {
       let (result, warnings, advisories) = compile(body);
@@ -5441,7 +5441,8 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
     let cases = [
       ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
       ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
-      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
+      // 2-arg `if` false branch yields Unit, so branches (String, Unit) mismatch JsNullish<Number>.
+      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("E_BRANCH_TYPE_MISMATCH")),
       ("matching-payload", nullable_return("(if flag 7 nil)"), None),
       (
         "wrong-argument-payload",
@@ -5453,14 +5454,23 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
       let snippet = format!("let\n    probe $ {function}\n  probe true");
       let entries = load_snippet_entries(&snippet);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
       let warnings = warnings.borrow();
-      let codes = warnings.iter().filter_map(LocatedWarning::code).collect::<Vec<_>>();
+      let mut codes = warnings.iter().filter_map(LocatedWarning::code).collect::<Vec<_>>();
+      if let Err(err) = &result
+        && let Some(code) = err.code.as_deref()
+      {
+        codes.push(code);
+      }
       match expected_code {
-        Some(code) => assert!(codes.contains(&code), "{label}: expected {code}, got {warnings:?}"),
+        Some(code) => assert!(
+          codes.contains(&code),
+          "{label}: expected {code}, got result={result:?}, warnings={warnings:?}"
+        ),
         None => assert!(
-          !codes.iter().any(|code| code.ends_with("TYPE_MISMATCH")),
-          "{label}: a matching payload should be accepted, got {warnings:?}"
+          result.is_ok() && !codes.iter().any(|code| code.ends_with("TYPE_MISMATCH")),
+          "{label}: a matching payload should be accepted, got result={result:?}, warnings={warnings:?}"
         ),
       }
     }
@@ -5503,13 +5513,13 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("struct-field", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("struct-field-pct", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("list-literal", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("map-callback", true, true, None),
-  ("hof-typed-fn-arg", true, true, None),
-  ("assert-type", true, true, None),
+  ("map-callback", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("hof-typed-fn-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("assert-type", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-ret", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-arg-defn", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-ok-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("let-bound-fn-literal", true, true, None),
+  ("let-bound-fn-literal", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-bound-list", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("let-cross-def", false, true, None),
   ("let-cross-def2", false, true, None),
@@ -5530,8 +5540,8 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("list-arg", false, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("tuple-arg", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("list-arg-nullable", false, false, None),
-  ("map-callback-ok", true, true, None),
-  ("hof-ok", true, true, None),
+  ("map-callback-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
+  ("hof-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("qfield-nilq", false, false, None),
   ("qfield-take-str", true, true, None),
   ("qfield-let-take-str", true, true, None),
@@ -5544,7 +5554,8 @@ const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool, Option<&str>)] = &[
   ("m-slice-ok2", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("local-ok", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
   ("local-ret-typed-fn-literal", true, true, Some("E_IMPLICIT_NIL_BRANCH")),
-  ("n3-jsnullish-ret", false, false, None),
+  // 2-arg `if` false branch yields Unit (not nil), so it no longer satisfies JsNullish<Number>.
+  ("n3-jsnullish-ret", false, true, None),
   ("n3-jsnullish-ret-join", false, false, None),
   ("n3-jsnullish-arg", false, false, None),
   ("n3-dynamic-ret", false, false, None),
