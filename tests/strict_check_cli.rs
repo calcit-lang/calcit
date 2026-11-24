@@ -551,10 +551,12 @@ fn explicit_dynamic_alias_does_not_recover_asserted_trait_capabilities() {
   let snapshot = directory.snapshot();
   fs::copy("tests/fixtures/enum-slot-alias.cirru", &snapshot).unwrap();
   for (kind, target, code) in [
+    ("def", "RawOpen", "quote $ def RawOpen ([] 1)"),
+    ("schema", "RawOpen", "quote Dynamic"),
     (
       "def",
       "OpenCountable",
-      "quote $ def OpenCountable $ assert-type ([] 1) calcit.core/Countable",
+      "quote $ def OpenCountable $ let ((raw RawOpen)) (assert-traits raw calcit.core/Countable) raw",
     ),
     ("schema", "OpenCountable", "quote Dynamic"),
     ("def", "AliasCountable", "quote $ def AliasCountable OpenCountable"),
