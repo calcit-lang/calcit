@@ -7946,7 +7946,8 @@ fn preprocess_known_function_call(
       {
         return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
       }
-      if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
+      if !call_has_type_warnings
+        && matches!(def.as_ref(), "get" | "nth" | "first" | "last")
         && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
       {
         return preprocess_recorded_lowering(
