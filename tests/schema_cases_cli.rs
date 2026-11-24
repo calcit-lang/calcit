@@ -410,22 +410,22 @@ fn user_cases_body_verification_rejects_wrong_branch_argument_usage() {
   :files $ {}
     |demo.main $ %{} :FileEntry
       :defs $ {}
-        |bad-branch-call $ %{} :CodeEntry (:doc "|Calls &str:count on List T branch") (:examples $ [])
+        |bad-branch-call $ %{} :CodeEntry (:doc "|Passes String to callback expecting T on List T branch") (:examples $ [])
           :code $ quote
-            defn bad-branch-call (x)
+            defn bad-branch-call (x f)
               cond
-                (list? x) (&str:count x)
-                (string? x) (&str:count x)
-                true 0
-          :schema $ quote $ Fn Dynamic (-> Number) (:open :reflect)
+                (list? x) (f |not-t)
+                (string? x) (f x)
+                true (f x)
+          :schema $ quote $ Fn Dynamic (Fn Dynamic (-> Dynamic) (:features :pass)) (-> Dynamic) (:open :reflect)
             :cases
-              Fn (List T) (-> Number) (:generics T)
-              Fn String (-> Number)
+              Fn (List T) (Fn T (-> U) (:features :pass)) (-> U) (:generics T U)
+              Fn String (Fn String (-> U) (:features :pass)) (-> U) (:generics U)
         |main! $ %{} :CodeEntry (:doc |) (:examples $ [])
           :code $ quote
             defn main! ()
               let
-                  n $ bad-branch-call ([] 1 2)
+                  n $ bad-branch-call ([] 1 2) (fn (v) (&+ v 1))
                 , &unit
           :schema $ quote $ Fn (-> Unit)
         |reload! $ %{} :CodeEntry (:doc |) (:examples $ [])
@@ -450,8 +450,8 @@ fn user_cases_body_verification_rejects_wrong_branch_argument_usage() {
     String::from_utf8_lossy(&check.stderr)
   );
   assert!(
-    combined.contains("E_PROC_ARG_TYPE_MISMATCH") || combined.contains("E_FN_ARG_TYPE_MISMATCH"),
-    "expected argument type mismatch on demo.main/bad-branch-call:\n{combined}"
+    combined.contains("E_CALL_ARGUMENT_UNPROVEN") && combined.contains("demo.main/bad-branch-call") && combined.contains(":cases"),
+    "expected E_CALL_ARGUMENT_UNPROVEN on demo.main/bad-branch-call with :cases context:\n{combined}"
   );
 
   let _ = fs::remove_dir_all(&dir);

@@ -7212,7 +7212,10 @@ fn preprocess_list_call(
 
         // Eagerly execute type-slot procs during preprocessing so that TypeSlot
         // annotations can be resolved by the type checker within the same compilation.
-        if let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first()
+        // Skip re-registration during speculative `:cases` replay because the base
+        // pass already registered each declaration (and diagnosed real duplicates).
+        if !in_case_body_verification()
+          && let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first()
           && let Some(slot_name) = processed_args.first().and_then(|arg| match arg {
             Calcit::Tag(tag) => Some(Arc::from(tag.ref_str())),
             Calcit::Str(text) => Some(Arc::from(text.as_ref())),
@@ -14724,7 +14727,10 @@ fn static_runtime_type_kind(ty: &CalcitTypeAnnotation) -> Option<&'static str> {
     T::Enum(_, _) | T::EnumValue(_) | T::AnonymousEnum => Some("enum"),
     T::EnumDef(_) => Some("enum-def"),
     T::TypeRef(_, _) => {
-      if ty.resolve_to_struct().is_some() {
+      let expanded = CalcitTypeAnnotation::expand_schema_alias(&Arc::new(ty.clone()));
+      if expanded.as_ref() != ty {
+        static_runtime_type_kind(expanded.as_ref())
+      } else if ty.resolve_to_struct().is_some() {
         Some("struct")
       } else if ty.resolve_to_enum().is_some() {
         Some("enum")
@@ -14974,8 +14980,18 @@ fn extract_predicate_bindings_with_literal_equality(
   if items.len() == 3
     && let Some((sym, kind)) = type_of_equality_predicate(items.first(), items.get(1), items.get(2))
   {
-    let narrowed = tag_annotation(kind);
-    let true_binding = (!scope_types.get(&sym).is_some_and(|current| current.is_proven_for(&narrowed))).then_some((sym, narrowed));
+    // Native `type-of` distinguishes `:macro` from `:fn`; do not bind `:macro` to `DynFn`.
+    // Also preserve an existing annotation whose runtime kind already matches `kind`
+    // (for example `Tuple<Tag, Number>` matching `:list`) instead of widening it.
+    let true_binding = if kind == "macro" {
+      None
+    } else {
+      let narrowed = tag_annotation(kind);
+      let already_matches = scope_types.get(&sym).is_some_and(|current| {
+        current.is_proven_for(&narrowed) || static_type_predicate_matches_kind(current.as_ref(), kind) == Some(true)
+      });
+      (!already_matches).then_some((sym, narrowed))
+    };
     return PredicateNarrowing {
       true_binding,
       false_binding: None,
@@ -16620,6 +16636,7 @@ fn checked_function_hint(
 fn verify_defn_cases(
   base_signature: &CalcitFnTypeAnnotation,
   base_async_invocation: bool,
+  base_tail_result: Option<&tail_context::Expected>,
   def_name: &str,
   info: &Arc<CalcitSymbolInfo>,
   args: &CalcitList,
@@ -16739,12 +16756,6 @@ fn verify_defn_cases(
       let local = resolve_local_type_refs_for_body(case_fn.return_type.clone(), &case_body_types);
       resolve_namespace_type_refs_for_body(local, ctx.file_ns)
     };
-    let case_tail_result = (!case_fn.is_async_invocation()).then(|| tail_context::Expected {
-      annotation: case_return_type.clone(),
-      position: "return value".into(),
-      location: ctx.call_location.clone().or_else(|| Some(definition_location.clone())),
-      callback: None,
-    });
 
     let case_warnings = RefCell::new(Vec::new());
     let mut case_processed_body: Vec<Calcit> = Vec::new();
@@ -16755,8 +16766,11 @@ fn verify_defn_cases(
         if is_source_hint_form(source) {
           continue;
         }
+        // Offer the same tail context that the executable base pass used, never a
+        // case-only return target that would silently coerce tags/literals differently
+        // from the emitted runtime body.
         let _tail = tail_context::TailScope::offer(if Some(index) == tail_index {
-          case_tail_result.clone()
+          base_tail_result.cloned()
         } else {
           None
         });
@@ -17532,6 +17546,8 @@ pub fn preprocess_defn(
       ));
       let verify_cases_schema = if source_top_level_definition
         && matches!(head, CalcitSyntax::Defn)
+        && info.at_ns.as_ref() == ctx.file_ns
+        && info.at_def.as_ref() == def_name.as_ref()
         && let CalcitTypeAnnotation::Fn(signature) = def_schema.as_ref()
         && !signature.cases.is_empty()
         // Low-level core `:open :intrinsic` defs dispatch through internal `&`-primitives
@@ -18119,6 +18135,7 @@ pub fn preprocess_defn(
             effective_fn_schema
               .as_ref()
               .is_some_and(|signature| signature.is_async_invocation()),
+            tail_result.as_ref(),
             def_name.as_ref(),
             info,
             args,
@@ -31255,7 +31272,7 @@ mod tests {
       Some(false)
     );
 
-    // Tuple shares List's runtime kind.
+    // Tuple shares List's runtime kind, and type-of :list must not widen Tuple to List<Dynamic>.
     let tuple_ty = Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
       Arc::new(CalcitTypeAnnotation::Tag),
       Arc::new(CalcitTypeAnnotation::Number),
@@ -31266,8 +31283,14 @@ mod tests {
       Some(true)
     );
     assert_eq!(
-      static_type_predicate_truth(&core_pred("map?", local_x(tuple_ty)), &scope),
+      static_type_predicate_truth(&core_pred("map?", local_x(tuple_ty.clone())), &scope),
       Some(false)
+    );
+    assert!(
+      extract_predicate_bindings(&type_of_eq(local_x(tuple_ty), "list"), &scope)
+        .true_binding
+        .is_none(),
+      "type-of :list must preserve existing Tuple slots"
     );
 
     // Nullable(String) cannot be a List, but nil?/string? remain unknown.
@@ -31286,10 +31309,19 @@ mod tests {
     );
     assert_eq!(static_type_predicate_truth(&core_pred("nil?", local_x(nullable_str)), &scope), None);
 
-    // Dynamic and rigid TypeVar must stay unknown.
+    // Dynamic and rigid TypeVar must stay unknown; type-of :macro must not bind DynFn.
     let dynamic_ty = calcit::DYNAMIC_TYPE.clone();
     scope.insert(Arc::from("x"), dynamic_ty.clone());
-    assert_eq!(static_type_predicate_truth(&core_pred("list?", local_x(dynamic_ty)), &scope), None);
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("list?", local_x(dynamic_ty.clone())), &scope),
+      None
+    );
+    assert!(
+      extract_predicate_bindings(&type_of_eq(local_x(dynamic_ty), "macro"), &scope)
+        .true_binding
+        .is_none(),
+      "type-of :macro must not emit a DynFn binding"
+    );
 
     let tv_ty = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     scope.insert(Arc::from("x"), tv_ty.clone());
