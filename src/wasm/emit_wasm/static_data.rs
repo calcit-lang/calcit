@@ -434,6 +434,9 @@ impl<'a> ReachabilityState<'a> {
       Calcit::Impl(imp) => {
         self.record_impl(imp, current_ns);
       }
+      Calcit::Proc(CalcitProc::NativeTryParseEdnValue) => {
+        self.enqueue(crate::wasm::host::calcit::CORE_NS, "&edn:parse-pure");
+      }
       Calcit::Thunk(thunk) => {
         self.visit_expr(thunk.get_code(), current_ns, false);
       }

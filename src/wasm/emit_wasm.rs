@@ -13354,6 +13354,27 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       }
       edn_parse::emit_try_parse_json_value(ctx, &args[2..3])
     }
+    CalcitProc::NativeTryParseEdnValue => {
+      expect_arity(3, args, "&try-parse-edn-value")?;
+      for (idx, label) in [(0, "Result"), (1, "EdnValue")] {
+        let prototype_type = infer_wasm_static_type(ctx, &args[idx]);
+        if !prototype_type.as_ref().is_some_and(|annotation| {
+          let expanded = expand_wasm_value_type(annotation);
+          matches!(expanded.as_ref(), CalcitTypeAnnotation::Never) || proven_disjoint_value_kind(&expanded) == Some("enum-def")
+        }) {
+          return Err(format!(
+            "E_WASM_EDN_TYPE: &try-parse-edn-value requires a statically known {label} enum definition"
+          ));
+        }
+        emit_expr(ctx, &args[idx])?;
+        ctx.emit(Instruction::Drop);
+      }
+      let fn_idx = *ctx
+        .fn_index
+        .get("calcit.core/&edn:parse-pure")
+        .ok_or_else(|| "missing calcit.core/&edn:parse-pure in WASM module".to_string())?;
+      emit_direct_fn_call(ctx, fn_idx, 1, None, &args[2..3], NativeValRepr::F64)
+    }
     CalcitProc::Split => emit_split(ctx, args),
     CalcitProc::SplitLines => emit_split_lines(ctx, args),
 
@@ -15021,6 +15042,16 @@ fn list_element_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, ri
 }
 
 fn concrete_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  let mut visited = HashSet::new();
+  concrete_types_have_scalar_collision_inner(left, right, depth, &mut visited)
+}
+
+fn concrete_types_have_scalar_collision_inner(
+  left: &Arc<CalcitTypeAnnotation>,
+  right: &Arc<CalcitTypeAnnotation>,
+  depth: usize,
+  visited: &mut HashSet<(String, String)>,
+) -> bool {
   use CalcitTypeAnnotation as T;
 
   if depth >= 32 {
@@ -15034,7 +15065,6 @@ fn concrete_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, right:
   if let (Some(l), Some(r)) = (proven_scalar_kind(&left), proven_scalar_kind(&right)) {
     return l != r && !matches!((l, r), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
   }
-  let cmp = |a: &Arc<T>, b: &Arc<T>| concrete_types_have_scalar_collision(a, b, depth + 1);
   if let (Some(ld), Some(rd)) = (left.resolve_to_enum(), right.resolve_to_enum()) {
     if enum_identity_tag(&ld) != enum_identity_tag(&rd) {
       return false;
@@ -15045,25 +15075,51 @@ fn concrete_types_have_scalar_collision(left: &Arc<CalcitTypeAnnotation>, right:
         _ => &[],
       }
     }
+    let key = (
+      sets::nominal_cycle_key(&left, ld.definition_ref().map(AsRef::as_ref), ld.name().ref_str()),
+      sets::nominal_cycle_key(&right, rd.definition_ref().map(AsRef::as_ref), rd.name().ref_str()),
+    );
+    if !visited.insert(key.clone()) {
+      return false;
+    }
     let l_bindings: TypeBindings = ld.generics().iter().cloned().zip(extract_args(&left).iter().cloned()).collect();
     let r_bindings: TypeBindings = rd.generics().iter().cloned().zip(extract_args(&right).iter().cloned()).collect();
-    return ld.variants().iter().zip(rd.variants().iter()).any(|(lv, rv)| {
+    let has_collision = ld.variants().iter().zip(rd.variants().iter()).any(|(lv, rv)| {
       lv.tag == rv.tag
         && lv.payload_types().len() == rv.payload_types().len()
         && lv.payload_types().iter().zip(rv.payload_types().iter()).any(|(lp, rp)| {
           let l_sub = expand_wasm_value_type(&lp.substitute_type_vars(&l_bindings));
           let r_sub = expand_wasm_value_type(&rp.substitute_type_vars(&r_bindings));
-          cmp(&l_sub, &r_sub)
+          concrete_types_have_scalar_collision_inner(&l_sub, &r_sub, depth + 1, visited)
         })
     });
+    visited.remove(&key);
+    return has_collision;
   }
   match (left.as_ref(), right.as_ref()) {
-    (T::Nullable(inner, NullableOrigin::Inferred), _) => cmp(inner, &right) || cmp(&Arc::new(T::Nil), &right),
-    (_, T::Nullable(inner, NullableOrigin::Inferred)) => cmp(&left, inner) || cmp(&left, &Arc::new(T::Nil)),
-    (T::List(l), T::List(r)) | (T::Set(l), T::Set(r)) => cmp(l, r),
-    (T::Tuple(ls), T::Tuple(rs)) => ls.len() == rs.len() && ls.iter().zip(rs.iter()).any(|(l, r)| cmp(l, r)),
-    (T::List(m), T::Tuple(slots)) | (T::Tuple(slots), T::List(m)) => slots.iter().any(|slot| cmp(m, slot)),
-    (T::Map(lk, lv), T::Map(rk, rv)) => cmp(lk, rk) || cmp(lv, rv),
+    (T::Nullable(inner, NullableOrigin::Inferred), _) => {
+      concrete_types_have_scalar_collision_inner(inner, &right, depth + 1, visited)
+        || concrete_types_have_scalar_collision_inner(&Arc::new(T::Nil), &right, depth + 1, visited)
+    }
+    (_, T::Nullable(inner, NullableOrigin::Inferred)) => {
+      concrete_types_have_scalar_collision_inner(&left, inner, depth + 1, visited)
+        || concrete_types_have_scalar_collision_inner(&left, &Arc::new(T::Nil), depth + 1, visited)
+    }
+    (T::List(l), T::List(r)) | (T::Set(l), T::Set(r)) => concrete_types_have_scalar_collision_inner(l, r, depth + 1, visited),
+    (T::Tuple(ls), T::Tuple(rs)) => {
+      ls.len() == rs.len()
+        && ls
+          .iter()
+          .zip(rs.iter())
+          .any(|(l, r)| concrete_types_have_scalar_collision_inner(l, r, depth + 1, visited))
+    }
+    (T::List(m), T::Tuple(slots)) | (T::Tuple(slots), T::List(m)) => slots
+      .iter()
+      .any(|slot| concrete_types_have_scalar_collision_inner(m, slot, depth + 1, visited)),
+    (T::Map(lk, lv), T::Map(rk, rv)) => {
+      concrete_types_have_scalar_collision_inner(lk, rk, depth + 1, visited)
+        || concrete_types_have_scalar_collision_inner(lv, rv, depth + 1, visited)
+    }
     _ => false,
   }
 }

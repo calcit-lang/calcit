@@ -58,7 +58,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
 import { core_enum_value } from "./js-core-enum-value.mjs";
-import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
+import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, extract_edn_value, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnMapView, TypedEdnSetView } from "./typed-edn.mjs";
 import { FingerVec } from "@calcit/finger-vec";
 
@@ -2222,6 +2222,20 @@ export let parse_cirru_edn = (code: string, options: CalcitValue) => {
 /** Parse Cirru EDN text into Result<Dynamic, String> without throwing syntax errors. */
 export let _$n_try_parse_cirru_edn = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
   return try_parse_with_result(resultType, code, "&try-parse-cirru-edn", (text) => parse_cirru_edn(text, null));
+};
+
+/** Parse Cirru EDN text into closed Result<EdnValue, String> without throwing syntax errors. */
+export let _$n_try_parse_edn_value = (resultType: CalcitEnumDef, ednValueType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  if (!(ednValueType instanceof CalcitEnumDef)) {
+    throw new Error(`&try-parse-edn-value expected EdnValue enum definition, got: ${toString(ednValueType, true)}`);
+  }
+  return try_parse_with_result(resultType, code, "&try-parse-edn-value", (text) => {
+    let nodes = parse(text);
+    if (nodes.length !== 1) {
+      throw new Error(`Expected EDN in a single node, got ${nodes.length}`);
+    }
+    return extract_edn_value(nodes[0], ednValueType);
+  });
 };
 
 type DataShapeNode =

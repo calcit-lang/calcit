@@ -10,7 +10,7 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     .iter()
     .map(|arg| {
       infer_wasm_static_type(ctx, arg)
-        .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+        .map(|ty| expand_wasm_value_type(&ty))
         .unwrap_or_else(|| DYNAMIC_TYPE.clone())
     })
     .collect::<Vec<_>>();
@@ -150,7 +150,7 @@ pub(super) fn infer_set_member_types(ctx: &WasmGenCtx, set: &Calcit) -> Vec<Arc<
     {
       return members;
     }
-    let annotation = CalcitTypeAnnotation::expand_schema_alias(&evidence.annotation);
+    let annotation = expand_wasm_value_type(&evidence.annotation);
     match annotation.as_ref() {
       CalcitTypeAnnotation::Set(element) => return vec![element.clone()],
       CalcitTypeAnnotation::Never => return vec![annotation],
@@ -210,7 +210,7 @@ pub(super) fn check_set_union_types(ctx: &WasmGenCtx, left: &Calcit, right: &Cal
 fn check_set_include_types(ctx: &WasmGenCtx, set: &Calcit, elem: &Calcit) -> Result<bool, String> {
   let set_members = infer_set_member_types(ctx, set);
   let elem_type = infer_wasm_static_type(ctx, elem)
-    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .map(|ty| expand_wasm_value_type(&ty))
     .unwrap_or_else(|| DYNAMIC_TYPE.clone());
   if set_comparison_can_erase_kind(&elem_type, &elem_type, 0) || set_members.iter().any(|m| set_comparison_can_erase_kind(m, m, 0)) {
     return Err(
@@ -239,7 +239,7 @@ fn check_set_include_types(ctx: &WasmGenCtx, set: &Calcit, elem: &Calcit) -> Res
 fn check_set_membership_types(ctx: &WasmGenCtx, set: &Calcit, target: &Calcit) -> Result<(), String> {
   let set_members = infer_set_member_types(ctx, set);
   let target_type = infer_wasm_static_type(ctx, target)
-    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .map(|ty| expand_wasm_value_type(&ty))
     .unwrap_or_else(|| DYNAMIC_TYPE.clone());
   if set_comparison_can_erase_kind(&target_type, &target_type, 0)
     || set_members
@@ -257,6 +257,32 @@ fn check_set_membership_types(ctx: &WasmGenCtx, set: &Calcit, target: &Calcit) -
 /// descends into containers. Compare corresponding slots so a heterogeneous
 /// tuple can still be compared with another tuple of the same shape.
 pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>, depth: usize) -> bool {
+  let mut visited = HashSet::new();
+  set_comparison_can_erase_kind_inner(left, right, depth, &mut visited)
+}
+
+pub(super) fn nominal_cycle_key(annotation: &CalcitTypeAnnotation, definition_ref: Option<&str>, fallback_name: &str) -> String {
+  use CalcitTypeAnnotation as T;
+
+  let base = definition_ref.unwrap_or(fallback_name);
+  let args: &[Arc<CalcitTypeAnnotation>] = match annotation {
+    T::Struct(_, args) | T::Enum(_, args) | T::TypeRef(_, args) => args.as_slice(),
+    _ => &[],
+  };
+  if args.is_empty() {
+    base.to_owned()
+  } else {
+    let rendered = args.iter().map(|arg| arg.to_brief_string()).collect::<Vec<_>>().join(",");
+    format!("{base}<{rendered}>")
+  }
+}
+
+fn set_comparison_can_erase_kind_inner(
+  left: &Arc<CalcitTypeAnnotation>,
+  right: &Arc<CalcitTypeAnnotation>,
+  depth: usize,
+  visited: &mut HashSet<(String, String)>,
+) -> bool {
   use CalcitTypeAnnotation as T;
 
   let left = expand_wasm_value_type(left);
@@ -264,25 +290,40 @@ pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, ri
   if matches!(left.as_ref(), T::Never) || matches!(right.as_ref(), T::Never) {
     return false;
   }
-  // Recursive declarations and unresolved shapes cannot serve as evidence.
+  // Unresolved or non-cyclic overly deep shapes cannot serve as evidence.
   if depth >= 32 {
     return true;
   }
-  let compare = |left: &Arc<T>, right: &Arc<T>| set_comparison_can_erase_kind(left, right, depth + 1);
   let scalar_kind = proven_scalar_kind;
   if let (Some(left), Some(right)) = (scalar_kind(&left), scalar_kind(&right)) {
     // Tags start at 1, while Nil and Unit use 0.
     return left != right && !matches!((left, right), ("tag", "nil" | "unit") | ("nil" | "unit", "tag"));
   }
   match (left.as_ref(), right.as_ref()) {
-    (T::Nullable(inner, NullableOrigin::Inferred), _) => compare(inner, &right) || compare(&Arc::new(T::Nil), &right),
-    (_, T::Nullable(inner, NullableOrigin::Inferred)) => compare(&left, inner) || compare(&left, &Arc::new(T::Nil)),
-    (T::List(left), T::List(right)) | (T::Set(left), T::Set(right)) => compare(left, right),
-    (T::Tuple(left), T::Tuple(right)) => {
-      left.len() == right.len() && left.iter().zip(right.iter()).any(|(left, right)| compare(left, right))
+    (T::Nullable(inner, NullableOrigin::Inferred), _) => {
+      set_comparison_can_erase_kind_inner(inner, &right, depth + 1, visited)
+        || set_comparison_can_erase_kind_inner(&Arc::new(T::Nil), &right, depth + 1, visited)
     }
-    (T::List(member), T::Tuple(slots)) => slots.iter().any(|slot| compare(member, slot)),
-    (T::Tuple(slots), T::List(member)) => slots.iter().any(|slot| compare(slot, member)),
+    (_, T::Nullable(inner, NullableOrigin::Inferred)) => {
+      set_comparison_can_erase_kind_inner(&left, inner, depth + 1, visited)
+        || set_comparison_can_erase_kind_inner(&left, &Arc::new(T::Nil), depth + 1, visited)
+    }
+    (T::List(left), T::List(right)) | (T::Set(left), T::Set(right)) => {
+      set_comparison_can_erase_kind_inner(left, right, depth + 1, visited)
+    }
+    (T::Tuple(left), T::Tuple(right)) => {
+      left.len() == right.len()
+        && left
+          .iter()
+          .zip(right.iter())
+          .any(|(left, right)| set_comparison_can_erase_kind_inner(left, right, depth + 1, visited))
+    }
+    (T::List(member), T::Tuple(slots)) => slots
+      .iter()
+      .any(|slot| set_comparison_can_erase_kind_inner(member, slot, depth + 1, visited)),
+    (T::Tuple(slots), T::List(member)) => slots
+      .iter()
+      .any(|slot| set_comparison_can_erase_kind_inner(slot, member, depth + 1, visited)),
     (T::Map(left_key, left_value), T::Map(right_key, right_value)) => {
       let norm_key = |k: &Arc<T>| {
         if matches!(k.as_ref(), T::StructValue(_)) {
@@ -291,27 +332,51 @@ pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, ri
           k.clone()
         }
       };
-      compare(&norm_key(left_key), &norm_key(right_key)) || compare(left_value, right_value)
+      set_comparison_can_erase_kind_inner(&norm_key(left_key), &norm_key(right_key), depth + 1, visited)
+        || set_comparison_can_erase_kind_inner(left_value, right_value, depth + 1, visited)
     }
     (T::Struct(..) | T::StructValue(_) | T::TypeRef(..), T::Struct(..) | T::StructValue(_) | T::TypeRef(..))
       if let (Some(left_def), Some(right_def)) = (left.resolve_to_struct(), right.resolve_to_struct()) =>
     {
-      left_def.fields == right_def.fields
-        && left_def
-          .field_types
-          .iter()
-          .zip(right_def.field_types.iter())
-          .any(|(left_field, right_field)| {
-            compare(
-              &set_comparison_payload(&left, &left_def.generics, left_field, left_def.definition_ref.as_deref()),
-              &set_comparison_payload(&right, &right_def.generics, right_field, right_def.definition_ref.as_deref()),
-            )
-          })
+      if left_def.fields != right_def.fields {
+        return false;
+      }
+      let key = (
+        nominal_cycle_key(&left, left_def.definition_ref.as_deref(), left_def.name.ref_str()),
+        nominal_cycle_key(&right, right_def.definition_ref.as_deref(), right_def.name.ref_str()),
+      );
+      if !visited.insert(key.clone()) {
+        // Coinductive cycle hit: already checking this nominal pair on the active stack.
+        return false;
+      }
+      let can_erase = left_def
+        .field_types
+        .iter()
+        .zip(right_def.field_types.iter())
+        .any(|(left_field, right_field)| {
+          set_comparison_can_erase_kind_inner(
+            &set_comparison_payload(&left, &left_def.generics, left_field, left_def.definition_ref.as_deref()),
+            &set_comparison_payload(&right, &right_def.generics, right_field, right_def.definition_ref.as_deref()),
+            depth + 1,
+            visited,
+          )
+        });
+      visited.remove(&key);
+      can_erase
     }
     (T::Enum(..) | T::EnumValue(_) | T::TypeRef(..), T::Enum(..) | T::EnumValue(_) | T::TypeRef(..))
       if let (Some(left_def), Some(right_def)) = (left.resolve_to_enum(), right.resolve_to_enum()) =>
     {
-      left_def.variants().iter().any(|left_variant| {
+      let key = (
+        nominal_cycle_key(&left, left_def.definition_ref().map(AsRef::as_ref), left_def.name().ref_str()),
+        nominal_cycle_key(&right, right_def.definition_ref().map(AsRef::as_ref), right_def.name().ref_str()),
+      );
+      if !visited.insert(key.clone()) {
+        // Coinductive cycle hit: an Enum is always a heap object, so recursive self-references
+        // do not introduce scalar-kind collisions unless a non-cyclic variant payload does.
+        return false;
+      }
+      let can_erase = left_def.variants().iter().any(|left_variant| {
         right_def
           .find_variant_by_name(left_variant.tag.ref_str())
           .is_some_and(|right_variant| {
@@ -321,7 +386,7 @@ pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, ri
                 .iter()
                 .zip(right_variant.payload_types())
                 .any(|(left_payload, right_payload)| {
-                  compare(
+                  set_comparison_can_erase_kind_inner(
                     &set_comparison_payload(
                       &left,
                       left_def.generics(),
@@ -334,10 +399,14 @@ pub(super) fn set_comparison_can_erase_kind(left: &Arc<CalcitTypeAnnotation>, ri
                       right_payload,
                       right_def.definition_ref().map(AsRef::as_ref),
                     ),
+                    depth + 1,
+                    visited,
                   )
                 })
           })
-      })
+      });
+      visited.remove(&key);
+      can_erase
     }
     (T::String, T::String) | (T::Buffer, T::Buffer) => false,
     // Different known heap layouts do not share an address or recurse.
@@ -425,10 +494,10 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         check_set_include_types(ctx, &args[0], extra)?;
         for prev_elem in &args[1..2 + extra_idx] {
           let prev_ty = infer_wasm_static_type(ctx, prev_elem)
-            .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+            .map(|ty| expand_wasm_value_type(&ty))
             .unwrap_or_else(|| DYNAMIC_TYPE.clone());
           let extra_ty = infer_wasm_static_type(ctx, extra)
-            .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+            .map(|ty| expand_wasm_value_type(&ty))
             .unwrap_or_else(|| DYNAMIC_TYPE.clone());
           if set_comparison_can_erase_kind(&prev_ty, &extra_ty, 0) && !are_disjoint_number_and_heap_types(&prev_ty, &extra_ty) {
             return Err(
@@ -439,12 +508,12 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         }
       }
       SetOpKind::Exclude => {
-        let set_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
-        let target_type = infer_wasm_static_type(ctx, extra).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+        let set_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
+        let target_type = infer_wasm_static_type(ctx, extra).map(|ty| expand_wasm_value_type(&ty));
         let disjoint_scalar = if let (Some(CalcitTypeAnnotation::Set(item_type)), Some(target_type)) =
           (set_type.as_deref(), target_type.as_deref())
           && let (Some(item_kind), Some(target_kind)) = (
-            proven_scalar_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)),
+            proven_scalar_kind(&expand_wasm_value_type(item_type)),
             proven_scalar_kind(target_type),
           ) {
           item_kind != target_kind
@@ -666,12 +735,12 @@ pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   expect_arity(2, args, "&set:includes? expects 2 args")?;
   let set_members = infer_set_member_types(ctx, &args[0]);
   let target_ev = infer_wasm_evidence(ctx, &args[1]);
-  let target_type = CalcitTypeAnnotation::expand_schema_alias(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
+  let target_type = expand_wasm_value_type(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
   if !set_members.is_empty()
     && let Some(target_kind) = proven_disjoint_value_kind(&target_type)
-    && set_members.iter().all(|item_type| {
-      proven_disjoint_value_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)).is_some_and(|k| k != target_kind)
-    })
+    && set_members
+      .iter()
+      .all(|item_type| proven_disjoint_value_kind(&expand_wasm_value_type(item_type)).is_some_and(|k| k != target_kind))
   {
     emit_expr(ctx, &args[0])?;
     ctx.emit(Instruction::Drop);
@@ -769,12 +838,12 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   // their shared f64 representation, but still evaluate both arguments.
   let set_members = infer_set_member_types(ctx, &args[0]);
   let target_ev = infer_wasm_evidence(ctx, &args[1]);
-  let target_type = CalcitTypeAnnotation::expand_schema_alias(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
+  let target_type = expand_wasm_value_type(target_ev.scalar_origin.as_ref().unwrap_or(&target_ev.annotation));
   if !set_members.is_empty()
     && let Some(target_kind) = proven_disjoint_value_kind(&target_type)
-    && set_members.iter().all(|item_type| {
-      proven_disjoint_value_kind(&CalcitTypeAnnotation::expand_schema_alias(item_type)).is_some_and(|k| k != target_kind)
-    })
+    && set_members
+      .iter()
+      .all(|item_type| proven_disjoint_value_kind(&expand_wasm_value_type(item_type)).is_some_and(|k| k != target_kind))
   {
     emit_expr(ctx, &args[0])?;
     emit_expr(ctx, &args[1])?;
