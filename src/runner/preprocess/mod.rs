@@ -648,6 +648,8 @@ thread_local! {
   /// Proof-only errors recovered during an opted-in assertion audit. `None`
   /// keeps the default fail-fast behavior.
   static PROOF_ERROR_COLLECTOR: RefCell<Option<ProofErrorCollector>> = const { RefCell::new(None) };
+  /// Active while verifying a function body against an individual `:cases` clause.
+  static IN_CASE_BODY_VERIFICATION: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
@@ -14575,23 +14577,33 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let tail_signature = tail_context::take_for_current();
+  let prune_dead_branches = in_case_body_verification() || !matches!(args.first(), Some(Calcit::Bool(_)));
+  let prune_true = prune_dead_branches && !narrowing.true_reachable && narrowing.false_reachable;
+  let prune_false = prune_dead_branches && narrowing.true_reachable && !narrowing.false_reachable;
+
   let mut true_scope_types = ctx.scope_types.clone();
-  for (sym, inferred) in &narrowing.when_true {
-    true_scope_types.refine(sym.clone(), inferred.clone());
-  }
+  let true_form = if prune_true {
+    None
+  } else {
+    for (sym, inferred) in &narrowing.when_true {
+      true_scope_types.refine(sym.clone(), inferred.clone());
+    }
+    let true_tail = tail_context::TailScope::offer(tail_signature.clone());
+    let form = preprocess_expr(
+      args.get(1).unwrap(),
+      ctx.scope_defs,
+      &mut true_scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+      ctx.call_stack,
+    )?;
+    drop(true_tail);
+    Some(form)
+  };
 
-  let true_tail = tail_context::TailScope::offer(tail_signature.clone());
-  let true_form = preprocess_expr(
-    args.get(1).unwrap(),
-    ctx.scope_defs,
-    &mut true_scope_types,
-    ctx.file_ns,
-    ctx.check_warnings,
-    ctx.call_stack,
-  )?;
-  drop(true_tail);
-
-  let false_form = if let Some(false_branch) = args.get(2) {
+  let false_form = if prune_false {
+    None
+  } else if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
     for (sym, inferred) in &narrowing.when_false {
       false_scope_types.refine(sym.clone(), inferred.clone());
@@ -14612,9 +14624,36 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   } else {
     None
   };
-  if !matches!(cond_form, Calcit::Bool(false)) {
+  if !prune_true && !matches!(cond_form, Calcit::Bool(false)) {
     propagate_scope_widening(ctx.scope_types, &true_scope_types, &narrowing.when_true, None);
   }
+
+  if prune_false {
+    let live = true_form.expect("live true branch was preprocessed");
+    if in_case_body_verification() || matches!(cond_form, Calcit::Bool(true)) || is_pure_static_condition(&cond_form) {
+      return Ok(live);
+    }
+    return Ok(generated_call(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(head_ns)),
+      Calcit::from(CalcitList::default()),
+      cond_form,
+      live,
+    ]));
+  }
+  if prune_true {
+    let live = false_form.unwrap_or(Calcit::Nil);
+    if in_case_body_verification() || matches!(cond_form, Calcit::Bool(false)) || is_pure_static_condition(&cond_form) {
+      return Ok(live);
+    }
+    return Ok(generated_call(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(head_ns)),
+      Calcit::from(CalcitList::default()),
+      cond_form,
+      live,
+    ]));
+  }
+
+  let true_form = true_form.expect("live true branch was preprocessed");
 
   // P7: constant folding — eliminate dead branch only when condition is a Bool literal (#2881)
   match &cond_form {
@@ -14631,6 +14670,265 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   }
 
   Ok(Calcit::List(Arc::new(xs.into())))
+}
+
+fn in_case_body_verification() -> bool {
+  IN_CASE_BODY_VERIFICATION.with(Cell::get)
+}
+
+struct CaseBodyVerificationScope(bool);
+
+impl CaseBodyVerificationScope {
+  fn enter() -> Self {
+    let previous = IN_CASE_BODY_VERIFICATION.with(|flag| flag.replace(true));
+    Self(previous)
+  }
+}
+
+impl Drop for CaseBodyVerificationScope {
+  fn drop(&mut self) {
+    IN_CASE_BODY_VERIFICATION.with(|flag| flag.set(self.0));
+  }
+}
+
+fn is_pure_static_condition(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::Bool(_) | Calcit::Nil | Calcit::Unit | Calcit::Local(_) => true,
+    Calcit::List(items) => match items.first() {
+      Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => is_pure_static_condition(&items[1]),
+      Some(Calcit::Import(import))
+        if import.ns.as_ref() == calcit::CORE_NS
+          && import.def.as_ref() == "not"
+          && program::has_bundled_core_source()
+          && items.len() == 2 =>
+      {
+        is_pure_static_condition(&items[1])
+      }
+      Some(Calcit::Proc(CalcitProc::NativeEquals)) if items.len() == 3 => {
+        is_pure_static_condition(&items[1]) && is_pure_static_condition(&items[2])
+      }
+      Some(Calcit::Proc(CalcitProc::TypeOf)) if items.len() == 2 => matches!(items.get(1), Some(Calcit::Local(_))),
+      Some(Calcit::Proc(CalcitProc::NativeStructMatches)) if items.len() == 3 => {
+        matches!(items.get(1), Some(Calcit::Local(_))) && matches!(items.get(2), Some(Calcit::Import(_)))
+      }
+      Some(Calcit::Proc(proc))
+        if items.len() == 2 && (predicate_target_kind(proc.as_ref()).is_some() || proc.as_ref() == "non-nil?") =>
+      {
+        matches!(items.get(1), Some(Calcit::Local(_)))
+      }
+      Some(Calcit::Import(import))
+        if import.ns.as_ref() == calcit::CORE_NS
+          && program::has_bundled_core_source()
+          && items.len() == 2
+          && (predicate_target_kind(import.def.as_ref()).is_some() || import.def.as_ref() == "non-nil?") =>
+      {
+        matches!(items.get(1), Some(Calcit::Local(_)))
+      }
+      Some(Calcit::Import(import))
+        if import.ns.as_ref() == calcit::CORE_NS
+          && import.def.as_ref() == "="
+          && program::has_bundled_core_source()
+          && items.len() == 3 =>
+      {
+        is_pure_static_condition(&items[1]) && is_pure_static_condition(&items[2])
+      }
+      _ => false,
+    },
+    Calcit::Tag(_) => true,
+    _ => false,
+  }
+}
+
+fn predicate_target_kind(pred_name: &str) -> Option<&'static str> {
+  match pred_name {
+    "list?" => Some("list"),
+    "map?" => Some("map"),
+    "set?" => Some("set"),
+    "string?" => Some("string"),
+    "number?" => Some("number"),
+    "bool?" => Some("bool"),
+    "nil?" => Some("nil"),
+    "tag?" => Some("tag"),
+    "symbol?" => Some("symbol"),
+    "fn?" => Some("fn"),
+    "struct?" => Some("struct"),
+    "enum?" => Some("enum"),
+    "struct-def?" => Some("struct-def"),
+    "enum-def?" => Some("enum-def"),
+    "ref?" => Some("ref"),
+    "cirru-quote?" => Some("cirru-quote"),
+    "buffer?" => Some("buffer"),
+    "macro?" => Some("macro"),
+    _ => None,
+  }
+}
+
+fn static_runtime_type_kind(ty: &CalcitTypeAnnotation) -> Option<&'static str> {
+  use CalcitTypeAnnotation as T;
+  match ty {
+    T::Bool => Some("bool"),
+    T::Number | T::Numeric(_) => Some("number"),
+    T::String => Some("string"),
+    T::Symbol => Some("symbol"),
+    T::Tag => Some("tag"),
+    T::List(_) | T::Tuple(_) => Some("list"),
+    T::Map(_, _) => Some("map"),
+    T::Set(_) => Some("set"),
+    T::Fn(_) | T::DynFn => Some("fn"),
+    T::Macro(_) => Some("macro"),
+    T::Nil => Some("nil"),
+    T::Unit => Some("unit"),
+    T::Ref(_) => Some("ref"),
+    T::Buffer => Some("buffer"),
+    T::BufList => Some("buf-list"),
+    T::CirruQuote => Some("cirru-quote"),
+    T::Struct(_, _) | T::StructValue(_) => Some("struct"),
+    T::StructDef(_) => Some("struct-def"),
+    T::Enum(_, _) | T::EnumValue(_) | T::AnonymousEnum => Some("enum"),
+    T::EnumDef(_) => Some("enum-def"),
+    T::TypeRef(_, _) => {
+      if ty.resolve_to_struct().is_some() {
+        Some("struct")
+      } else if ty.resolve_to_enum().is_some() {
+        Some("enum")
+      } else if ty.resolve_to_fn().is_some() {
+        Some("fn")
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn static_type_predicate_matches_kind(ty: &CalcitTypeAnnotation, expected_kind: &str) -> Option<bool> {
+  match ty {
+    CalcitTypeAnnotation::Nullable(inner, _) => {
+      if expected_kind == "nil" {
+        None
+      } else if static_type_predicate_matches_kind(inner, expected_kind) == Some(false) {
+        Some(false)
+      } else {
+        None
+      }
+    }
+    _ => static_runtime_type_kind(ty).map(|actual| actual == expected_kind),
+  }
+}
+
+fn type_of_equality_predicate(
+  head: Option<&Calcit>,
+  left: Option<&Calcit>,
+  right: Option<&Calcit>,
+) -> Option<(Arc<str>, &'static str)> {
+  let core_equality = match head? {
+    Calcit::Proc(CalcitProc::NativeEquals) => true,
+    Calcit::Import(CalcitImport { ns, def, .. }) => {
+      ns.as_ref() == calcit::CORE_NS && def.as_ref() == "=" && program::has_bundled_core_source()
+    }
+    _ => false,
+  };
+  if !core_equality {
+    return None;
+  }
+  let extract_type_of_local = |expr: &Calcit| -> Option<Arc<str>> {
+    let Calcit::List(items) = expr else { return None };
+    if items.len() != 2 || !matches!(items.first(), Some(Calcit::Proc(CalcitProc::TypeOf))) {
+      return None;
+    }
+    match items.get(1)? {
+      Calcit::Local(local) => Some(local.sym.clone()),
+      Calcit::Symbol { sym, .. } => Some(sym.clone()),
+      _ => None,
+    }
+  };
+  let extract_kind_tag = |expr: &Calcit| -> Option<&'static str> {
+    let Calcit::Tag(tag) = expr else { return None };
+    match tag.ref_str() {
+      "bool" => Some("bool"),
+      "number" => Some("number"),
+      "string" => Some("string"),
+      "symbol" => Some("symbol"),
+      "tag" => Some("tag"),
+      "list" => Some("list"),
+      "map" => Some("map"),
+      "set" => Some("set"),
+      "fn" => Some("fn"),
+      "macro" => Some("macro"),
+      "nil" => Some("nil"),
+      "unit" => Some("unit"),
+      "ref" => Some("ref"),
+      "buffer" => Some("buffer"),
+      "buf-list" => Some("buf-list"),
+      "cirru-quote" => Some("cirru-quote"),
+      "struct" => Some("struct"),
+      "struct-def" => Some("struct-def"),
+      "enum" => Some("enum"),
+      "enum-def" => Some("enum-def"),
+      _ => None,
+    }
+  };
+  let (left, right) = (left?, right?);
+  match (extract_type_of_local(left), extract_kind_tag(right)) {
+    (Some(sym), Some(kind)) => Some((sym, kind)),
+    _ => match (extract_type_of_local(right), extract_kind_tag(left)) {
+      (Some(sym), Some(kind)) => Some((sym, kind)),
+      _ => None,
+    },
+  }
+}
+
+pub(super) fn static_type_predicate_truth(cond_form: &Calcit, scope_types: &ScopeTypes) -> Option<bool> {
+  let Calcit::List(items) = cond_form else {
+    return None;
+  };
+  let lookup_target_type = |target: &Calcit| -> Option<Arc<CalcitTypeAnnotation>> {
+    match target {
+      Calcit::Local(local) => Some(scope_types.get(&local.sym).cloned().unwrap_or_else(|| local.type_info.clone())),
+      Calcit::Symbol { sym, .. } => scope_types.get(sym).cloned(),
+      _ => None,
+    }
+  };
+  if items.len() == 3
+    && matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructMatches)))
+    && let Some(target_ty) = items.get(1).and_then(&lookup_target_type)
+    && let Some((_, expected_struct_annot)) = struct_origin_binding(items.get(1), items.get(2))
+  {
+    if let Some(expected_struct) = expected_struct_annot.resolve_to_struct() {
+      if matches!(target_ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _)) {
+        return None;
+      }
+      if let Some(actual_struct) = target_ty.resolve_to_struct() {
+        return Some(actual_struct.name == expected_struct.name && actual_struct.definition_ref == expected_struct.definition_ref);
+      }
+      if static_type_predicate_matches_kind(target_ty.as_ref(), "struct") == Some(false) {
+        return Some(false);
+      }
+    }
+    return None;
+  }
+  if items.len() == 3
+    && let Some((sym, expected_kind)) = type_of_equality_predicate(items.first(), items.get(1), items.get(2))
+  {
+    let target_ty = scope_types.get(&sym)?;
+    return static_type_predicate_matches_kind(target_ty.as_ref(), expected_kind);
+  }
+  if items.len() != 2 {
+    return None;
+  }
+  let pred_name = match items.first() {
+    Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && program::has_bundled_core_source() => {
+      def.as_ref()
+    }
+    Some(Calcit::Proc(proc)) => proc.as_ref(),
+    _ => return None,
+  };
+  let target_ty = items.get(1).and_then(lookup_target_type)?;
+  if pred_name == "non-nil?" {
+    return static_type_predicate_matches_kind(target_ty.as_ref(), "nil").map(|is_nil| !is_nil);
+  }
+  let expected_kind = predicate_target_kind(pred_name)?;
+  static_type_predicate_matches_kind(target_ty.as_ref(), expected_kind)
 }
 
 struct PredicateNarrowing {
@@ -14733,6 +15031,16 @@ fn extract_predicate_bindings_with_literal_equality(
   {
     return PredicateNarrowing {
       true_binding: Some(binding),
+      false_binding: None,
+    };
+  }
+  if items.len() == 3
+    && let Some((sym, kind)) = type_of_equality_predicate(items.first(), items.get(1), items.get(2))
+  {
+    let narrowed = tag_annotation(kind);
+    let true_binding = (!scope_types.get(&sym).is_some_and(|current| current.is_proven_for(&narrowed))).then_some((sym, narrowed));
+    return PredicateNarrowing {
+      true_binding,
       false_binding: None,
     };
   }
@@ -16364,6 +16672,255 @@ fn checked_function_hint(
   ))
 }
 
+/// Verify a `defn` body against every declared `:cases` specialization (#2736).
+///
+/// Each case re-preprocesses the body with that case's parameter types, rest type,
+/// and lexical generics under static type-predicate branch pruning, then checks the
+/// body's return expression against that case's declared return type. Traces and
+/// post-lowering rewrites from speculative case passes are rolled back so the base
+/// lowered definition remains the sole emitted runtime code.
+#[allow(clippy::too_many_arguments)]
+fn verify_defn_cases(
+  base_signature: &CalcitFnTypeAnnotation,
+  base_async_invocation: bool,
+  def_name: &str,
+  info: &Arc<CalcitSymbolInfo>,
+  args: &CalcitList,
+  zs: &[Calcit],
+  param_symbols: &[Arc<str>],
+  body_defs: &HashSet<Arc<str>>,
+  has_marked_args: bool,
+  tail_index: Option<usize>,
+  definition_location: &NodeLocation,
+  ctx: &mut PreprocessContext,
+) -> Result<(), CalcitErr> {
+  struct CaseTraceRestore {
+    expressions: Option<usize>,
+    usages: Option<usize>,
+    rewrites: Option<post_lowering::Checkpoint>,
+  }
+
+  impl CaseTraceRestore {
+    fn capture() -> Self {
+      Self {
+        expressions: SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len())),
+        usages: RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len)),
+        rewrites: post_lowering::Scope::checkpoint(),
+      }
+    }
+  }
+
+  impl Drop for CaseTraceRestore {
+    fn drop(&mut self) {
+      if let Some(len) = self.expressions {
+        SOURCE_EXPRESSION_TRACE.with(|trace| {
+          if let Some(trace) = trace.borrow_mut().as_mut() {
+            trace.expressions.truncate(len);
+          }
+        });
+      }
+      if let Some(len) = self.usages {
+        RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+          if let Some(trace) = trace.borrow_mut().as_mut() {
+            trace.truncate(len);
+          }
+        });
+      }
+      post_lowering::Scope::rollback(self.rewrites.take());
+    }
+  }
+
+  let _case_mode = CaseBodyVerificationScope::enter();
+
+  for (case_idx, raw_case) in base_signature.cases.iter().enumerate() {
+    let _restore = CaseTraceRestore::capture();
+    let case_label = format!(" (while verifying `:cases` #{} `{}`)", case_idx + 1, raw_case.describe());
+    let mut case_fn = if raw_case.generics.is_empty() {
+      raw_case.as_ref().clone()
+    } else {
+      raw_case.with_lexical_binders()
+    };
+    if base_async_invocation && !case_fn.is_async_invocation() {
+      case_fn = case_fn.with_async_invocation();
+    }
+    let case_fn = Arc::new(case_fn);
+
+    let mut case_body_types = ctx.scope_types.clone();
+    case_body_types.clear_generics();
+    for sym in param_symbols {
+      case_body_types.shadow_parameter(sym);
+    }
+    case_body_types.bind_function_generics(&case_fn, ctx.file_ns);
+
+    let case_parameter_types = case_fn
+      .arg_types
+      .iter()
+      .enumerate()
+      .map(|(idx, arg_type)| {
+        let positional = unwrap_named_body_parameter_type(arg_type.clone(), param_symbols.get(idx));
+        let local = resolve_local_type_refs_for_body(positional, &case_body_types);
+        resolve_namespace_type_refs_for_body(local, ctx.file_ns)
+      })
+      .chain(case_fn.rest_type.iter().map(|rest_type| {
+        let local = resolve_local_type_refs_for_body(rest_type.clone(), &case_body_types);
+        Arc::new(CalcitTypeAnnotation::List(resolve_namespace_type_refs_for_body(local, ctx.file_ns)))
+      }))
+      .collect::<Vec<_>>();
+    for (param_sym, arg_type) in param_symbols.iter().zip(case_parameter_types) {
+      case_body_types.bind_parameter(param_sym.to_owned(), arg_type);
+    }
+
+    let mut case_zs = zs.to_vec();
+    for param in &mut case_zs {
+      if let Calcit::Local(local) = param
+        && let Some(type_info) = case_body_types.get(&local.sym)
+      {
+        local.type_info = type_info.clone();
+      }
+      record_generic_source_local(param, &case_body_types);
+    }
+    let case_recur_param_types = param_symbols
+      .iter()
+      .map(|symbol| case_body_types.get(symbol).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+      .collect::<Vec<_>>();
+    case_body_types.set_recur_parameters((!has_marked_args).then_some(case_recur_param_types.as_slice()));
+    if info.at_ns.as_ref() == ctx.file_ns && info.at_def.as_ref() == def_name {
+      case_body_types.mark_defn_parameters(param_symbols);
+    }
+
+    let mut case_proof_bindings = proof_provenance::BindingScope::new();
+    for parameter in &case_zs {
+      case_proof_bindings.bind(parameter, None, &case_body_types);
+    }
+    let mut case_explicit_open = explicit_open::ExplicitOpenScope::new();
+    for parameter in &case_zs {
+      let open = matches!(parameter, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
+      case_explicit_open.bind(parameter, open);
+    }
+
+    let case_return_type = {
+      let local = resolve_local_type_refs_for_body(case_fn.return_type.clone(), &case_body_types);
+      resolve_namespace_type_refs_for_body(local, ctx.file_ns)
+    };
+    let case_tail_result = (!case_fn.is_async_invocation()).then(|| tail_context::Expected {
+      annotation: case_return_type.clone(),
+      position: "return value".into(),
+      location: ctx.call_location.clone().or_else(|| Some(definition_location.clone())),
+      callback: None,
+    });
+
+    let case_warnings = RefCell::new(Vec::new());
+    let mut case_processed_body: Vec<Calcit> = Vec::new();
+    source_replay::Scope::rewind_function();
+
+    let case_result = (|| -> Result<(), CalcitErr> {
+      for (index, source) in args.iter().enumerate().skip(2) {
+        if is_source_hint_form(source) {
+          continue;
+        }
+        let _tail = tail_context::TailScope::offer(if Some(index) == tail_index {
+          case_tail_result.clone()
+        } else {
+          None
+        });
+        let form = preprocess_expr(source, body_defs, &mut case_body_types, ctx.file_ns, &case_warnings, ctx.call_stack)?;
+        condition_evidence::establish_normal_exit(&form, &mut case_body_types);
+        case_processed_body.push(form);
+      }
+
+      if let Some(returned_expr) = case_processed_body.last() {
+        reject_strict_bare_enum_constructor_value(
+          returned_expr,
+          &case_return_type,
+          &case_body_types,
+          ctx.file_ns,
+          def_name,
+          ctx.call_stack,
+          ctx.call_location.clone().or_else(|| Some(definition_location.clone())),
+        )?;
+      }
+      if !matches!(
+        case_return_type.as_ref(),
+        CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, _)
+      ) && let Some(returned_expr) = case_processed_body
+        .iter()
+        .rev()
+        .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+      {
+        check_value_position_nil_branch(
+          returned_expr,
+          "function return",
+          true,
+          &case_body_types,
+          ctx.file_ns,
+          ctx.call_stack,
+          None,
+        )?;
+      }
+      reject_strict_nil_for_unit_return(
+        &case_processed_body,
+        &case_return_type,
+        &case_body_types,
+        ctx.file_ns,
+        def_name,
+        ctx.call_stack,
+        ctx.call_location.clone().or_else(|| Some(definition_location.clone())),
+      )?;
+      check_function_return_type(
+        &case_processed_body,
+        &case_return_type,
+        case_fn.is_async_invocation(),
+        &case_body_types,
+        (!has_marked_args).then_some(case_recur_param_types.as_slice()),
+        CallTypeCheckInfo {
+          file_ns: ctx.file_ns,
+          def_name,
+          call_location: case_processed_body
+            .iter()
+            .rev()
+            .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+            .and_then(Calcit::get_location)
+            .and_then(|returned| find_macro_location_in_def(ctx.call_stack, &returned.ns, &returned.def))
+            .or_else(|| find_preferred_macro_location(ctx.call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
+            .or_else(|| ctx.call_location.clone())
+            .or_else(|| {
+              ctx
+                .call_stack
+                .0
+                .first()
+                .map(|frame| NodeLocation::new(frame.ns.to_owned(), frame.def.to_owned(), Arc::new(vec![])))
+            })
+            .or_else(|| Some(definition_location.clone())),
+        },
+        &case_warnings,
+      )
+      .map_err(|mut error| {
+        error.stack = ctx.call_stack.clone();
+        error
+      })
+    })();
+
+    let mut parent_warnings = ctx.check_warnings.borrow_mut();
+    for mut warning in case_warnings.into_inner() {
+      let already_reported = parent_warnings.iter().any(|existing| {
+        existing.code() == warning.code() && existing.location() == warning.location() && existing.message() == warning.message()
+      });
+      if !already_reported {
+        warning.append_message(&case_label);
+        parent_warnings.push(warning);
+      }
+    }
+    drop(parent_warnings);
+
+    if let Err(mut error) = case_result {
+      error.msg.push_str(&case_label);
+      return Err(error);
+    }
+  }
+
+  Ok(())
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -17036,9 +17593,22 @@ pub fn preprocess_defn(
           )
         }),
       ));
+      let verify_cases_schema = if source_top_level_definition
+        && matches!(head, CalcitSyntax::Defn)
+        && let CalcitTypeAnnotation::Fn(signature) = def_schema.as_ref()
+        && !signature.cases.is_empty()
+        // Low-level core `:open :intrinsic` defs dispatch through internal `&`-primitives
+        // and dynamic method fallbacks whose contracts are verified by core `:tests`.
+        && signature.open_reason.0 != Some(calcit::FnOpenReason::Intrinsic)
+      {
+        Some(signature.clone())
+      } else {
+        None
+      };
       let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
         borrows_capture_refinements
+          || verify_cases_schema.is_some()
           || (!source_top_level_definition
             && !has_marked_args
             && !has_body_fn_hint
@@ -17605,6 +18175,25 @@ pub fn preprocess_defn(
           error.stack = ctx.call_stack.clone();
           error
         })?;
+
+        if let Some(base_signature) = verify_cases_schema.as_ref() {
+          verify_defn_cases(
+            base_signature,
+            effective_fn_schema
+              .as_ref()
+              .is_some_and(|signature| signature.is_async_invocation()),
+            def_name.as_ref(),
+            info,
+            args,
+            &zs,
+            &param_symbols,
+            &body_defs,
+            has_marked_args,
+            tail_index,
+            &definition_location,
+            ctx,
+          )?;
+        }
 
         // `recur` must stay in tail position everywhere, calcit.core included.
         check_recur_tail_position(&processed_body, ctx.file_ns, def_name.as_ref(), ctx.check_warnings);
@@ -30657,5 +31246,116 @@ mod tests {
     let (result, _) = literal_match_form(Arc::new(CalcitTypeAnnotation::Dynamic), vec![Calcit::tag("a"), enum_pattern]);
     let error = result.expect_err("mixed patterns are rejected");
     assert!(error.msg.contains("mixes literal patterns with enum pattern"), "{}", error.msg);
+  }
+
+  #[test]
+  fn static_type_predicate_truth_handles_concrete_nullable_and_open_types() {
+    let _lock = lock_preprocess_test_state();
+    let core = crate::load_core_snapshot().expect("embedded core snapshot");
+    program::PROGRAM_CODE_DATA
+      .write()
+      .unwrap()
+      .extend(program::extract_program_data(&core).expect("core source"));
+    let sym_x: Arc<str> = Arc::from("x");
+    let local_x = |ty: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(CalcitLocal {
+        idx: CalcitLocal::track_sym(&sym_x),
+        sym: sym_x.clone(),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("test.ns"),
+          at_def: Arc::from("demo"),
+        }),
+        location: None,
+        type_info: ty,
+      })
+    };
+    let core_pred = |name: &str, arg: Calcit| {
+      Calcit::from(vec![
+        Calcit::Import(CalcitImport {
+          ns: Arc::from(calcit::CORE_NS),
+          def: Arc::from(name),
+          info: Arc::new(ImportInfo::Core {
+            at_ns: Arc::from("test.ns"),
+          }),
+          def_id: None,
+        }),
+        arg,
+      ])
+    };
+    let type_of_eq = |arg: Calcit, kind: &str| {
+      Calcit::from(vec![
+        Calcit::Proc(CalcitProc::NativeEquals),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::TypeOf), arg]),
+        Calcit::tag(kind),
+      ])
+    };
+
+    let list_ty = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)));
+    let mut scope = ScopeTypes::new();
+    scope.insert(Arc::from("x"), list_ty.clone());
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("list?", local_x(list_ty.clone())), &scope),
+      Some(true)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("string?", local_x(list_ty.clone())), &scope),
+      Some(false)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("nil?", local_x(list_ty.clone())), &scope),
+      Some(false)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("non-nil?", local_x(list_ty.clone())), &scope),
+      Some(true)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&type_of_eq(local_x(list_ty.clone()), "list"), &scope),
+      Some(true)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&type_of_eq(local_x(list_ty), "string"), &scope),
+      Some(false)
+    );
+
+    // Tuple shares List's runtime kind.
+    let tuple_ty = Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ])));
+    scope.insert(Arc::from("x"), tuple_ty.clone());
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("list?", local_x(tuple_ty.clone())), &scope),
+      Some(true)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("map?", local_x(tuple_ty)), &scope),
+      Some(false)
+    );
+
+    // Nullable(String) cannot be a List, but nil?/string? remain unknown.
+    let nullable_str = Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::String),
+      NullableOrigin::Inferred,
+    ));
+    scope.insert(Arc::from("x"), nullable_str.clone());
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("list?", local_x(nullable_str.clone())), &scope),
+      Some(false)
+    );
+    assert_eq!(
+      static_type_predicate_truth(&core_pred("string?", local_x(nullable_str.clone())), &scope),
+      None
+    );
+    assert_eq!(static_type_predicate_truth(&core_pred("nil?", local_x(nullable_str)), &scope), None);
+
+    // Dynamic and rigid TypeVar must stay unknown.
+    let dynamic_ty = calcit::DYNAMIC_TYPE.clone();
+    scope.insert(Arc::from("x"), dynamic_ty.clone());
+    assert_eq!(static_type_predicate_truth(&core_pred("list?", local_x(dynamic_ty)), &scope), None);
+
+    let tv_ty = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    scope.insert(Arc::from("x"), tv_ty.clone());
+    assert_eq!(static_type_predicate_truth(&core_pred("list?", local_x(tv_ty)), &scope), None);
   }
 }
