@@ -294,6 +294,45 @@ impl CallTreeAnalyzer {
     })
   }
 
+  fn is_quote_head(head: &Calcit) -> bool {
+    matches!(head, Calcit::Syntax(crate::calcit::CalcitSyntax::Quote, _))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quote")
+  }
+
+  fn is_quasiquote_head(head: &Calcit) -> bool {
+    matches!(head, Calcit::Syntax(crate::calcit::CalcitSyntax::Quasiquote, _))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "quasiquote")
+  }
+
+  fn is_unquote_head(head: &Calcit) -> bool {
+    matches!(
+      head,
+      Calcit::Syntax(
+        crate::calcit::CalcitSyntax::MacroInterpolate | crate::calcit::CalcitSyntax::MacroInterpolateSpread,
+        _,
+      )
+    ) || matches!(head, Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "~" | "~@" | "unquote" | "unquote-splicing"))
+  }
+
+  fn extract_quasiquote_unquotes_recursive(code: &Calcit, current_ns: &str, calls: &mut Vec<(String, String)>) {
+    if let Calcit::List(list) = code {
+      if let Some(head) = list.first() {
+        if Self::is_quote_head(head) {
+          return;
+        }
+        if Self::is_unquote_head(head) {
+          for item in list.iter().skip(1) {
+            Self::extract_calls_recursive(item, current_ns, calls);
+          }
+          return;
+        }
+      }
+      for item in list.iter() {
+        Self::extract_quasiquote_unquotes_recursive(item, current_ns, calls);
+      }
+    }
+  }
+
   /// Extract all function/definition calls from a Calcit expression
   fn extract_calls(&self, code: &Calcit, current_ns: &str) -> Vec<(String, String)> {
     let mut calls = vec![];
@@ -371,6 +410,17 @@ impl CallTreeAnalyzer {
         }
       }
       Calcit::List(list) => {
+        if let Some(head) = list.first() {
+          if Self::is_quote_head(head) {
+            return;
+          }
+          if Self::is_quasiquote_head(head) {
+            for item in list.iter().skip(1) {
+              Self::extract_quasiquote_unquotes_recursive(item, current_ns, calls);
+            }
+            return;
+          }
+        }
         list
           .traverse_result::<String>(&mut |item| {
             Self::extract_calls_recursive(item, current_ns, calls);

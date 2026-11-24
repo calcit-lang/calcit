@@ -931,11 +931,9 @@ fn run_multi_entry_all_defs(scope: &AllDefsScope) -> Result<MultiEntryCheckOutco
   for (idx, ctx) in scope.entry_contexts.iter().enumerate() {
     let mut roots = Vec::new();
     for (ns, def) in [(&ctx.init_ns, &ctx.init_def), (&ctx.reload_ns, &ctx.reload_def)] {
-      if idx == 0 || program::has_def_code(ns, def) {
-        let pair = (ns.clone(), def.clone());
-        if !roots.contains(&pair) {
-          roots.push(pair);
-        }
+      let pair = (ns.clone(), def.clone());
+      if !roots.contains(&pair) {
+        roots.push(pair);
       }
     }
     if roots.is_empty() {

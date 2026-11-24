@@ -3706,4 +3706,39 @@ fn dual_entry_browser_and_node_all_defs_checks_each_target_and_rejects_cross_tar
   );
   let single_stdout = String::from_utf8_lossy(&rejected_single.stdout);
   assert!(single_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{single_stdout}");
+
+  // 7. Quoted symbols naming another target's FFI do not create false call edges.
+  let quoted_symbol = directory.0.join("quoted-symbol.cirru");
+  fs::write(
+    &quoted_symbol,
+    base_snapshot
+      .replace(
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared",
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared\n              demo.server :as demo.server",
+      )
+      .replace(
+        "defn reload! () &unit",
+        "defn reload! ()\n              let\n                  _ $ quote (demo.server/read-url)\n                , &unit",
+      ),
+  )
+  .expect("write quoted-symbol snapshot");
+  assert_success(
+    &run_calcit(&quoted_symbol, &["--check-only", "--all-defs", "--format", "json"]),
+    "quoted symbol naming a node FFI inside browser code must not trigger target mismatch",
+  );
+
+  // 8. A secondary entry whose declared reload-fn is missing must fail rather than being silently dropped.
+  let missing_secondary_root = directory.0.join("missing-secondary-root.cirru");
+  fs::write(
+    &missing_secondary_root,
+    base_snapshot.replace("(:reload-fn 'demo.server/reload!)", "(:reload-fn 'demo.server/missing-reload!)"),
+  )
+  .expect("write missing-secondary-root snapshot");
+  let rejected_missing = run_calcit(&missing_secondary_root, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_missing.status.success(),
+    "secondary entry with missing reload-fn must fail --all-defs"
+  );
+  let missing_stdout = String::from_utf8_lossy(&rejected_missing.stdout);
+  assert!(missing_stdout.contains("demo.server/missing-reload!"), "{missing_stdout}");
 }
