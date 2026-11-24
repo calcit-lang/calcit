@@ -7506,7 +7506,9 @@ fn preprocess_known_function_call(
       .as_ref()
       .is_some_and(|contract| contract.expected_types.is_some())
       || refreshed_core_types.is_some()
-      || refreshed_case.is_some()
+      || refreshed_case
+        .as_ref()
+        .is_some_and(|(_, expected)| expected.iter().any(|annotation| annotation.resolve_to_nonoptional_fn().is_some()))
     {
       explicit_open::note_callee_use(&head_form);
     }
@@ -7944,7 +7946,8 @@ fn preprocess_known_function_call(
       {
         return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
       }
-      if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
+      if !call_has_type_warnings
+        && matches!(def.as_ref(), "get" | "nth" | "first" | "last")
         && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
       {
         return preprocess_recorded_lowering(
