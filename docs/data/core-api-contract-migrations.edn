@@ -1,6 +1,219 @@
 
 {}
   :migrations $ []
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {}
+        :failure "|Unicode_标量位置，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] (:: 'Map 'K 'V) 'K
+              :generics $ [] 'K 'V
+              :return $ :: 'Option 'V
+            :: 'Fn $ {}
+              :args $ [] (:: 'List 'T) 'Number
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String 'Number
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {}
+        :failure "|Unicode_标量位置，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {} (:name |.first)
+        :provenance 'calcit.core/first
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] $ :: 'List 'T
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {} (:name |.first)
+        :provenance 'calcit.core/first
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {} (:name |.last)
+        :provenance 'calcit.core/last
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] $ :: 'List 'T
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {} (:name |.last)
+        :provenance 'calcit.core/last
+        :receiver |'String
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {}
+        :failure "|位置读取返回_Option_Number，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] (:: 'Map 'K 'V) 'K
+              :generics $ [] 'K 'V
+              :return $ :: 'Option 'V
+            :: 'Fn $ {}
+              :args $ [] (:: 'List 'T) 'Number
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String 'Number
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {}
+        :failure "|位置读取返回_Option_Number，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {} (:name |.first)
+        :provenance 'calcit.core/first
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] $ :: 'List 'T
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {} (:name |.first)
+        :provenance 'calcit.core/first
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {} (:name |.last)
+        :provenance 'calcit.core/last
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] $ :: 'List 'T
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {} (:name |.last)
+        :provenance 'calcit.core/last
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic
+          :return $ :: 'Option 'Dynamic
+    {} (:family |methods) (:issue |#2736)
+      :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
+      :version |0.46.0
+      :after $ {}
+        :failure "|key_读取返回_Option_Number，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver "|:: 'Map 'Tag 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :cases $ []
+            :: 'Fn $ {}
+              :args $ [] (:: 'Map 'K 'V) 'K
+              :generics $ [] 'K 'V
+              :return $ :: 'Option 'V
+            :: 'Fn $ {}
+              :args $ [] (:: 'List 'T) 'Number
+              :generics $ [] 'T
+              :return $ :: 'Option 'T
+            :: 'Fn $ {}
+              :args $ [] 'String 'Number
+              :return $ :: 'Option 'String
+          :return $ :: 'Option 'Dynamic
+      :before $ {}
+        :failure "|key_读取返回_Option_Number，缺失返回_none"
+        :name |.get
+        :provenance 'calcit.core/get
+        :receiver "|:: 'Map 'Tag 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] 'Dynamic 'Dynamic
+          :return $ :: 'Option 'Dynamic
     {} (:family |definitions) (:issue |#2726)
       :reason "|ref_watchers_are_stored_and_run_when_the_Ref_changes;_the_watcher_slot_now_declares_(:features_:state_:io)_so_watchers_may_read_Refs_or_print"
       :version |0.43.0
