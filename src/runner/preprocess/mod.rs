@@ -14577,7 +14577,10 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let tail_signature = tail_context::take_for_current();
-  let prune_dead_branches = in_case_body_verification() || !matches!(args.first(), Some(Calcit::Bool(_)));
+  // Prune statically unreachable branches only during speculative `:cases` body
+  // verification; ordinary compilation keeps every branch checked and preserves
+  // runtime type-guard `if` forms (P7 below only folds Bool literals).
+  let prune_dead_branches = in_case_body_verification();
   let prune_true = prune_dead_branches && !narrowing.true_reachable && narrowing.false_reachable;
   let prune_false = prune_dead_branches && narrowing.true_reachable && !narrowing.false_reachable;
 
@@ -14629,28 +14632,10 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   }
 
   if prune_false {
-    let live = true_form.expect("live true branch was preprocessed");
-    if in_case_body_verification() || matches!(cond_form, Calcit::Bool(true)) || is_pure_static_condition(&cond_form) {
-      return Ok(live);
-    }
-    return Ok(generated_call(vec![
-      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(head_ns)),
-      Calcit::from(CalcitList::default()),
-      cond_form,
-      live,
-    ]));
+    return Ok(true_form.expect("live true branch was preprocessed"));
   }
   if prune_true {
-    let live = false_form.unwrap_or(Calcit::Nil);
-    if in_case_body_verification() || matches!(cond_form, Calcit::Bool(false)) || is_pure_static_condition(&cond_form) {
-      return Ok(live);
-    }
-    return Ok(generated_call(vec![
-      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(head_ns)),
-      Calcit::from(CalcitList::default()),
-      cond_form,
-      live,
-    ]));
+    return Ok(false_form.unwrap_or(Calcit::Nil));
   }
 
   let true_form = true_form.expect("live true branch was preprocessed");
@@ -14688,54 +14673,6 @@ impl CaseBodyVerificationScope {
 impl Drop for CaseBodyVerificationScope {
   fn drop(&mut self) {
     IN_CASE_BODY_VERIFICATION.with(|flag| flag.set(self.0));
-  }
-}
-
-fn is_pure_static_condition(expr: &Calcit) -> bool {
-  match expr {
-    Calcit::Bool(_) | Calcit::Nil | Calcit::Unit | Calcit::Local(_) => true,
-    Calcit::List(items) => match items.first() {
-      Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => is_pure_static_condition(&items[1]),
-      Some(Calcit::Import(import))
-        if import.ns.as_ref() == calcit::CORE_NS
-          && import.def.as_ref() == "not"
-          && program::has_bundled_core_source()
-          && items.len() == 2 =>
-      {
-        is_pure_static_condition(&items[1])
-      }
-      Some(Calcit::Proc(CalcitProc::NativeEquals)) if items.len() == 3 => {
-        is_pure_static_condition(&items[1]) && is_pure_static_condition(&items[2])
-      }
-      Some(Calcit::Proc(CalcitProc::TypeOf)) if items.len() == 2 => matches!(items.get(1), Some(Calcit::Local(_))),
-      Some(Calcit::Proc(CalcitProc::NativeStructMatches)) if items.len() == 3 => {
-        matches!(items.get(1), Some(Calcit::Local(_))) && matches!(items.get(2), Some(Calcit::Import(_)))
-      }
-      Some(Calcit::Proc(proc))
-        if items.len() == 2 && (predicate_target_kind(proc.as_ref()).is_some() || proc.as_ref() == "non-nil?") =>
-      {
-        matches!(items.get(1), Some(Calcit::Local(_)))
-      }
-      Some(Calcit::Import(import))
-        if import.ns.as_ref() == calcit::CORE_NS
-          && program::has_bundled_core_source()
-          && items.len() == 2
-          && (predicate_target_kind(import.def.as_ref()).is_some() || import.def.as_ref() == "non-nil?") =>
-      {
-        matches!(items.get(1), Some(Calcit::Local(_)))
-      }
-      Some(Calcit::Import(import))
-        if import.ns.as_ref() == calcit::CORE_NS
-          && import.def.as_ref() == "="
-          && program::has_bundled_core_source()
-          && items.len() == 3 =>
-      {
-        is_pure_static_condition(&items[1]) && is_pure_static_condition(&items[2])
-      }
-      _ => false,
-    },
-    Calcit::Tag(_) => true,
-    _ => false,
   }
 }
 
