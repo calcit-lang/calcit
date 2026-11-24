@@ -5687,17 +5687,21 @@ fn legacy_quoted_declaration_types_are_rejected() {
   assert_eq!(
     rewritten,
     [
+      "defunion Input String Number",
       "defstruct Point (:x Number) (:y Number)",
       "defenum Shape (:circle Number) (:none)",
-      "defunion Input String Number",
       "defstruct Local (:v String)",
       "defunion T String Number",
     ],
     "{messages:?}"
   );
   assert!(
-    hits.iter().all(|hit| !hit.coord.is_empty()),
-    "each hit points at its declaration form"
+    hits[..3].iter().all(|hit| hit.coord.is_empty()),
+    "top-level declarations sit at the root of their own CodeEntry"
+  );
+  assert!(
+    hits[3..].iter().all(|hit| !hit.coord.is_empty()),
+    "nested declarations point inside their enclosing form"
   );
   assert!(
     messages
