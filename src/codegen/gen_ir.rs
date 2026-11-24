@@ -619,6 +619,7 @@ mod tests {
 
     let fn_type = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),

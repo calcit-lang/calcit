@@ -128,6 +128,29 @@ where
         .as_ref()
         .map(|rest| map_type_and_trait_references(rest.clone(), resolve_type_ref, resolve_trait_bound, strip_open)),
       features: signature.features.clone(),
+      cases: if signature.cases.is_empty() {
+        signature.cases.clone()
+      } else {
+        Arc::new(
+          signature
+            .cases
+            .iter()
+            .map(|case| {
+              match map_type_and_trait_references(
+                Arc::new(CalcitTypeAnnotation::Fn(case.clone())),
+                resolve_type_ref,
+                resolve_trait_bound,
+                strip_open,
+              )
+              .as_ref()
+              {
+                CalcitTypeAnnotation::Fn(updated) => updated.clone(),
+                _ => case.clone(),
+              }
+            })
+            .collect(),
+        )
+      },
     }))),
     CalcitTypeAnnotation::Macro(signature) => {
       let map_contract = |contract: &MacroSyntaxType| match contract {

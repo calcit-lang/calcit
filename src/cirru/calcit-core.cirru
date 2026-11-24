@@ -2361,6 +2361,14 @@
             -> $ List T
             :generics T
             :open :intrinsic
+            :cases
+              Fn (List T)
+                Fn T (-> K) (:features :pass)
+                -> $ List T
+                :generics T K
+              Fn (List T) Tag
+                -> $ List T
+                :generics T
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |sorts-by-function-key)
             :code $ quote $ assert= ([] 1 2 3 4)
@@ -4905,6 +4913,19 @@
             quote $ assert= true $ any? ([] 5 15 25)
               fn (x) (> x 10)
           :schema $ quote $ Fn Dynamic Fn (-> Bool) (:open :intrinsic)
+            :cases
+              Fn (List T)
+                Fn T (-> Bool) (:features :pass)
+                -> Bool
+                :generics T
+              Fn (Set T)
+                Fn T (-> Bool) (:features :pass)
+                -> Bool
+                :generics T
+              Fn (Map K V)
+                Fn (Tuple K V) (-> Bool) (:features :pass)
+                -> Bool
+                :generics K V
           :tests $ []
             %{} 'TestEntry (:name |shortlists-list-members)
               :code $ quote $ assert= true
@@ -7718,6 +7739,13 @@
                 raise "|dissoc expected a List or Map"
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Dynamic) (-> Dynamic) (:open :intrinsic)
+            :cases
+              Fn (Map K V) (& K)
+                -> $ Map K V
+                :generics K V
+              Fn (List T) Number
+                -> $ List T
+                :generics T
           :tests $ []
             %{} 'TestEntry (:name |removes-multiple-map-keys)
               :code $ quote $ assert= (&{} :d 5)
@@ -8003,6 +8031,19 @@
             -> Unit
             :generics R
             :open :intrinsic
+            :cases
+              Fn (List T)
+                Fn T (-> R) (:features :pass)
+                -> Unit
+                :generics T R
+              Fn (Set T)
+                Fn T (-> R) (:features :pass)
+                -> Unit
+                :generics T R
+              Fn (Map K V)
+                Fn (Tuple K V) (-> R) (:features :pass)
+                -> Unit
+                :generics K V R
           :tests $ []
             %{} 'TestEntry (:name |returns-unit-after-callbacks)
               :code $ quote $ assert= &unit
@@ -8337,6 +8378,19 @@
             quote $ assert= false $ every? ([] 1 2 3)
               defn %gt1 (x) (&> x 1)
           :schema $ quote $ Fn Dynamic Fn (-> Bool) (:open :intrinsic)
+            :cases
+              Fn (List T)
+                Fn T (-> Bool) (:features :pass)
+                -> Bool
+                :generics T
+              Fn (Set T)
+                Fn T (-> Bool) (:features :pass)
+                -> Bool
+                :generics T
+              Fn (Map K V)
+                Fn (Tuple K V) (-> Bool) (:features :pass)
+                -> Bool
+                :generics K V
           :tests $ []
             %{} 'TestEntry (:name |checks-every-set-member)
               :code $ quote $ assert= true
@@ -8601,6 +8655,19 @@
                 defn %long? (s)
                   &> (&str:count s) 1
           :schema $ quote $ Fn Dynamic Fn (-> Dynamic) (:open :intrinsic)
+            :cases
+              Fn (List T)
+                Fn T (-> Bool) (:features :pass)
+                -> $ List T
+                :generics T
+              Fn (Set T)
+                Fn T (-> Bool) (:features :pass)
+                -> $ Set T
+                :generics T
+              Fn (Map K V)
+                Fn (Tuple K V) (-> Bool) (:features :pass)
+                -> $ Map K V
+                :generics K V
           :tests $ []
             %{} 'TestEntry (:name |filters-map-pairs)
               :code $ quote $ assert= (&{} :c 3 :d 4)
@@ -8771,6 +8838,11 @@
           :schema $ quote $ Fn Dynamic
             -> $ Option Dynamic
             :open :intrinsic
+            :cases
+              Fn (List T)
+                -> $ Option T
+                :generics T
+              Fn String $ -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |returns-first-or-none)
               :code $ quote $ do
@@ -9416,6 +9488,14 @@
           :schema $ quote $ Fn Dynamic Dynamic
             -> $ Option Dynamic
             :open :intrinsic
+            :cases
+              Fn (Map K V) K
+                -> $ Option V
+                :generics K V
+              Fn (List T) Number
+                -> $ Option T
+                :generics T
+              Fn String Number $ -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |reads-list-indices-as-options)
               :code $ quote $ do
@@ -10374,6 +10454,11 @@
                   if (bool? result) result $ raise "|includes? expected a Bool from the receiver .includes? method"
           :examples $ []
           :schema $ quote $ Fn Dynamic Dynamic (-> Bool) (:open :intrinsic)
+            :cases
+              Fn (List T) T (-> Bool) (:generics T)
+              Fn (Set T) T (-> Bool) (:generics T)
+              Fn (Map K V) V (-> Bool) (:generics K V)
+              Fn String String $ -> Bool
           :tests $ []
             %{} 'TestEntry (:name |finds-map-value)
               :code $ quote $ assert= false
@@ -10781,6 +10866,11 @@
           :schema $ quote $ Fn Dynamic
             -> $ Option Dynamic
             :open :intrinsic
+            :cases
+              Fn (List T)
+                -> $ Option T
+                :generics T
+              Fn String $ -> $ Option String
           :tests $ []
             %{} 'TestEntry (:name |returns-last-or-none)
               :code $ quote $ do
@@ -11106,6 +11196,21 @@
             :generics C T U
             :where $ C Mappable
             :open :intrinsic
+            :cases
+              Fn (List T)
+                Fn T (-> U) (:features :pass)
+                -> $ List U
+                :generics T U
+              Fn (Set T)
+                Fn T (-> U) (:features :pass)
+                -> $ Set U
+                :generics T U
+              Fn (Map K V)
+                Fn (Tuple K V)
+                  -> $ Tuple K2 V2
+                  :features :pass
+                -> $ Map K2 V2
+                :generics K V K2 V2
           :tests $ []
             %{} 'TestEntry (:name |maps-over-sets)
               :code $ quote $ assert= (#{} 2 3 4)
@@ -12282,6 +12387,15 @@
             -> $ Map Dynamic Dynamic
             :generics P
             :open :intrinsic
+            :cases
+              Fn
+                List $ Tuple K V
+                -> $ Map K V
+                :generics K V
+              Fn
+                List $ List T
+                -> $ Map T T
+                :generics T
           :tests $ []
             %{} 'TestEntry (:name |converts-list-pairs)
               :code $ quote $ assert= (&{} :a 1 :b 2)

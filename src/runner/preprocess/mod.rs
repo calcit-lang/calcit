@@ -52,7 +52,8 @@ use crate::{
 
 use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
-  CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
+  CheckedCallLowering, checked_call_contract_arity, instantiate_fn_case_expected_types, resolve_bound_type_slot_chain,
+  resolve_checked_call_contract, select_fn_case,
 };
 use type_checking::{
   CallTypeCheckInfo, check_core_fn_arg_types, check_function_return_type, check_local_fn_call_arg_types, check_proc_arg_types,
@@ -4888,6 +4889,7 @@ fn preprocess_immediate_call_context(
       }
       let signature = Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         arg_types: input_types,
         runtime_arity: None,
@@ -7438,7 +7440,12 @@ fn preprocess_known_function_call(
     let can_refresh_core_types = info.def_ns.as_ref() == calcit::CORE_NS
       && ((args.len() == 3 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce"))
         || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "sort")));
-    let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_core_types) {
+    let callee_cases_schema = match program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
+      CalcitTypeAnnotation::Fn(fn_annot) if !fn_annot.cases.is_empty() => Some(fn_annot.clone()),
+      _ => None,
+    };
+    let can_refresh_cases = callee_cases_schema.is_some();
+    let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_core_types || can_refresh_cases) {
       let contextual_arg = resolve_callback_constructor(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       let processed_count = ys.len().saturating_sub(1);
       let staged_values = args
@@ -7472,15 +7479,29 @@ fn preprocess_known_function_call(
     } else {
       None
     };
+    let refreshed_case = if refreshed_checked_contract.is_none()
+      && refreshed_core_types.is_none()
+      && let Some(schema) = callee_cases_schema.as_ref()
+      && let Some(staged) = staged_args.as_ref()
+    {
+      select_fn_case(schema, &info.def_ns, staged, scope_types).and_then(|case| {
+        let expected = instantiate_fn_case_expected_types(&case, &info.def_ns, staged, scope_types)?;
+        Some((case, expected))
+      })
+    } else {
+      None
+    };
     let active_expected_types = refreshed_checked_contract
       .as_ref()
       .and_then(|contract| contract.expected_types.as_deref())
       .or(refreshed_core_types.as_deref())
+      .or_else(|| refreshed_case.as_ref().map(|(_, expected)| expected.as_slice()))
       .unwrap_or(preprocessing_expected_types);
     if refreshed_checked_contract
       .as_ref()
       .is_some_and(|contract| contract.expected_types.is_some())
       || refreshed_core_types.is_some()
+      || refreshed_case.is_some()
     {
       explicit_open::note_callee_use(&head_form);
     }
@@ -7495,7 +7516,9 @@ fn preprocess_known_function_call(
       // Nominal names in the callee schema resolve in its declaration namespace, not the caller's (#2027).
       resolve_namespace_type_refs_for_body(expected, &info.def_ns)
     });
-    let mut callback_output_binders = if refreshed_checked_contract.is_none() {
+    let mut callback_output_binders = if let Some((case, _)) = refreshed_case.as_ref() {
+      case.generics.as_ref().clone()
+    } else if refreshed_checked_contract.is_none() {
       info.generics.as_ref().clone()
     } else {
       vec![]
@@ -7526,6 +7549,7 @@ fn preprocess_known_function_call(
     // A callback's declared input is evidence, including an explicit
     // open payload. Do not relabel an inferred callable placeholder.
     let member_inputs = refreshed_core_types.is_some()
+      || refreshed_case.is_some()
       || (declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input));
     let warnings_before = check_warnings.borrow().len();
     // A core parameter that the receiver fixes (the field type in `assoc` on
@@ -7556,6 +7580,7 @@ fn preprocess_known_function_call(
         .as_ref()
         .or(checked_contract.as_ref())
         .map(|contract| &contract.return_type)
+        .or_else(|| refreshed_case.as_ref().map(|(case, _)| &case.return_type))
         .unwrap_or(&info.return_type);
       let pattern = resolve_namespace_type_refs_for_body(pattern.substitute_type_vars(&preprocessing_type_bindings), &info.def_ns);
       offered_result_bindings(offered_result.as_ref(), &pattern)
@@ -9977,6 +10002,7 @@ fn expected_method_argument_types(
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: info.generics.clone(),
@@ -12887,6 +12913,7 @@ fn validate_method_call(
         arg_types.insert(0, type_value.clone());
         let signature = CalcitFnTypeAnnotation {
           open_reason: Default::default(),
+          cases: Default::default(),
           guard: None,
           arg_types,
           runtime_arity: None,
@@ -17406,6 +17433,7 @@ pub fn preprocess_defn(
           features.insert(pass_tag);
           generated_fn_schema = Some(Arc::new(CalcitFnTypeAnnotation {
             open_reason: Default::default(),
+            cases: Default::default(),
             guard: None,
             runtime_arity,
             generics: Arc::new(vec![]),
@@ -17778,6 +17806,7 @@ fn recheck_let_lambda_call(
   let _leave = Leave;
   let signature = Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     arg_types,
     runtime_arity: None,
@@ -20212,6 +20241,17 @@ fn reject_strict_unproven_generic_relation(
   {
     return Ok(());
   }
+  let selected_case = if !signature.cases.is_empty() {
+    let callee_ns = match head {
+      Calcit::Fn { info, .. } => info.def_ns.as_ref(),
+      Calcit::Import(import) => import.ns.as_ref(),
+      _ => file_ns,
+    };
+    select_fn_case(signature, callee_ns, args, scope_types)
+  } else {
+    None
+  };
+  let signature = selected_case.as_deref().unwrap_or(signature);
   let expanded_contract = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
     match expanded_call_contract(signature, args) {
       Ok(contract) => Some(contract),
@@ -20951,6 +20991,7 @@ mod tests {
     let _restore = DefinitionContextScope::enter("tests.context", "restore", &Calcit::Nil);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -21055,6 +21096,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
@@ -21082,6 +21124,7 @@ mod tests {
 
     let variadic = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![var]),
@@ -21110,6 +21153,7 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -21839,6 +21883,7 @@ mod tests {
     )]);
     let signature = Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -21921,6 +21966,7 @@ mod tests {
     // directly, independently of strict mode and program-owned definitions.
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -28912,6 +28958,7 @@ mod tests {
       location: None,
       type_info: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
@@ -29530,6 +29577,7 @@ mod tests {
     }
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -29643,6 +29691,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -29689,6 +29738,7 @@ mod tests {
 
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -29711,6 +29761,7 @@ mod tests {
     let _slots = TypeSlotsGuard::cleared();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -29830,6 +29881,7 @@ mod tests {
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -29913,6 +29965,7 @@ mod tests {
   ) -> CalcitFnTypeAnnotation {
     CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
@@ -30332,6 +30385,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -30374,6 +30428,7 @@ mod tests {
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -30436,6 +30491,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_argument() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -30478,6 +30534,7 @@ mod tests {
   fn preprocess_rejects_pending_async_value_as_call_receiver() {
     let signature = CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),

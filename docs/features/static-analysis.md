@@ -226,9 +226,9 @@ schema 声明 `:features :decode-boundary` 后，`analyze weak-types` 把参数�
 
 这个标记只能用在函数 schema 上：参数里至少有一个位置含 Dynamic，返回类型不含 Dynamic。加载 Snapshot 时检查，不符合时报 `E_DECODE_BOUNDARY_SHAPE`。返回值仍是 Dynamic 的函数没有完成解码，应该先写出具体返回类型。
 
-### 写明理由的开放签名 `(:open …)`
+### 写明理由的开放签名 `(:open …)` 与 `:cases`
 
-`Fn` schema 写了 `(:open :reflect)`、`(:open :decode)`、`(:open :host)`，或 `calcit.core` 里由检查器内建规则决定类型的 `(:open :intrinsic)` 时，签名内部的 schema Dynamic 归到 `intentional-open`，不计入 `unresolved`，不产生 `W_SCHEMA_DYNAMIC`，该定义的 coverage 也不因此降为 partial。理由的写法见 [类型指南](../type-guidance.md)。
+`Fn` schema 写了 `(:open :reflect)`、`(:open :decode)`、`(:open :host)`，或 `calcit.core` 里由检查器内建规则决定类型的 `(:open :intrinsic)` 时，签名内部的 schema Dynamic 归到 `intentional-open`，不计入 `unresolved`，不产生 `W_SCHEMA_DYNAMIC`，该定义的 coverage 也不因此降为 partial。当函数需要按第 1 个实参（接收者）类型收窄参数与返回值时，可在 `Fn` schema 中声明 `(:cases (Fn …) …)`（对 `calcit.core` 与用户定义同样开放），调用处优先匹配第一条接收者相符的 case，未匹配或接收者为 `Dynamic` 时回退到外层签名。具体写法见 [类型指南](../type-guidance.md)。
 
 For `code-nil`, the report includes raw `nil` and the legacy `;nil` compatibility marker. Nil and Unit are distinct: only structurally proven return positions in a function declared to return `Unit` are classified as `declared-unit`, and those findings are migration debt because the returned value is still Nil. Intermediate nil values remain unresolved. The explicit `&unit` literal is the canonical Unit value and is not nil debt. Under the default strict diagnostics, a statically Nil return for a declared Unit function fails during preprocessing with `E_NIL_FOR_UNIT`. The core release gate runs `analyze weak-types --only code-nil --intent unresolved,declared-unit` and requires no findings.
 

@@ -355,7 +355,25 @@ defstruct Button (:on-click $ :: Fn Dynamic (-> Unit))
 
 理由只有 `:reflect`、`:decode`、`:host` 三种，不改变类型：带不带 `:open` 的同一签名是同一个类型。
 
-`calcit.core` 另有第四种理由 `:intrinsic`，标在由检查器内建规则决定类型的函数上，例如 `filter`、`first`、`get`、`assoc`、`each`。它们的 schema 保留运行时接受的开放形状（`Fn Dynamic Fn (-> Dynamic) (:open :intrinsic)`），调用处按接收者种类检查：`filter` 收 `List Task` 时回调是 `Fn Task (-> Bool)`，结果是 `List Task`。`calcit query peek` 和 `calcit query schema` 在 schema 后列出这些规则（JSON 输出的 `data.checker_rules`）。项目代码不能使用 `:intrinsic`，写了会报 `E_OPEN_WITHOUT_REASON`。
+`calcit.core` 另有第四种理由 `:intrinsic`，标在由检查器按接收者或内建规则决定类型的函数上，例如 `filter`、`first`、`get`、`assoc`、`each`。其中 12 个纯数据分派的核心函数（`first`、`last`、`get`、`any?`、`every?`、`each`、`filter`、`map`、`dissoc`、`includes?`、`pairs-map`、`&list:sort-by`）已将按接收者特化的签名直接写在 schema 的 `:cases` 子句中；`any?`、`every?`、`each` 在 `Map K V` 接收者上也已统一为 `Tuple K V` 回调入参。其余涉及字段查找或路径算子的核心函数仍保留内建规则。项目代码不能使用 `:intrinsic`，写了会报 `E_OPEN_WITHOUT_REASON`。
+
+### 按接收者特化的 `:cases` 签名
+
+多态函数可以在 `Fn` schema 中附加 `:cases` 子句，按接收者（第 1 个实参）类型列出多条普通 `Fn` 签名；该能力同时对 `calcit.core` 和用户定义开放：
+
+```cirru.no-check
+:schema $ quote $ Fn Dynamic Dynamic
+  -> $ Option Dynamic
+  :open :reflect
+  :cases
+    Fn (Map K V) K (-> (Option V)) (:generics K V)
+    Fn (List T) Number (-> (Option T)) (:generics T)
+    Fn String Number (-> (Option String))
+```
+
+- **调用处分派**：检查器按顺序选取第一条第 1 个参数匹配接收者类型的 case，用来检查其余实参（包含内联 lambda 的上下文入参类型推导）并推导返回类型；若接收者是 `Dynamic`、未知或无任何 case 匹配，则回退到外层签名。每条 case 拥有独立的 `:generics`，不与外层签名的泛型名冲突。
+- **查询渲染**：`calcit query peek` 与 `calcit query schema` 会直接从 schema 渲染 `## Cases` 段落（结构化输出中的 `data.cases`）；仅有剩余内建规则的 core 函数才额外展示 `## Checker rules`（`data.checker_rules`）。
+- **限制**：当前阶段仅在调用处执行 `:cases` 分派与类型推导，定义体按每条 case 逐分支流分析校验留作后续步骤；`:cases` 内不能嵌套 `:cases`，且每条 case 至少需要一个接收者参数。
 
 `calcit analyze weak-types` 把带 `:open` 理由的签名里的 Dynamic 归到 `intentional-open`，不计入 `unresolved`，也不让该定义的 coverage 降为 partial；`--intent intentional-open` 可以单独列出这些位置。
 

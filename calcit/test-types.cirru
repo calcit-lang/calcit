@@ -167,6 +167,50 @@
           :code $ quote $ defn pair-first (p) (nth p 0)
           :examples $ []
           :schema $ quote $ Fn (Pair Number String) (-> Number)
+        'pick-by-receiver $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn pick-by-receiver (x)
+            cond
+                list? x
+                first x
+              (string? x) (first x)
+              true $ Option :none
+          :examples $ []
+          :schema $ quote $ Fn Dynamic
+            -> $ Option Dynamic
+            :open :reflect
+            :cases
+              Fn (List T)
+                -> $ Option T
+                :generics T
+              Fn String $ -> $ Option String
+          :tests $ [] $ %{} 'TestEntry (:name |cases-dispatch)
+            :code $ quote $ let
+                n-opt $ pick-by-receiver $ [] 10 20
+                s-opt $ pick-by-receiver |hello
+                m $ {} (:a 1) (:b 2)
+              assert= (Option :some 10) n-opt
+              assert= (Option :some |h) s-opt
+              assert= 15 $ match n-opt
+                (:some n) (&+ n 5)
+                (:none) 0
+              assert= |h! $ match s-opt
+                (:some s) (&str:concat s |!)
+                (:none) |
+              assert= true $ any? m $ fn (pair)
+                > (nth pair 1) 1
+              assert= true $ every? m $ fn (pair)
+                > (nth pair 1) 0
+              assert=
+                {} $ :a 1
+                dissoc m :b
+              assert= ([] 10)
+                dissoc ([] 10 20) 1
+              assert= true $ includes? m 2
+              assert=
+                {} (:x 1) (:y 2)
+                pairs-map $ []
+                  assert-type ([] :x 1) (Tuple Tag Number)
+                  assert-type ([] :y 2) (Tuple Tag Number)
         'process-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn process-string (s) (str s |!!!)
           :examples $ []

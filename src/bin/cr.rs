@@ -2842,6 +2842,7 @@ fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
 fn generated_zero_arg_fn_schema(return_type: Arc<CalcitTypeAnnotation>, features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
+    cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: Arc::new(vec![]),
@@ -3153,6 +3154,7 @@ mod tests {
     };
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3189,6 +3191,7 @@ mod tests {
     }));
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3217,6 +3220,7 @@ mod tests {
   fn type_coverage_uses_schema_for_fn_value_payloads() {
     let schema = CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
       open_reason: Default::default(),
+      cases: Default::default(),
       guard: None,
       runtime_arity: None,
       generics: Arc::new(vec![]),
@@ -3749,6 +3753,7 @@ mod tests {
       list(vec![leaf("defn"), leaf("dispatch!"), list(vec![leaf("op")]), leaf("op")]),
       CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3831,6 +3836,7 @@ mod tests {
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -3990,6 +3996,7 @@ mod tests {
     let fn_schema = |return_type: Arc<CalcitTypeAnnotation>| {
       CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4060,6 +4067,7 @@ mod tests {
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4131,6 +4139,7 @@ mod tests {
       code: list(vec![leaf("defn"), leaf("demo"), list(vec![leaf("value")]), leaf("nil")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4270,6 +4279,7 @@ mod tests {
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4308,6 +4318,7 @@ mod tests {
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4441,6 +4452,7 @@ mod tests {
       code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
         open_reason: Default::default(),
+        cases: Default::default(),
         guard: None,
         runtime_arity: None,
         generics: Arc::new(vec![]),
@@ -4454,6 +4466,7 @@ mod tests {
         rest_type: Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(
           calcit::calcit::CalcitFnTypeAnnotation {
             open_reason: Default::default(),
+            cases: Default::default(),
             guard: None,
             runtime_arity: None,
             generics: Arc::new(vec![]),
