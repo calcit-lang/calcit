@@ -538,8 +538,40 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_str_at(string_tag: i32) ->
   b.finish(vec![ValType::I32; 3], vec![ValType::I32; 3])
 }
 
+/// Tag IDs and equality helper needed to construct closed `JsonValue` enum values directly.
+#[derive(Clone, Copy)]
+pub(in crate::wasm::emit_wasm) struct JsonValueEnumTags {
+  pub enum_tag: i32,
+  pub null_variant: u32,
+  pub bool_variant: u32,
+  pub number_variant: u32,
+  pub string_variant: u32,
+  pub array_variant: u32,
+  pub object_variant: u32,
+  pub map_key_equal_idx: u32,
+}
+
 /// `__rt_json_parse_at(src_ptr: i32, pos: i32, end: i32, depth: i32) → (val: f64, next_pos: i32, ok: i32)`
 pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
+  tags: (i32, i32, i32, i32, i32, i32),
+  fns: (u32, u32, u32, u32, u32, u32),
+) -> CompiledFn {
+  build_rt_json_parse_at_impl(tags, fns, None)
+}
+
+/// `__rt_json_parse_value_at(src_ptr: i32, pos: i32, end: i32, depth: i32) → (val: f64, next_pos: i32, ok: i32)`
+///
+/// Parses RFC 8259 JSON directly into closed `JsonValue` enum values with `String` object keys
+/// and unboxed `Bool`/`Number` payloads (no boxed-scalar ABI needed).
+pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_value_at(
+  tags: (i32, i32, i32, i32, i32, i32),
+  fns: (u32, u32, u32, u32, u32, u32),
+  json_value: JsonValueEnumTags,
+) -> CompiledFn {
+  build_rt_json_parse_at_impl(tags, fns, Some(json_value))
+}
+
+fn build_rt_json_parse_at_impl(
   (string_tag, list_tag, map_tag, nil_tag, bool_tag, number_tag): (i32, i32, i32, i32, i32, i32),
   (self_idx, parse_str_idx, tag_from_str_idx, map_from_flat_idx, parse_float_valid_idx, parse_float_idx): (
     u32,
@@ -549,6 +581,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
     u32,
     u32,
   ),
+  json_value: Option<JsonValueEnumTags>,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4); // 0=src_ptr, 1=pos, 2=end, 3=depth
   let cur = b.alloc_i32();
@@ -612,6 +645,37 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
     b.emit(Instruction::Return);
   };
 
+  let emit_wrap_enum_0 = |b: &mut RuntimeFnBuilder, enum_tag: i32, variant_tag: u32, cur_local: u32| {
+    rt_emit_ensure_heap_capacity_const(b, 16, req_bytes);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(BlockType::Empty));
+    fail_return(b, cur_local);
+    b.emit(Instruction::End);
+    rt_emit_alloc_const(b, 8, boxed_ptr, enum_tag);
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::I64Const(((variant_tag as u64) << 32) as i64));
+    b.emit(Instruction::I64Store(mem_arg_i64(0)));
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  };
+
+  let emit_wrap_enum_1 = |b: &mut RuntimeFnBuilder, enum_tag: i32, variant_tag: u32, payload_local: u32, cur_local: u32| {
+    rt_emit_ensure_heap_capacity_const(b, 24, req_bytes);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(BlockType::Empty));
+    fail_return(b, cur_local);
+    b.emit(Instruction::End);
+    rt_emit_alloc_const(b, 16, boxed_ptr, enum_tag);
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::I64Const((((variant_tag as u64) << 32) | 1u64) as i64));
+    b.emit(Instruction::I64Store(mem_arg_i64(0)));
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::LocalGet(payload_local));
+    b.emit(Instruction::F64Store(mem_arg_f64(8)));
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  };
+
   b.emit(Instruction::LocalGet(3));
   b.emit(Instruction::I32Const(32));
   b.emit(Instruction::I32GtU);
@@ -662,17 +726,27 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
       fail_return(&mut b, cur);
       b.emit(Instruction::End);
     }
-    rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
-    b.emit(Instruction::I32Eqz);
-    b.emit(Instruction::If(BlockType::Empty));
-    fail_return(&mut b, cur);
-    b.emit(Instruction::End);
-    rt_emit_alloc_const(&mut b, 8, boxed_ptr, kind_tag);
-    b.emit(Instruction::LocalGet(boxed_ptr));
-    b.emit(f64_const(result_val));
-    b.emit(Instruction::F64Store(mem_arg_f64(0)));
-    b.emit(Instruction::LocalGet(boxed_ptr));
-    b.emit(Instruction::F64ConvertI32U);
+    if let Some(jv) = json_value {
+      if word == "null" {
+        emit_wrap_enum_0(&mut b, jv.enum_tag, jv.null_variant, cur);
+      } else {
+        b.emit(f64_const(result_val));
+        b.emit(Instruction::LocalSet(val));
+        emit_wrap_enum_1(&mut b, jv.enum_tag, jv.bool_variant, val, cur);
+      }
+    } else {
+      rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
+      b.emit(Instruction::I32Eqz);
+      b.emit(Instruction::If(BlockType::Empty));
+      fail_return(&mut b, cur);
+      b.emit(Instruction::End);
+      rt_emit_alloc_const(&mut b, 8, boxed_ptr, kind_tag);
+      b.emit(Instruction::LocalGet(boxed_ptr));
+      b.emit(f64_const(result_val));
+      b.emit(Instruction::F64Store(mem_arg_f64(0)));
+      b.emit(Instruction::LocalGet(boxed_ptr));
+      b.emit(Instruction::F64ConvertI32U);
+    }
     b.emit(Instruction::LocalGet(cur));
     b.emit(Instruction::I32Const(word.len() as i32));
     b.emit(Instruction::I32Add);
@@ -698,8 +772,15 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::If(BlockType::Empty));
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(str_ptr));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::LocalGet(str_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(val));
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.string_variant, val, cur);
+  } else {
+    b.emit(Instruction::LocalGet(str_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Return);
@@ -739,8 +820,15 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::LocalGet(list_buf));
   b.emit(f64_const(0.0));
   b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(list_buf));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::LocalGet(list_buf));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(val));
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.array_variant, val, cur);
+  } else {
+    b.emit(Instruction::LocalGet(list_buf));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
@@ -865,8 +953,15 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::LocalGet(list_cnt));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(list_buf));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::LocalGet(list_buf));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(val));
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.array_variant, val, cur);
+  } else {
+    b.emit(Instruction::LocalGet(list_buf));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Return);
@@ -921,8 +1016,15 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::LocalGet(map_ptr));
   b.emit(f64_const(0.0));
   b.emit(Instruction::F64Store(mem_arg_f64(8)));
-  b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::LocalGet(map_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(val));
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.object_variant, val, cur);
+  } else {
+    b.emit(Instruction::LocalGet(map_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::I32Add);
@@ -970,23 +1072,30 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
 
-  b.emit(Instruction::LocalGet(str_ptr));
-  b.emit(Instruction::Call(tag_from_str_idx));
-  b.emit(Instruction::LocalSet(key_tag));
-  // Reclaim temporary key string now that tag_from_str has resolved it to a tag ID.
-  b.emit(Instruction::LocalGet(str_ptr));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::I32Store(mem_arg_i32(0)));
-  b.emit(Instruction::LocalGet(key_heap_mark));
-  b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::LocalGet(key_tag));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::If(BlockType::Empty));
-  fail_return(&mut b, cur);
-  b.emit(Instruction::End);
+  if json_value.is_some() {
+    // Keep the parsed JSON string directly as the Map<String, JsonValue> key.
+    b.emit(Instruction::LocalGet(str_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(key_tag));
+  } else {
+    b.emit(Instruction::LocalGet(str_ptr));
+    b.emit(Instruction::Call(tag_from_str_idx));
+    b.emit(Instruction::LocalSet(key_tag));
+    // Reclaim temporary key string now that tag_from_str has resolved it to a tag ID.
+    b.emit(Instruction::LocalGet(str_ptr));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Sub);
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::I32Store(mem_arg_i32(0)));
+    b.emit(Instruction::LocalGet(key_heap_mark));
+    b.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
+    b.emit(Instruction::LocalGet(key_tag));
+    b.emit(f64_const(0.0));
+    b.emit(Instruction::F64Eq);
+    b.emit(Instruction::If(BlockType::Empty));
+    fail_return(&mut b, cur);
+    b.emit(Instruction::End);
+  }
 
   skip_ws(&mut b, 0, cur, 2, byte);
   b.emit(Instruction::LocalGet(cur));
@@ -1045,7 +1154,11 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(key_tag));
-  b.emit(Instruction::F64Eq);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::Call(jv.map_key_equal_idx));
+  } else {
+    b.emit(Instruction::F64Eq);
+  }
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(obj_buf));
   b.emit(Instruction::I32Const(16));
@@ -1172,8 +1285,15 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   b.emit(Instruction::If(BlockType::Empty));
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    b.emit(Instruction::LocalGet(map_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalSet(val));
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.object_variant, val, cur);
+  } else {
+    b.emit(Instruction::LocalGet(map_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Return);
@@ -1497,19 +1617,23 @@ pub(in crate::wasm::emit_wasm) fn build_rt_json_parse_at(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
 
-  // Box parsed JSON numbers with `number_tag` so integer values in the heap
-  // range remain distinguishable from heap pointers under `type-of` and decoding.
-  rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
-  b.emit(Instruction::I32Eqz);
-  b.emit(Instruction::If(BlockType::Empty));
-  fail_return(&mut b, cur);
-  b.emit(Instruction::End);
-  rt_emit_alloc_const(&mut b, 8, boxed_ptr, number_tag);
-  b.emit(Instruction::LocalGet(boxed_ptr));
-  b.emit(Instruction::LocalGet(val));
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(boxed_ptr));
-  b.emit(Instruction::F64ConvertI32U);
+  if let Some(jv) = json_value {
+    emit_wrap_enum_1(&mut b, jv.enum_tag, jv.number_variant, val, cur);
+  } else {
+    // Box parsed JSON numbers with `number_tag` so integer values in the heap
+    // range remain distinguishable from heap pointers under `type-of` and decoding.
+    rt_emit_ensure_heap_capacity_const(&mut b, 16, req_bytes);
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(BlockType::Empty));
+    fail_return(&mut b, cur);
+    b.emit(Instruction::End);
+    rt_emit_alloc_const(&mut b, 8, boxed_ptr, number_tag);
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::LocalGet(val));
+    b.emit(Instruction::F64Store(mem_arg_f64(0)));
+    b.emit(Instruction::LocalGet(boxed_ptr));
+    b.emit(Instruction::F64ConvertI32U);
+  }
   b.emit(Instruction::LocalGet(cur));
   b.emit(Instruction::I32Const(1));
   b.finish(vec![ValType::I32; 4], vec![ValType::F64, ValType::I32, ValType::I32])

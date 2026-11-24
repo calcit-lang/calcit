@@ -604,3 +604,40 @@ Result :err message
 ```
 
 Calcit 会根据 Enum 定义检查 variant 和 payload，并在预处理阶段生成命名构造。`%::` 保留给显式 prototype、动态跨模块构造和兼容旧代码的边界。
+
+## 封闭 JSON 值（JsonValue）
+
+`calcit.core/JsonValue` 是递归封闭的名义 Enum，用来在 Native、JavaScript 与 WASM/WASI 上无 `Dynamic` 地解析、匹配与格式化任意 JSON 数据：
+
+```cirru.no-check
+defenum JsonValue
+  :null
+  :bool Bool
+  :number Number
+  :string String
+  :array $ List JsonValue
+  :object $ Map String JsonValue
+```
+
+使用 `json:parse` 解析 RFC 8259 JSON 文本，返回 `Result JsonValue String`；语法错误或溢出数值返回 `Result :err String`。
+使用 `.to-json` / `.to-json-pretty`（或函数形式 `json:stringify` / `json:pretty`）将 `JsonValue` 格式化为紧凑或两空格缩进的 JSON 文本：
+
+```cirru
+let
+    parsed $ json:parse "|{\"ok\":true,\"items\":[1,\"a\",null]}"
+  match parsed
+    (:ok value)
+      do
+        assert-type value JsonValue
+        assert= (Result :ok value) (json:parse (.to-json value))
+        assert= (Result :ok value) (json:parse (.to-json-pretty value))
+    (:err msg) (raise msg)
+```
+
+与返回 `Result Dynamic String` 的 `try-parse-json` / `.parse-json` 不同，`JsonValue` 的对象键使用 `String`（`Map String JsonValue`），因此在 WASM/WASI 上也能解析编译期未知的任意 JSON 键名，并且不需要为动态 JSON 标量启用 boxed scalar ABI。
+
+### 限制
+
+- `json:parse` 在 WASM/WASI 上沿用现有 JSON 解析上限（输入 64 KiB、单数组 4096 项、单对象 2048 项、嵌套深度 32），超限时返回 `Result :err`。
+- `json:stringify` / `.to-json` 对 `JsonValue :number` 中的非有限浮点数沿用 `json-stringify` 的报错语义。
+- 同类的封闭递归 `EdnValue`（含 `Set EdnValue` 与 `Map EdnValue EdnValue`）依赖 WASM 对递归 Enum 集合元素/键比较的统一支持，将在后续迭代单独落地。

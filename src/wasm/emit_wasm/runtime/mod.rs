@@ -1144,6 +1144,37 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_json_parse_root"), json_parse_root_idx);
   fns.push(build_rt_json_parse_root(json_parse_at_idx));
 
+  // Closed JsonValue recursive parser: __rt_json_parse_value_at(src_ptr:i32, pos:i32, end:i32, depth:i32) → (val:f64, next_pos:i32, ok:i32).
+  let json_parse_value_at_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_json_parse_value_at"), json_parse_value_at_idx);
+  let json_value_tags = JsonValueEnumTags {
+    enum_tag,
+    null_variant: require_tag("null") as u32,
+    bool_variant: require_tag("bool") as u32,
+    number_variant: require_tag("number") as u32,
+    string_variant: require_tag("string") as u32,
+    array_variant: require_tag("array") as u32,
+    object_variant: require_tag("object") as u32,
+    map_key_equal_idx,
+  };
+  fns.push(build_rt_json_parse_value_at(
+    (string_tag, list_tag, map_tag, nil_tag, bool_tag, number_tag),
+    (
+      json_parse_value_at_idx,
+      json_parse_str_at_idx,
+      tag_from_str_idx,
+      map_from_flat_checked_idx,
+      parse_float_valid_idx,
+      parse_float_idx,
+    ),
+    json_value_tags,
+  ));
+
+  // Closed JsonValue root parser: __rt_json_parse_value_root(s:f64) → (val:f64, ok:i32).
+  let json_parse_value_root_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_json_parse_value_root"), json_parse_value_root_idx);
+  fns.push(build_rt_json_parse_root(json_parse_value_at_idx));
+
   // str-find-from: __rt_str_find_from(h_ptr: i32, h_start: i32, pat_ptr: i32) → i32
   // Returns byte offset of first occurrence at or after h_start, or -1.
   let str_find_from_idx = base_index + fns.len() as u32;

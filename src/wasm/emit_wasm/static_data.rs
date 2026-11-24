@@ -29,6 +29,9 @@ const BUILTIN_TYPE_TAGS: &[&str] = &[
   "some",
   "ok",
   "err",
+  "null",
+  "array",
+  "object",
   "total-limit",
 ];
 
@@ -818,7 +821,7 @@ pub(super) fn detect_static_pool_options(
   };
   let needs_json_parse = fn_defs
     .iter()
-    .any(|(ns, name, _, _)| ns == crate::wasm::host::calcit::CORE_NS && name == "try-parse-json")
+    .any(|(ns, name, _, _)| ns == crate::wasm::host::calcit::CORE_NS && matches!(name.as_str(), "try-parse-json" | "json:parse"))
     || any_expr(expr_uses_json_parse);
   let needs_value_formatting = fn_defs
     .iter()
@@ -1198,11 +1201,18 @@ fn expr_uses_json_format(expr: &Calcit) -> bool {
 
 fn expr_uses_json_parse(expr: &Calcit) -> bool {
   match expr {
-    Calcit::Proc(CalcitProc::JsonParse | CalcitProc::NativeTryParseJson) => true,
+    Calcit::Proc(CalcitProc::JsonParse | CalcitProc::NativeTryParseJson | CalcitProc::NativeTryParseJsonValue) => true,
     Calcit::Import(CalcitImport { ns, def, .. }) => {
-      ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "try-parse-json" | "&try-parse-json" | "json-parse")
+      ns.as_ref() == "calcit.core"
+        && matches!(
+          def.as_ref(),
+          "try-parse-json" | "&try-parse-json" | "json-parse" | "json:parse" | "&try-parse-json-value"
+        )
     }
-    Calcit::Symbol { sym, .. } => matches!(sym.as_ref(), "try-parse-json" | "&try-parse-json" | "json-parse"),
+    Calcit::Symbol { sym, .. } => matches!(
+      sym.as_ref(),
+      "try-parse-json" | "&try-parse-json" | "json-parse" | "json:parse" | "&try-parse-json-value"
+    ),
     Calcit::Method(name, _) => name.as_ref() == "parse-json",
     Calcit::List(xs) => xs.iter().any(expr_uses_json_parse),
     Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_json_parse),

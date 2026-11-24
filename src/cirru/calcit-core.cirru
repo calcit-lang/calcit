@@ -1571,6 +1571,36 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal
+        '&json:pretty-at $ %{} 'CodeEntry (:doc "|Internal recursive pretty-printer for closed JsonValue with 2-space indentation.")
+          :code $ quote $ defn &json:pretty-at (value depth)
+            match value
+              (:null) |null
+              (:bool b) (if b |true |false)
+              (:number n) (json-stringify n)
+              (:string s) (json-stringify s)
+              (:array xs)
+                if (&list:empty? xs) |[]
+                  let
+                      next-depth $ &+ depth 1
+                      pad $ join-string (repeat "|  " next-depth) |
+                      close-pad $ join-string (repeat "|  " depth) |
+                      items $ &list:map xs $ fn (item)
+                        hint-fn $ Fn JsonValue (-> String)
+                        str pad $ &json:pretty-at item next-depth
+                    str "|[\n" (join-string items "|,\n") "|\n" close-pad |]
+              (:object m)
+                if (&map:empty? m) |{}
+                  let
+                      next-depth $ &+ depth 1
+                      pad $ join-string (repeat "|  " next-depth) |
+                      close-pad $ join-string (repeat "|  " depth) |
+                      items $ map-list-kv m $ fn (k v)
+                        hint-fn $ Fn String JsonValue (-> String)
+                        str pad (json-stringify k) "|: " (&json:pretty-at v next-depth)
+                    str "|{\n" (join-string items "|,\n") "|\n" close-pad |}
+          :examples $ []
+          :schema $ quote $ Fn JsonValue Number (-> String)
+          :tags $ #{} :internal
         '&let $ %{} 'CodeEntry
           :doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable"
           :code $ quote &runtime-implementation
@@ -3787,6 +3817,13 @@
             -> $ Result Dynamic String
             :open :decode
           :tags $ #{} :builtin :internal
+        '&try-parse-json-value $ %{} 'CodeEntry
+          :doc "|内部封闭 JSON 解析边界；显式接收 Result 与 JsonValue 原型，将语法失败收敛为 Result :err，供 json:parse 与 backend lowering 使用。"
+          :code $ quote $ def &try-parse-json-value &runtime-implementation
+          :examples $ []
+          :schema $ quote $ Fn EnumDef EnumDef String
+            -> $ Result JsonValue String
+          :tags $ #{} :builtin :internal
         '&turn-string $ %{} 'CodeEntry
           :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
           :code $ quote &runtime-implementation
@@ -4427,6 +4464,126 @@
               assert= 1 $ count $ :headers resp
               assert= (HttpBody :empty) (:body resp)
             :tags $ #{} :core :unit
+        'JsonValue $ %{} 'CodeEntry
+          :doc "|Closed recursive nominal JSON value ADT across Native, JS, and WASM/WASI without Dynamic. Variants: :null, :bool Bool, :number Number, :string String, :array (List JsonValue), :object (Map String JsonValue). Use `json:parse` to parse JSON text into `Result JsonValue String`, and `.to-json` / `.to-json-pretty` (or `json:stringify` / `json:pretty`) to format."
+          :code $ quote $ def JsonValue
+            impl-traits
+              defenum JsonValue (:null) (:bool Bool) (:number Number) (:string String)
+                :array $ List JsonValue
+                :object $ Map String JsonValue
+              , internal/&core-debug-impl internal/&core-eq-impl JsonValueOpsImpl
+          :examples $ []
+            quote $ json:parse "|{\"ok\":true,\"items\":[1,\"a\",null]}"
+            quote $ .to-json $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
+          :schema $ quote EnumDef
+          :tags $ #{} :core :data
+          :tests $ []
+            %{} 'TestEntry (:name |constructs-matches-and-compares-recursive-variants)
+              :code $ quote $ let
+                  empty-arr $ JsonValue :array $ []
+                  empty-obj $ JsonValue :object $ {}
+                  nested $ JsonValue :object $ {}
+                    |null $ JsonValue :null
+                    |flag $ JsonValue :bool true
+                    |count $ JsonValue :number 42
+                    |name $ JsonValue :string |calcit
+                    |items $ JsonValue :array $ []
+                      JsonValue :number 1
+                      JsonValue :bool false
+                      , empty-arr empty-obj
+                  describe $ fn (v)
+                    hint-fn $ Fn JsonValue (-> String)
+                    match v
+                      (:null) |null
+                      (:bool b) (if b |true |false)
+                      (:number n) (to-string n)
+                      (:string s) s
+                      (:array xs) (str "|array:" (count xs))
+                      (:object m) (str "|object:" (count m))
+                assert= (JsonValue :null) (JsonValue :null)
+                assert= false $ = (JsonValue :null) (JsonValue :bool false)
+                assert= false $ = (JsonValue :number 0) (JsonValue :bool false)
+                assert= |null $ describe (JsonValue :null)
+                assert= |true $ describe (JsonValue :bool true)
+                assert= |42 $ describe (JsonValue :number 42)
+                assert= |calcit $ describe (JsonValue :string |calcit)
+                assert= |array:0 $ describe empty-arr
+                assert= |object:5 $ describe nested
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |roundtrips-json-text-and-reports-syntax-errors)
+              :code $ quote $ let
+                  sample "|{\"a\":1,\"b\":[true,false,null,\"hi\\n\\\"q\\\"\"],\"c\":{}}"
+                  parsed $ json:parse sample
+                  expected $ JsonValue :object $ {}
+                    |a $ JsonValue :number 1
+                    |b $ JsonValue :array $ []
+                      JsonValue :bool true
+                      JsonValue :bool false
+                      JsonValue :null
+                      JsonValue :string "|hi\n\"q\""
+                    |c $ JsonValue :object $ {}
+                assert-type parsed (Result JsonValue String)
+                assert= (Result :ok expected) parsed
+                match parsed
+                  (:ok v)
+                    do
+                      assert= (Result :ok expected) (json:parse (.to-json v))
+                      assert= (Result :ok expected) (json:parse (.to-json-pretty v))
+                      assert= (Result :ok expected) (json:parse (json:stringify v))
+                      assert= (Result :ok expected) (json:parse (json:pretty v))
+                  (:err msg) (raise msg)
+                assert= true $ .err? $ json:parse |{
+                assert= true $ .err? $ json:parse "|[1, 2"
+                assert= true $ .err? $ json:parse |
+                assert= true $ .err? $ json:parse "|1 2"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-compact-and-pretty-json-deterministically)
+              :code $ quote $ do
+                assert= |null $ .to-json (JsonValue :null)
+                assert= |true $ .to-json (JsonValue :bool true)
+                assert= |false $ .to-json (JsonValue :bool false)
+                assert= |42 $ .to-json (JsonValue :number 42)
+                assert= |1.5 $ .to-json (JsonValue :number 1.5)
+                assert= "|\"hello\\nworld\"" $ .to-json (JsonValue :string "|hello\nworld")
+                assert= |[] $ .to-json (JsonValue :array ([]))
+                assert= |{} $ .to-json (JsonValue :object ({}))
+                assert= |[1,true,null] $ .to-json
+                  JsonValue :array $ [] (JsonValue :number 1) (JsonValue :bool true) (JsonValue :null)
+                assert= "|{\"k\":1}" $ .to-json
+                  JsonValue :object $ {} (|k (JsonValue :number 1))
+                assert= "|{\n  \"k\": [\n    1,\n    \"x\"\n  ]\n}" $ .to-json-pretty
+                  JsonValue :object $ {}
+                    |k $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :string |x)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |handles-duplicate-keys-arbitrary-keys-unicode-and-overflow)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ JsonValue :object $ {} (|dup (JsonValue :number 2))
+                  json:parse "|{\"dup\":1,\"dup\":2}"
+                assert=
+                  Result :ok $ JsonValue :object $ {}
+                    "|unseen dynamic key 中文" $ JsonValue :string "|中文😀"
+                  json:parse "|{\"unseen dynamic key \\u4e2d\\u6587\":\"\\u4e2d\\u6587\\uD83D\\uDE00\"}"
+                assert=
+                  Result :ok $ JsonValue :array $ []
+                    JsonValue :number -0.25
+                    JsonValue :number 1e-5
+                    JsonValue :number 1000000
+                  json:parse "|[-0.25, 1e-5, 1e6]"
+                assert= true $ .err? $ json:parse |1e400
+              :tags $ #{} :core :unit
+        'JsonValueOps $ %{} 'CodeEntry (:doc "|Internal method contract for closed JsonValue formatting.")
+          :code $ quote $ deftrait JsonValueOps
+            .to-json $ Fn JsonValue (-> String)
+            .to-json-pretty $ Fn JsonValue (-> String)
+          :examples $ []
+          :schema $ quote Trait
+          :tags $ #{} :internal :trait
+        'JsonValueOpsImpl $ %{} 'CodeEntry (:doc "|Internal JsonValue method implementation.")
+          :code $ quote $ defimpl JsonValueOpsImpl JsonValueOps (.to-json json:stringify) (.to-json-pretty json:pretty)
+          :examples $ []
+          :schema $ quote Impl
+          :tags $ #{} :internal :trait-impl
         'Len $ %{} 'CodeEntry (:doc "|Core trait: Len")
           :code $ quote $ deftrait Len
             .len $ Fn Self $ -> Number
@@ -10774,6 +10931,52 @@
               {} $ :a 1
           :schema $ quote $ Fn T (-> String) (:generics T)
           :tags $ #{} :builtin :internal
+        'json:parse $ %{} 'CodeEntry
+          :doc "|Parse RFC 8259 JSON text into closed nominal `Result<JsonValue, String>` without `Dynamic`. Syntax or overflow errors return `Result :err String`. Works across Native, JS, and WASM/WASI."
+          :code $ quote $ defn json:parse (source) (&try-parse-json-value Result JsonValue source)
+          :examples $ []
+            quote $ json:parse "|{\"a\":1,\"b\":[true,null]}"
+            quote $ json:parse |{
+          :schema $ quote $ Fn String
+            -> $ Result JsonValue String
+          :tags $ #{} :core :data
+        'json:pretty $ %{} 'CodeEntry
+          :doc "|Format a closed `JsonValue` into 2-space indented RFC 8259 JSON text. User code can also call `.to-json-pretty` on `JsonValue`."
+          :code $ quote $ defn json:pretty (value) (&json:pretty-at value 0)
+          :examples $ []
+            quote $ json:pretty $ JsonValue :object $ {} (|a (JsonValue :number 1))
+          :schema $ quote $ Fn JsonValue (-> String)
+          :tags $ #{} :core :data
+        'json:stringify $ %{} 'CodeEntry
+          :doc "|Format a closed `JsonValue` into compact RFC 8259 JSON text. User code can also call `.to-json` on `JsonValue`."
+          :code $ quote $ defn json:stringify (value)
+            match value
+              (:null) |null
+              (:bool b) (if b |true |false)
+              (:number n) (json-stringify n)
+              (:string s) (json-stringify s)
+              (:array xs)
+                if (&list:empty? xs) |[]
+                  str |[
+                    join-string
+                      &list:map xs $ fn (item)
+                        hint-fn $ Fn JsonValue (-> String)
+                        json:stringify item
+                      , |,
+                    , |]
+              (:object m)
+                if (&map:empty? m) |{}
+                  str |{
+                    join-string
+                      map-list-kv m $ fn (k v)
+                        hint-fn $ Fn String JsonValue (-> String)
+                        str (json-stringify k) |: (json:stringify v)
+                      , |,
+                    , |}
+          :examples $ []
+            quote $ json:stringify $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
+          :schema $ quote $ Fn JsonValue (-> String)
+          :tags $ #{} :core :data
         'keys $ %{} 'CodeEntry
           :doc "|Returns Set<K> for Map<K,V>. User code should prefer `.keys`; a statically known Map receiver lowers directly to internal `&map:keys`."
           :code $ quote $ defn keys (x) (&map:keys x)

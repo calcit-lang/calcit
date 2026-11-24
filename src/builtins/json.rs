@@ -52,6 +52,34 @@ pub fn try_parse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Parse JSON text into a closed nominal `Result<JsonValue, String>` without throwing exceptions.
+pub fn try_parse_value(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 3 {
+    return err_arity("&try-parse-json-value expected 3 arguments", xs);
+  }
+  let [
+    result_type @ Calcit::EnumDef(_),
+    json_value_type @ Calcit::EnumDef(_),
+    Calcit::Str(content),
+  ] = xs
+  else {
+    let msg = format!(
+      "&try-parse-json-value expected Result enum, JsonValue enum, and a string, but received: {}, {}, and {}",
+      type_of(std::slice::from_ref(&xs[0]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[1]))?.lisp_str(),
+      type_of(std::slice::from_ref(&xs[2]))?.lisp_str()
+    );
+    return CalcitErr::err_str(CalcitErrKind::Type, msg);
+  };
+  let parsed = serde_json::from_str::<Value>(content)
+    .map_err(|err| format!("json:parse expected valid JSON string, got parse error: {err}"))
+    .and_then(|value| json_to_json_value(json_value_type, value).map_err(|err| err.msg));
+  match parsed {
+    Ok(value) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), value]),
+    Err(message) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("err"), Calcit::new_str(message)]),
+  }
+}
+
 pub fn stringify(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs {
     [value] => {
@@ -104,6 +132,35 @@ fn json_to_calcit(value: Value) -> Result<Calcit, CalcitErr> {
         map.insert_mut(Calcit::tag(&key), json_to_calcit(value)?);
       }
       Ok(Calcit::Map(map))
+    }
+  }
+}
+
+fn json_to_json_value(json_value_type: &Calcit, value: Value) -> Result<Calcit, CalcitErr> {
+  match value {
+    Value::Null => new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("null")]),
+    Value::Bool(flag) => new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("bool"), Calcit::Bool(flag)]),
+    Value::Number(number) => {
+      let n = number
+        .as_f64()
+        .filter(|v| v.is_finite())
+        .ok_or_else(|| CalcitErr::use_str(CalcitErrKind::Type, format!("json number cannot fit into calcit number: {number}")))?;
+      new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("number"), Calcit::Number(n)])
+    }
+    Value::String(text) => new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("string"), Calcit::new_str(text)]),
+    Value::Array(items) => {
+      let mut values = Vec::with_capacity(items.len());
+      for item in items {
+        values.push(json_to_json_value(json_value_type, item)?);
+      }
+      new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("array"), Calcit::from(values)])
+    }
+    Value::Object(entries) => {
+      let mut map = rpds::HashTrieMap::new_sync();
+      for (key, item) in entries {
+        map.insert_mut(Calcit::new_str(key), json_to_json_value(json_value_type, item)?);
+      }
+      new_named_enum_value(&[json_value_type.to_owned(), Calcit::tag("object"), Calcit::Map(map)])
     }
   }
 }
@@ -298,5 +355,16 @@ mod tests {
   fn json_stringify_formats_integer_numbers_without_decimal_suffix() {
     let result = stringify(&[Calcit::Number(1.0)]).expect("stringify integer number");
     assert_eq!(result, Calcit::new_str("1"));
+  }
+
+  #[test]
+  fn try_parse_value_rejects_wrong_arity_and_non_enum_args() {
+    let arity_err = try_parse_value(&[Calcit::new_str("1")]).expect_err("wrong arity should fail");
+    assert_eq!(arity_err.kind, CalcitErrKind::Arity);
+    assert!(arity_err.msg.contains("&try-parse-json-value expected 3 arguments"));
+
+    let type_err = try_parse_value(&[Calcit::Nil, Calcit::Nil, Calcit::new_str("1")]).expect_err("non-enum args should fail");
+    assert_eq!(type_err.kind, CalcitErrKind::Type);
+    assert!(type_err.msg.contains("expected Result enum, JsonValue enum, and a string"));
   }
 }

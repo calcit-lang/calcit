@@ -3015,9 +3015,52 @@ export let json_parse = function (code: CalcitValue): CalcitValue {
   return json_to_calcit(JSON.parse(code));
 };
 
+const json_to_json_value = (jsonValueType: CalcitEnumDef, value: any): CalcitEnumValue => {
+  if (value === null) {
+    return new CalcitEnumValue(newTag("null"), [], jsonValueType);
+  }
+  if (typeof value === "boolean") {
+    return new CalcitEnumValue(newTag("bool"), [value], jsonValueType);
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error(`json number cannot fit into calcit number: ${value}`);
+    }
+    return new CalcitEnumValue(newTag("number"), [value], jsonValueType);
+  }
+  if (typeof value === "string") {
+    return new CalcitEnumValue(newTag("string"), [value], jsonValueType);
+  }
+  if (Array.isArray(value)) {
+    return new CalcitEnumValue(
+      newTag("array"),
+      [new CalcitSliceList(value.map((item) => json_to_json_value(jsonValueType, item)))],
+      jsonValueType,
+    );
+  }
+  if (typeof value === "object") {
+    const entries: CalcitValue[] = [];
+    for (const key of Object.keys(value)) {
+      entries.push(key, json_to_json_value(jsonValueType, value[key]));
+    }
+    return new CalcitEnumValue(newTag("object"), [new CalcitSliceMap(entries)], jsonValueType);
+  }
+  throw new Error(`Unsupported JSON value: ${value}`);
+};
+
 /** Parse JSON text into Result<Dynamic, String> without throwing syntax errors. */
 export let _$n_try_parse_json = (resultType: CalcitEnumDef, code: string): CalcitEnumValue => {
   return try_parse_with_result(resultType, code, "&try-parse-json", (text) => json_parse(text));
+};
+
+/** Parse JSON text into closed Result<JsonValue, String> without throwing syntax errors. */
+export let _$n_try_parse_json_value = (resultType: CalcitEnumDef, jsonValueType: CalcitEnumDef, code: string): CalcitEnumValue => {
+  if (!(jsonValueType instanceof CalcitEnumDef)) {
+    throw new Error(`&try-parse-json-value expected JsonValue enum definition, got: ${toString(jsonValueType, true)}`);
+  }
+  return try_parse_with_result(resultType, code, "&try-parse-json-value", (text) =>
+    json_to_json_value(jsonValueType, JSON.parse(text)),
+  );
 };
 
 export let json_stringify = function (value: CalcitValue): string {

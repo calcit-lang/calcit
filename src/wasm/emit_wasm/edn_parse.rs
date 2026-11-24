@@ -195,7 +195,7 @@ pub(super) fn emit_json_parse(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -> Result<(), String> {
+fn emit_try_parse_json_with_rt(ctx: &mut WasmGenCtx, input: u32, rt_root_fn: &str) -> Result<(), String> {
   let is_str = emit_has_heap_tag(ctx, input, "string");
   ctx.emit(Instruction::LocalGet(is_str));
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -214,7 +214,7 @@ pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -
   let val = ctx.alloc_local();
   let ok = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(input));
-  ctx.call_rt("__rt_json_parse_root");
+  ctx.call_rt(rt_root_fn);
   ctx.emit(Instruction::LocalSet(ok));
   ctx.emit(Instruction::LocalSet(val));
   ctx.emit(Instruction::LocalGet(ok));
@@ -231,6 +231,10 @@ pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -
   Ok(())
 }
 
+pub(super) fn emit_try_parse_json_from_local(ctx: &mut WasmGenCtx, input: u32) -> Result<(), String> {
+  emit_try_parse_json_with_rt(ctx, input, "__rt_json_parse_root")
+}
+
 pub(super) fn emit_try_parse_json(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err(format!("try-parse-json expected 1 argument, got {}", args.len()));
@@ -239,6 +243,20 @@ pub(super) fn emit_try_parse_json(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let input = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(input));
   emit_try_parse_json_from_local(ctx, input)
+}
+
+pub(super) fn emit_try_parse_json_value_from_local(ctx: &mut WasmGenCtx, input: u32) -> Result<(), String> {
+  emit_try_parse_json_with_rt(ctx, input, "__rt_json_parse_value_root")
+}
+
+pub(super) fn emit_try_parse_json_value(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() != 1 {
+    return Err(format!("json:parse expected 1 argument, got {}", args.len()));
+  }
+  emit_expr(ctx, &args[0])?;
+  let input = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(input));
+  emit_try_parse_json_value_from_local(ctx, input)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
