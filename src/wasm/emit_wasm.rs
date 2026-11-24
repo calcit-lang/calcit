@@ -1232,7 +1232,7 @@ fn emit_wasm_impl(
     let is_custom_core = ns == "calcit.core"
       && matches!(
         name.as_str(),
-        "repeat" | "interleave" | "zipmap" | "intersperse" | "join-string" | "try-parse-json" | "keys-non-nil"
+        "repeat" | "interleave" | "zipmap" | "intersperse" | "join-string" | "try-parse-json" | "json:parse" | "keys-non-nil"
       );
     let is_wasi_init = target == WasmTarget::Wasi && ns == init_ns && name == init_def;
     if matches!(args, CalcitFnArgs::Args(_))
@@ -10298,6 +10298,19 @@ fn try_custom_def_impl(
         instructions: ctx.instructions,
       })
     })()),
+    "json:parse" => Some((|| {
+      let mut ctx = WasmGenCtx::new(1, env.clone());
+      ctx.locals.insert("__p0__".into(), 0);
+      ctx.arg_indices.push(0);
+      edn_parse::emit_try_parse_json_value_from_local(&mut ctx, 0)?;
+      Ok(CompiledFn {
+        export_name: Some(export_name.to_owned()),
+        params: vec![ValType::F64],
+        results: vec![ValType::F64],
+        locals: ctx.extra_locals,
+        instructions: ctx.instructions,
+      })
+    })()),
     _ => None,
   }
 }
@@ -11479,6 +11492,7 @@ fn is_core_special_call_name(name: &str) -> bool {
         | "filter-map-kv"
         | "keys-non-nil"
         | "try-parse-json"
+        | "json:parse"
         | "nil->option"
         | "'"
     )
@@ -11949,6 +11963,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
           "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           "try-parse-json" if args_list.len() == 1 => return edn_parse::emit_try_parse_json(ctx, &args_list),
+          "json:parse" if args_list.len() == 1 => return edn_parse::emit_try_parse_json_value(ctx, &args_list),
           "nil->option" if args_list.len() == 1 => {
             if let Some(lowered) = lower_nil_to_option_target(ctx, &args_list[0])? {
               return emit_expr(ctx, &lowered);
@@ -12075,6 +12090,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
             && !ctx.locals.contains_key(name) =>
         {
           return edn_parse::emit_try_parse_json(ctx, &args_list);
+        }
+        "json:parse"
+          if args_list.len() == 1
+            && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+            && !ctx.lambda_locals.contains_key(name)
+            && !ctx.locals.contains_key(name) =>
+        {
+          return edn_parse::emit_try_parse_json_value(ctx, &args_list);
         }
         "nil->option"
           if args_list.len() == 1
@@ -13313,6 +13336,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       emit_expr(ctx, &args[0])?;
       ctx.emit(Instruction::Drop);
       edn_parse::emit_try_parse_json(ctx, &args[1..2])
+    }
+    CalcitProc::NativeTryParseJsonValue => {
+      expect_arity(3, args, "&try-parse-json-value")?;
+      for (idx, label) in [(0, "Result"), (1, "JsonValue")] {
+        let prototype_type = infer_wasm_static_type(ctx, &args[idx]);
+        if !prototype_type.as_ref().is_some_and(|annotation| {
+          let expanded = expand_wasm_value_type(annotation);
+          matches!(expanded.as_ref(), CalcitTypeAnnotation::Never) || proven_disjoint_value_kind(&expanded) == Some("enum-def")
+        }) {
+          return Err(format!(
+            "E_WASM_EDN_TYPE: &try-parse-json-value requires a statically known {label} enum definition"
+          ));
+        }
+        emit_expr(ctx, &args[idx])?;
+        ctx.emit(Instruction::Drop);
+      }
+      edn_parse::emit_try_parse_json_value(ctx, &args[2..3])
     }
     CalcitProc::Split => emit_split(ctx, args),
     CalcitProc::SplitLines => emit_split_lines(ctx, args),
@@ -20334,6 +20374,31 @@ mod tests {
         expected.to_bits()
       );
     }
+  }
+
+  #[test]
+  fn closed_json_value_parse_does_not_enable_boxed_json_scalars() {
+    use super::{CalcitFnArgs, program_has_boxed_json_scalars};
+
+    let closed_body = vec![Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeTryParseJsonValue),
+      Calcit::Nil,
+      Calcit::Nil,
+      Calcit::new_str("{}"),
+    ])];
+    let closed_fn_defs = vec![("app.main".to_owned(), "parse".to_owned(), CalcitFnArgs::Args(vec![]), closed_body)];
+    assert!(
+      !program_has_boxed_json_scalars(&closed_fn_defs, &HashMap::new()),
+      "closed JsonValue parsing must not trigger boxed dynamic JSON scalar checks"
+    );
+
+    let open_body = vec![Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeTryParseJson),
+      Calcit::Nil,
+      Calcit::new_str("{}"),
+    ])];
+    let open_fn_defs = vec![("app.main".to_owned(), "parse".to_owned(), CalcitFnArgs::Args(vec![]), open_body)];
+    assert!(program_has_boxed_json_scalars(&open_fn_defs, &HashMap::new()));
   }
 
   #[test]

@@ -193,6 +193,8 @@ pub enum CalcitProc {
   JsonParse,
   #[strum(serialize = "&try-parse-json")]
   NativeTryParseJson,
+  #[strum(serialize = "&try-parse-json-value")]
+  NativeTryParseJsonValue,
   #[strum(serialize = "json-stringify")]
   JsonStringify,
   #[strum(serialize = "json-pretty")]

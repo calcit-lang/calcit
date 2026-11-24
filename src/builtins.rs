@@ -449,6 +449,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeCirruQuoteLeafText => meta::cirru_quote_leaf_text(args),
     JsonParse => json::parse(args),
     NativeTryParseJson => json::try_parse(args),
+    NativeTryParseJsonValue => json::try_parse_value(args),
     JsonStringify => json::stringify(args),
     JsonPretty => json::pretty(args),
     // time
