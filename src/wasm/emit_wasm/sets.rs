@@ -81,11 +81,10 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
       } else {
         let is_dup = ctx.alloc_i32(0);
         for j in compatible_prev {
-          let eq = emit_equals_core_shallow(ctx, elem, elem_locals[j])?;
+          ctx.emit(Instruction::LocalGet(elem));
+          ctx.emit(Instruction::LocalGet(elem_locals[j]));
+          ctx.call_rt("__rt_value_equal");
           ctx.emit(Instruction::LocalGet(is_dup));
-          ctx.emit(Instruction::LocalGet(eq));
-          ctx.emit(f64_const(0.0));
-          ctx.emit(Instruction::F64Ne);
           ctx.emit(Instruction::I32Or);
           ctx.emit(Instruction::LocalSet(is_dup));
         }
@@ -566,51 +565,14 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   Ok(result)
 }
 
-/// Inline structural set-membership check.
+/// Structural set-membership check via `__rt_set_find_elem` (which uses recursive `__rt_value_equal`).
 /// Returns i32 local: index of found element (-1 = not found).
-/// Uses structural equality (emit_equals_core) so heap objects like lists compare correctly.
 fn emit_set_find_structural(ctx: &mut WasmGenCtx, set_ptr: u32, needle: u32) -> u32 {
-  let set_count = emit_load_count_i32(ctx, set_ptr);
-  let result = ctx.alloc_i32(-1); // -1 = not found
-  let si = ctx.alloc_i32(0);
-
-  ctx.begin_block();
-  ctx.begin_loop();
-  ctx.loop_exit_if_ge(si, set_count);
-
-  // Load element at set_ptr + 8 + si*8
-  let elem_addr = ctx.alloc_local_typed(ValType::I32);
+  let result = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(set_ptr));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(si));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(elem_addr));
-
-  let elem = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(elem_addr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::LocalSet(elem));
-
-  // Structural equality: needle == elem? (shallow: no recursive set comparison)
-  let eq = emit_equals_core_shallow(ctx, needle, elem).expect("emit_equals_core_shallow in set_find_structural");
-
-  ctx.emit(Instruction::LocalGet(eq));
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne);
-  ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(si));
+  ctx.emit(Instruction::LocalGet(needle));
+  ctx.call_rt("__rt_set_find_elem");
   ctx.emit(Instruction::LocalSet(result));
-  ctx.emit(Instruction::Br(2)); // break out of loop+block
-  ctx.emit(Instruction::End);
-
-  ctx.i32_inc(si);
-  ctx.emit(Instruction::Br(0));
-  ctx.emit(Instruction::End); // loop
-  ctx.emit(Instruction::End); // block
-
   result
 }
 

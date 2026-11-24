@@ -1398,6 +1398,57 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_equal(value_equal_idx: u32) -> Co
   b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
+/// `__rt_set_find_elem(set_ptr: i32, needle: f64) → i32`
+/// Find an element in a set using deep structural equality; returns index or -1.
+pub(in crate::wasm::emit_wasm) fn build_rt_set_find_elem(value_equal_idx: u32) -> CompiledFn {
+  let set_find_instructions = vec![
+    Instruction::LocalGet(0),
+    Instruction::F64Load(mem_arg_f64(0)),
+    Instruction::I32TruncF64U,
+    Instruction::LocalSet(2),
+    Instruction::I32Const(-1),
+    Instruction::LocalSet(4),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(3),
+    Instruction::Block(wasm_encoder::BlockType::Empty),
+    Instruction::Loop(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(3),
+    Instruction::LocalGet(2),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(3),
+    Instruction::I32Const(8),
+    Instruction::I32Mul,
+    Instruction::I32Add,
+    Instruction::F64Load(mem_arg_f64(0)),
+    Instruction::LocalGet(1),
+    Instruction::Call(value_equal_idx),
+    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::LocalGet(3),
+    Instruction::LocalSet(4),
+    Instruction::Br(2),
+    Instruction::End,
+    Instruction::LocalGet(3),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(3),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(4),
+  ];
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::I32, ValType::F64],
+    results: vec![ValType::I32],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32],
+    instructions: set_find_instructions,
+  }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
   use super::*;

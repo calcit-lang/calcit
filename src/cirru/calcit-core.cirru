@@ -4120,6 +4120,36 @@
                   do (println |left) 1
                   do (println |right) true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-nested-sets-and-collections-structurally)
+              :code $ quote $ let
+                  a $ #{} (#{} 1 2) (#{} 3 4)
+                  b $ #{} (#{} 4 3) (#{} 2 1)
+                  c $ #{} (#{} 1 2) (#{} 3 5)
+                  deduped $ #{} (#{} 1 2) (#{} 2 1)
+                  nested-lists $ #{} ([] 1 2) ([] 3 4)
+                  nested-lists-b $ #{} ([] 3 4) ([] 1 2)
+                  set-key-map $ {} ((#{} 1 2) 10) ((#{} 3 4) 20)
+                assert= true $ = a b
+                assert= true $ &= a b
+                assert= false $ = a c
+                assert= true $ not= a c
+                assert= 1 $ count deduped
+                assert= true $ .includes? a (#{} 2 1)
+                assert= false $ .includes? a (#{} 1 3)
+                assert= true $ includes? a (#{} 2 1)
+                assert= true $ = nested-lists nested-lists-b
+                assert= true $ .includes? nested-lists ([] 1 2)
+                assert= true $ =
+                  #{} (#{} 1 2) (#{} 3 4)
+                  union (#{} (#{} 1 2)) (#{} (#{} 2 1) (#{} 4 3))
+                assert= true $ =
+                  #{} (#{} 3 4)
+                  difference a (#{} (#{} 2 1))
+                assert= true $ =
+                  #{} (#{} 1 2)
+                  intersection a (#{} (#{} 2 1) (#{} 9))
+                assert= (Some 10) (&map:get set-key-map (#{} 2 1))
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
           :code $ quote $ defn > (x & ys)
