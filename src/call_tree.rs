@@ -345,6 +345,20 @@ impl CallTreeAnalyzer {
             }
           }
 
+          // Resolve `:as` qualified symbols such as `alias/def` in raw source AST.
+          if !found
+            && let Some((prefix, target_def)) = sym.split_once('/')
+            && let Some(file_data) = code_data.get(info.at_ns.as_ref())
+            && let Some(import_rule) = file_data.import_map.get(prefix)
+            && let crate::program::ImportRule::NsAs(ns) = &**import_rule
+            && code_data
+              .get(ns.as_ref())
+              .is_some_and(|target_file| target_file.defs.contains_key(target_def))
+          {
+            calls.push((ns.to_string(), target_def.to_string()));
+            found = true;
+          }
+
           // Finally, check if it's implicitly available from calcit.core
           // (unless we're already in calcit.core to avoid double-counting)
           if !found

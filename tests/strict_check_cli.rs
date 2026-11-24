@@ -3531,10 +3531,25 @@ fn dual_entry_browser_and_node_all_defs_checks_each_target_and_rejects_cross_tar
         :examples $ []
     |demo.draft $ %{} :FileEntry
       :defs $ {}
+        |a-unwired-caller $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String))
+          :code $ quote
+            defn a-unwired-caller ()
+              m-node-helper
+          :examples $ []
+        |m-node-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String) (:features :js-ffi))
+          :code $ quote
+            defn m-node-helper ()
+              demo.server/read-url (js-cast (new js/Object) demo.server/NodeRequest)
+          :examples $ []
         |unwired-node-only $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String))
           :code $ quote
             defn unwired-node-only (req)
               demo.server/read-url req
+          :examples $ []
+        |z-unwired-caller $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String))
+          :code $ quote
+            defn z-unwired-caller ()
+              m-node-helper
           :examples $ []
       :ns $ %{} :CodeEntry (:doc |) (:schema nil)
         :code $ quote
@@ -3564,7 +3579,10 @@ fn dual_entry_browser_and_node_all_defs_checks_each_target_and_rejects_cross_tar
     "demo.server/unwired-server-helper",
     "demo.shared/format-label",
     "demo.shared/unwired-shared-pure",
+    "demo.draft/a-unwired-caller",
+    "demo.draft/m-node-helper",
     "demo.draft/unwired-node-only",
+    "demo.draft/z-unwired-caller",
   ] {
     assert!(
       defs

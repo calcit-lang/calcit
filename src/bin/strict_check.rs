@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use calcit::ProgramEntries;
@@ -838,13 +838,30 @@ fn find_entry_with_target(entry_contexts: &[EntryCheckContext], target: Snapshot
   entry_contexts.iter().position(|ctx| ctx.target == Some(target))
 }
 
+fn transitive_nodes_from(start: &str, graph: &DefinitionGraph) -> BTreeSet<String> {
+  let mut visited = BTreeSet::new();
+  let mut queue = VecDeque::new();
+  visited.insert(start.to_owned());
+  queue.push_back(start.to_owned());
+  while let Some(node) = queue.pop_front() {
+    if let Some(deps) = graph.get(&node) {
+      for dep in deps {
+        if visited.insert(dep.clone()) {
+          queue.push_back(dep.clone());
+        }
+      }
+    }
+  }
+  visited
+}
+
 fn assign_unwired_entry_owner(
   ns: &str,
   def: &str,
   scope: &AllDefsScope,
   ns_entry_targets: &HashMap<String, Vec<SnapshotTarget>>,
   ns_entry_indices: &HashMap<String, BTreeSet<usize>>,
-  unwired_analyzer: &mut CallTreeAnalyzer,
+  unwired_graph: &DefinitionGraph,
 ) -> usize {
   let fqn = format!("{ns}/{def}");
 
@@ -874,22 +891,13 @@ fn assign_unwired_entry_owner(
   // graph or schemas. Conflicting targets (len > 1) fall back to the selected entry
   // so `E_JS_FFI_TARGET_MISMATCH` is still reported.
   let mut referenced_targets = Vec::new();
-  if let Ok(analysis) = unwired_analyzer.analyze(ns, def) {
-    let mut sub_graph = BTreeMap::new();
-    collect_graph(&analysis.tree, &mut sub_graph);
-    let mut nodes = BTreeSet::new();
-    for (node, deps) in &sub_graph {
-      nodes.insert(node.clone());
-      nodes.extend(deps.iter().cloned());
+  for node in transitive_nodes_from(&fqn, unwired_graph) {
+    if let Some(&target) = scope.declared_targets.get(&node) {
+      push_unique_target(&mut referenced_targets, target);
     }
-    for node in &nodes {
-      if let Some(&target) = scope.declared_targets.get(node) {
-        push_unique_target(&mut referenced_targets, target);
-      }
-      if let Some((node_ns, node_def)) = node.rsplit_once('/') {
-        let schema = program::lookup_def_schema(node_ns, node_def);
-        collect_schema_declared_targets(node_ns, schema.as_ref(), &scope.declared_targets, &mut referenced_targets);
-      }
+    if let Some((node_ns, node_def)) = node.rsplit_once('/') {
+      let schema = program::lookup_def_schema(node_ns, node_def);
+      collect_schema_declared_targets(node_ns, schema.as_ref(), &scope.declared_targets, &mut referenced_targets);
     }
   }
   if referenced_targets.len() == 1
@@ -948,20 +956,22 @@ fn run_multi_entry_all_defs(scope: &AllDefsScope) -> Result<MultiEntryCheckOutco
     entry_roots[idx] = roots;
   }
 
-  // Assign unwired project definitions to their true entry context.
-  let mut unwired_analyzer = CallTreeAnalyzer::new(CallTreeConfig {
-    include_core,
-    ..CallTreeConfig::default()
-  });
-  for (ns, def) in &scope.roots {
-    let fqn = format!("{ns}/{def}");
-    if reached_definitions.contains(&fqn) {
-      continue;
-    }
-    let owner = assign_unwired_entry_owner(ns, def, scope, &ns_entry_targets, &ns_entry_indices, &mut unwired_analyzer);
-    let pair = (ns.clone(), def.clone());
-    if !entry_roots[owner].contains(&pair) {
-      entry_roots[owner].push(pair);
+  // Assign unwired project definitions to their true entry context using a
+  // single full graph so transitive target discovery is order-independent.
+  let unwired_roots = scope
+    .roots
+    .iter()
+    .filter(|(ns, def)| !reached_definitions.contains(&format!("{ns}/{def}")))
+    .cloned()
+    .collect::<Vec<_>>();
+  if !unwired_roots.is_empty() {
+    let (unwired_graph, _) = build_graph_for_roots(&unwired_roots, include_core, Some(&scope.intrinsics))?;
+    for (ns, def) in &unwired_roots {
+      let owner = assign_unwired_entry_owner(ns, def, scope, &ns_entry_targets, &ns_entry_indices, &unwired_graph);
+      let pair = (ns.clone(), def.clone());
+      if !entry_roots[owner].contains(&pair) {
+        entry_roots[owner].push(pair);
+      }
     }
   }
 
