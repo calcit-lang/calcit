@@ -4339,6 +4339,11 @@ impl CalcitTypeAnnotation {
       if let Some(builtin) = Self::builtin_type_from_symbol_name(sym).filter(|_| !Self::generics_contains(generics, sym)) {
         return Arc::new(builtin);
       }
+      // Qualified names in a type position refer to definitions. Preserve
+      // them for runtime assertions as well as scoped static checks.
+      if !sym.starts_with('\'') && sym.contains('/') {
+        return Arc::new(CalcitTypeAnnotation::TypeRef(sym.clone(), Arc::new(vec![])));
+      }
       if sym.starts_with('\'') {
         let stripped = sym.trim_start_matches('\'');
         if let Some(slot_name) = stripped.strip_prefix('*')
@@ -12771,25 +12776,24 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
             .any(|member| value_matches_type_annotation(value, member.annotation.as_ref()))
         });
       }
-      let nominal_match = match value {
+      // An explicit alias is a structural contract, not a nominal name.
+      // Expand it before the short-name fallback so an unrelated Struct or
+      // Enum with the same name cannot satisfy the aliased type.
+      if expected_args.is_empty()
+        && let Some(resolved) = resolve_type_ref_as_schema(expected_name, &[])
+      {
+        let Ok(_guard) = enter_alias_relation(expected_name, expected, false, false) else {
+          return false;
+        };
+        return value_matches_type_annotation(value, resolved.as_ref());
+      }
+      match value {
         Calcit::Struct(r) => CalcitTypeAnnotation::type_ref_name_matches(expected_name, r.struct_ref.name.ref_str()),
         Calcit::Enum(t) => t
           .sum_type
           .as_ref()
           .is_some_and(|st| CalcitTypeAnnotation::type_ref_name_matches(expected_name, st.name().ref_str())),
         _ => false,
-      };
-      if nominal_match {
-        true
-      } else if expected_args.is_empty()
-        && let Some(resolved) = resolve_type_ref_as_schema(expected_name, &[])
-      {
-        let Ok(_guard) = enter_alias_relation(expected_name, expected, false, false) else {
-          return false;
-        };
-        value_matches_type_annotation(value, resolved.as_ref())
-      } else {
-        false
       }
     }
     CalcitTypeAnnotation::StructDef(expected_struct) => match value {
