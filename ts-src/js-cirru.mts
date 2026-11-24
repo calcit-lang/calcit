@@ -577,7 +577,7 @@ export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValu
   return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView | TypedEdnMapView;
 };
 
-const EDN_NUMBER_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+const EDN_NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
 export let extract_edn_value = (x: CirruEdnFormat, ednValueType: CalcitEnumDef): CalcitEnumValue => {
   if (typeof x === "string") {

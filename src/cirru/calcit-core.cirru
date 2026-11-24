@@ -933,16 +933,30 @@
           :examples $ []
           :schema $ quote $ Fn EdnValue (-> String)
           :tags $ #{} :internal
-        '&edn:format-leaf $ %{} 'CodeEntry (:doc "|Internal helper: format a Cirru EDN leaf token, quoting with JSON escapes when required.")
+        '&edn:format-leaf $ %{} 'CodeEntry (:doc "|Internal helper: format a Cirru EDN leaf token, quoting with Cirru escapes when required.")
           :code $ quote $ defn &edn:format-leaf (text)
             let
                 n $ &str:count text
               if (&= n 0) "|\"\""
                 let
                     needs-quote $ &edn:leaf-needs-quote? text 0 n
-                  if needs-quote (json-stringify text) text
+                  if needs-quote (&str:concat "|\"" (&str:concat (&edn:escape-cirru-str text 0 n |) "|\"")) text
           :examples $ []
           :schema $ quote $ Fn String (-> String)
+          :tags $ #{} :internal
+        '&edn:escape-cirru-str $ %{} 'CodeEntry (:doc "|Internal helper: escape a string using Cirru double-quoted escapes (\\n, \\t, \\r, \\\", \\\\).")
+          :code $ quote $ defn &edn:escape-cirru-str (text idx total acc)
+            if (&>= idx total) acc
+              let
+                  ch $ &str:slice text idx (&+ idx 1)
+                  escaped $ if (= ch "|\\") "|\\\\"
+                    if (= ch "|\"") "|\\\""
+                      if (= ch "|\n") "|\\n"
+                        if (= ch "|\t") "|\\t"
+                          if (= ch "|\r") "|\\r" ch
+                recur text (&+ idx 1) total (&str:concat acc escaped)
+          :examples $ []
+          :schema $ quote $ Fn String Number Number String (-> String)
           :tags $ #{} :internal
         '&edn:leaf-needs-quote? $ %{} 'CodeEntry (:doc "|Internal helper: check whether a Cirru leaf string contains whitespace, parens, quotes, backslashes, or control characters.")
           :code $ quote $ defn &edn:leaf-needs-quote? (text idx total)
@@ -1082,17 +1096,20 @@
                               recur line len (:pos q) in-paren (&list:append acc (&edn:cirru-node :leaf (:text q))) depth
                           let
                               end-p $ &edn:scan-token-end line p len
-                              tok $ &str:slice line p end-p
-                            if (= tok |$)
-                              match (&edn:parse-seq line len end-p in-paren ([]) (&+ depth 1))
-                                (:err msg) (Result :err msg)
-                                (:ok tail)
-                                  let
-                                      new-nodes $ &list:append acc (&edn:cirru-node :list (:nodes tail))
-                                      new-pos $ :pos tail
-                                      new-depth $ &+ 1 (:dollar-depth tail)
-                                    Result :ok $ &edn:parse-seq-result :nodes new-nodes :pos new-pos :dollar-depth new-depth
-                              recur line len end-p in-paren (&list:append acc (&edn:cirru-node :leaf tok)) depth
+                            if (&<= end-p p)
+                              Result :err "|E_WASM_EDN_SYNTAX: unexpected delimiter or tab in Cirru EDN"
+                              let
+                                  tok $ &str:slice line p end-p
+                                if (= tok |$)
+                                  match (&edn:parse-seq line len end-p in-paren ([]) (&+ depth 1))
+                                    (:err msg) (Result :err msg)
+                                    (:ok tail)
+                                      let
+                                          new-nodes $ &list:append acc (&edn:cirru-node :list (:nodes tail))
+                                          new-pos $ :pos tail
+                                          new-depth $ &+ 1 (:dollar-depth tail)
+                                        Result :ok $ &edn:parse-seq-result :nodes new-nodes :pos new-pos :dollar-depth new-depth
+                                  recur line len end-p in-paren (&list:append acc (&edn:cirru-node :leaf tok)) depth
           :examples $ []
           :schema $ quote $ Fn String Number Number Bool (List calcit.core/&edn:cirru-node) Number
             -> $ Result calcit.core/&edn:parse-seq-result String
@@ -4789,6 +4806,16 @@
                 assert= (Result :ok (EdnValue :bool true)) (edn:parse "|do true")
                 assert= (Result :ok (EdnValue :bool false)) (edn:parse "|do false")
                 assert= (Result :ok (EdnValue :number -12.5)) (edn:parse "|do -12.5")
+                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do +1")
+                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do 01")
+                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do 1.")
+                assert= (Result :ok (EdnValue :number 0.5)) (edn:parse "|do .5")
+                let
+                    ctrl $ str |a (char-from-code 8) |b
+                    ctrl-val $ EdnValue :map
+                      {}
+                        (EdnValue :string ctrl) (EdnValue :tag ctrl)
+                  assert= (Result :ok ctrl-val) (edn:parse (.to-edn ctrl-val))
                 assert= (Result :ok (EdnValue :string "|hello world\n\"ok\"")) (edn:parse "|do \"|hello world\\n\\\"ok\\\"\"")
                 assert= (Result :ok (EdnValue :tag |unseen-dynamic-tag)) (edn:parse "|do :unseen-dynamic-tag")
                 assert= (Result :ok (EdnValue :symbol |unseen-symbol)) (edn:parse "|do 'unseen-symbol")
@@ -4822,6 +4849,8 @@
                 assert= true $ .err? $ edn:parse "|%{} 'Point (:x 1)"
                 assert= true $ .err? $ &edn:parse-pure "|do 1e400"
                 assert= true $ .err? $ &edn:parse-pure "|("
+                assert= true $ .err? $ &edn:parse-pure "|[]\t1"
+                assert= true $ .err? $ edn:parse "|[]\t1"
               :tags $ #{} :core :unit
         'EdnValueOps $ %{} 'CodeEntry (:doc "|Internal method contract for closed EdnValue formatting.")
           :code $ quote $ deftrait EdnValueOps
