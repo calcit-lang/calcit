@@ -50,6 +50,11 @@
           :code $ quote $ defunion Geo Point Shape String
           :examples $ []
           :schema $ quote UnionDef
+        'HostBlob $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait HostBlob (:size Number) (:type String)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ quote Trait
         'Json $ %{} 'CodeEntry
           :doc "|A recursive union: lists and maps hold Json values again."
           :code $ quote $ defunion Json String Number Bool (List Json) (Map String Json)
@@ -185,6 +190,15 @@
         'TripleInput $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defunion TripleInput Number (Tuple Number Number Number)
           :examples $ []
+        'UploadInput $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion UploadInput String HostBlob
+          :examples $ []
+          :schema $ quote UnionDef
+          :tests $ [] $ %{} 'TestEntry (:name |external-object-member-matches-value-branch)
+            :code $ quote $ do
+              assert= |local.txt $ assert-type |local.txt UploadInput
+              assert= |path:local.txt $ describe-upload-input |local.txt
+            :tags $ #{} :union :unit
         'cells-total $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cells-total (c)
             match c
@@ -282,6 +296,14 @@
                     segment-raw $ Some |plain
                     , MaybeGeo
               :tags $ #{} :union :unit
+        'describe-upload-input $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn describe-upload-input (input)
+            hint-fn $ Fn UploadInput $ -> String
+            match input
+              (String path) (str |path: path)
+              (HostBlob _blob) |blob
+          :examples $ []
+          :schema $ quote $ Fn UploadInput (-> String)
         'erased-cells $ %{} 'CodeEntry
           :doc "|Restores a value from a type-erased cache without checking it, so `%::` has to."
           :code $ quote $ defn erased-cells (x) (unsafe-coerce x 'Cells)

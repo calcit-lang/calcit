@@ -2858,7 +2858,7 @@ impl CalcitTypeAnnotation {
       .is_ok_and(|traits| traits.iter().any(|required| Self::type_ref_matches_trait(name, required)))
   }
 
-  fn trait_references_match(actual: &CalcitTrait, expected: &CalcitTrait) -> bool {
+  pub(crate) fn trait_references_match(actual: &CalcitTrait, expected: &CalcitTrait) -> bool {
     actual.matches_reference(expected)
       || (actual.definition_ref.is_some() && expected.definition_ref.is_some() && expected.matches_reference(actual))
   }
@@ -5253,6 +5253,45 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Resolve this type annotation to a source-backed `CalcitTrait` definition and its `(ns, def)` path.
+  #[allow(clippy::type_complexity)]
+  pub fn resolve_to_source_trait_with_ref(&self) -> Option<(Arc<CalcitTrait>, (Arc<str>, Arc<str>))> {
+    let resolve_ns_def = |ns: &str, def: &str| {
+      let resolved = crate::runner::preprocess::resolve_source_trait_instance_type(ns, def)?;
+      match resolved.as_ref() {
+        Self::Trait(trait_def) => Some((trait_def.clone(), (Arc::from(ns), Arc::from(def)))),
+        _ => None,
+      }
+    };
+    match self {
+      Self::Trait(trait_def) => {
+        let (ns, def) = split_nominal_definition_ref(trait_def.definition_ref.as_deref())?;
+        Some((trait_def.clone(), (ns, def)))
+      }
+      Self::TypeRef(name, args) if args.is_empty() => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        if let Some((ns, def)) = stripped.rsplit_once('/') {
+          resolve_ns_def(ns, def)
+        } else {
+          current_type_annotation_namespace()
+            .and_then(|ns| resolve_ns_def(&ns, stripped))
+            .or_else(|| resolve_ns_def(CORE_NS, stripped))
+        }
+      }
+      Self::Nullable(inner, NullableOrigin::Inferred) => inner.resolve_to_source_trait_with_ref(),
+      Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_source_trait_with_ref()),
+      _ => None,
+    }
+  }
+
+  /// Resolve this type annotation to a declared external-object host trait (`defexternal` or `deftrait` with `:ffi {:kind :external-object}`).
+  #[allow(clippy::type_complexity)]
+  pub fn resolve_to_external_object_trait_with_ref(&self) -> Option<(Arc<CalcitTrait>, (Arc<str>, Arc<str>))> {
+    let (trait_def, (ns, def)) = self.resolve_to_source_trait_with_ref()?;
+    let ffi = crate::program::lookup_def_ffi(&ns, &def)?;
+    crate::snapshot::ffi_metadata_is_external_object(&ffi).then_some((trait_def, (ns, def)))
+  }
+
   /// Whether this is a zero-argument reference naming a `defunion`.
   pub(crate) fn names_union(&self) -> bool {
     matches!(self, Self::TypeRef(_, args) if args.is_empty()) && self.resolve_to_union().is_some()
@@ -6091,7 +6130,11 @@ impl CalcitTypeAnnotation {
             .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
       (Self::TypeRef(name, args), Self::Trait(trait_def)) => {
-        args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref())
+        args.is_empty()
+          && (Self::type_ref_matches_trait(name, trait_def.as_ref())
+            || self
+              .resolve_to_external_object_trait_with_ref()
+              .is_some_and(|(actual_trait, _)| Self::trait_annotation_proves(&actual_trait, trait_def)))
           || self
             .resolve_nominal_instance_type()
             .is_some_and(|instance| instance.satisfies_trait_bound(trait_def.as_ref()))
@@ -6563,7 +6606,11 @@ impl CalcitTypeAnnotation {
       // type; a trait is not a schema alias, so the TypeRef fallback below
       // would otherwise report a mismatch (for example inside Fn arguments).
       (Self::TypeRef(name, args), Self::Trait(trait_def))
-        if args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()) =>
+        if args.is_empty()
+          && (Self::type_ref_matches_trait(name, trait_def.as_ref())
+            || self.resolve_to_external_object_trait_with_ref().is_some_and(|(actual_trait, _)| {
+              actual_trait.validate_reachable_method_schemas().is_ok() && Self::trait_annotation_proves(&actual_trait, trait_def)
+            })) =>
       {
         Proven
       }

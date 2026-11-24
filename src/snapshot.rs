@@ -229,6 +229,11 @@ pub fn ffi_metadata_value<'a>(ffi: &'a Edn, key: &str) -> Option<&'a Edn> {
   }
 }
 
+/// Whether definition-level `:ffi` metadata marks an external-object host trait.
+pub fn ffi_metadata_is_external_object(ffi: &Edn) -> bool {
+  matches!(ffi_metadata_value(ffi, "kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "external-object")
+}
+
 /// Read the optional host target from definition-level `:ffi` metadata.
 ///
 /// Definitions without a target are shared across entry targets. Callers that
@@ -4784,7 +4789,9 @@ const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "defref",
   "defstruct",
   "defenum",
+  "defunion",
   "deftrait",
+  "defexternal",
   "defimpl",
   "deftype",
   "defmacro",
@@ -4871,7 +4878,10 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
           if let Cirru::List(items) = line
             && let Some(name) = extract_def_name(items, idx)
           {
-            def_dict.insert(name, CodeEntry::from_code(line.clone()));
+            let (normalized_code, generated_ffi) = normalize_entry_external(line.clone(), None, &name)?;
+            let mut entry = CodeEntry::from_code(normalized_code);
+            entry.ffi = generated_ffi;
+            def_dict.insert(name, entry);
           }
         }
         // Each def is registered as its own CodeEntry so the type-checker can

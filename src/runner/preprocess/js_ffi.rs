@@ -574,7 +574,16 @@ pub(super) fn is_external_trait_field(type_value: &CalcitTypeAnnotation, field_n
 pub(crate) fn is_host_value_type(type_value: &CalcitTypeAnnotation) -> bool {
   match type_value {
     CalcitTypeAnnotation::Nullable(inner, _) => is_host_value_type(inner.as_ref()),
-    _ => trait_list_from_type(type_value).is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def))),
+    _ => {
+      trait_list_from_type(type_value).is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def)))
+        || type_value.resolve_to_union().is_some_and(|union_def| {
+          union_def.checked_members().is_ok_and(|members| {
+            members
+              .iter()
+              .any(|member| member.kind == calcit::union_def::UnionMemberKind::ExternalObject)
+          })
+        })
+    }
   }
 }
 
@@ -588,20 +597,9 @@ pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
 
 /// Read the declaration's FFI kind without constructing or evaluating its trait.
 pub(super) fn definition_is_external_object(ns: &str, def: &str) -> bool {
-  let Some(ffi) = program::lookup_def_ffi(ns, def) else {
-    return false;
-  };
-  match ffi {
-    cirru_edn::Edn::Struct(value) => value
-      .pairs
-      .iter()
-      .find(|(key, _)| key.ref_str() == "kind")
-      .is_some_and(|(_, value)| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    cirru_edn::Edn::Map(value) => value
-      .get(&cirru_edn::Edn::Tag(EdnTag::new("kind")))
-      .is_some_and(|value| matches!(value, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    _ => false,
-  }
+  program::lookup_def_ffi(ns, def)
+    .as_ref()
+    .is_some_and(crate::snapshot::ffi_metadata_is_external_object)
 }
 
 pub(super) fn external_trait_field_is_writable(trait_def: &CalcitTrait, field_name: &str) -> bool {

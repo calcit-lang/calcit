@@ -80,6 +80,9 @@ pub enum UnionMemberKind {
   Struct(Arc<str>),
   /// A named enum, keyed by its definition reference or name.
   Enum(Arc<str>),
+  /// A declared external-object host trait (`defexternal` or `deftrait` with `:ffi {:kind :external-object}`).
+  /// All external-object traits share the single `:js-object` runtime kind, so at most one may appear per union.
+  ExternalObject,
 }
 
 impl UnionMemberKind {
@@ -87,6 +90,7 @@ impl UnionMemberKind {
     match self {
       Self::Struct(name) => format!("struct {name}"),
       Self::Enum(name) => format!("enum {name}"),
+      Self::ExternalObject => "external-object".to_owned(),
       other => format!("{other:?}"),
     }
   }
@@ -232,7 +236,19 @@ impl CalcitUnionDef {
       T::Never => reject("Never has no values"),
       T::TypeVar(_) | T::TypeSlot(_) => reject("unions take no type parameters"),
       T::Numeric(_) => reject("a numeric refinement cannot be told apart from Number at runtime"),
-      T::Trait(_) | T::TraitSet(_) => reject("trait objects have no closed runtime kind"),
+      T::Trait(_) => {
+        if let Some((trait_def, (ns, def))) = annotation.resolve_to_external_object_trait_with_ref() {
+          let reference: Arc<str> = trait_def.definition_ref.clone().unwrap_or_else(|| Arc::from(format!("{ns}/{def}")));
+          return Ok(UnionMember {
+            annotation: Arc::new(CalcitTypeAnnotation::Trait(trait_def)),
+            pattern_name: short_name(&reference),
+            kind: UnionMemberKind::ExternalObject,
+            definition: Some((ns, def)),
+          });
+        }
+        reject("trait objects have no closed runtime kind; only external-object traits can be members")
+      }
+      T::TraitSet(_) => reject("trait objects have no closed runtime kind"),
       _ => {
         if let Some((enum_def, path)) = annotation.resolve_to_enum_with_ref() {
           let reference: Arc<str> = enum_def
@@ -271,7 +287,19 @@ impl CalcitUnionDef {
             definition,
           });
         }
-        reject("only built-in value types, named structs, named enums and other unions can be members")
+        if let Some((trait_def, (ns, def))) = annotation.resolve_to_external_object_trait_with_ref() {
+          let reference: Arc<str> = trait_def.definition_ref.clone().unwrap_or_else(|| Arc::from(format!("{ns}/{def}")));
+          return Ok(UnionMember {
+            annotation: Arc::new(CalcitTypeAnnotation::Trait(trait_def)),
+            pattern_name: short_name(&reference),
+            kind: UnionMemberKind::ExternalObject,
+            definition: Some((ns, def)),
+          });
+        }
+        if annotation.resolve_to_source_trait_with_ref().is_some() {
+          return reject("trait objects have no closed runtime kind; only external-object traits can be members");
+        }
+        reject("only built-in value types, named structs, named enums, external-object traits and other unions can be members")
       }
     }
   }
