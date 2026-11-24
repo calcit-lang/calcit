@@ -268,6 +268,14 @@ calcit calcit.cirru --check-only --all-defs --format edn
 是否存在都无关；回归测试比较了不同创建顺序下的完整报告。core 内置 `&runtime-implementation` 占位符没有源码函数体，
 与 `--check-only --ns` 一致，不参与检查。
 
+当 Snapshot 的多个 entry 声明了不同的 `:target`（例如 `default` 为 `:browser`、`server` 为 `:node`）时，`--check-only --all-defs`
+按各 entry 自身的 `:target`、`:type-slots` 与 `:feature-policy` 分别检查每个 entry 的可达闭包，并把多个 entry
+共同可达的定义在每个相关目标下都验证一遍，因此跨目标调用（例如浏览器入口或共享助手误调用 Node 专用 FFI）仍会报
+`E_JS_FFI_TARGET_MISMATCH`。尚未被任何 entry 接线的项目定义按以下优先级归属目标：定义自身声明的 `:ffi :target`、
+所在命名空间唯一归属的 entry 目标、传递依赖与 schema 引用的唯一 `:ffi :target`，否则回退到当前选中的 entry；
+若未接线定义同时混用多个目标的 FFI，回退检查同样会报 `E_JS_FFI_TARGET_MISMATCH`。单 entry 或单一目标项目保持原有行为，
+所有项目定义均在当前选中 entry 的上下文下检查。
+
 `--all-defs` 的开销接近一次 `--keep-going`。在 release 构建、5 次取稳定值的测量中，calcit-core
 （395 个源码定义）为 default 约 160ms、`--all-defs` 约 190ms；Respo main（0.16.114-alpha.8，386 个定义）的
 `--keep-going` 约 295ms、`--all-defs` 约 356ms。因此类库 CI 可以把它作为 `--check-only` 之外的常驻门禁。

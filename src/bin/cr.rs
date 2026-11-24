@@ -1042,7 +1042,8 @@ fn run_cli() -> Result<(), String> {
     if cli_args.keep_going || cli_args.all_defs {
       let all_defs_scope = cli_args
         .all_defs
-        .then(|| strict_check::AllDefsScope::from_snapshot(&snapshot, &project_namespaces));
+        .then(|| strict_check::AllDefsScope::from_snapshot(&snapshot, &project_namespaces, &entries))
+        .transpose()?;
       strict_check::run(&entries, &cli_args.format, all_defs_scope.as_ref())
     } else {
       // Only the plain check-only report carries the open-type summary.

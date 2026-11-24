@@ -3422,3 +3422,323 @@ fn wasm_json_codecs_scalar_identity_and_equality_fixes() {
     1.0
   );
 }
+
+#[test]
+fn dual_entry_browser_and_node_all_defs_checks_each_target_and_rejects_cross_target_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let base_snapshot = r#"
+{} (:about "|file is generated - never edit directly; learn cr edit/tree workflows before changing") (:package |demo)
+  :entries $ {}
+    :default $ {} (:description "|Browser entry") (:init-fn 'demo.browser/main!) (:mode :js) (:reload-fn 'demo.browser/reload!) (:target :browser)
+      :feature-policy $ {} (:js-ffi :error)
+      :modules $ []
+      :type-slots $ {}
+    :server $ {} (:description "|Node entry") (:init-fn 'demo.server/main!) (:mode :js) (:reload-fn 'demo.server/reload!) (:target :node)
+      :feature-policy $ {} (:js-ffi :error)
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    |demo.shared $ %{} :FileEntry
+      :defs $ {}
+        |format-label $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn String (-> String))
+          :code $ quote
+            defn format-label (text)
+              str "|label:" text
+          :examples $ []
+        |unwired-shared-pure $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn Number (-> Number))
+          :code $ quote
+            defn unwired-shared-pure (x) (+ x 1)
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+        :code $ quote (ns demo.shared)
+        :examples $ []
+    |demo.browser $ %{} :FileEntry
+      :defs $ {}
+        |BrowserWindow $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
+          :code $ quote
+            deftrait BrowserWindow
+              .title $ Fn demo.browser/BrowserWindow (-> String)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object) (:target :browser)
+            :names $ {} (:title |title)
+        |read-title $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.browser/BrowserWindow (-> String) (:features :js-ffi))
+          :code $ quote
+            defn read-title (win)
+              win .title
+          :examples $ []
+          :ffi $ {} (:backend :js) (:target :browser)
+        |unwired-browser-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.browser/BrowserWindow (-> String))
+          :code $ quote
+            defn unwired-browser-helper (win)
+              demo.shared/format-label (read-title win)
+          :examples $ []
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> Unit) (:features :js-ffi :io))
+          :code $ quote
+            defn main! ()
+              let
+                  win $ js-cast (new js/Object) BrowserWindow
+                println $ demo.shared/format-label (read-title win)
+                , &unit
+          :examples $ []
+        |reload! $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> Unit))
+          :code $ quote
+            defn reload! () &unit
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+        :code $ quote
+          ns demo.browser
+            :require
+              demo.shared :as demo.shared
+        :examples $ []
+    |demo.server $ %{} :FileEntry
+      :defs $ {}
+        |NodeRequest $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
+          :code $ quote
+            deftrait NodeRequest
+              .url $ Fn demo.server/NodeRequest (-> String)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
+            :names $ {} (:url |url)
+        |read-url $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String) (:features :js-ffi))
+          :code $ quote
+            defn read-url (req)
+              req .url
+          :examples $ []
+          :ffi $ {} (:backend :js) (:target :node)
+        |unwired-server-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String))
+          :code $ quote
+            defn unwired-server-helper (req)
+              demo.shared/format-label (read-url req)
+          :examples $ []
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> Unit) (:features :js-ffi :io))
+          :code $ quote
+            defn main! ()
+              let
+                  req $ js-cast (new js/Object) NodeRequest
+                println $ demo.shared/format-label (read-url req)
+                , &unit
+          :examples $ []
+        |reload! $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> Unit))
+          :code $ quote
+            defn reload! () &unit
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+        :code $ quote
+          ns demo.server
+            :require
+              demo.shared :as demo.shared
+        :examples $ []
+    |demo.draft $ %{} :FileEntry
+      :defs $ {}
+        |a-unwired-caller $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String))
+          :code $ quote
+            defn a-unwired-caller ()
+              m-node-helper
+          :examples $ []
+        |m-node-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String) (:features :js-ffi))
+          :code $ quote
+            defn m-node-helper ()
+              demo.server/read-url (js-cast (new js/Object) demo.server/NodeRequest)
+          :examples $ []
+        |unwired-node-only $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String))
+          :code $ quote
+            defn unwired-node-only (req)
+              demo.server/read-url req
+          :examples $ []
+        |z-unwired-caller $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn (-> String))
+          :code $ quote
+            defn z-unwired-caller ()
+              m-node-helper
+          :examples $ []
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil)
+        :code $ quote
+          ns demo.draft
+            :require
+              demo.server :as demo.server
+              demo.browser :as demo.browser
+        :examples $ []
+"#;
+  fs::write(&snapshot, base_snapshot).expect("write dual-entry snapshot");
+
+  // 1. Clean dual-entry project passes `--check-only --all-defs` across both targets,
+  // including unwired definitions in target-owned and draft namespaces.
+  let clean = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  assert_success(&clean, "clean dual-entry browser+node project must pass --all-defs");
+  let report: serde_json::Value = serde_json::from_slice(&clean.stdout).expect("JSON envelope");
+  assert_eq!(report["data"]["scope"], "all-defs");
+  assert_eq!(report["data"]["status"], "passed");
+  let entries = report["data"]["entries"].as_array().expect("entries list");
+  assert!(entries.iter().any(|item| item == "demo.browser/main!"), "{report}");
+  assert!(entries.iter().any(|item| item == "demo.server/main!"), "{report}");
+  let defs = report["data"]["definitions"].as_array().expect("definitions list");
+  for expected_def in [
+    "demo.browser/read-title",
+    "demo.browser/unwired-browser-helper",
+    "demo.server/read-url",
+    "demo.server/unwired-server-helper",
+    "demo.shared/format-label",
+    "demo.shared/unwired-shared-pure",
+    "demo.draft/a-unwired-caller",
+    "demo.draft/m-node-helper",
+    "demo.draft/unwired-node-only",
+    "demo.draft/z-unwired-caller",
+  ] {
+    assert!(
+      defs
+        .iter()
+        .any(|row| row["definition"] == expected_def && row["status"] == "passed"),
+      "expected {expected_def} to pass in report: {report}"
+    );
+  }
+
+  // 2. Real cross-target bug: browser entry calls Node FFI -> rejected.
+  let browser_calls_node = directory.0.join("browser-calls-node.cirru");
+  fs::write(
+    &browser_calls_node,
+    base_snapshot
+      .replace(
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared",
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared\n              demo.server :as demo.server",
+      )
+      .replace(
+        "println $ demo.shared/format-label (read-title win)",
+        "println $ demo.server/read-url (js-cast (new js/Object) demo.server/NodeRequest)",
+      ),
+  )
+  .expect("write browser-calls-node snapshot");
+  let rejected_browser = run_calcit(&browser_calls_node, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(!rejected_browser.status.success(), "browser calling node FFI must fail");
+  let browser_stdout = String::from_utf8_lossy(&rejected_browser.stdout);
+  assert!(browser_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{browser_stdout}");
+
+  // 3. Real cross-target bug: shared helper (reached by both browser and node) uses browser FFI -> rejected under node.
+  let shared_uses_browser = directory.0.join("shared-uses-browser.cirru");
+  fs::write(
+    &shared_uses_browser,
+    base_snapshot
+      .replace(
+        "(ns demo.shared)",
+        "(ns demo.shared (:require (demo.browser :as demo.browser)))",
+      )
+      .replace(
+        "defn format-label (text)\n              str \"|label:\" text",
+        "defn format-label (text)\n              str text (demo.browser/read-title (js-cast (new js/Object) demo.browser/BrowserWindow))",
+      )
+      .replace(
+        "|format-label $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn String (-> String))",
+        "|format-label $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn String (-> String) (:features :js-ffi))",
+      ),
+  )
+  .expect("write shared-uses-browser snapshot");
+  let rejected_shared = run_calcit(&shared_uses_browser, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_shared.status.success(),
+    "shared helper using browser FFI must fail when reached by node entry"
+  );
+  let shared_stdout = String::from_utf8_lossy(&rejected_shared.stdout);
+  assert!(shared_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{shared_stdout}");
+
+  // 4. Real cross-target bug: unwired definition in Node-owned namespace calls browser FFI -> rejected.
+  let unwired_cross_target = directory.0.join("unwired-cross-target.cirru");
+  fs::write(
+    &unwired_cross_target,
+    base_snapshot
+      .replace(
+        "ns demo.server\n            :require\n              demo.shared :as demo.shared",
+        "ns demo.server\n            :require\n              demo.shared :as demo.shared\n              demo.browser :as demo.browser",
+      )
+      .replace(
+        "defn unwired-server-helper (req)\n              demo.shared/format-label (read-url req)",
+        "defn unwired-server-helper (req)\n              str (read-url req) (demo.browser/read-title (js-cast (new js/Object) demo.browser/BrowserWindow))",
+      )
+      .replace(
+        "|unwired-server-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String))",
+        "|unwired-server-helper $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String) (:features :js-ffi))",
+      ),
+  )
+  .expect("write unwired-cross-target snapshot");
+  let rejected_unwired = run_calcit(&unwired_cross_target, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_unwired.status.success(),
+    "unwired server helper calling browser FFI must fail"
+  );
+  let unwired_stdout = String::from_utf8_lossy(&rejected_unwired.stdout);
+  assert!(unwired_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{unwired_stdout}");
+
+  // 5. Real cross-target bug: unwired definition in draft namespace mixes browser and node FFI -> rejected.
+  let unwired_mixed = directory.0.join("unwired-mixed.cirru");
+  fs::write(
+    &unwired_mixed,
+    base_snapshot
+      .replace(
+        "|unwired-node-only $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest (-> String))",
+        "|unwired-node-only $ %{} :CodeEntry (:doc |) (:schema $ quote $ Fn demo.server/NodeRequest demo.browser/BrowserWindow (-> String))",
+      )
+      .replace(
+        "defn unwired-node-only (req)\n              demo.server/read-url req",
+        "defn unwired-node-only (req win)\n              str (demo.server/read-url req) (demo.browser/read-title win)",
+      ),
+  )
+  .expect("write unwired-mixed snapshot");
+  let rejected_mixed = run_calcit(&unwired_mixed, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_mixed.status.success(),
+    "unwired draft definition mixing browser and node FFI must fail"
+  );
+  let mixed_stdout = String::from_utf8_lossy(&rejected_mixed.stdout);
+  assert!(mixed_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{mixed_stdout}");
+
+  // 6. Single-entry browser-only project still rejects unwired Node FFI definitions.
+  let single_entry = directory.0.join("single-entry-browser.cirru");
+  fs::write(
+    &single_entry,
+    base_snapshot.replace(
+      "    :server $ {} (:description \"|Node entry\") (:init-fn 'demo.server/main!) (:mode :js) (:reload-fn 'demo.server/reload!) (:target :node)\n      :feature-policy $ {} (:js-ffi :error)\n      :modules $ []\n      :type-slots $ {}\n",
+      "",
+    ),
+  )
+  .expect("write single-entry browser snapshot");
+  let rejected_single = run_calcit(&single_entry, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_single.status.success(),
+    "single-entry browser project must still reject node FFI definitions"
+  );
+  let single_stdout = String::from_utf8_lossy(&rejected_single.stdout);
+  assert!(single_stdout.contains("E_JS_FFI_TARGET_MISMATCH"), "{single_stdout}");
+
+  // 7. Quoted symbols naming another target's FFI do not create false call edges.
+  let quoted_symbol = directory.0.join("quoted-symbol.cirru");
+  fs::write(
+    &quoted_symbol,
+    base_snapshot
+      .replace(
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared",
+        "ns demo.browser\n            :require\n              demo.shared :as demo.shared\n              demo.server :as demo.server",
+      )
+      .replace(
+        "defn reload! () &unit",
+        "defn reload! ()\n              let\n                  _ $ quote (demo.server/read-url)\n                , &unit",
+      ),
+  )
+  .expect("write quoted-symbol snapshot");
+  assert_success(
+    &run_calcit(&quoted_symbol, &["--check-only", "--all-defs", "--format", "json"]),
+    "quoted symbol naming a node FFI inside browser code must not trigger target mismatch",
+  );
+
+  // 8. A secondary entry whose declared reload-fn is missing must fail rather than being silently dropped.
+  let missing_secondary_root = directory.0.join("missing-secondary-root.cirru");
+  fs::write(
+    &missing_secondary_root,
+    base_snapshot.replace("(:reload-fn 'demo.server/reload!)", "(:reload-fn 'demo.server/missing-reload!)"),
+  )
+  .expect("write missing-secondary-root snapshot");
+  let rejected_missing = run_calcit(&missing_secondary_root, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(
+    !rejected_missing.status.success(),
+    "secondary entry with missing reload-fn must fail --all-defs"
+  );
+  let missing_stdout = String::from_utf8_lossy(&rejected_missing.stdout);
+  assert!(missing_stdout.contains("demo.server/missing-reload!"), "{missing_stdout}");
+}
