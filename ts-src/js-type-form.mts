@@ -63,9 +63,9 @@ for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbo
   typeNameAliases.set(name, name);
   typeNameAliases.set(name.toLowerCase(), name);
 }
-for (const name of ["BufList", "CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
+for (const name of ["BufList", "CirruQuote", "JsObject", "FfiResource", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
 for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
-  ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"],
+  ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"], ["ffi-resource", "FfiResource"],
   ["struct-def", "StructDef"], ["enum-def", "EnumDef"], ["buf-list", "BufList"],
   // Intentionally open family spellings (#2594) are the bare family types.
   ["AnyFn", "Fn"], ["AnyStruct", "Struct"], ["AnyEnum", "Enum"]]) typeNameAliases.set(alias, name);
@@ -272,6 +272,9 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
     case "CirruQuote":
     case "cirru-quote":
       return value instanceof CalcitCirruQuote;
+    case "FfiResource":
+    case "ffi-resource":
+      return false;
     case "List":
     case "list":
       return requireEvidence ? null : isList(value);

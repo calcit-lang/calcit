@@ -996,7 +996,7 @@ fn gen_call_code(
               Some(graph) => graph,
               None => {
                 let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
-                Arc::new(DataShapeGraph::build_open(target.as_ref(), ns).map_err(|error| error.to_string())?)
+                Arc::new(DataShapeGraph::build_for_encode(target.as_ref(), ns).map_err(|error| error.to_string())?)
               }
             };
             let graph_code = data_shape_graph_to_js(graph.as_ref(), ns, file_imports)?;
@@ -1431,6 +1431,7 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
       DataShapeNode::Tag => String::from("{kind:\"tag\"}"),
       DataShapeNode::Buffer => String::from("{kind:\"buffer\"}"),
       DataShapeNode::CirruQuote => String::from("{kind:\"cirru-quote\"}"),
+      DataShapeNode::FfiResource => String::from("{kind:\"ffi-resource\"}"),
       DataShapeNode::MapOption { nominal_path, inner, .. } => {
         let nominal = nominal_ref_to_js(nominal_path.as_ref(), current_ns, file_imports)?;
         format!("{{kind:\"map-option\",nominal:{nominal},inner:{inner}}}")

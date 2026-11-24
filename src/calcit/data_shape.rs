@@ -159,6 +159,10 @@ pub(crate) enum DataShapeNode {
   Tag,
   Buffer,
   CirruQuote,
+  /// An opaque native `resource-v1` lease handle accepted only at runtime
+  /// `decode-map-as` / field-write boundaries and rejected by Cirru EDN
+  /// parsing and `encode-map-as`.
+  FfiResource,
   /// A nominal `Option<T>` accepted from an ordinary runtime value. Missing
   /// struct fields become `Option :none`; present raw values become `Option :some value`.
   MapOption {
@@ -241,17 +245,25 @@ struct GraphBuilder {
   resolving_aliases: HashSet<String>,
   resolving_slots: HashSet<String>,
   allow_dynamic: bool,
+  allow_ffi_resource: bool,
 }
 
 impl DataShapeGraph {
   pub(crate) fn build(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, DataShapeError> {
-    Self::build_with_options(target, default_ns, false)
+    Self::build_with_options(target, default_ns, false, false)
   }
 
   /// Builds a decoder shape for a runtime Calcit map. This intentionally
-  /// permits explicit Dynamic leaves and lifts raw option fields.
+  /// permits explicit Dynamic leaves, native `FfiResource` handles, and lifts
+  /// raw option fields.
   pub(crate) fn build_open(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, DataShapeError> {
-    Self::build_with_options(target, default_ns, true)
+    Self::build_with_options(target, default_ns, true, true)
+  }
+
+  /// Builds an encoder shape for `encode-map-as`. Permits explicit Dynamic
+  /// leaves and `MapOption`, but rejects non-serializable `FfiResource` handles.
+  pub(crate) fn build_for_encode(target: &CalcitTypeAnnotation, default_ns: &str) -> Result<Self, DataShapeError> {
+    Self::build_with_options(target, default_ns, true, false)
   }
 
   /// Add deep field checks where the legacy scalar matcher is insufficient.
@@ -271,13 +283,19 @@ impl DataShapeGraph {
     })
   }
 
-  fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
+  fn build_with_options(
+    target: &CalcitTypeAnnotation,
+    default_ns: &str,
+    allow_dynamic: bool,
+    allow_ffi_resource: bool,
+  ) -> Result<Self, DataShapeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],
       nominal_nodes: HashMap::new(),
       resolving_aliases: HashSet::new(),
       resolving_slots: HashSet::new(),
       allow_dynamic,
+      allow_ffi_resource,
     };
     let root = builder.build_type(target, default_ns)?;
     let nodes = builder
@@ -378,6 +396,7 @@ impl DataShapeGraph {
       DataShapeNode::Tag if matches!(value, Calcit::Tag(_)) => Ok(()),
       DataShapeNode::Buffer if matches!(value, Calcit::Buffer(_)) => Ok(()),
       DataShapeNode::CirruQuote if matches!(value, Calcit::CirruQuote(_)) => Ok(()),
+      DataShapeNode::FfiResource if super::type_annotation::is_native_ffi_resource_value(value) => Ok(()),
       DataShapeNode::Dynamic => Ok(()),
       DataShapeNode::MapOption { nominal, inner, .. } => match value {
         Calcit::Enum(enum_value)
@@ -586,6 +605,7 @@ impl DataShapeNode {
       (Self::Tag, Calcit::Tag(_)) => true,
       (Self::Buffer, Calcit::Buffer(_)) => true,
       (Self::CirruQuote, Calcit::CirruQuote(_)) => true,
+      (Self::FfiResource, value) if super::type_annotation::is_native_ffi_resource_value(value) => true,
       (Self::List(_) | Self::Tuple(_), Calcit::List(_)) => true,
       (Self::Set(_), Calcit::Set(_)) => true,
       (Self::Map { .. }, Calcit::Map(_)) => true,
@@ -630,6 +650,7 @@ impl DataShapeNode {
       Self::Tag => "tag",
       Self::Buffer => "buffer",
       Self::CirruQuote => "cirru-quote",
+      Self::FfiResource => "ffi-resource",
       Self::MapOption { .. } => "Option",
       Self::List(_) => "list",
       Self::Tuple(_) => "tuple",
@@ -785,6 +806,8 @@ impl GraphBuilder {
         Err(unsupported_type("trait constraints are not data shapes"))
       }
       CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),
+      CalcitTypeAnnotation::FfiResource if self.allow_ffi_resource => Ok(self.push(DataShapeNode::FfiResource)),
+      CalcitTypeAnnotation::FfiResource => Err(unsupported_type("FfiResource is an opaque non-serializable native resource")),
       CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => {
         Err(unsupported_type("JsNullish is an opaque JavaScript boundary value"))
       }
@@ -1019,6 +1042,7 @@ fn shape_fingerprint(root: usize, nodes: &[DataShapeNode]) -> String {
       DataShapeNode::Tag => hasher.update(b"tag;"),
       DataShapeNode::Buffer => hasher.update(b"buffer;"),
       DataShapeNode::CirruQuote => hasher.update(b"cirru-quote;"),
+      DataShapeNode::FfiResource => hasher.update(b"ffi-resource;"),
       DataShapeNode::MapOption {
         nominal,
         nominal_path,
@@ -1417,5 +1441,89 @@ mod tests {
       "tests.shape",
     )
     .expect("nominal marker implementation should satisfy the bound");
+  }
+
+  #[test]
+  fn ffi_resource_data_shape_enforces_non_serializable_and_runtime_lease_invariants() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static RELEASES: AtomicUsize = AtomicUsize::new(0);
+    extern "C" fn release_stub(_handle: u64, _generation: u64) -> i32 {
+      RELEASES.fetch_add(1, Ordering::SeqCst);
+      0
+    }
+
+    let regex_struct = Arc::new(CalcitStructDef {
+      definition_ref: Some(Arc::from("regex.core/Regex")),
+      name: EdnTag::new("Regex"),
+      fields: Arc::new(vec![EdnTag::new("source"), EdnTag::new("handle")]),
+      field_types: Arc::new(vec![
+        Arc::new(CalcitTypeAnnotation::String),
+        Arc::new(CalcitTypeAnnotation::FfiResource),
+      ]),
+      field_defaults: Arc::new(vec![None, None]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    let regex_type = CalcitTypeAnnotation::Struct(regex_struct, Arc::new(vec![]));
+
+    // Closed EDN parsing and map encoding must reject FfiResource (non-serializable).
+    assert!(
+      DataShapeGraph::build(&CalcitTypeAnnotation::FfiResource, "regex.core")
+        .expect_err("closed EDN shape must reject FfiResource")
+        .to_string()
+        .contains("non-serializable")
+    );
+    assert!(
+      DataShapeGraph::build(&regex_type, "regex.core")
+        .expect_err("closed EDN shape must reject struct with FfiResource field")
+        .to_string()
+        .contains("non-serializable")
+    );
+    assert!(
+      DataShapeGraph::build_for_encode(&CalcitTypeAnnotation::FfiResource, "regex.core")
+        .expect_err("encode-map-as shape must reject FfiResource")
+        .to_string()
+        .contains("non-serializable")
+    );
+    assert!(
+      DataShapeGraph::build_for_encode(&regex_type, "regex.core")
+        .expect_err("encode-map-as shape must reject struct with FfiResource field")
+        .to_string()
+        .contains("non-serializable")
+    );
+
+    // Open runtime decode shape accepts genuine NativeFfiResource and rejects everything else.
+    let open_shape = DataShapeGraph::build_open(&CalcitTypeAnnotation::FfiResource, "regex.core")
+      .expect("open runtime shape should accept FfiResource");
+    assert!(open_shape.validate_value(&Calcit::new_str("not-a-resource")).is_err());
+    assert!(open_shape.validate_value(&Calcit::Nil).is_err());
+    let plain_anyref = Calcit::AnyRef(cirru_edn::EdnAnyRef::new(42usize));
+    let plain_err = open_shape
+      .validate_value(&plain_anyref)
+      .expect_err("non-resource AnyRef must be rejected");
+    assert!(plain_err.message.contains("expected ffi-resource, got any-ref"));
+
+    let before = RELEASES.load(Ordering::SeqCst);
+    {
+      let resource = Calcit::AnyRef(
+        crate::wasm::ffi_abi::new_test_resource_anyref("regex_test_lib", 11, 2, release_stub).expect("create test resource"),
+      );
+      open_shape.validate_value(&resource).expect("genuine resource must validate");
+      assert!(crate::calcit::value_matches_type_annotation(
+        &resource,
+        &CalcitTypeAnnotation::FfiResource
+      ));
+      assert!(!crate::calcit::value_matches_type_annotation(
+        &plain_anyref,
+        &CalcitTypeAnnotation::FfiResource
+      ));
+    }
+    assert_eq!(
+      RELEASES.load(Ordering::SeqCst),
+      before + 1,
+      "dropping final FfiResource lease must trigger release exactly once"
+    );
   }
 }

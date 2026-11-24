@@ -53,6 +53,15 @@ pub extern "C" fn calcit_ffi_resource_release_v1(
 
 不需要也不应向 Calcit 用户暴露手动 `drop`。模块 registry 可以在 dylib shutdown 时报告剩余槽位，但正常资源释放由宿主引用计数驱动。
 
+### 静态类型与受检边界：`FfiResource`
+
+Calcit 提供内置闭合类型 `FfiResource`，用于标注由 `resource-v1` 托管的不透明原生资源句柄（例如 `defstruct Regex (:source String) (:handle FfiResource)`），替代在结构体句柄字段上使用 `Dynamic`：
+
+- `FfiResource` 不是开放类型：`Dynamic`、`String`、`Nil` 或普通 `AnyRef` 都不能隐式满足 `FfiResource`，也不应使用 `unsafe-coerce` 绕过检查。
+- 从 `&call-dylib-edn` 返回的 `Dynamic` 载荷进入静态类型层时，使用 `decode-map-as` 或 `try-decode-map-as`（例如 `try-decode-map-as raw (Result FfiResource String)`）完成运行时检查；运行时只接受真实的 `resource-v1` 宿主 lease，拒绝普通 `AnyRef`、标量以及手工伪造的保留 token。
+- 不可序列化约束在静态与运行时同时生效：`parse-cirru-edn-as`、`try-parse-cirru-edn-as` 与 `encode-map-as` 会在编译期拒绝 `FfiResource` 及包含它的结构体；`format-cirru-edn` 与 JSON 序列化在运行时同样拒绝。
+- 跨后端边界：WASM / WASI 目标遇到 `FfiResource` 会显式报 `E_WASM_UNSUPPORTED_FFI_RESOURCE`，不会静默擦除为 `f64` 或 `Dynamic`；JavaScript 运行时解码器也会明确拒绝 `FfiResource`。
+
 ### 模块 registry 建议
 
 registry 应放在同步锁之后，并为每个槽位维护 generation。复用空槽位时递增 generation；generation 溢出时永久退役该槽位。每次方法调用和 release 都同时校验 handle 与 generation。不要把 Rust 对象地址编码成 handle，也不要让 `Vec`、`Arc`、`Box` 或 `Result` 穿过 C ABI。

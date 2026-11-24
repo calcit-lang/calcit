@@ -33,6 +33,7 @@ impl MapEncoder<'_> {
       return Err(DataShapeValueError::at(path, format!("invalid data shape node #{node_id}")));
     };
     match (node, input) {
+      (DataShapeNode::FfiResource, _) => Err(DataShapeValueError::at(path, "FfiResource is not serializable")),
       (DataShapeNode::MapOption { .. }, Calcit::Enum(option)) => self.encode_option(node_id, option, false, path, depth),
       (DataShapeNode::List(inner), Calcit::List(items)) => {
         let mut values = Vec::with_capacity(items.len());

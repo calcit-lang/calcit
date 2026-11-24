@@ -126,6 +126,7 @@ write-file
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
 | `E_WASM_SET_ELEMENT_KIND` | Set 元素或 Map 键操作缺少静态类型证据来排除不同标量种类的数值表示冲突 | 在构造、查询或集合运算前收窄元素与键类型，或使用 native / JS |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记，或来源判断缺少区分定义 ID 与实例指针的类型证据 | 通过具名 `defstruct` 构造；目标参数声明为 Struct 或 StructDef |
+| `E_WASM_UNSUPPORTED_FFI_RESOURCE` | 定义、结构体或联合类型引用了原生 `FfiResource`（`resource-v1` 动态库句柄），WASM / WASI 无法将其 lowering 为宿主资源 | 留在 native 目标，或在跨端边界改用可序列化值类型 |
 | `E_WASM_UNSUPPORTED_JS_FFI` | 定义只有 JavaScript 实现，或 `unsafe-coerce` 无法保持值身份 | 提供可 lowering 的实现 |
 | `E_WASM_UNSUPPORTED_TRY` | 使用了 `try` 语法；WASM 与 WASI server 目标已退役 `try` 异常恢复流 | 可恢复错误改用 `Result<T, E>`（`Result :ok` / `Result :err` 与 `match`）；不可恢复不变式失败使用 `raise` trap，并将必须验证 trap 的旧测试留在 native / JS |
 | `E_WASM_EDN_TYPE` | `format-cirru-edn`、`json-stringify` 或 `json-pretty` 的输入类型不闭合 | 写出闭合类型 |
