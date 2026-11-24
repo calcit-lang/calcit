@@ -305,7 +305,7 @@ fn strict_type_fail_nil_to_option_as_map_callback_uses_element_types() {
   });
 }
 
-// The bridge drops every inferred nil layer, also when nested missing-else
+// The bridge drops every inferred nil layer, also when nested nil-join
 // branches stack them or when it is passed to `map` by name, so the result
 // satisfies a declared `Option<Number>` payload.
 #[test]
@@ -313,9 +313,9 @@ fn strict_type_fail_nil_to_option_flattens_nil_joins() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     for source in [
-      "let\n    f $ fn (a b)\n      hint-fn $ Fn Bool Bool (-> $ Option Number)\n      nil->option $ if a $ if b 1\n  f true false",
+      "let\n    f $ fn (a b)\n      hint-fn $ Fn Bool Bool (-> $ Option Number)\n      nil->option $ if a (if b 1 nil) nil\n  f true false",
       "let\n    f $ fn ()\n      hint-fn $ Fn (-> $ List $ Option Number)\n      map ([] 1 nil 2) nil->option\n  f",
-      "let\n    f $ fn (c xs)\n      hint-fn $ Fn Bool (List Number) (-> $ List $ Option Number)\n      map (map xs $ fn (x) (if c x)) nil->option\n  f true ([] 1 2)",
+      "let\n    f $ fn (c xs)\n      hint-fn $ Fn Bool (List Number) (-> $ List $ Option Number)\n      map (map xs $ fn (x) (if c x nil)) nil->option\n  f true ([] 1 2)",
     ] {
       let entries = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);
@@ -5439,18 +5439,20 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
   run_with_large_stack(|| {
     let nullable_return = |body: &str| format!("fn (flag) (hint-fn $ Fn Bool (-> $ JsNullish Number)) {body}");
     let cases = [
-      ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
-      ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
-      // 2-arg `if` false branch yields Unit, so branches (String, Unit) mismatch JsNullish<Number>.
-      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("E_BRANCH_TYPE_MISMATCH")),
-      ("matching-payload", nullable_return("(if flag 7 nil)"), None),
+      ("wrong-live-payload", false, nullable_return("(if flag |bad nil)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
+      ("wrong-reversed-payload", false, nullable_return("(if flag nil |bad)"), Some("E_FN_RETURN_TYPE_MISMATCH")),
+      // 2-arg `if` false branch yields Unit, so in strict mode branches (String, Unit) mismatch JsNullish<Number>.
+      ("missing-else-payload", true, nullable_return("(if flag |bad)"), Some("E_BRANCH_TYPE_MISMATCH")),
+      ("matching-payload", false, nullable_return("(if flag 7 nil)"), None),
       (
         "wrong-argument-payload",
+        false,
         "fn (flag) (hint-fn $ Fn Bool (-> Unit)) $ let ((take $ fn (v) (hint-fn $ Fn (JsNullish Number) (-> Unit)) &unit)) $ take $ if flag |bad nil".to_owned(),
         Some("E_LOCAL_FN_ARG_TYPE_MISMATCH"),
       ),
     ];
-    for (label, function, expected_code) in cases {
+    for (label, strict, function, expected_code) in cases {
+      let _strict_guard = if strict { Some(StrictTypesReset::enabled()) } else { None };
       let snippet = format!("let\n    probe $ {function}\n  probe true");
       let entries = load_snippet_entries(&snippet);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);

@@ -2783,7 +2783,8 @@ pub(crate) fn check_function_return_type(
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
-    if !proven
+    if (audit || lexical_return || super::strict_types_enabled())
+      && !proven
       && let Some(err) = branch_type_mismatch(
         last_expr,
         declared_return_type,
