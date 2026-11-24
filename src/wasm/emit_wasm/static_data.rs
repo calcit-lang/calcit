@@ -1674,19 +1674,18 @@ mod tests {
     );
 
     let mut state = ReachabilityState::new(&program_data);
-    let first = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Helper"), Arc::new(vec![])));
-    let weak_first = Arc::downgrade(&first);
-    state.visit_annotation(&first, "app.a");
-    drop(first);
+    let shared = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Helper"), Arc::new(vec![])));
+    let weak_shared = Arc::downgrade(&shared);
+    state.visit_annotation(&shared, "app.a");
+    // Visiting the same Arc under another namespace must still traverse that namespace,
+    // while repeating the same (pointer, namespace) pair is deduplicated.
+    state.visit_annotation(&shared, "app.b");
+    state.visit_annotation(&shared, "app.b");
+    drop(shared);
     assert!(
-      weak_first.upgrade().is_some(),
+      weak_shared.upgrade().is_some(),
       "ReachabilityState must retain visited temporary Arc annotations so addresses cannot be reused"
     );
-
-    let second = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Helper"), Arc::new(vec![])));
-    state.visit_annotation(&second, "app.b");
-    // Same pointer in same namespace is deduplicated, while another namespace is still traversed.
-    state.visit_annotation(&second, "app.b");
     assert_eq!(state.retained_annotations.len(), 2);
 
     state.run();
