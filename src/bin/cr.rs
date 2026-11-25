@@ -994,8 +994,9 @@ fn run_cli() -> Result<(), String> {
 
   // now global states
   {
+    let extracted = program::extract_program_data(&snapshot)?;
     let mut prgm = { program::PROGRAM_CODE_DATA.write().expect("open program data") };
-    *prgm = program::extract_program_data(&snapshot)?;
+    *prgm = extracted;
   }
 
   let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);

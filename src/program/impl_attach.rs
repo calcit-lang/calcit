@@ -1289,7 +1289,9 @@ fn collect_non_coherent_nominal_defs_inner(
 /// `impl-traits` / `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits` call.
 pub(crate) fn collect_non_coherent_nominal_defs(program: &ProgramCodeData) -> HashSet<String> {
   let written = WRITTEN_CODE.lock().expect("lock written type code").clone();
-  collect_non_coherent_nominal_defs_inner(program, &written, &HashMap::new())
+  calcit::type_annotation::with_staged_type_source(program, || {
+    collect_non_coherent_nominal_defs_inner(program, &written, &HashMap::new())
+  })
 }
 
 /// View the written form of a definition without mutating `program` before validation succeeds.
@@ -1308,6 +1310,10 @@ pub(crate) struct StagedSourceImpls {
 /// Validate and stage all `(:impls …)` attachments on `program` without mutating
 /// `program` or global attachment state if any check fails.
 pub(crate) fn stage_source_impls(program: &ProgramCodeData) -> Result<StagedSourceImpls, String> {
+  calcit::type_annotation::with_staged_type_source(program, || stage_source_impls_inner(program))
+}
+
+fn stage_source_impls_inner(program: &ProgramCodeData) -> Result<StagedSourceImpls, String> {
   let written = WRITTEN_CODE.lock().expect("lock written type code").clone();
 
   let mut rewrites: HashMap<DefKey, (Calcit, Calcit)> = HashMap::new();

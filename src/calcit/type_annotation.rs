@@ -244,7 +244,32 @@ fn lookup_runtime_ready_registered(ns: &str, def: &str) -> Option<Calcit> {
   crate::program::lookup_runtime_ready(ns, def)
 }
 
+thread_local! {
+  /// The source currently being staged takes precedence over an older installed program.
+  static STAGED_TYPE_SOURCE: RefCell<Option<Arc<crate::program::ProgramCodeData>>> = const { RefCell::new(None) };
+}
+
+pub(crate) fn with_staged_type_source<T>(program: &crate::program::ProgramCodeData, f: impl FnOnce() -> T) -> T {
+  struct Restore(Option<Arc<crate::program::ProgramCodeData>>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      STAGED_TYPE_SOURCE.with(|source| *source.borrow_mut() = self.0.take());
+    }
+  }
+  let previous = STAGED_TYPE_SOURCE.with(|source| source.borrow_mut().replace(Arc::new(program.clone())));
+  let _restore = Restore(previous);
+  f()
+}
+
 fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
+  if let Some(result) = STAGED_TYPE_SOURCE.with(|source| {
+    source
+      .borrow()
+      .as_ref()
+      .map(|program| program.get(ns).and_then(|file| file.defs.get(def)).map(|entry| entry.code.clone()))
+  }) {
+    return result;
+  }
   #[cfg(test)]
   if let Some(lookup) = TEST_LOOKUP_DEF_CODE.get() {
     return lookup(ns, def);
@@ -255,7 +280,18 @@ fn lookup_def_code_registered(ns: &str, def: &str) -> Option<Calcit> {
 /// Look up a definition's schema type annotation by namespace and definition name.
 /// Returns `None` if the schema is `Dynamic`.
 fn lookup_schema_registered(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
-  let schema = crate::program::lookup_def_schema(ns, def);
+  let schema = if let Some(result) = STAGED_TYPE_SOURCE.with(|source| {
+    source.borrow().as_ref().map(|program| {
+      program
+        .get(ns)
+        .and_then(|file| file.defs.get(def))
+        .map(|entry| entry.schema.clone())
+    })
+  }) {
+    result?
+  } else {
+    crate::program::lookup_def_schema(ns, def)
+  };
   if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     None
   } else {

@@ -2280,6 +2280,53 @@ fn impl_attach_program(type_source: &str, type_ns_impls: &[(&str, &str)], other_
   ])
 }
 
+#[test]
+fn impl_attach_resolves_callable_alias_from_incoming_program() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+  let mut program = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("Handler", "deftype Handler $ Fn P (-> P)"),
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("decorate", "defn decorate (x) (impl-traits x P-Labeled)"),
+    ],
+    &[],
+  );
+  program.get_mut("app.m").unwrap().defs.get_mut("decorate").unwrap().schema =
+    Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.m/Handler"), Arc::new(vec![])));
+  let mut installed = program.clone();
+  let stale = impl_attach_file(
+    "app.m",
+    &[],
+    &[("Handler", "deftype Handler $ Fn Q (-> Q)"), ("Q", "defstruct Q (:name String)")],
+  );
+  installed.get_mut("app.m").unwrap().defs.extend(stale.defs);
+  *PROGRAM_CODE_DATA.write().unwrap() = installed;
+  let non_coherent = impl_attach::collect_non_coherent_nominal_defs(&program);
+  assert!(
+    non_coherent.contains("app.m/P"),
+    "incoming callable alias should identify P: {non_coherent:?}"
+  );
+  assert!(
+    !non_coherent.contains("app.m/Q"),
+    "the previous program must not determine the new alias: {non_coherent:?}"
+  );
+  assert!(
+    impl_attach::stage_source_impls(&program).is_ok(),
+    "staging must use the incoming alias"
+  );
+  let previous = program["app.m"].defs["decorate"]
+    .schema
+    .resolve_to_fn()
+    .expect("installed alias remains available");
+  assert!(
+    previous.arg_types[0].to_string().contains('Q'),
+    "staged lookup must be restored after staging"
+  );
+}
+
 const LISTED_TYPE: &str = "defstruct P (:name String) (:impls t/Labeled)";
 
 #[test]
