@@ -695,6 +695,8 @@ checkTrap("test-display-by-count(-255,2)", () => e["test-display-by-count"](-255
 checkTrap("test-display-by-count(1.5,16)", () => e["test-display-by-count"](1.5, 16));
 checkTrap("test-display-by-count(9007199254740992,16)", () => e["test-display-by-count"](9007199254740992, 16));
 checkTrap("test-display-by-count(17,10)", () => e["test-display-by-count"](17, 10));
+check("test-coherent-point-containers(10)", 75, e["test-coherent-point-containers"], 10);
+check("test-coherent-enum-many-variants(11)", 1578, e["test-coherent-enum-many-variants"], 11);
 
 // --- __str_new FFI test (JS → WASM string passing) ---
 // Protocol: read heap top, write bytes at top+16 (zero-copy), call __str_new(top+16, len)

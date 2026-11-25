@@ -31,6 +31,11 @@
           :code $ quote $ defref *wasm-atom-counter 20
           :examples $ []
           :schema $ quote $ Ref Number
+        '*wasm-coherent-point $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-coherent-point
+            %{} MeasuredPoint $ :value 19
+          :examples $ []
+          :schema $ quote $ Ref test-wasm.main/MeasuredPoint
         '*wasm-ref-box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *wasm-ref-box (RefBox :label |init :count 0)
           :examples $ []
@@ -55,6 +60,18 @@
           :code $ quote $ defref *wasm-ref-str |seed
           :examples $ []
           :schema $ quote $ Ref String
+        'CoherentStage $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum CoherentStage (:s0 Number) (:s1 Number) (:s2 Number) (:s3 Number) (:s4 Number) (:s5 Number) (:s6 Number) (:s7 Number) (:s8 Number) (:s9 Number) (:impls StageScore)
+          :examples $ []
+          :schema $ quote EnumDef
+        'CoherentStage-StageScore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl CoherentStage StageScore (.stage-score coherent-stage:score)
+          :examples $ []
+          :schema $ quote Impl
+        'MeasuredHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct MeasuredHolder (:point MeasuredPoint)
+          :examples $ []
+          :schema $ quote StructDef
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MeasuredPoint (:value Number) (:impls PointScore)
           :examples $ []
@@ -85,6 +102,11 @@
           :code $ quote $ defenum RefMsg (:empty) (:text String) (:tagged Number String)
           :examples $ []
           :schema $ quote EnumDef
+        'StageScore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait StageScore
+            .stage-score $ Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
           :code $ quote $ defwasm-export add-two (a b) (&+ a b)
           :examples $ []
@@ -106,6 +128,26 @@
               assert= (&+ before 2) (deref *wasm-ref-counter)
               assert= (&+ before 5) (bump-ref-counter 3)
             :tags $ #{} :unit :wasm
+        'coherent-stage:score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn coherent-stage:score (stage)
+            match stage
+              (:s0 v) v
+              (:s1 v) (+ v 10)
+              (:s2 v) (+ v 20)
+              (:s3 v) (+ v 30)
+              (:s4 v) (+ v 40)
+              (:s5 v) (+ v 50)
+              (:s6 v) (+ v 60)
+              (:s7 v) (+ v 70)
+              (:s8 v) (+ v 80)
+              (:s9 v) (+ v 90)
+          :examples $ []
+          :schema $ quote $ Fn test-wasm.main/CoherentStage (-> Number)
+        'coherent:point-param-score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn coherent:point-param-score (p)
+            + (.score p) (&trait-call PointScore :score p)
+          :examples $ []
+          :schema $ quote $ Fn test-wasm.main/MeasuredPoint (-> Number)
         'collatz-steps $ %{} 'CodeEntry (:doc "|Collatz conjecture step counter")
           :code $ quote $ defwasm-export collatz-steps (n)
             if (&< n 2) 0 $ if
@@ -253,6 +295,23 @@
           :code $ quote $ defwasm-export reload! () &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
+        'step-coherent-stage $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn step-coherent-stage (n stage)
+            if (<= n 0) stage $ let
+                r $ .rem n 10
+                next-v $ + (.stage-score stage) n
+              recur (- n 1)
+                if (&= r 0) (CoherentStage :s0 next-v)
+                  if (&= r 1) (CoherentStage :s1 next-v)
+                    if (&= r 2) (CoherentStage :s2 next-v)
+                      if (&= r 3) (CoherentStage :s3 next-v)
+                        if (&= r 4) (CoherentStage :s4 next-v)
+                          if (&= r 5) (CoherentStage :s5 next-v)
+                            if (&= r 6) (CoherentStage :s6 next-v)
+                              if (&= r 7) (CoherentStage :s7 next-v)
+                                if (&= r 8) (CoherentStage :s8 next-v) (CoherentStage :s9 next-v)
+          :examples $ []
+          :schema $ quote $ Fn Number test-wasm.main/CoherentStage (-> test-wasm.main/CoherentStage)
         'sum-destruct-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-destruct-list (acc xs)
             match (destruct-list xs)
@@ -436,6 +495,43 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-number-index-in-wasm)
             :code $ quote $ assert= 1 (test-closure-map-indexed)
             :tags $ #{} :core :unit :wasm
+        'test-coherent-enum-many-variants $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-coherent-enum-many-variants (n)
+            let
+                final-stage $ step-coherent-stage n $ CoherentStage :s0 0
+                direct-score $ .stage-score final-stage
+                trait-score $ &trait-call StageScore :stage-score final-stage
+                boxed-score $ .stage-score $ dyn:box final-stage StageScore
+              + direct-score $ + trait-score boxed-score
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+          :tests $ [] $ %{} 'TestEntry
+            :name |dispatches-coherent-ten-variant-enum-and-dyn-box
+            :code $ quote $ assert= 1578 (test-coherent-enum-many-variants 11)
+            :tags $ #{} :core :trait :wasm
+        'test-coherent-point-containers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-coherent-point-containers (x)
+            reset! *wasm-coherent-point $ %{} MeasuredPoint $ :value (+ x 9)
+            let
+                points $ [] $ %{} MeasuredPoint
+                  :value $ + x 1
+                opt-point $ Some $ %{} MeasuredPoint
+                  :value $ + x 2
+                holder $ %{} MeasuredHolder $ :point
+                  %{} MeasuredPoint $ :value $ + x 3
+                param-score $ coherent:point-param-score $ %{} MeasuredPoint (:value x)
+                list-score $ .score $ &list:nth points 0
+                opt-score $ match opt-point
+                  (:some item) (.score item)
+                  (:none) 0
+                holder-score $ .score $ :point holder
+                ref-score $ &trait-call PointScore :score @*wasm-coherent-point
+              + param-score $ + list-score $ + opt-score (+ holder-score ref-score)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |dispatches-coherent-point-across-containers)
+            :code $ quote $ assert= 75 (test-coherent-point-containers 10)
+            :tags $ #{} :core :trait :wasm
         'test-compare $ %{} 'CodeEntry (:doc "|comparison chain")
           :code $ quote $ defwasm-export test-compare (a b)
             if (&< a b) -1 $ if (&> a b) 1 0

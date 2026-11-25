@@ -24,6 +24,21 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.48.0 静态连贯 Trait 与值级 `impl-traits` 弃用（#2949）
+
+本版本在全程序加载、预处理与 WASM/WASI 代码生成阶段引入静态连贯（Static Coherence）分析，解除普通顶层名义类型在跨边界分发时的动态跟踪与 8 路分支限制：
+
+- **静态连贯名义类型的唯一顶层 `defimpl` 约束（`E_DUPLICATE_TRAIT_IMPL`）**：
+  - 未被任何值级或局部 `impl-traits`（含 `&struct:impl-traits`、`&enum:impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`）触及的顶层 `defstruct` / `defenum` 视为静态连贯类型。
+  - 对静态连贯类型，同一 `(Type, Trait)` 组合在整个程序中最多只能存在一个顶层 `defimpl`；即使未将该 trait 列入 `(:impls …)`，重复的顶层 `defimpl` 也会在加载期直接报 `E_DUPLICATE_TRAIT_IMPL`。
+  - 静态连贯类型的函数参数与 `TypeRef` 在预处理阶段直接视为拥有完整 impl 表。
+- **WASM / WASI 绕过 `ImplSelector` 与 8 路分发上限**：
+  - 静态连贯类型在 WASM/WASI 下不再要求逐值追踪 `exact_impls`：来自函数参数、`List` / `Option` / `Struct` 字段或 `defref` 的连贯名义值可直接完成 `.method` 与 `&trait-call` 静态分发。
+  - `if` / `match` / `recur` 汇合不再为静态连贯类型分配 `ImplSelector` 局部变量或受 8 路 `MAX_IMPL_ALTERNATIVES` 限制；`dyn:box` 对应的 vtable 直接按规范类型键去重。
+- **弃用值级 `impl-traits` 并清理死原语 `&enum:with-impls`**：
+  - 值级/局部 `impl-traits`（及 `&struct:impl-traits`、`&enum:impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`）已标记为弃用，仅保留既有兼容路径。请迁移为顶层 `(:impls …)` + `defimpl`，需要动态多态集合或句柄时改用对象安全 `(Dyn Trait)`（`dyn:box`）。
+  - JS 运行时中已无引用且未纳入统一契约的死助手 `&enum:with-impls` 已移除；如有历史脚本直接调用，请改用 `(:impls …)`。
+
 ## 0.46.0 双参数 `if` 假分支统一返回 `Unit` 与 Unicode 标量对齐（#2928）
 
 本版本统一了 native、JS 与 WASM 后端在双参数 `if` 假分支返回值以及 `trim` / `&compare` Unicode 标量语义上的差异：

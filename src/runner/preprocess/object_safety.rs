@@ -684,7 +684,7 @@ pub(super) fn preprocess_dyn_box(
     ));
   };
 
-  let expanded_expr_type = CalcitTypeAnnotation::expand_schema_alias(&raw_expr_type);
+  let expanded_expr_type = CalcitTypeAnnotation::expand_value_type_aliases(&raw_expr_type);
   let resolved_expr_type = match expanded_expr_type.as_ref() {
     CalcitTypeAnnotation::TypeRef(_, type_args) => {
       if let Some(struct_def) = expanded_expr_type.resolve_to_struct() {

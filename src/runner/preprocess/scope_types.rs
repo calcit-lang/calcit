@@ -76,7 +76,9 @@ impl ScopeTypes {
     self.defn_parameters.remove(&name);
     self.refinements.remove(&name);
     self.incomplete_impl_bindings.remove(&name);
-    self.incomplete_impl_bindings.insert(name.clone());
+    if !super::type_inference::is_statically_coherent_nominal_type(&annotation) {
+      self.incomplete_impl_bindings.insert(name.clone());
+    }
     self.values.insert(name, annotation);
   }
 

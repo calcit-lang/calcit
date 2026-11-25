@@ -7127,6 +7127,9 @@ fn preprocess_list_call(
             | CalcitProc::NativeEnumImplTraits
             | CalcitProc::NativeStructValueImplTraits
             | CalcitProc::NativeEnumValueImplTraits => {
+              if let Some(base) = processed_args.first() {
+                type_inference::record_non_coherent_nominal_from_expr(base, scope_types);
+              }
               type_inference::check_impl_attachment_coherence(&processed_args, scope_types).map(|(code, message)| (message, code))
             }
             _ => None,
@@ -7995,17 +7998,29 @@ fn preprocess_known_function_call(
       call_location.clone(),
       check_warnings,
     );
-    if info.def_ns.as_ref() == calcit::CORE_NS
-      && info.name.as_ref() == "impl-traits"
-      && let Some((code, message)) = type_inference::check_impl_attachment_coherence(&current_args, scope_types)
-    {
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        message,
-        code,
-        call_stack,
-        call_location.clone(),
-      ));
+    if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "impl-traits" {
+      let is_top_level_nominal_wrapper = current_args.first().is_some_and(|base| {
+        matches!(
+          base,
+          Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructNew | CalcitProc::NativeEnumNew)))
+        )
+      }) && program::lookup_def_code(file_ns, def_name).is_some_and(|code| {
+        program::impl_attach::code_is_top_level_impl_traits(&code)
+          && (calcit::is_bundled_core_ns(file_ns)
+            || !program::impl_attach::is_hand_written_top_level_impl_traits(file_ns, def_name, &code))
+      });
+      if !is_top_level_nominal_wrapper && let Some(base) = current_args.first() {
+        type_inference::record_non_coherent_nominal_from_expr(base, scope_types);
+      }
+      if let Some((code, message)) = type_inference::check_impl_attachment_coherence(&current_args, scope_types) {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          message,
+          code,
+          call_stack,
+          call_location.clone(),
+        ));
+      }
     }
     let effective_schema = effective_user_call_schema(info.as_ref());
     let effective_schema = if let Some(contract) = checked_contract.as_ref()
@@ -16052,8 +16067,10 @@ fn process_match(
                 type_info: payload_type.clone(),
               });
 
-              body_types.insert(sym.to_owned(), payload_type);
-              body_types.mark_incomplete_impls(sym.to_owned());
+              body_types.insert(sym.to_owned(), payload_type.clone());
+              if !type_inference::is_statically_coherent_nominal_type(&payload_type) {
+                body_types.mark_incomplete_impls(sym.to_owned());
+              }
               processed_pattern.push(local);
             }
             other => {
