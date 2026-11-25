@@ -77,10 +77,31 @@ pub(super) struct DynTraitRegistry {
   traits: Vec<Arc<CalcitTrait>>,
   trait_id_by_key: HashMap<String, u32>,
   vtables_by_trait: Vec<Vec<DynVtableEntry>>,
-  vtable_id_by_trait_and_type: Vec<HashMap<String, u32>>,
+  vtable_ids_by_trait_and_type: Vec<HashMap<String, Vec<u32>>>,
   trampolines: Vec<DynTrampolineSpec>,
   dispatch_slot_by_key: HashMap<DynDispatchKey, u32>,
   to_str_slot: Option<u32>,
+}
+
+fn attached_impls_for_vtable_type(ty: &Arc<CalcitTypeAnnotation>) -> Option<Vec<Arc<crate::wasm::host::calcit::CalcitImpl>>> {
+  let expanded = expand_wasm_value_type(ty);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Struct(def, _) | CalcitTypeAnnotation::StructValue(def) => Some(def.impls.clone()),
+    CalcitTypeAnnotation::Enum(def, _) | CalcitTypeAnnotation::EnumValue(def) => Some(def.impls().to_vec()),
+    CalcitTypeAnnotation::TypeRef(_, _) => expanded
+      .resolve_to_struct()
+      .map(|def| def.impls)
+      .or_else(|| expanded.resolve_to_enum().map(|def| def.impls().to_vec())),
+    _ => None,
+  }
+}
+
+fn same_vtable_impl_identity(left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>) -> bool {
+  match (attached_impls_for_vtable_type(left), attached_impls_for_vtable_type(right)) {
+    (Some(l_impls), Some(r_impls)) => l_impls == r_impls,
+    (None, None) => expand_wasm_value_type(left) == expand_wasm_value_type(right),
+    _ => false,
+  }
 }
 
 impl DynTraitRegistry {
@@ -100,18 +121,35 @@ impl DynTraitRegistry {
     self.traits.push(trait_def.clone());
     self.trait_id_by_key.insert(key, id);
     self.vtables_by_trait.push(Vec::new());
-    self.vtable_id_by_trait_and_type.push(HashMap::new());
+    self.vtable_ids_by_trait_and_type.push(HashMap::new());
     id
+  }
+
+  #[cfg(test)]
+  pub(super) fn trait_count_for_test(&self) -> usize {
+    self.traits.len()
+  }
+
+  #[cfg(test)]
+  pub(super) fn vtable_count_for_test(&self, trait_id: u32) -> usize {
+    self.vtables_by_trait[trait_id as usize].len()
   }
 
   fn intern_vtable(&mut self, trait_id: u32, concrete_key: String, concrete_type: Arc<CalcitTypeAnnotation>, file_ns: String) -> u32 {
     let trait_idx = trait_id as usize;
-    if let Some(&vtable_id) = self.vtable_id_by_trait_and_type[trait_idx].get(&concrete_key) {
+    if let Some(existing_ids) = self.vtable_ids_by_trait_and_type[trait_idx].get(&concrete_key)
+      && let Some(&vtable_id) = existing_ids
+        .iter()
+        .find(|&&id| same_vtable_impl_identity(&self.vtables_by_trait[trait_idx][id as usize].concrete_type, &concrete_type))
+    {
       return vtable_id;
     }
     let vtable_id = self.vtables_by_trait[trait_idx].len() as u32;
     self.vtables_by_trait[trait_idx].push(DynVtableEntry { concrete_type, file_ns });
-    self.vtable_id_by_trait_and_type[trait_idx].insert(concrete_key, vtable_id);
+    self.vtable_ids_by_trait_and_type[trait_idx]
+      .entry(concrete_key)
+      .or_default()
+      .push(vtable_id);
     vtable_id
   }
 
@@ -624,7 +662,10 @@ pub(super) fn compile_dyn_trampolines(
               compiled_counts[slot] = count;
               Ok(func)
             }
-            Err(err) => Err((label, err, *arity)),
+            Err(err) => {
+              compiled_counts[slot] = current_count;
+              Err((label, err, *arity))
+            }
           }
         }
         DynTrampolineSpec::ToStr => match compile_to_str_trampoline(env) {
@@ -632,7 +673,10 @@ pub(super) fn compile_dyn_trampolines(
             compiled_counts[slot] = count;
             Ok(func)
           }
-          Err(err) => Err((String::from("__dyn_trait_to_str"), err, 1)),
+          Err(err) => {
+            compiled_counts[slot] = current_count;
+            Err((String::from("__dyn_trait_to_str"), err, 1))
+          }
         },
       };
       compiled_slots[slot] = Some(compiled);
@@ -648,12 +692,6 @@ pub(super) fn compile_dyn_trampolines(
     match entry.expect("trampoline slot must be compiled") {
       Ok(func) => compiled_fns.push(func),
       Err((label, err, arity)) => {
-        let deferred_wasi_capability = env.target == WasmTarget::Wasi
-          && env.boundary == WasmBoundary::Component
-          && (err.starts_with("E_WASI_COMMAND_CAPABILITY:") || err.starts_with("E_WASI_HTTP_CAPABILITY:"));
-        if !deferred_wasi_capability {
-          return Err(err);
-        }
         unsupported_dependencies.insert(fn_idx, (label, err));
         let params = if arity == 1 && matches!(env.dyn_traits.borrow().trampolines[slot], DynTrampolineSpec::ToStr) {
           vec![ValType::I32]
@@ -672,4 +710,117 @@ pub(super) fn compile_dyn_trampolines(
   }
 
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::wasm::host::calcit::{CalcitImpl, CalcitStructDef, CalcitTrait};
+  use cirru_edn::EdnTag;
+
+  fn dummy_env(target: WasmTarget, boundary: WasmBoundary) -> WasmCompileEnv {
+    WasmCompileEnv {
+      function_value_dependencies: Rc::default(),
+      dyn_traits: Rc::new(RefCell::new(DynTraitRegistry::new(10))),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: false,
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: StructLayouts::default(),
+      any_type_table: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      atom_is_scalar: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target,
+      boundary,
+      world: WasiWorld::Command,
+    }
+  }
+
+  #[test]
+  fn intern_vtable_separates_struct_impl_identities_and_shares_matching_impls() {
+    let trait_def = Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]).with_definition_ref("app.main", "Show"));
+    let mut base_struct = CalcitStructDef::from_fields(EdnTag::new("Probe"), vec![EdnTag::new("v")]);
+    base_struct.definition_ref = Some(Arc::from("app.main/Probe"));
+
+    let mut left = base_struct.clone();
+    left.impls.push(Arc::new(CalcitImpl {
+      name: EdnTag::new("Show"),
+      origin: Some(trait_def.clone()),
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    }));
+
+    let mut right = base_struct;
+    right.impls.push(Arc::new(CalcitImpl {
+      name: EdnTag::new("Show"),
+      origin: Some(trait_def.clone()),
+      fields: Arc::new(vec![EdnTag::new("show")]),
+      values: Arc::new(vec![Calcit::Bool(true)]),
+    }));
+
+    let left_ty = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left)));
+    let left_ty_same = Arc::new(CalcitTypeAnnotation::Struct(
+      Arc::new(left_ty.resolve_to_struct().expect("struct")),
+      Arc::new(vec![]),
+    ));
+    let right_ty = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right)));
+
+    let key = dyn_concrete_type_key(&left_ty).expect("key");
+    assert_eq!(key, dyn_concrete_type_key(&right_ty).expect("right key"));
+
+    let mut registry = DynTraitRegistry::new(0);
+    let trait_id = registry.intern_trait(&trait_def);
+    let v0 = registry.intern_vtable(trait_id, key.clone(), left_ty, String::from("app.main"));
+    let v0_again = registry.intern_vtable(trait_id, key.clone(), left_ty_same, String::from("app.main"));
+    let v1 = registry.intern_vtable(trait_id, key, right_ty, String::from("app.main"));
+
+    assert_eq!(v0, 0);
+    assert_eq!(v0_again, 0, "matching attached impls must reuse the vtable ID");
+    assert_eq!(
+      v1, 1,
+      "different attached impls on the same struct definition must receive distinct vtable IDs"
+    );
+  }
+
+  #[test]
+  fn compile_dyn_trampolines_terminates_and_defers_unreachable_errors() {
+    let env = dummy_env(WasmTarget::Core, WasmBoundary::Native);
+    let missing_trait = Arc::new(
+      CalcitTrait::new(EdnTag::new("Custom"), vec![EdnTag::new("op")], vec![DYNAMIC_TYPE.clone()])
+        .with_definition_ref("app.main", "Custom"),
+    );
+    let mut struct_without_impl = CalcitStructDef::from_fields(EdnTag::new("Missing"), vec![]);
+    struct_without_impl.definition_ref = Some(Arc::from("app.main/Missing"));
+
+    {
+      let mut reg = env.dyn_traits.borrow_mut();
+      let trait_id = reg.intern_trait(&missing_trait);
+      reg.intern_vtable(
+        trait_id,
+        String::from("struct:app.main/Missing"),
+        Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(struct_without_impl))),
+        String::from("app.main"),
+      );
+      reg.ensure_dispatch_trampoline(&missing_trait, &missing_trait, "op", 1);
+    }
+
+    let mut compiled_fns = Vec::new();
+    let mut unsupported = HashMap::new();
+    compile_dyn_trampolines(&env, &mut compiled_fns, &mut unsupported)
+      .expect("failed non-capability trampoline must be deferred cleanly without infinite retry");
+    assert_eq!(compiled_fns.len(), 1);
+    assert!(matches!(compiled_fns[0].instructions.as_slice(), [Instruction::Unreachable]));
+    assert!(
+      unsupported.contains_key(&10),
+      "failed trampoline slot 10 must be recorded in unsupported_dependencies"
+    );
+  }
 }

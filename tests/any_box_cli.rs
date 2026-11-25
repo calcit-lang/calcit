@@ -848,7 +848,7 @@ fn any_box_dyn_trait_cross_ns_and_hash_work_on_native_and_js_and_reject_unsafe_t
                 h1 $ .hash (&list:nth hashers 1)
                 h2 $ .hash (&list:nth hashers 2)
                 hashes-ok $ and (&= (hash (BoxAlert :label |abcd)) h0) (&= (hash 16384) h1) (&= (hash |xyz) h2)
-              if (and (&= b1 b2) hit miss hashes-ok) 0 1
+              if (and (&= b1 b2) hit miss hashes-ok) 0 (raise |any-dyn-cli-check-failed)
           :examples $ []
           :schema $ quote $ Fn (-> Number)
         'reload! $ %{} 'CodeEntry (:doc |)

@@ -7866,7 +7866,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(_, _) => 26,
       Self::Trait(_) => 27,
       Self::TraitSet(_) => 28,
-      Self::DynTrait(_) => 42,
+      Self::DynTrait(_) => 43,
       Self::Nil => 29,
       Self::Unit => 30,
       Self::JsObject => 31,
@@ -12603,6 +12603,18 @@ mod tests {
     assert!(cov_proof.prove(&cov_actual_cb, &cov_expected_cb).is_proven());
     assert_eq!(cov_proof.result(&t_var), Some(NEVER_TYPE.clone()));
     assert_eq!(cov_proof.result(&u_var), Some(NEVER_TYPE.clone()));
+  }
+
+  #[test]
+  fn dyn_trait_and_any_have_distinct_ordering() {
+    let dyn_show = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![])));
+    assert_ne!(CalcitTypeAnnotation::Any, dyn_show);
+    assert_ne!(CalcitTypeAnnotation::Any.cmp(&dyn_show), std::cmp::Ordering::Equal);
+    assert_ne!(dyn_show.cmp(&CalcitTypeAnnotation::Any), std::cmp::Ordering::Equal);
+    assert_eq!(
+      CalcitTypeAnnotation::Any.cmp(&dyn_show),
+      dyn_show.cmp(&CalcitTypeAnnotation::Any).reverse()
+    );
   }
 }
 

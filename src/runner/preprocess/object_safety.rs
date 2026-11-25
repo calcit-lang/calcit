@@ -201,9 +201,15 @@ pub(crate) fn resolve_dyn_trait_definition(
   if let Some(scope) = scope_types
     && !raw_name.contains('/')
     && let Some(local) = scope.type_reference(raw_name)
-    && let CalcitTypeAnnotation::Trait(resolved) = local.as_ref()
   {
-    return Ok(Some(resolved.clone()));
+    match local.as_ref() {
+      CalcitTypeAnnotation::Trait(resolved) => return Ok(Some(resolved.clone())),
+      _ => {
+        if let Some(resolved) = local.as_trait_definition() {
+          return Ok(Some(Arc::new(resolved.clone())));
+        }
+      }
+    }
   }
 
   if let Some((ns, def)) = program::resolve_type_name_in_ns(file_ns, raw_name) {
@@ -534,10 +540,13 @@ fn resolve_dyn_box_trait_operand(trait_raw: &Calcit, ctx: &mut PreprocessContext
       )))
     }
     Calcit::Local(local) => {
-      if let Some(ann) = ctx.scope_types.type_reference(&local.sym)
-        && let CalcitTypeAnnotation::Trait(trait_def) = ann.as_ref()
-      {
-        return Ok((trait_def.clone(), preprocessed_trait));
+      if let Some(ann) = ctx.scope_types.type_reference(&local.sym) {
+        if let CalcitTypeAnnotation::Trait(trait_def) = ann.as_ref() {
+          return Ok((trait_def.clone(), preprocessed_trait));
+        }
+        if let Some(trait_def) = ann.as_trait_definition() {
+          return Ok((Arc::new(trait_def.clone()), preprocessed_trait));
+        }
       }
       Err(fail(format!(
         "dyn:box expects a statically resolved trait as its second argument, got local `{}`",

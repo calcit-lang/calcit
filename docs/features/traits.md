@@ -475,7 +475,16 @@ deftrait AlertPlugin
   .alert $ Fn Self Number (-> String)
 
 defstruct EmailAlert (:addr String) (:impls AlertPlugin)
+defimpl EmailAlert AlertPlugin
+  .alert $ fn (self code)
+    hint-fn $ Fn EmailAlert Number (-> String)
+    str (:addr self) |# code
+
 defstruct WebhookAlert (:url String) (:impls AlertPlugin)
+defimpl WebhookAlert AlertPlugin
+  .alert $ fn (self code)
+    hint-fn $ Fn WebhookAlert Number (-> String)
+    str (:url self) |# code
 
 defn dispatch-alerts (plugins code)
   hint-fn $ Fn (List (Dyn AlertPlugin)) Number (-> (List String))

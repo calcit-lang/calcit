@@ -1188,9 +1188,16 @@ fn emit_wasm_impl(
   for (_, name, _, _) in &fn_defs {
     *export_name_counts.entry(name.clone()).or_insert(0) += 1;
   }
-  let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, direct_scalar_type_test);
-  let trait_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_trait_call);
-  let method_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_method_call);
+  let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, |_, _, _, expr| direct_scalar_type_test(expr));
+  let trait_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, |ns, name, args, expr| {
+    let params_and_types = program_data
+      .get(ns)
+      .and_then(|file| file.defs.get(name))
+      .and_then(|compiled| qualified_fn_schema(&compiled.schema, ns))
+      .map(|sig| sig.arg_types.clone());
+    expr_uses_trait_call_for_def(expr, params_and_types.as_deref(), Some(args))
+  });
+  let method_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, |_, _, _, expr| expr_uses_method_call(expr));
   let mut fn_index: HashMap<String, u32> = HashMap::new();
   let mut fn_arity: HashMap<String, u32> = HashMap::new();
   // Track functions with rest args: value is the fixed-arity count (params before `&`).
@@ -10235,7 +10242,7 @@ fn expression_calls_sensitive(
 fn collect_sensitive_defs(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   export_name_counts: &HashMap<String, usize>,
-  direct_predicate: fn(&Calcit) -> bool,
+  direct_predicate: impl Fn(&str, &str, &CalcitFnArgs, &Calcit) -> bool,
 ) -> HashSet<String> {
   let qualified_names = fn_defs
     .iter()
@@ -10248,7 +10255,7 @@ fn collect_sensitive_defs(
     .collect::<HashMap<_, _>>();
   let mut sensitive = fn_defs
     .iter()
-    .filter(|(_, _, _, body)| body.iter().any(direct_predicate))
+    .filter(|(ns, name, args, body)| body.iter().any(|expr| direct_predicate(ns, name, args, expr)))
     .map(|(ns, name, _, _)| format!("{ns}/{name}"))
     .collect::<HashSet<_>>();
 
@@ -10947,14 +10954,167 @@ fn check_uses_recur(expr: &Calcit) -> bool {
   }
 }
 
-fn expr_uses_trait_call(expr: &Calcit) -> bool {
+fn dyn_box_operand_needs_specialization(
+  expr: &Calcit,
+  specialized_params: Option<&HashSet<String>>,
+  local_sensitivity: &HashMap<String, bool>,
+) -> bool {
   match expr {
-    Calcit::List(items) => {
-      matches!(
-        items.first(),
-        Some(Calcit::Proc(CalcitProc::NativeTraitCall) | Calcit::Syntax(CalcitSyntax::DynBox, _))
-      ) || items.iter().any(expr_uses_trait_call)
+    Calcit::Number(_) | Calcit::Bool(_) | Calcit::Str(_) | Calcit::Tag(_) | Calcit::Nil | Calcit::Unit => false,
+    Calcit::Import(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) | Calcit::Trait(_) | Calcit::Proc(_) => false,
+    Calcit::Local(local) => {
+      if let Some(&sensitive) = local_sensitivity.get(local.sym.as_ref()) {
+        return sensitive;
+      }
+      if let Some(params) = specialized_params {
+        if params.contains(local.sym.as_ref()) {
+          return true;
+        }
+        if !local.type_info.contains_type_var()
+          && !nil_type_evidence_is_open(&local.type_info)
+          && !is_nominal_value_annotation(&local.type_info)
+        {
+          return false;
+        }
+      }
+      true
     }
+    Calcit::Symbol { sym, .. } => {
+      if let Some(&sensitive) = local_sensitivity.get(sym.as_ref()) {
+        return sensitive;
+      }
+      if let Some(params) = specialized_params
+        && params.contains(sym.as_ref())
+      {
+        return true;
+      }
+      true
+    }
+    Calcit::List(items) if !items.is_empty() => match &items[0] {
+      Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+        let mut scoped = local_sensitivity.clone();
+        if let Some(Calcit::List(binding)) = items.get(1) {
+          let record_pair = |pair: &Calcit, scoped: &mut HashMap<String, bool>| {
+            if let Calcit::List(kv) = pair
+              && kv.len() == 2
+              && let Some(name) = match &kv[0] {
+                Calcit::Local(l) => Some(l.sym.as_ref().to_owned()),
+                Calcit::Symbol { sym, .. } => Some(sym.as_ref().to_owned()),
+                _ => None,
+              }
+            {
+              let rhs_sensitive = dyn_box_operand_needs_specialization(&kv[1], specialized_params, scoped);
+              scoped.insert(name, rhs_sensitive);
+            }
+          };
+          if binding.len() == 2 && !matches!(binding[0], Calcit::List(_)) {
+            record_pair(items.get(1).expect("checked"), &mut scoped);
+          } else {
+            for pair in binding.iter() {
+              record_pair(pair, &mut scoped);
+            }
+          }
+        }
+        items
+          .drop_left()
+          .drop_left()
+          .iter()
+          .any(|item| dyn_box_operand_needs_specialization(item, specialized_params, &scoped))
+      }
+      Calcit::Syntax(CalcitSyntax::Quote, _) => false,
+      Calcit::Syntax(CalcitSyntax::Defn, _) => true,
+      Calcit::Syntax(_, _) | Calcit::Proc(_) | Calcit::Method(_, _) | Calcit::Import(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) => {
+        items
+          .drop_left()
+          .iter()
+          .any(|arg| dyn_box_operand_needs_specialization(arg, specialized_params, local_sensitivity))
+      }
+      _ => items
+        .iter()
+        .any(|item| dyn_box_operand_needs_specialization(item, specialized_params, local_sensitivity)),
+    },
+    _ => false,
+  }
+}
+
+fn expr_uses_trait_call_for_def(expr: &Calcit, arg_types: Option<&[Arc<CalcitTypeAnnotation>]>, args: Option<&CalcitFnArgs>) -> bool {
+  let specialized_params = match (args, arg_types) {
+    (Some(fn_args), Some(types)) => {
+      let names = fn_param_names(fn_args);
+      let set = names
+        .into_iter()
+        .zip(types.iter())
+        .filter(|(_, ty)| ty.contains_type_var() || nil_type_evidence_is_open(ty) || is_nominal_value_annotation(ty))
+        .map(|(name, _)| name)
+        .collect::<HashSet<_>>();
+      Some(set)
+    }
+    _ => None,
+  };
+  let mut scoped_sensitivity = HashMap::new();
+  expr_uses_trait_call_inner(expr, specialized_params.as_ref(), &mut scoped_sensitivity)
+}
+
+fn expr_uses_trait_call_inner(
+  expr: &Calcit,
+  specialized_params: Option<&HashSet<String>>,
+  local_sensitivity: &mut HashMap<String, bool>,
+) -> bool {
+  match expr {
+    Calcit::List(items) => match items.first() {
+      Some(Calcit::Proc(CalcitProc::NativeTraitCall)) => true,
+      Some(Calcit::Syntax(CalcitSyntax::DynBox, _)) => {
+        items
+          .get(1)
+          .is_some_and(|operand| dyn_box_operand_needs_specialization(operand, specialized_params, local_sensitivity))
+          || items
+            .drop_left()
+            .iter()
+            .any(|item| expr_uses_trait_call_inner(item, specialized_params, local_sensitivity))
+      }
+      Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+        let mut scoped = local_sensitivity.clone();
+        if let Some(Calcit::List(binding)) = items.get(1) {
+          let mut visit_pair = |pair: &Calcit| -> bool {
+            if let Calcit::List(kv) = pair
+              && kv.len() == 2
+            {
+              if expr_uses_trait_call_inner(&kv[1], specialized_params, &mut scoped) {
+                return true;
+              }
+              if let Some(name) = match &kv[0] {
+                Calcit::Local(l) => Some(l.sym.as_ref().to_owned()),
+                Calcit::Symbol { sym, .. } => Some(sym.as_ref().to_owned()),
+                _ => None,
+              } {
+                let rhs_sensitive = dyn_box_operand_needs_specialization(&kv[1], specialized_params, &scoped);
+                scoped.insert(name, rhs_sensitive);
+              }
+            }
+            false
+          };
+          if binding.len() == 2 && !matches!(binding[0], Calcit::List(_)) {
+            if visit_pair(items.get(1).expect("checked")) {
+              return true;
+            }
+          } else {
+            for pair in binding.iter() {
+              if visit_pair(pair) {
+                return true;
+              }
+            }
+          }
+        }
+        items
+          .drop_left()
+          .drop_left()
+          .iter()
+          .any(|item| expr_uses_trait_call_inner(item, specialized_params, &mut scoped))
+      }
+      _ => items
+        .iter()
+        .any(|item| expr_uses_trait_call_inner(item, specialized_params, local_sensitivity)),
+    },
     _ => false,
   }
 }
@@ -11543,7 +11703,7 @@ fn emit_call_expr_as_repr(
   }
 
   if dst_repr != NativeValRepr::F64
-    && !matches!(head, Calcit::Syntax(..))
+    && !matches!(head, Calcit::Syntax(syn, _) if *syn != CalcitSyntax::DynBox)
     && !args_list
       .iter()
       .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
@@ -11782,7 +11942,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(&call[..]));
   }
 
-  if !matches!(head, Calcit::Syntax(..))
+  if !matches!(head, Calcit::Syntax(syn, _) if *syn != CalcitSyntax::DynBox)
     && !args_list
       .iter()
       .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
@@ -21376,5 +21536,131 @@ mod tests {
     let err = component_abi_type(&direct, "regex.core/use-handle", "logical_schema.parameters[0]")
       .expect_err("Component ABI must reject native FfiResource");
     assert!(err.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"), "err: {err}");
+  }
+
+  #[test]
+  fn dyn_box_respects_impl_selector_and_assigns_distinct_vtable_ids() {
+    let trait_def = Arc::new(
+      crate::wasm::host::calcit::CalcitTrait::new(
+        EdnTag::new("ProbeShow"),
+        vec![EdnTag::new("render")],
+        vec![Arc::new(CalcitTypeAnnotation::from_function_parts(
+          vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self")))],
+          Arc::new(CalcitTypeAnnotation::String),
+        ))],
+      )
+      .with_definition_ref("tests.wasm", "ProbeShow"),
+    );
+
+    let mut left_def = CalcitStructDef::from_fields(EdnTag::new("ProbeBox"), vec![]);
+    left_def.definition_ref = Some(Arc::from("tests.wasm/ProbeBox"));
+    left_def.impls.push(Arc::new(CalcitImpl {
+      name: EdnTag::new("ProbeShow"),
+      origin: Some(trait_def.clone()),
+      fields: Arc::new(vec![EdnTag::new("render")]),
+      values: Arc::new(vec![Calcit::Nil]),
+    }));
+
+    let mut right_def = left_def.clone();
+    right_def.impls[0] = Arc::new(CalcitImpl {
+      values: Arc::new(vec![Calcit::Bool(true)]),
+      ..(*left_def.impls[0]).clone()
+    });
+
+    let left_ty = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left_def)));
+    let right_ty = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right_def)));
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: false,
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::from([(String::from("dyn-trait"), 10)]),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      atom_is_scalar: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
+      any_type_table: Default::default(),
+    };
+    let mut ctx = WasmGenCtx::new(3, env.clone());
+    let sym_info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.wasm"),
+      at_def: Arc::from("box-selector"),
+    });
+    let make_local = |name: &str, ty: Arc<CalcitTypeAnnotation>, slot: u32| -> Calcit {
+      Calcit::Local(CalcitLocal {
+        idx: slot as u16,
+        sym: Arc::from(name),
+        info: sym_info.clone(),
+        location: None,
+        type_info: ty,
+      })
+    };
+    ctx.locals.insert(String::from("flag"), 0);
+    ctx.local_types.insert(
+      String::from("flag"),
+      WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Bool)),
+    );
+    ctx.locals.insert(String::from("left"), 1);
+    ctx.local_types.insert(
+      String::from("left"),
+      WasmTypeEvidence {
+        exact_impls: true,
+        ..WasmTypeEvidence::contract(left_ty.clone())
+      },
+    );
+    ctx.locals.insert(String::from("right"), 2);
+    ctx.local_types.insert(
+      String::from("right"),
+      WasmTypeEvidence {
+        exact_impls: true,
+        ..WasmTypeEvidence::contract(right_ty.clone())
+      },
+    );
+
+    let chosen_sym = Calcit::Symbol {
+      sym: Arc::from("chosen"),
+      info: sym_info.clone(),
+      location: None,
+    };
+    let joined = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+      make_local("flag", Arc::new(CalcitTypeAnnotation::Bool), 0),
+      make_local("left", left_ty, 1),
+      make_local("right", right_ty, 2),
+    ]);
+    let box_call = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::DynBox, Arc::from("tests.wasm")),
+      make_local("chosen", super::DYNAMIC_TYPE.clone(), 0),
+      Calcit::Trait(trait_def),
+    ]);
+    let let_expr = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.wasm")),
+      Calcit::from(vec![chosen_sym, joined]),
+      box_call,
+    ]);
+    let Calcit::List(let_list) = &let_expr else {
+      unreachable!("let expression must be a list");
+    };
+    emit_call_expr(&mut ctx, let_list).expect("dyn:box over ImplSelector must emit cleanly");
+
+    let reg = env.dyn_traits.borrow();
+    assert_eq!(reg.trait_count_for_test(), 1);
+    assert_eq!(
+      reg.vtable_count_for_test(0),
+      2,
+      "both ImplSelector branches must register distinct vtable entries"
+    );
   }
 }

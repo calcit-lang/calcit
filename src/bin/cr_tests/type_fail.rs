@@ -8197,6 +8197,39 @@ fn dyn_trait_object_safety_and_boxing_rejections() {
         err.to_string().contains("E_TRAIT_NOT_OBJECT_SAFE"),
         "expected E_TRAIT_NOT_OBJECT_SAFE for deftype declaration, got: {err}"
       );
+
+      let snap_entries = load_snippet_entries("deftype BadSnapshotDyn (Dyn Eq)\ndefn main! () &unit");
+      let snap_warnings = RefCell::new(vec![]);
+      let snap_err = runner::preprocess::compile_source_def_for_snapshot(
+        &snap_entries.init_ns,
+        "BadSnapshotDyn",
+        &snap_warnings,
+        &CallStackList::default(),
+      )
+      .expect_err("snapshot deftype BadSnapshotDyn (Dyn Eq) must fail E_TRAIT_NOT_OBJECT_SAFE before caching");
+      assert!(
+        snap_err.to_string().contains("E_TRAIT_NOT_OBJECT_SAFE"),
+        "expected E_TRAIT_NOT_OBJECT_SAFE for snapshot deftype, got: {snap_err}"
+      );
+    }
+    expect_error(
+      "Dyn in function guard target rejected",
+      "defn check-dyn (x)\n  hint-fn $ Fn Dynamic (-> Bool) (:guard (Dyn Eq))\n  false\ndefn main! () (do check-dyn &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    {
+      let entries = load_snippet_entries("defn bad-zero (x)\n  hint-fn $ Fn Dyn (-> String)\n  |ok\ndefn main! () (do bad-zero &unit)");
+      let err = run_check_only(&entries).expect_err("bare Dyn without trait arg should fail E_TRAIT_NOT_OBJECT_SAFE");
+      assert!(
+        err.contains("E_TRAIT_NOT_OBJECT_SAFE") && err.contains("expected 1 trait argument, got 0"),
+        "expected arity diagnostic on bare Dyn, got: {err}"
+      );
+    }
+    {
+      let entries = load_snippet_entries(
+        "defn check-local ()\n  let\n      LocalToString ToString\n      render $ fn (x) (hint-fn $ Fn (Dyn LocalToString) (-> String)) (.to-string x)\n    render (dyn:box 42 LocalToString)\ndefn main! () (do (check-local) &unit)",
+      );
+      run_check_only(&entries).expect("lexical let-bound trait descriptor should resolve in (Dyn LocalToString)");
     }
     expect_error(
       "deftype alias to non-object-safe Dyn rejected in Fn signature",
@@ -8221,21 +8254,34 @@ fn dyn_trait_object_safety_and_boxing_rejections() {
     }
 
     // E_DYN_BOX_TYPE rejections.
-    expect_error(
-      "dyn:box rejects open Dynamic value",
-      "defn bad (x)\n  hint-fn $ Fn Dynamic (-> (Dyn Show))\n  dyn:box x Show\ndefn main! () (do bad &unit)",
-      "E_DYN_BOX_TYPE",
-    );
-    expect_error(
-      "dyn:box rejects unimplemented struct",
-      "defstruct Unshown (:n Number)\ndefn bad () (dyn:box (Unshown :n 1) Show)\ndefn main! () (do bad &unit)",
-      "E_DYN_BOX_TYPE",
-    );
-    expect_error(
-      "dyn:box rejects Option Dynamic",
-      "defn bad (x)\n  hint-fn $ Fn (Option Dynamic) (-> (Dyn Countable))\n  dyn:box x Countable\ndefn main! () (do bad &unit)",
-      "E_DYN_BOX_TYPE",
-    );
+    {
+      let entries =
+        load_snippet_entries("defn bad (x)\n  hint-fn $ Fn Dynamic (-> (Dyn Show))\n  dyn:box x Show\ndefn main! () (do bad &unit)");
+      let err = run_check_only(&entries).expect_err("dyn:box Dynamic should fail E_DYN_BOX_TYPE");
+      assert!(
+        err.contains("E_DYN_BOX_TYPE") && err.contains("open") && err.contains("Dynamic"),
+        "expected open Dynamic reason with E_DYN_BOX_TYPE, got: {err}"
+      );
+    }
+    {
+      let entries =
+        load_snippet_entries("defstruct Unshown (:n Number)\ndefn bad () (dyn:box (Unshown :n 1) Show)\ndefn main! () (do bad &unit)");
+      let err = run_check_only(&entries).expect_err("dyn:box unimplemented struct should fail E_DYN_BOX_TYPE");
+      assert!(
+        err.contains("E_DYN_BOX_TYPE") && err.contains("does not implement trait"),
+        "expected missing trait impl reason with E_DYN_BOX_TYPE, got: {err}"
+      );
+    }
+    {
+      let entries = load_snippet_entries(
+        "defn bad (x)\n  hint-fn $ Fn (Option Dynamic) (-> (Dyn Countable))\n  dyn:box x Countable\ndefn main! () (do bad &unit)",
+      );
+      let err = run_check_only(&entries).expect_err("dyn:box Option Dynamic should fail E_DYN_BOX_TYPE");
+      assert!(
+        err.contains("E_DYN_BOX_TYPE") && err.contains("open") && err.contains("Dynamic"),
+        "expected open Option Dynamic reason with E_DYN_BOX_TYPE, got: {err}"
+      );
+    }
     expect_error(
       "dyn:box rejects non-trait second argument",
       "defn bad () (dyn:box 1 2)\ndefn main! () (do bad &unit)",
@@ -8585,11 +8631,31 @@ defn main! ()
     .expect("core WASM emit for Dyn Plugin should succeed");
 
     let wasm_bytes = fs::read(out_dir.path().join("program.wasm")).expect("program.wasm");
+    let mut import_funcs = 0u32;
     let mut call_indirect_count = 0usize;
-    let mut br_table_count = 0usize;
     let mut table_entries = 0u64;
+    let mut exported_run_idx: Option<u32> = None;
+    let mut direct_calls: std::collections::HashMap<u32, Vec<u32>> = std::collections::HashMap::new();
+    let mut br_table_targets: std::collections::HashMap<u32, Vec<usize>> = std::collections::HashMap::new();
+    let mut local_fn_idx = 0u32;
     for payload in wasmparser::Parser::new(0).parse_all(&wasm_bytes) {
       match payload.expect("valid wasm payload") {
+        wasmparser::Payload::ImportSection(reader) => {
+          for import in reader.into_imports() {
+            let import = import.expect("import");
+            if matches!(import.ty, wasmparser::TypeRef::Func(_)) {
+              import_funcs += 1;
+            }
+          }
+        }
+        wasmparser::Payload::ExportSection(reader) => {
+          for export in reader {
+            let export = export.expect("export");
+            if export.kind == wasmparser::ExternalKind::Func && export.name == "run-core-dyn-test" {
+              exported_run_idx = Some(export.index);
+            }
+          }
+        }
         wasmparser::Payload::TableSection(reader) => {
           for table in reader {
             let table = table.expect("table entry");
@@ -8597,11 +8663,19 @@ defn main! ()
           }
         }
         wasmparser::Payload::CodeSectionEntry(body) => {
+          let func_idx = import_funcs + local_fn_idx;
+          local_fn_idx += 1;
           let mut ops = body.get_operators_reader().expect("operators");
           while !ops.eof() {
             match ops.read().expect("op") {
               wasmparser::Operator::CallIndirect { .. } => call_indirect_count += 1,
-              wasmparser::Operator::BrTable { .. } => br_table_count += 1,
+              wasmparser::Operator::Call { function_index } => {
+                direct_calls.entry(func_idx).or_default().push(function_index);
+              }
+              wasmparser::Operator::BrTable { targets } => {
+                let target_count = targets.targets().count();
+                br_table_targets.entry(func_idx).or_default().push(target_count);
+              }
               _ => {}
             }
           }
@@ -8611,7 +8685,27 @@ defn main! ()
     }
     assert_eq!(call_indirect_count, 0, "Dyn Trait WASM dispatch must emit zero CallIndirect");
     assert_eq!(table_entries, 0, "Dyn Trait WASM dispatch must add zero funcref table entries");
-    assert!(br_table_count > 0, "Dyn Trait WASM dispatch must emit BrTable trampoline");
+    let run_fn_idx = exported_run_idx.expect("run-core-dyn-test export must exist");
+    let mut pending = vec![run_fn_idx];
+    let mut visited = std::collections::HashSet::new();
+    let mut reachable_br_targets = Vec::new();
+    while let Some(idx) = pending.pop() {
+      if !visited.insert(idx) {
+        continue;
+      }
+      if let Some(counts) = br_table_targets.get(&idx) {
+        reachable_br_targets.extend(counts.iter().copied());
+      }
+      if let Some(callees) = direct_calls.get(&idx) {
+        pending.extend(callees.iter().copied());
+      }
+    }
+    assert!(
+      reachable_br_targets.contains(&2),
+      "Dyn Trait WASM dispatch from run-core-dyn-test must reach a 2-arm BrTable trampoline, got: {reachable_br_targets:?}"
+    );
+    let dyn_result = call_core_wasm_f64(&wasm_bytes, "run-core-dyn-test");
+    assert_eq!(dyn_result, 28.0, "run-core-dyn-test must compute (10+3) + (5*3) = 28");
 
     let load_wasi_entries = |snippet: &str| {
       builtins::effects::init_effects_states();
@@ -8699,8 +8793,127 @@ defn main! ()
     )
     .expect_err("WASI 0.3 command component check must catch unsupported op inside reachable Dyn Trait impl");
     assert!(
-      comp_err.contains("E_WASI_COMMAND") || comp_err.contains("E_WASM_CAPABILITY"),
-      "expected WASI component capability error, got: {comp_err}"
+      (comp_err.contains("E_WASI_COMMAND_CAPABILITY") || comp_err.contains("E_WASI_COMMAND_DEPENDENCY"))
+        && !comp_err.contains("E_WASI_COMMAND_INDIRECT")
+        && comp_err.contains("E_WASM_CAPABILITY")
+        && (comp_err.contains("walk-dir") || comp_err.contains("fs-read-dir")),
+      "expected WASI component capability error for walk-dir / fs-read-dir, got: {comp_err}"
     );
+  });
+}
+
+#[cfg(feature = "wasm")]
+fn call_core_wasm_f64(wasm_bytes: &[u8], export_name: &str) -> f64 {
+  let engine = wasmtime::Engine::default();
+  let module = wasmtime::Module::new(&engine, wasm_bytes).expect("valid core wasm module");
+  let mut linker = wasmtime::Linker::new(&engine);
+  let mut registered = HashSet::new();
+  for import in module.imports() {
+    let key = (import.module().to_owned(), import.name().to_owned());
+    if !registered.insert(key) {
+      continue;
+    }
+    if let wasmtime::ExternType::Func(func_ty) = import.ty() {
+      let result_tys: Vec<_> = func_ty.results().collect();
+      linker
+        .func_new(import.module(), import.name(), func_ty, move |_caller, _params, results| {
+          for (idx, ty) in result_tys.iter().enumerate() {
+            results[idx] = match ty {
+              wasmtime::ValType::I32 => wasmtime::Val::I32(0),
+              wasmtime::ValType::I64 => wasmtime::Val::I64(0),
+              wasmtime::ValType::F32 => wasmtime::Val::F32(0),
+              wasmtime::ValType::F64 => wasmtime::Val::F64(0),
+              _ => wasmtime::Val::I32(0),
+            };
+          }
+          Ok(())
+        })
+        .expect("stub import");
+    }
+  }
+  let mut store = wasmtime::Store::new(&engine, ());
+  let instance = linker.instantiate(&mut store, &module).expect("instantiate core wasm");
+  let func = instance
+    .get_typed_func::<(), f64>(&mut store, export_name)
+    .unwrap_or_else(|err| panic!("missing export `{export_name}`: {err}"));
+  func
+    .call(&mut store, ())
+    .unwrap_or_else(|err| panic!("call `{export_name}`: {err}"))
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn dyn_trait_wasm_handles_closed_generic_spread_nan_equality_and_json_scalar_hash() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let load_entries = |snippet: &str| {
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+      annotate_snippet_macros(&mut file);
+      file.defs.get_mut("main!").expect("main! entry").schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![],
+        Arc::new(CalcitTypeAnnotation::Unit),
+      ));
+      snapshot.files.insert("app.main".to_owned(), file);
+      prepare_snapshot_entries(snapshot)
+    };
+
+    let code = r#"
+deftrait Plugin
+  .emit-code $ Fn Self Number (-> Number)
+
+defstruct ItemA (:v Number) (:impls Plugin)
+defimpl ItemA Plugin $ .emit-code $ fn (self n) (hint-fn $ Fn ItemA Number (-> Number)) (&+ (:v self) n)
+
+defn box-closed (x)
+  hint-fn $ Fn T (-> (Dyn Plugin)) (:generics T)
+  dyn:box (ItemA :v 10) Plugin
+
+defn run-closed-spread ()
+  hint-fn $ Fn (-> Number)
+  let
+      f box-closed
+      a $ f true
+      b $ f & ([] false)
+    &+ (.emit-code a 3) (.emit-code b 3)
+
+defwasm-export check-all-dyn-edge-cases ()
+  hint-fn $ Fn (-> Number)
+  let
+      spread-res $ run-closed-spread
+      nan-val $ &/ 0.0 0.0
+      nan-eq $ = (dyn:box nan-val ToString) (dyn:box nan-val ToString)
+      json-res $ try-parse-json |true
+      boxed-bool-hash $ match json-res
+        (:ok raw) (&hash (assert-type raw Bool))
+        (:err _) 0
+      num-hash-ok $ &= (&hash 16392) (&hash (assert-type 16392 Number))
+    if (and (&= spread-res 26) nan-eq num-hash-ok (&= boxed-bool-hash (&hash true))) 1 0
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let ((_ok (check-all-dyn-edge-cases))) , &unit
+"#;
+    let entries = load_entries(code);
+    run_check_only(&entries).expect("edge-case dyn trait snippet should preprocess");
+
+    let out_dir = tempfile::tempdir().expect("temp dir");
+    let emit_str = out_dir.path().to_str().expect("utf8 path");
+    calcit::wasm::emit_wasm::emit_wasm_with_world(
+      &entries.init_ns,
+      &entries.init_def,
+      emit_str,
+      calcit::wasm::emit_wasm::WasmTarget::Core,
+      calcit::wasm::emit_wasm::WasmBoundary::Native,
+      calcit::wasm::emit_wasm::WasiWorld::Command,
+    )
+    .expect("Core WASM emit for closed generic dyn:box, NaN eq, and boxed JSON hash must succeed");
+
+    let wasm_bytes = fs::read(out_dir.path().join("program.wasm")).expect("program.wasm");
+    assert_eq!(call_core_wasm_f64(&wasm_bytes, "check-all-dyn-edge-cases"), 1.0);
   });
 }

@@ -89,9 +89,7 @@ pub(super) fn imports_unloaded_ns(file_ns: &str, name: &str, target_ns: &str) ->
 /// Find the first unresolved nominal reference in `annotation`.
 pub(super) fn find_unknown_type_name(annotation: &Arc<CalcitTypeAnnotation>, file_ns: &str, path: &str) -> Option<UnknownTypeName> {
   super::find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
-    CalcitTypeAnnotation::TypeRef(name, args)
-      if !(name.trim_start_matches('\'') == "Dyn" && !args.is_empty()) && !type_name_resolves(file_ns, name) =>
-    {
+    CalcitTypeAnnotation::TypeRef(name, _args) if name.trim_start_matches('\'') != "Dyn" && !type_name_resolves(file_ns, name) => {
       Some(UnknownTypeName {
         path: candidate_path.to_owned(),
         name: Arc::from(name.trim_start_matches('\'')),

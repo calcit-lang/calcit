@@ -2853,6 +2853,10 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
         Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
           Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
         }
+        Some(local_type) if resolved_args.is_empty() => match local_type.as_trait_definition() {
+          Some(trait_def) => Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.clone()))),
+          None => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
+        },
         _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
       }
     },
@@ -2862,9 +2866,13 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
         let lookup_name = trait_def.name.ref_str().trim_start_matches('\'').trim_start_matches(':');
         if trait_def.definition_ref.is_none()
           && let Some(local_type) = scope_types.type_reference(lookup_name)
-          && let CalcitTypeAnnotation::Trait(resolved) = local_type.as_ref()
         {
-          return resolved.clone();
+          if let CalcitTypeAnnotation::Trait(resolved) = local_type.as_ref() {
+            return resolved.clone();
+          }
+          if let Some(resolved) = local_type.as_trait_definition() {
+            return Arc::new(resolved.clone());
+          }
         }
       }
       trait_def
@@ -3014,6 +3022,7 @@ pub fn compile_source_def_for_snapshot(
   })?;
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
+  object_safety::reject_non_object_safe_dyn_traits_in_deftype(ns, def, &code, &scope_types, call_stack)?;
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code, call_stack)?;
   mark_audit_proven(ns, def);
 
@@ -20464,7 +20473,13 @@ pub(super) fn find_schema_annotation_with<T>(
           .as_ref()
           .and_then(|item| find_schema_annotation_with(item, &format!("{path}.rest"), predicate, skip_descend))
       })
-      .or_else(|| find_schema_annotation_with(&info.return_type, &format!("{path}.return"), predicate, skip_descend)),
+      .or_else(|| find_schema_annotation_with(&info.return_type, &format!("{path}.return"), predicate, skip_descend))
+      .or_else(|| {
+        info
+          .guard
+          .as_ref()
+          .and_then(|guard| find_schema_annotation_with(guard, &format!("{path}.guard"), predicate, skip_descend))
+      }),
     CalcitTypeAnnotation::Macro(signature) => {
       let mut find_contract = |contract: &MacroSyntaxType, contract_path: String| match contract {
         MacroSyntaxType::Expr(semantic) => find_schema_annotation_with(semantic, &contract_path, predicate, skip_descend),
