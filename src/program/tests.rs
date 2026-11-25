@@ -2625,4 +2625,44 @@ fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coh
     "hand-written top-level impl-traits wrapper must mark nominal def non-coherent"
   );
   impl_attach::attach_source_impls(&mut hand_wrapped).expect("hand-wrapped non-coherent def preserves detached defimpls");
+
+  // Factory calls `(make-p)` returning a nominal type must mark that type non-coherent when passed to `impl-traits`.
+  for factory_def in [
+    "defn make-p () (hint-fn $ Fn (-> P)) (%{} P :name |a)",
+    "defn make-p () (%{} P :name |a)",
+  ] {
+    let mut factory_program = impl_attach_program(
+      "defstruct P (:name String)",
+      &[
+        ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+        ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+        ("make-p", factory_def),
+        ("UseFactory", "def p-v $ impl-traits (make-p) P-Labeled"),
+      ],
+      &[],
+    );
+    assert!(
+      impl_attach::collect_non_coherent_nominal_defs(&factory_program).contains("app.m/P"),
+      "factory call `{factory_def}` must mark returned nominal def non-coherent"
+    );
+    impl_attach::attach_source_impls(&mut factory_program).expect("factory-attached non-coherent def preserves detached defimpls");
+  }
+
+  // Shadowing `let` binding `(let ((P (make-q))) (impl-traits P ...))` must NOT fall through to top-level `P`.
+  let mut shadowed = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("make-q", "defn make-q () 42"),
+      ("UseShadow", "def v $ let ((P (make-q))) (impl-traits P P-Labeled)"),
+    ],
+    &[],
+  );
+  assert!(
+    !impl_attach::collect_non_coherent_nominal_defs(&shadowed).contains("app.m/P"),
+    "shadowed local binding without a nominal target must not mark top-level P non-coherent"
+  );
+  let err = impl_attach::attach_source_impls(&mut shadowed).expect_err("top-level P stays coherent and rejects duplicate defimpl");
+  assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 }

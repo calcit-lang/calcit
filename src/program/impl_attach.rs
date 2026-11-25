@@ -467,6 +467,43 @@ fn hint_fn_arg_nodes(scan: NonCoherentScanCtx<'_>, body: &[Calcit]) -> Option<Ve
   None
 }
 
+fn hint_fn_return_node(scan: NonCoherentScanCtx<'_>, body: &[Calcit]) -> Option<Calcit> {
+  let spec = body.iter().find_map(|item| {
+    let Calcit::List(parts) = item else { return None };
+    let head = parts.first()?;
+    if matches!(head, Calcit::Syntax(CalcitSyntax::HintFn, _))
+      || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "hint-fn")
+    {
+      parts.get(1)
+    } else {
+      None
+    }
+  })?;
+  let Calcit::List(items) = spec else { return None };
+  let head = items.first()?;
+  if matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "Fn")
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "Fn")
+  {
+    for item in items.iter().skip(1) {
+      if let Calcit::List(clause) = item
+        && matches!(clause.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "->")
+      {
+        return clause.get(1).cloned();
+      }
+    }
+  }
+  if matches!(head, Calcit::Proc(CalcitProc::NativeMap)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "{}") {
+    for pair in items.iter().skip(1) {
+      if let Calcit::List(kv) = pair
+        && matches!(kv.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "return")
+      {
+        return kv.get(1).cloned();
+      }
+    }
+  }
+  None
+}
+
 fn bind_fn_param_nominals(
   scan: NonCoherentScanCtx<'_>,
   params: &CalcitList,
@@ -475,25 +512,20 @@ fn bind_fn_param_nominals(
   local_bindings: &mut HashMap<Arc<str>, Vec<DefKey>>,
 ) {
   let param_names = fn_param_names_from_list(params);
+  for param in &param_names {
+    local_bindings.insert(param.clone(), Vec::new());
+  }
   if let Some(arg_nodes) = hint_fn_arg_nodes(scan, body) {
     for (param, arg_node) in param_names.iter().zip(arg_nodes.iter()) {
       if let Some(key) = type_node_nominal_target(scan, arg_node) {
         local_bindings.insert(param.clone(), vec![key]);
-      } else {
-        local_bindings.remove(param);
       }
     }
   } else if let Some(fn_ann) = schema.and_then(|ann| ann.resolve_to_fn()) {
     for (param, arg_ty) in param_names.iter().zip(fn_ann.arg_types.iter()) {
       if let Some(key) = nominal_key_from_annotation(scan.program, scan.ns, scan.file, arg_ty.as_ref(), scan.written) {
         local_bindings.insert(param.clone(), vec![key]);
-      } else {
-        local_bindings.remove(param);
       }
-    }
-  } else {
-    for param in &param_names {
-      local_bindings.remove(param);
     }
   }
   for item in body {
@@ -515,6 +547,92 @@ fn bind_fn_param_nominals(
   }
 }
 
+fn resolve_call_return_nominal_targets(
+  scan: NonCoherentScanCtx<'_>,
+  head: &Calcit,
+  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
+  visited_calls: &mut HashSet<DefKey>,
+) -> Vec<DefKey> {
+  if let Calcit::Symbol { sym, .. } = head
+    && let Some(targets) = local_bindings.get(sym.as_ref())
+  {
+    return targets.clone();
+  }
+  let direct_nominal = match head {
+    Calcit::Symbol { sym, .. } => resolve_nominal_target(scan.program, scan.ns, scan.file, sym.as_ref(), scan.written),
+    Calcit::Import(import) => resolve_nominal_target(
+      scan.program,
+      scan.ns,
+      scan.file,
+      &format!("{}/{}", import.ns, import.def),
+      scan.written,
+    ),
+    _ => None,
+  };
+  if let Some(key) = direct_nominal {
+    return vec![key];
+  }
+  if let Calcit::Fn { info, .. } = head
+    && let Some(target_file) = scan.program.get(info.def_ns.as_ref())
+    && let Some(key) = nominal_key_from_annotation(scan.program, &info.def_ns, target_file, info.return_type.as_ref(), scan.written)
+  {
+    return vec![key];
+  }
+  let callee_key = match head {
+    Calcit::Symbol { sym, .. } => resolve_in(scan.program, scan.ns, scan.file, sym.as_ref()),
+    Calcit::Import(import) => Some((import.ns.clone(), import.def.clone())),
+    _ => None,
+  };
+  let Some(callee_key) = callee_key else {
+    return Vec::new();
+  };
+  if !visited_calls.insert(callee_key.clone()) {
+    return Vec::new();
+  }
+  let result = (|| {
+    let target_file = scan.program.get(&callee_key.0)?;
+    let entry = target_file.defs.get(&callee_key.1)?;
+    let callee_scan = NonCoherentScanCtx {
+      program: scan.program,
+      ns: &callee_key.0,
+      file: target_file,
+      written: scan.written,
+    };
+    if let Some(fn_ann) = entry.schema.resolve_to_fn()
+      && let Some(key) =
+        nominal_key_from_annotation(scan.program, &callee_key.0, target_file, fn_ann.return_type.as_ref(), scan.written)
+    {
+      return Some(vec![key]);
+    }
+    let code = effective_written_code(&callee_key, &entry.code, scan.written);
+    let Calcit::List(items) = code else {
+      return None;
+    };
+    let def_head = items.first()?;
+    if (matches!(
+      def_head,
+      Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)
+    ) || is_core_symbol_or_import(scan.program, &callee_key.0, target_file, def_head, "defn"))
+      && let Some(Calcit::List(params)) = items.get(2)
+    {
+      let body: Vec<Calcit> = items.iter().skip(3).cloned().collect();
+      if let Some(ret_node) = hint_fn_return_node(callee_scan, &body)
+        && let Some(key) = type_node_nominal_target(callee_scan, &ret_node)
+      {
+        return Some(vec![key]);
+      }
+      if let Some(tail) = body.last() {
+        let mut callee_bindings = HashMap::new();
+        bind_fn_param_nominals(callee_scan, params, Some(entry.schema.as_ref()), &body, &mut callee_bindings);
+        return Some(expr_nominal_targets_inner(callee_scan, tail, &callee_bindings, visited_calls));
+      }
+    }
+    None
+  })();
+  visited_calls.remove(&callee_key);
+  result.unwrap_or_default()
+}
+
 fn expr_nominal_targets(
   program: &ProgramCodeData,
   ns: &str,
@@ -523,6 +641,29 @@ fn expr_nominal_targets(
   local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
   written: &HashMap<DefKey, (Calcit, Calcit)>,
 ) -> Vec<DefKey> {
+  expr_nominal_targets_inner(
+    NonCoherentScanCtx {
+      program,
+      ns,
+      file,
+      written,
+    },
+    expr,
+    local_bindings,
+    &mut HashSet::new(),
+  )
+}
+
+fn expr_nominal_targets_inner(
+  scan: NonCoherentScanCtx<'_>,
+  expr: &Calcit,
+  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
+  visited_calls: &mut HashSet<DefKey>,
+) -> Vec<DefKey> {
+  let program = scan.program;
+  let ns = scan.ns;
+  let file = scan.file;
+  let written = scan.written;
   match expr {
     Calcit::Symbol { sym, .. } => {
       if let Some(targets) = local_bindings.get(sym.as_ref()) {
@@ -589,13 +730,13 @@ fn expr_nominal_targets(
       if is_impl_attach_head(program, ns, file, head) {
         return items
           .get(1)
-          .map(|base| expr_nominal_targets(program, ns, file, base, local_bindings, written))
+          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, visited_calls))
           .unwrap_or_default();
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) || is_core_symbol_or_import(program, ns, file, head, "if") {
         let mut out = Vec::new();
         for branch in [items.get(2), items.get(3)].into_iter().flatten() {
-          out.extend(expr_nominal_targets(program, ns, file, branch, local_bindings, written));
+          out.extend(expr_nominal_targets_inner(scan, branch, local_bindings, visited_calls));
         }
         return out;
       }
@@ -603,7 +744,7 @@ fn expr_nominal_targets(
         return items
           .iter()
           .last()
-          .map(|tail| expr_nominal_targets(program, ns, file, tail, local_bindings, written))
+          .map(|tail| expr_nominal_targets_inner(scan, tail, local_bindings, visited_calls))
           .unwrap_or_default();
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
@@ -620,12 +761,8 @@ fn expr_nominal_targets(
                 _ => None,
               }
             {
-              let targets = expr_nominal_targets(program, ns, file, rhs, &scoped, written);
-              if targets.is_empty() {
-                scoped.remove(&name);
-              } else {
-                scoped.insert(name, targets);
-              }
+              let targets = expr_nominal_targets_inner(scan, rhs, &scoped, visited_calls);
+              scoped.insert(name, targets);
             }
           };
           if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
@@ -641,7 +778,7 @@ fn expr_nominal_targets(
         return items
           .iter()
           .last()
-          .map(|tail| expr_nominal_targets(program, ns, file, tail, &scoped, written))
+          .map(|tail| expr_nominal_targets_inner(scan, tail, &scoped, visited_calls))
           .unwrap_or_default();
       }
       if matches!(
@@ -667,22 +804,11 @@ fn expr_nominal_targets(
       {
         return items
           .get(1)
-          .map(|base| expr_nominal_targets(program, ns, file, base, local_bindings, written))
+          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, visited_calls))
           .unwrap_or_default();
       }
-      // Constructor call `(Point :x 1)` or `(Option :some 1)`.
-      match head {
-        Calcit::Symbol { sym, .. } => {
-          if let Some(targets) = local_bindings.get(sym.as_ref()) {
-            return targets.clone();
-          }
-          resolve_nominal_target(program, ns, file, sym.as_ref(), written)
-            .into_iter()
-            .collect()
-        }
-        Calcit::Import(_) => expr_nominal_targets(program, ns, file, head, local_bindings, written),
-        _ => Vec::new(),
-      }
+      // Constructor call `(Point :x 1)` / `(Option :some 1)` or factory call `(make-p)`.
+      resolve_call_return_nominal_targets(scan, head, local_bindings, visited_calls)
     }
     _ => Vec::new(),
   }
@@ -737,11 +863,7 @@ fn walk_expr_for_non_coherent(
             _ => None,
           } {
             let targets = expr_nominal_targets(scan.program, scan.ns, scan.file, rhs, scoped, scan.written);
-            if targets.is_empty() {
-              scoped.remove(&name);
-            } else {
-              scoped.insert(name, targets);
-            }
+            scoped.insert(name, targets);
           }
         }
       };
