@@ -159,12 +159,9 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
   let expanded = CalcitTypeAnnotation::expand_schema_alias(&ev.annotation);
   match expanded.as_ref() {
     CalcitTypeAnnotation::List(element) => Some(WasmTypeEvidence {
-      annotation: element.clone(),
       codec_hint: elem_codec_hint,
       set_member_types: ev.set_member_types,
-      list_element_types: None,
-      scalar_origin: None,
-      exact_impls: false,
+      ..WasmTypeEvidence::contract(element.clone())
     }),
     CalcitTypeAnnotation::Set(element) => Some(WasmTypeEvidence {
       annotation: element.clone(),
@@ -180,12 +177,9 @@ pub(super) fn infer_collection_element_evidence(ctx: &WasmGenCtx, source: &Calci
         DYNAMIC_TYPE.clone()
       };
       Some(WasmTypeEvidence {
-        annotation,
         codec_hint: elem_codec_hint,
         set_member_types: ev.set_member_types,
-        list_element_types: None,
-        scalar_origin: None,
-        exact_impls: false,
+        ..WasmTypeEvidence::contract(annotation)
       })
     }
     CalcitTypeAnnotation::Map(k, v) => Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![

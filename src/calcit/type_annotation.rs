@@ -394,6 +394,8 @@ thread_local! {
   /// pair is assumed to hold (coinductively), so the relation terminates
   /// instead of recursing until the Rust stack overflows.
   static UNION_RELATION_ASSUMPTIONS: RefCell<HashSet<UnionRelationKey>> = RefCell::new(HashSet::new());
+  /// Union/trait pairs currently being checked for closed-union trait propagation.
+  static UNION_TRAIT_ASSUMPTIONS: RefCell<HashSet<UnionTraitKey>> = RefCell::new(HashSet::new());
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
@@ -705,7 +707,9 @@ impl CallTypeProof {
       }
       let expected = expected.substitute_type_vars(&self.renaming);
       let mut independent = TypeBindings::new();
-      if actual.prove_available_bindings(&expected, &mut independent).is_mismatch()
+      if actual
+        .prove_available_bindings_for_fresh(&expected, &mut independent, &self.fresh_names)
+        .is_mismatch()
         || independent.keys().any(|name| !self.fresh_names.contains(name))
       {
         continue;
@@ -948,14 +952,16 @@ impl CallTypeProof {
     if let (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) = (input_actual, input_expected) {
       for (actual_parameter, expected_parameter) in actual.arg_types.iter().zip(&expected.arg_types) {
         let mut candidate = staged.clone();
-        if actual_parameter.prove_with_bindings(expected_parameter, &mut candidate).is_proven()
+        if actual_parameter
+          .prove_with_bindings_for_fresh(expected_parameter, &mut candidate, &self.fresh_names)
+          .is_proven()
           && candidate.keys().all(|name| self.fresh_names.contains(name))
         {
           staged = candidate;
         }
       }
     }
-    let proof = actual.prove_available_bindings(&expected, &mut staged);
+    let proof = actual.prove_available_bindings_for_fresh(&expected, &mut staged, &self.fresh_names);
     if requires_universal_callback
       && let CalcitTypeAnnotation::Fn(signature) = expected.as_ref()
       && (matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
@@ -1171,6 +1177,31 @@ fn enter_union_relation_assumption(
   // `then`, not `then_some`: building a guard for a pair that is already
   // active would drop it at once and remove the outer caller's entry.
   entered.then(|| UnionRelationAssumption { key })
+}
+
+type UnionTraitKey = (Arc<str>, Option<u64>, Option<Arc<str>>, Arc<str>);
+
+struct UnionTraitAssumption {
+  key: UnionTraitKey,
+}
+
+impl Drop for UnionTraitAssumption {
+  fn drop(&mut self) {
+    UNION_TRAIT_ASSUMPTIONS.with(|active| {
+      active.borrow_mut().remove(&self.key);
+    });
+  }
+}
+
+fn enter_union_trait_assumption(union_def: &CalcitUnionDef, expected_trait: &CalcitTrait) -> Option<UnionTraitAssumption> {
+  let key = (
+    union_relation_identity(union_def),
+    expected_trait.runtime_id,
+    expected_trait.definition_ref.clone(),
+    Arc::from(expected_trait.name.ref_str()),
+  );
+  let entered = UNION_TRAIT_ASSUMPTIONS.with(|active| active.borrow_mut().insert(key.clone()));
+  entered.then(|| UnionTraitAssumption { key })
 }
 
 fn type_ref_arity_resolution_key(name: &str) -> Arc<str> {
@@ -1529,8 +1560,9 @@ fn bounded_plain_type_relation<'a>(
     }
 
     match (actual, expected) {
-      // No inhabitant supplies a generic binding or an open boundary.
-      (Type::Never, _) => {}
+      // No inhabitant satisfies any concrete target, while a TypeVar still needs
+      // the binding-aware path so fresh call generics retain `Never` (#2942).
+      (Type::Never, expected) if !matches!(expected, Type::TypeVar(_)) => {}
       (Type::TypeVar(left), Type::TypeVar(right)) if left == right => {}
       // Other generic-variable relations need the binding-aware path below,
       // including when their exact inferred value is Dynamic.
@@ -3237,7 +3269,7 @@ impl CalcitTypeAnnotation {
     Arc::new(trait_def.as_ref().clone().with_definition_ref(ns, def))
   }
 
-  fn parse_trait_bounds_value(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Option<Vec<Arc<CalcitTrait>>> {
+  fn parse_trait_bounds_value(form: &Calcit, generics: &[Arc<str>]) -> Option<Vec<Arc<CalcitTrait>>> {
     // Macro expansion turns a quoted name into a quote expression. It denotes
     // one bound, not a list of bounds whose first member is the quote syntax.
     if let Calcit::List(items) = form
@@ -3250,12 +3282,10 @@ impl CalcitTypeAnnotation {
       };
       let mut traits: Vec<Arc<CalcitTrait>> = vec![];
       for item in items.iter().skip(start) {
-        let parsed = Self::parse_type_annotation_form_inner(item, generics, strict_named_refs);
+        let parsed = Self::parse_type_annotation_form_inner(item, generics, true);
         match parsed.as_ref() {
           CalcitTypeAnnotation::Trait(trait_def) => traits.push(Self::trait_bound_with_source_ref(item, trait_def)),
-          CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
-            traits.push(Arc::new(CalcitTrait::new_reference(name)))
-          }
+          CalcitTypeAnnotation::TypeRef(name, args) if args.is_empty() => traits.push(Arc::new(CalcitTrait::new_reference(name))),
           _ => return None,
         }
       }
@@ -3264,23 +3294,21 @@ impl CalcitTypeAnnotation {
       }
     }
 
-    match Self::parse_type_annotation_form_inner(form, generics, strict_named_refs).as_ref() {
+    match Self::parse_type_annotation_form_inner(form, generics, true).as_ref() {
       CalcitTypeAnnotation::Trait(trait_def) => Some(vec![Self::trait_bound_with_source_ref(form, trait_def)]),
-      CalcitTypeAnnotation::TypeRef(name, args) if strict_named_refs && args.is_empty() => {
-        Some(vec![Arc::new(CalcitTrait::new_reference(name))])
-      }
+      CalcitTypeAnnotation::TypeRef(name, args) if args.is_empty() => Some(vec![Arc::new(CalcitTrait::new_reference(name))]),
       _ => None,
     }
   }
 
-  pub(crate) fn parse_where_bounds_form(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Vec<CalcitGenericBound> {
+  pub(crate) fn parse_where_bounds_form(form: &Calcit, generics: &[Arc<str>], _strict_named_refs: bool) -> Vec<CalcitGenericBound> {
     let mut bounds: Vec<CalcitGenericBound> = vec![];
 
     let mut visit_pair = |key: &Calcit, value: &Calcit| {
       let Some(name) = Self::parse_where_bound_name(key, generics) else {
         return;
       };
-      let Some(traits) = Self::parse_trait_bounds_value(value, generics, strict_named_refs) else {
+      let Some(traits) = Self::parse_trait_bounds_value(value, generics) else {
         return;
       };
       if traits.is_empty() {
@@ -5538,6 +5566,8 @@ impl CalcitTypeAnnotation {
       // destination of that type like any other `T` into `JsNullish<T>`.
       (Some(_), None) => match expected {
         Self::Nullable(inner, _) => relate(self, inner.as_ref(), bindings),
+        // Trait bounds are satisfied when every closed union member satisfies the bound.
+        Self::Trait(_) | Self::TraitSet(_) => return None,
         _ => Mismatch,
       },
       (None, Some(expected)) => into_union(self, &expected, bindings),
@@ -5561,6 +5591,25 @@ impl CalcitTypeAnnotation {
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_union()),
       _ => None,
     }
+  }
+
+  /// Whether this type resolves directly or through `deftype`/non-constructor aliases to a closed union.
+  fn expands_to_union(&self) -> bool {
+    self.resolve_to_union().is_some()
+      || (matches!(self, Self::TypeRef(_, _) | Self::TypeSlot(_))
+        && Self::expand_value_type_aliases(&Arc::new(self.clone()))
+          .resolve_to_union()
+          .is_some())
+  }
+
+  /// Resolve a `TypeRef` via value aliases first so nominal definitions keep their value semantics
+  /// instead of collapsing to constructor `:schema` metadata (`StructDef`/`EnumDef`/`Custom`).
+  fn resolve_value_or_schema_alias(&self, name: &str, args: &[Arc<Self>]) -> Option<Arc<Self>> {
+    let expanded = Self::expand_value_type_aliases(&Arc::new(self.clone()));
+    (expanded.as_ref() != self)
+      .then_some(expanded)
+      .or_else(|| self.resolve_schema_alias())
+      .or_else(|| resolve_type_ref_as_schema(name, args))
   }
 
   /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
@@ -5805,6 +5854,8 @@ impl CalcitTypeAnnotation {
       Self::Map(_, _) => Some("&core-map-impls"),
       Self::Set(_) => Some("&core-set-impls"),
       Self::Ref(_) => Some("&core-ref-impls"),
+      Self::Buffer => Some("&core-buffer-impls"),
+      Self::BufList => Some("&core-buf-list-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::Numeric(_) => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
@@ -5812,8 +5863,25 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
       Self::Any => Some("&core-any-box-impls"),
+      Self::StructDef(_) | Self::EnumDef(_) => Some("&core-def-impls"),
+      Self::Custom(value)
+        if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
+          || matches!(
+            value.as_ref(),
+            Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
+          ) =>
+      {
+        Some("&core-def-impls")
+      }
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.core_impl_list_symbol(),
-      Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.core_impl_list_symbol()),
+      Self::TypeRef(..) => {
+        let expanded = Self::expand_value_type_aliases(&Arc::new(self.clone()));
+        if matches!(expanded.as_ref(), Self::TypeRef(..)) {
+          None
+        } else {
+          expanded.core_impl_list_symbol()
+        }
+      }
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
       _ => None,
     }
@@ -5888,7 +5956,13 @@ impl CalcitTypeAnnotation {
       Self::Struct(struct_def, _) | Self::StructValue(struct_def) => Some(struct_def.impls.to_vec()),
       Self::Enum(enum_def, _) | Self::EnumValue(enum_def) => Some(enum_def.impls().to_vec()),
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.collect_static_impls(),
-      Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.collect_static_impls()),
+      Self::TypeRef(name, args) => {
+        if self.expands_to_union() {
+          None
+        } else {
+          resolve_type_ref_as_schema(name, args).and_then(|schema| schema.collect_static_impls())
+        }
+      }
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.collect_static_impls()),
       _ => self.core_impl_list_symbol().and_then(|symbol| {
         lookup_runtime_ready_registered(CORE_NS, symbol)
@@ -5929,18 +6003,29 @@ impl CalcitTypeAnnotation {
   /// changing whether an otherwise identical core call emits a warning.
   fn builtin_core_trait_names(&self) -> &'static [&'static str] {
     if matches!(self, Self::StructValue(_) | Self::Struct(_, _)) {
-      return &["Debug", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
     }
     if matches!(self, Self::AnonymousEnum | Self::EnumValue(_) | Self::Enum(_, _)) {
-      return &["Debug", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
     }
     match self.core_impl_list_symbol() {
-      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Sliceable", "Emptyable"],
-      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
-      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-list-impls") => &[
+        "Debug",
+        "Eq",
+        "Hash",
+        "Add",
+        "Len",
+        "Mappable",
+        "Countable",
+        "Sliceable",
+        "Emptyable",
+      ],
+      Some("&core-map-impls") => &["Debug", "Eq", "Hash", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-set-impls") => &["Debug", "Eq", "Hash", "Len", "Mappable", "Countable", "Emptyable"],
       Some("&core-string-impls") => &[
         "Debug",
         "Eq",
+        "Hash",
         "Add",
         "Len",
         "Countable",
@@ -5949,12 +6034,16 @@ impl CalcitTypeAnnotation {
         "ToString",
         "Emptyable",
       ],
-      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
+      Some("&core-number-impls") => &["Debug", "Eq", "Hash", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
       Some("&core-fn-impls") => &["Debug"],
-      Some("&core-scalar-impls") => &["Debug", "Eq"],
-      Some("&core-cirru-quote-impls") => &["Debug", "Eq"],
       Some("&core-any-box-impls") => &["Debug"],
-      Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],
+      Some("&core-ref-impls") => &["Debug"],
+      Some("&core-buffer-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-buf-list-impls") => &["Debug"],
+      Some("&core-def-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-scalar-impls") => &["Debug", "Eq", "Hash", "Compare"],
+      Some("&core-cirru-quote-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-text-scalar-impls") => &["Debug", "Eq", "Hash", "Compare", "ToString"],
       _ => &[],
     }
   }
@@ -5974,20 +6063,84 @@ impl CalcitTypeAnnotation {
     None
   }
 
+  fn trait_takes_non_receiver_self(trait_def: &CalcitTrait, depth: usize) -> bool {
+    if depth == 0 {
+      return false;
+    }
+    let mentions_self_in_extra_params = trait_def.method_types.iter().any(|method_type| {
+      method_type.as_function().is_some_and(|sig| {
+        sig.arg_types.iter().skip(1).chain(sig.rest_type.iter()).any(|param| {
+          free_type_variable_names(std::slice::from_ref(param))
+            .iter()
+            .any(|name| source_type_variable(name) == "Self")
+        })
+      })
+    });
+    if mentions_self_in_extra_params {
+      return true;
+    }
+    if trait_def.method_types.is_empty() && matches!(trait_def.name.ref_str(), "Compare" | "Add" | "Multiply") {
+      return true;
+    }
+    trait_def
+      .requires
+      .iter()
+      .any(|required| Self::trait_takes_non_receiver_self(required.as_ref(), depth - 1))
+  }
+
+  fn union_satisfies_trait_bound(&self, union_def: &CalcitUnionDef, expected_trait: &CalcitTrait) -> bool {
+    // Binary traits whose method signature accepts another `Self` operand
+    // (e.g. `Compare .compare`, `Add .add`) cannot safely dispatch across
+    // distinct runtime variants (`String` vs `Number`, or different structs).
+    // Keep `Eq` allowed because core collections (`distinct`, `frequencies`,
+    // `group-by`, `index-of`) compare union variants structurally without
+    // calling a variant-specific `.eq?` method across mismatched operands.
+    if expected_trait.name.ref_str() != "Eq" && Self::trait_takes_non_receiver_self(expected_trait, 64) {
+      return false;
+    }
+    let Ok(members) = union_def.checked_members() else {
+      return false;
+    };
+    if members.is_empty() {
+      return false;
+    }
+    let Some(_assumption) = enter_union_trait_assumption(union_def, expected_trait) else {
+      return true;
+    };
+    members.iter().all(|member| member.annotation.satisfies_trait_bound(expected_trait))
+  }
+
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+    if matches!(self, Self::TypeRef(_, _) | Self::TypeSlot(_))
+      && self.resolve_nominal_instance_type().is_none()
+      && self.resolve_to_union().is_none()
+    {
+      // Expand `deftype`/non-constructor aliases without following nominal definitions
+      // into constructor metadata (`Custom(Tag "union-def")`), so closed-union aliases
+      // undergo member-by-member checking rather than inheriting `&core-def-impls`.
+      let expanded = Self::expand_value_type_aliases(&Arc::new(self.clone()));
+      return expanded.satisfies_trait_bound_normalized(expected_trait);
+    }
+    self.satisfies_trait_bound_normalized(expected_trait)
+  }
+
+  fn satisfies_trait_bound_normalized(&self, expected_trait: &CalcitTrait) -> bool {
     // A tuple keeps its arity and slot types, so it only has the capabilities
     // that do not return a value of its own type: slicing or emptying would
     // claim the same tuple type for a different length. Mapping needs one
     // element type, which only a homogeneous tuple has.
     if let Self::Tuple(items) = self {
       match expected_trait.name.ref_str() {
-        "Debug" | "Eq" | "Countable" | "Len" => {}
+        "Debug" | "Eq" | "Hash" | "Countable" | "Len" => {}
         "Mappable" if Self::homogeneous_tuple_item(items).is_some() => {}
         _ => return false,
       }
     }
     if let Some(instance) = self.resolve_nominal_instance_type() {
       return instance.satisfies_trait_bound(expected_trait);
+    }
+    if let Some(union_def) = self.resolve_to_union() {
+      return self.union_satisfies_trait_bound(&union_def, expected_trait);
     }
     match self {
       Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
@@ -6388,6 +6541,7 @@ impl CalcitTypeAnnotation {
           || self
             .resolve_nominal_instance_type()
             .is_some_and(|instance| instance.satisfies_trait_bound(trait_def.as_ref()))
+          || self.satisfies_trait_bound(trait_def.as_ref())
       }
       (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::trait_upcasts_to_type_ref(trait_def, name),
       (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b) || Self::trait_annotation_proves(a, b),
@@ -6541,7 +6695,21 @@ impl CalcitTypeAnnotation {
   /// Legacy compatibility boundaries remain observable as `NeedsBoundary`.
   pub(crate) fn prove_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     let mut staged = bindings.clone();
-    let result = self.prove_with_staged_bindings(expected, &mut staged);
+    let result = self.prove_with_staged_bindings_in_fresh(expected, &mut staged, None);
+    if result.is_proven() {
+      *bindings = staged;
+    }
+    result
+  }
+
+  fn prove_with_bindings_for_fresh(
+    &self,
+    expected: &CalcitTypeAnnotation,
+    bindings: &mut TypeBindings,
+    fresh_names: &HashSet<Arc<str>>,
+  ) -> TypeProof {
+    let mut staged = bindings.clone();
+    let result = self.prove_with_staged_bindings_in_fresh(expected, &mut staged, Some(fresh_names));
     if result.is_proven() {
       *bindings = staged;
     }
@@ -6553,19 +6721,43 @@ impl CalcitTypeAnnotation {
   /// intended for output projections such as `Result<T, Dynamic> -> T`.
   pub(crate) fn prove_available_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     let mut staged = bindings.clone();
-    let result = self.prove_with_staged_bindings(expected, &mut staged);
+    let result = self.prove_with_staged_bindings_in_fresh(expected, &mut staged, None);
     if !result.is_mismatch() {
       *bindings = staged;
     }
     result
   }
 
-  /// Evaluate a type proof against staged bindings; callers decide which outcomes commit them.
-  fn prove_with_staged_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+  fn prove_available_bindings_for_fresh(
+    &self,
+    expected: &CalcitTypeAnnotation,
+    bindings: &mut TypeBindings,
+    fresh_names: &HashSet<Arc<str>>,
+  ) -> TypeProof {
+    let mut staged = bindings.clone();
+    let result = self.prove_with_staged_bindings_in_fresh(expected, &mut staged, Some(fresh_names));
+    if !result.is_mismatch() {
+      *bindings = staged;
+    }
+    result
+  }
+
+  fn prove_with_staged_bindings_in_fresh(
+    &self,
+    expected: &CalcitTypeAnnotation,
+    bindings: &mut TypeBindings,
+    bind_never_vars: Option<&HashSet<Arc<str>>>,
+  ) -> TypeProof {
     use TypeBoundaryReason as Boundary;
     use TypeProof::{Mismatch, NeedsBoundary, Proven};
 
     if matches!(self, Self::Never) {
+      if let Self::TypeVar(var) = expected
+        && bind_never_vars.is_some_and(|vars| vars.contains(var))
+        && !bindings.contains_key(var)
+      {
+        bindings.insert(var.clone(), Arc::new(Self::Never));
+      }
       return Proven;
     }
     if let Some(proof) = self.union_relation(expected, bindings, PlainRelationMode::Proof) {
@@ -6581,7 +6773,7 @@ impl CalcitTypeAnnotation {
     if matches!(expected, Self::Trait(_) | Self::TraitSet(_))
       && let Some(instance) = self.resolve_nominal_instance_type()
     {
-      return instance.prove_with_staged_bindings(expected, bindings);
+      return instance.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars);
     }
 
     match (self, expected) {
@@ -6595,14 +6787,14 @@ impl CalcitTypeAnnotation {
         if bound.contains_type_var_named_with_bindings(var, bindings) {
           return NeedsBoundary(Boundary::RecursiveTypeVariable);
         }
-        bound.prove_with_staged_bindings(expected, bindings)
+        bound.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars)
       }
       (actual, Self::TypeVar(var)) => match bindings.get(var).cloned() {
         Some(bound) if bound.can_refine_bottom_binding(actual) => {
           bindings.insert(var.clone(), Arc::new(actual.clone()));
           Proven
         }
-        Some(bound) => actual.prove_with_staged_bindings(bound.as_ref(), bindings),
+        Some(bound) => actual.prove_with_staged_bindings_in_fresh(bound.as_ref(), bindings, bind_never_vars),
         None if actual.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
         None => {
           bindings.insert(var.clone(), Arc::new(actual.clone()));
@@ -6614,10 +6806,10 @@ impl CalcitTypeAnnotation {
       // Lift the expected payload before handling an unbound actual variable:
       // T proves Optional<T>, but still cannot prove an unrelated concrete type.
       (actual, Self::Nullable(expected, _)) if !matches!(actual, Self::Nullable(_, _)) => {
-        actual.prove_with_staged_bindings(expected, bindings)
+        actual.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars)
       }
       (Self::TypeVar(var), expected_type) => match bindings.get(var).cloned() {
-        Some(bound) => bound.prove_with_staged_bindings(expected_type, bindings),
+        Some(bound) => bound.prove_with_staged_bindings_in_fresh(expected_type, bindings, bind_never_vars),
         None if expected_type.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
         // Expected variables can be inferred from actual evidence. The reverse
         // direction cannot turn an arbitrary actual T into a concrete value.
@@ -6658,10 +6850,10 @@ impl CalcitTypeAnnotation {
         }
       }
       (Self::Nullable(actual, actual_origin), Self::Nullable(expected, expected_origin)) if actual_origin == expected_origin => {
-        actual.prove_with_staged_bindings(expected, bindings)
+        actual.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars)
       }
       (Self::Nullable(actual, _), expected) if !matches!(expected, Self::Nullable(_, _)) => actual
-        .prove_with_staged_bindings(expected, bindings)
+        .prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars)
         .and(NeedsBoundary(Boundary::NullableElimination)),
       (_, Self::Nullable(_, _)) | (Self::Nullable(_, _), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
@@ -6682,7 +6874,7 @@ impl CalcitTypeAnnotation {
           let Ok(_expected_guard) = enter_alias_relation(b_name, actual.as_ref(), false, true) else {
             return NeedsBoundary(Boundary::RecursiveTypeAlias);
           };
-          return actual.prove_with_staged_bindings(expected.as_ref(), bindings);
+          return actual.prove_with_staged_bindings_in_fresh(expected.as_ref(), bindings, bind_never_vars);
         }
         match Self::type_ref_nominal_match(a_name, b_name) {
           Some(true) => {}
@@ -6692,7 +6884,7 @@ impl CalcitTypeAnnotation {
         if a_args.is_empty() != b_args.is_empty() {
           return NeedsBoundary(Boundary::ErasedTypeArguments);
         }
-        Self::prove_slices(a_args, b_args, bindings)
+        Self::prove_slices_in_fresh(a_args, b_args, bindings, bind_never_vars)
       }
       (Self::TypeRef(name, actual_args), Self::Struct(base, expected_args)) => {
         match Self::type_ref_matches_struct_definition(name, base) {
@@ -6702,7 +6894,7 @@ impl CalcitTypeAnnotation {
         }
         match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          (false, false) => Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars),
           _ => NeedsBoundary(Boundary::ErasedTypeArguments),
         }
       }
@@ -6714,7 +6906,7 @@ impl CalcitTypeAnnotation {
         }
         match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          (false, false) => Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars),
           _ => NeedsBoundary(Boundary::ErasedTypeArguments),
         }
       }
@@ -6726,7 +6918,7 @@ impl CalcitTypeAnnotation {
         }
         match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          (false, false) => Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars),
           _ => NeedsBoundary(Boundary::ErasedTypeArguments),
         }
       }
@@ -6738,7 +6930,7 @@ impl CalcitTypeAnnotation {
         }
         match (actual_args.is_empty(), expected_args.is_empty()) {
           (true, true) => Proven,
-          (false, false) => Self::prove_slices(actual_args, expected_args, bindings),
+          (false, false) => Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars),
           _ => NeedsBoundary(Boundary::ErasedTypeArguments),
         }
       }
@@ -6760,25 +6952,27 @@ impl CalcitTypeAnnotation {
       }
       (Self::List(actual), Self::List(expected))
       | (Self::Set(actual), Self::Set(expected))
-      | (Self::Variadic(actual), Self::Variadic(expected)) => actual.prove_with_staged_bindings(expected, bindings),
-      (Self::Tuple(actual), Self::Tuple(expected)) => Self::prove_slices(actual, expected, bindings),
+      | (Self::Variadic(actual), Self::Variadic(expected)) => {
+        actual.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars)
+      }
+      (Self::Tuple(actual), Self::Tuple(expected)) => Self::prove_slices_in_fresh(actual, expected, bindings, bind_never_vars),
       (Self::Tuple(actual), Self::List(expected)) => match Self::homogeneous_tuple_item(actual) {
-        Some(item) => item.prove_with_staged_bindings(expected, bindings),
+        Some(item) => item.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars),
         None => TypeProof::Mismatch,
       },
       (Self::Ref(actual), Self::Ref(expected)) => {
         let mut invariant_bindings = bindings.clone();
         let result = actual
-          .prove_with_staged_bindings(expected, &mut invariant_bindings)
-          .and(expected.prove_with_staged_bindings(actual, &mut invariant_bindings));
+          .prove_with_staged_bindings_in_fresh(expected, &mut invariant_bindings, bind_never_vars)
+          .and(expected.prove_with_staged_bindings_in_fresh(actual, &mut invariant_bindings, bind_never_vars));
         if result.is_proven() {
           *bindings = invariant_bindings;
         }
         result
       }
       (Self::Map(actual_key, actual_value), Self::Map(expected_key, expected_value)) => actual_key
-        .prove_with_staged_bindings(expected_key, bindings)
-        .and(actual_value.prove_with_staged_bindings(expected_value, bindings)),
+        .prove_with_staged_bindings_in_fresh(expected_key, bindings, bind_never_vars)
+        .and(actual_value.prove_with_staged_bindings_in_fresh(expected_value, bindings, bind_never_vars)),
       (Self::Struct(actual, actual_args), Self::Struct(expected, expected_args)) => {
         match Self::struct_nominal_match(actual, expected) {
           Some(true) => {}
@@ -6788,7 +6982,7 @@ impl CalcitTypeAnnotation {
         if actual_args.is_empty() != expected_args.is_empty() {
           NeedsBoundary(Boundary::ErasedTypeArguments)
         } else {
-          Self::prove_slices(actual_args, expected_args, bindings)
+          Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars)
         }
       }
       (Self::Enum(actual, actual_args), Self::Enum(expected, expected_args)) => {
@@ -6800,7 +6994,7 @@ impl CalcitTypeAnnotation {
         if actual_args.is_empty() != expected_args.is_empty() {
           NeedsBoundary(Boundary::ErasedTypeArguments)
         } else {
-          Self::prove_slices(actual_args, expected_args, bindings)
+          Self::prove_slices_in_fresh(actual_args, expected_args, bindings, bind_never_vars)
         }
       }
       (Self::StructValue(actual), Self::StructValue(expected)) => match Self::struct_nominal_match(actual, expected) {
@@ -6842,7 +7036,7 @@ impl CalcitTypeAnnotation {
         Some(false) => Mismatch,
         None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
       },
-      (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings(expected, bindings),
+      (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings_in_fresh(expected, bindings, bind_never_vars),
       (Self::Fn(actual), Self::DynFn) => {
         if actual.is_pass_callback() {
           Mismatch
@@ -6874,35 +7068,49 @@ impl CalcitTypeAnnotation {
       (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
           let resolved = Self::expand_slot_schema_alias(&resolved);
-          resolved.prove_with_staged_bindings(resolved.as_ref(), bindings)
+          resolved.prove_with_staged_bindings_in_fresh(resolved.as_ref(), bindings, bind_never_vars)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-          Self::expand_slot_schema_alias(&resolved).prove_with_staged_bindings(other, bindings)
+          Self::expand_slot_schema_alias(&resolved).prove_with_staged_bindings_in_fresh(other, bindings, bind_never_vars)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
       (other, Self::TypeSlot(name)) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
-          other.prove_with_staged_bindings(Self::expand_slot_schema_alias(&resolved).as_ref(), bindings)
+          other.prove_with_staged_bindings_in_fresh(Self::expand_slot_schema_alias(&resolved).as_ref(), bindings, bind_never_vars)
         })
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (Self::TypeRef(name, args), other) => match self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
+      (actual, Self::Trait(expected)) if actual.expands_to_union() => {
+        if actual.satisfies_trait_bound(expected.as_ref()) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
+      (actual, Self::TraitSet(expected)) if actual.expands_to_union() => {
+        if actual.satisfies_trait_bounds(expected.as_ref()) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
+      (Self::TypeRef(name, args), other) => match self.resolve_value_or_schema_alias(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
-          Ok(_guard) => resolved.prove_with_staged_bindings(other, bindings),
+          Ok(_guard) => resolved.prove_with_staged_bindings_in_fresh(other, bindings, bind_never_vars),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
       },
-      (other, Self::TypeRef(name, args)) => match expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
+      (other, Self::TypeRef(name, args)) => match expected.resolve_value_or_schema_alias(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, false, true) {
-          Ok(_guard) => other.prove_with_staged_bindings(resolved.as_ref(), bindings),
+          Ok(_guard) => other.prove_with_staged_bindings_in_fresh(resolved.as_ref(), bindings, bind_never_vars),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
@@ -6917,16 +7125,17 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn prove_slices(
+  fn prove_slices_in_fresh(
     actual: &[Arc<CalcitTypeAnnotation>],
     expected: &[Arc<CalcitTypeAnnotation>],
     bindings: &mut TypeBindings,
+    bind_never_vars: Option<&HashSet<Arc<str>>>,
   ) -> TypeProof {
     if actual.len() != expected.len() {
       return TypeProof::Mismatch;
     }
     actual.iter().zip(expected).fold(TypeProof::Proven, |result, (actual, expected)| {
-      result.and(actual.prove_with_staged_bindings(expected, bindings))
+      result.and(actual.prove_with_staged_bindings_in_fresh(expected, bindings, bind_never_vars))
     })
   }
 
@@ -8879,6 +9088,20 @@ mod tests {
       (CalcitTypeAnnotation::Unit, "&core-scalar-impls"),
       (CalcitTypeAnnotation::CirruQuote, "&core-cirru-quote-impls"),
       (CalcitTypeAnnotation::Any, "&core-any-box-impls"),
+      (CalcitTypeAnnotation::Buffer, "&core-buffer-impls"),
+      (CalcitTypeAnnotation::BufList, "&core-buf-list-impls"),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("union-def"))), "&core-def-impls"),
+      (
+        infer_runtime_value_type(&Calcit::UnionDef(Arc::new(CalcitUnionDef::new(
+          EdnTag::new("SampleUnion"),
+          vec![Calcit::tag("string"), Calcit::tag("number")],
+        ))))
+        .as_ref()
+        .clone(),
+        "&core-def-impls",
+      ),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("trait"))), "&core-def-impls"),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("impl"))), "&core-def-impls"),
     ];
 
     for (annotation, definition) in cases {
@@ -12122,6 +12345,200 @@ mod tests {
       "aliases are left to the full resolver"
     );
   }
+
+  #[test]
+  fn closed_defunion_propagates_shared_traits_and_guards_cycles() {
+    let make_core_trait = |name: &str| CalcitTrait::new(EdnTag::new(name), vec![], vec![]).with_definition_ref(CORE_NS, name);
+    let debug_trait = make_core_trait("Debug");
+    let eq_trait = make_core_trait("Eq");
+    let hash_trait = make_core_trait("Hash");
+    let compare_trait = make_core_trait("Compare");
+
+    let mixed_debug_union = CalcitUnionDef::new(
+      EdnTag::new("MixedDebug"),
+      vec![
+        Calcit::Symbol {
+          sym: Arc::from("String"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("MixedDebug"),
+          }),
+          location: None,
+        },
+        Calcit::from(vec![
+          Calcit::Symbol {
+            sym: Arc::from("Ref"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("MixedDebug"),
+            }),
+            location: None,
+          },
+          Calcit::Symbol {
+            sym: Arc::from("Number"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("MixedDebug"),
+            }),
+            location: None,
+          },
+        ]),
+      ],
+    );
+    let mixed_annot = DYNAMIC_TYPE.as_ref();
+    assert!(mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &debug_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &eq_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &hash_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &compare_trait));
+
+    let ordered_union = CalcitUnionDef::new(
+      EdnTag::new("OrderedScalar"),
+      ["Number", "String", "Tag", "Bool", "Symbol"]
+        .into_iter()
+        .map(|name| Calcit::Symbol {
+          sym: Arc::from(name),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("OrderedScalar"),
+          }),
+          location: None,
+        })
+        .collect(),
+    );
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &debug_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &eq_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &hash_trait));
+    assert!(
+      !DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &compare_trait),
+      "heterogeneous defunion cannot combine same-Self ordering traits across distinct members"
+    );
+
+    let hashable_with_buffer = CalcitUnionDef::new(
+      EdnTag::new("TextOrBytes"),
+      ["String", "Buffer"]
+        .into_iter()
+        .map(|name| Calcit::Symbol {
+          sym: Arc::from(name),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("TextOrBytes"),
+          }),
+          location: None,
+        })
+        .collect(),
+    );
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &debug_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &eq_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &hash_trait));
+    assert!(!DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &compare_trait));
+
+    // Active union cycle assumption short-circuits instead of recursing forever.
+    let cycle_union = CalcitUnionDef::new(
+      EdnTag::new("Cyclic"),
+      vec![
+        Calcit::Symbol {
+          sym: Arc::from("String"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("Cyclic"),
+          }),
+          location: None,
+        },
+        Calcit::from(vec![
+          Calcit::Symbol {
+            sym: Arc::from("Ref"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("Cyclic"),
+            }),
+            location: None,
+          },
+          Calcit::Symbol {
+            sym: Arc::from("Number"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("Cyclic"),
+            }),
+            location: None,
+          },
+        ]),
+      ],
+    );
+    {
+      let _guard = enter_union_trait_assumption(&cycle_union, &eq_trait).expect("fresh cycle assumption should enter");
+      assert!(
+        DYNAMIC_TYPE.union_satisfies_trait_bound(&cycle_union, &eq_trait),
+        "active cycle assumption should return true without infinite recursion"
+      );
+    }
+    assert!(
+      !DYNAMIC_TYPE.union_satisfies_trait_bound(&cycle_union, &eq_trait),
+      "removing cycle assumption restores member checking"
+    );
+  }
+
+  #[test]
+  fn call_type_proof_retains_never_for_fresh_empty_collection_generics() {
+    let t_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let list_t = Arc::new(CalcitTypeAnnotation::List(t_var.clone()));
+    let empty_list = Arc::new(CalcitTypeAnnotation::List(NEVER_TYPE.clone()));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let list_number = Arc::new(CalcitTypeAnnotation::List(number.clone()));
+
+    let mut empty_proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&list_t), std::slice::from_ref(&empty_list));
+    empty_proof.prepare_inputs(std::iter::once((empty_list.as_ref(), list_t.as_ref())));
+    assert!(empty_proof.prove(&empty_list, &list_t).is_proven());
+    assert_eq!(empty_proof.result(&t_var), Some(NEVER_TYPE.clone()));
+    assert_eq!(empty_proof.result_or_open(&list_t), empty_list);
+
+    let mut refined_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[list_t.clone(), list_t.clone()],
+      &[empty_list.clone(), list_number.clone()],
+    );
+    refined_proof.prepare_inputs([(empty_list.as_ref(), list_t.as_ref()), (list_number.as_ref(), list_t.as_ref())]);
+    assert!(refined_proof.prove(&empty_list, &list_t).is_proven());
+    assert!(refined_proof.prove(&list_number, &list_t).is_proven());
+    assert_eq!(refined_proof.result(&t_var), Some(number));
+
+    let rigid_u = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")))));
+    let mut rigid_proof = CallTypeProof::new(&[], std::slice::from_ref(&rigid_u), std::slice::from_ref(&empty_list));
+    assert!(rigid_proof.prove(&empty_list, &rigid_u).is_proven());
+    assert_eq!(rigid_proof.result(&rigid_u), Some(rigid_u));
+  }
+
+  #[test]
+  fn call_type_proof_rejects_callback_param_invalidated_by_return_refinement() {
+    let t_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let u_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let list_t = Arc::new(CalcitTypeAnnotation::List(t_var.clone()));
+    let list_u = Arc::new(CalcitTypeAnnotation::List(u_var.clone()));
+    let list_never = Arc::new(CalcitTypeAnnotation::List(NEVER_TYPE.clone()));
+    let list_number = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)));
+
+    let actual_cb = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![list_never.clone()], list_number));
+    let expected_cb = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![list_t.clone()], list_t));
+    let mut bad_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      std::slice::from_ref(&expected_cb),
+      std::slice::from_ref(&actual_cb),
+    );
+    assert!(
+      !bad_proof.prove(&actual_cb, &expected_cb).is_proven(),
+      "return refinement T = Number must invalidate prior List Never callback param proof"
+    );
+
+    let cov_actual_cb = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![NEVER_TYPE.clone()], list_never));
+    let cov_expected_cb = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![t_var.clone()], list_u));
+    let mut cov_proof = CallTypeProof::new(
+      &[Arc::from("T"), Arc::from("U")],
+      std::slice::from_ref(&cov_expected_cb),
+      std::slice::from_ref(&cov_actual_cb),
+    );
+    assert!(cov_proof.prove(&cov_actual_cb, &cov_expected_cb).is_proven());
+    assert_eq!(cov_proof.result(&t_var), Some(NEVER_TYPE.clone()));
+    assert_eq!(cov_proof.result(&u_var), Some(NEVER_TYPE.clone()));
+  }
 }
 
 impl fmt::Display for CalcitTypeAnnotation {
@@ -12964,7 +13381,12 @@ impl CalcitFnTypeAnnotation {
     true
   }
 
-  fn prove_signature_with_bindings(&self, other: &CalcitFnTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
+  fn prove_signature_with_bindings_in_fresh(
+    &self,
+    other: &CalcitFnTypeAnnotation,
+    bindings: &mut TypeBindings,
+    bind_never_vars: Option<&HashSet<Arc<str>>>,
+  ) -> TypeProof {
     /// Follows aliases, bound type variables and type slots to the type the
     /// proof below would compare. `None` means the walk revisited a name, a
     /// cycle that cannot settle on any type.
@@ -13025,7 +13447,7 @@ impl CalcitFnTypeAnnotation {
       if erased && requires_signature {
         return TypeProof::Mismatch;
       }
-      expected.prove_with_staged_bindings(actual, &mut staged)
+      expected.prove_with_staged_bindings_in_fresh(actual, &mut staged, bind_never_vars)
     };
     for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
       let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
@@ -13040,9 +13462,31 @@ impl CalcitFnTypeAnnotation {
     if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
       result = result.and(prove_parameter(actual, expected));
     }
-    result = result.and(self.return_type.prove_with_staged_bindings(&other.return_type, &mut staged));
+    result = result.and(
+      self
+        .return_type
+        .prove_with_staged_bindings_in_fresh(&other.return_type, &mut staged, bind_never_vars),
+    );
     if result.is_proven() {
-      *bindings = staged;
+      // Re-validate callback parameter obligations against the final bindings
+      // (with `bind_never_vars` disabled) so a return-type refinement such as
+      // `Never -> Number` cannot invalidate an earlier contravariant check.
+      let mut recheck = staged.clone();
+      for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
+        let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
+          continue;
+        };
+        let Some(actual) = self.arg_types.get(idx).or(self.rest_type.as_ref()) else {
+          return TypeProof::Mismatch;
+        };
+        result = result.and(expected.prove_with_staged_bindings_in_fresh(actual, &mut recheck, None));
+      }
+      if let (Some(actual), Some(expected)) = (&self.rest_type, &other.rest_type) {
+        result = result.and(expected.prove_with_staged_bindings_in_fresh(actual, &mut recheck, None));
+      }
+      if result.is_proven() {
+        *bindings = recheck;
+      }
     }
     result
   }

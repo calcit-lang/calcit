@@ -1,6 +1,50 @@
 
 {}
   :migrations $ []
+    {} (:family |definitions) (:issue |#2942)
+      :reason "|distinct-values_deduplicates_Map_values_using_a_Set,_so_value_type_V_must_satisfy_Eq_and_Hash"
+      :version |0.47.0
+      :after $ {} (:declaration nil)
+        :failure "|返回去重_Set，不承诺顺序，不保留重复值"
+        :name 'calcit.core/distinct-values
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set 'V
+          :where $ {} $ 'V ([] 'Eq 'Hash)
+      :before $ {} (:declaration nil)
+        :failure "|返回去重_Set，不承诺顺序，不保留重复值"
+        :name 'calcit.core/distinct-values
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set 'V
+    {} (:family |methods) (:issue |#2942)
+      :reason "|distinct-values_deduplicates_Map_values_using_a_Set,_so_value_type_V_must_satisfy_Eq_and_Hash"
+      :version |0.47.0
+      :after $ {}
+        :failure "|返回去重_Set_Number，不保留重复值"
+        :name |.distinct-values
+        :provenance 'calcit.core/distinct-values
+        :receiver "|:: 'Map 'Tag 'Number"
+        :features $ []
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set 'V
+          :where $ {} $ 'V ([] 'Eq 'Hash)
+      :before $ {}
+        :failure "|返回去重_Set_Number，不保留重复值"
+        :name |.distinct-values
+        :provenance 'calcit.core/distinct-values
+        :receiver "|:: 'Map 'Tag 'Number"
+        :features $ []
+        :schema $ quote $ {} (:kind :fn)
+          :args $ [] $ :: 'Map 'K 'V
+          :generics $ [] 'K 'V
+          :return $ :: 'Set 'V
     {} (:family |methods) (:issue |#2736)
       :reason "|receiver-specialized_intrinsic_rules_are_now_declared_directly_as_:cases_data_in_the_schema"
       :version |0.45.1

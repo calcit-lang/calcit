@@ -365,6 +365,7 @@
           :schema $ quote $ Fn (List T) T
             -> $ Option Number
             :generics T
+            :where $ T Eq
           :tests $ [] $ %{} 'TestEntry (:name |keeps-number-and-string-element-types)
             :code $ quote $ do
               assert= (Some 2)

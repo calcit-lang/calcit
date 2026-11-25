@@ -943,7 +943,11 @@ try {
         "test-traits.main/retain-trait-metadata", "--path", "code@3.2", "--format", "json"], options));
       assert.deepEqual(descriptorType.diagnostics, []);
       assert.equal(descriptorType.data.inferred_type, "Trait");
-      assert.deepEqual(descriptorType.data.static_methods ?? [], [], "descriptors do not advertise instance methods");
+      assert.deepEqual(
+        (descriptorType.data.static_methods ?? []).map(method => method.name).sort(),
+        [".debug", ".eq?", ".hash"],
+        "descriptors advertise only core definition methods and do not advertise instance methods",
+      );
       assert.deepEqual(await readFile(traitSnapshot), traitSource);
       const descriptorSnapshot = join(project, "trait-descriptor.cirru");
       const descriptorDiagnostic = /E_GENERIC_WHERE_BOUND_MISMATCH|E_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|unknown method `\.greeting`/;

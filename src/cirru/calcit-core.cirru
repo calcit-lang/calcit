@@ -344,7 +344,7 @@
               :tags $ #{} :core :unicode :unit
             %{} 'TestEntry (:name |orders-unicode-scalars-for-tags)
               :code $ quote $ let
-                  bmp-tag $ turn-tag (char-from-code 57344)
+                  bmp-tag $ turn-tag $ char-from-code 57344
                   astral-tag $ turn-tag "|😀"
                 do
                   assert= -1 $ &compare bmp-tag astral-tag
@@ -506,10 +506,49 @@
                       (:none) (assert= true false)
                   (:none) (assert= true false)
               :tags $ #{} :core :unit
+        '&core-buf-list-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for BufList: Debug."
+          :code $ quote $ def &core-buf-list-impls
+            [] $ &impl::new Debug internal/&core-debug-impl
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-for-buf-list)
+            :code $ quote $ let
+                buf $ &buf-list:new
+              assert= "|(&buf-list count=0)" $ buf .debug
+              &buf-list:push buf 1
+              assert= "|(&buf-list count=1)" $ buf .debug
+            :tags $ #{} :core :unit
+        '&core-buffer-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for Buffer: Debug, Eq and Hash."
+          :code $ quote $ def &core-buffer-impls
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-eq-and-hash-for-buffer)
+            :code $ quote $ let
+                a $ &buffer 10 255
+                b $ &buffer 10 255
+                c $ &buffer 10 1
+                zero-buf $ &buffer 0
+              assert= "|(&buffer 0a ff)" $ a .debug
+              assert= "|(&buffer 00)" $ zero-buf .debug
+              assert= true $ a .eq? b
+              assert= false $ a .eq? c
+              assert= true $ = a b
+              assert= false $ = a c
+              assert= (hash a) (a .hash)
+              assert= (hash a) (hash b)
+              assert= ([] a c)
+                distinct $ [] a b c
+              assert-traits a Debug Eq Hash
+            :tags $ #{} :core :unit
         '&core-cirru-quote-impls $ %{} 'CodeEntry
-          :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq."
+          :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq/Hash."
           :code $ quote $ def &core-cirru-quote-impls
-            [] &core-cirru-quote-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] &core-cirru-quote-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -557,9 +596,113 @@
                   fn (message) message
                 assert= 4 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
+        '&core-def-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for first-class definition/trait/impl metadata values: Debug, Eq and Hash."
+          :code $ quote $ def &core-def-impls
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-debug-eq-and-hash-for-def-values)
+              :code $ quote $ let
+                  sample-impl $ &impl::new :SampleImpl
+                  other-impl $ &impl::new :OtherImpl
+                assert= true $ >
+                  count $ FsPath .debug
+                  , 0
+                assert= true $ FsPath .eq? FsPath
+                assert= false $ &= FsPath HttpBody
+                assert= (hash FsPath) (FsPath .hash)
+                assert= true $ >
+                  count $ HttpBody .debug
+                  , 0
+                assert= true $ HttpBody .eq? HttpBody
+                assert= (hash HttpBody) (HttpBody .hash)
+                assert= true $ >
+                  count $ CirruNode .debug
+                  , 0
+                assert= true $ CirruNode .eq? CirruNode
+                assert= (hash CirruNode) (CirruNode .hash)
+                assert= true $ >
+                  count $ Hash .debug
+                  , 0
+                assert= true $ Hash .eq? Hash
+                assert= false $ Hash .eq? Eq
+                assert= (hash Hash) (Hash .hash)
+                assert= true $ >
+                  count $ sample-impl .debug
+                  , 0
+                assert= true $ sample-impl .eq? sample-impl
+                assert= false $ sample-impl .eq? other-impl
+                assert= (hash sample-impl) (sample-impl .hash)
+                assert-traits FsPath Debug Eq Hash
+                assert-traits HttpBody Debug Eq Hash
+                assert-traits CirruNode Debug Eq Hash
+                assert-traits Hash Debug Eq Hash
+                assert-traits sample-impl Debug Eq Hash
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |verifies-builtin-trait-assertions)
+              :code $ quote $ let
+                  u &unit
+                  t :alpha
+                  b false
+                  n nil
+                  buf $ &buf-list:new
+                assert-traits u Debug Eq Hash Compare
+                assert-traits t Debug Eq Hash Compare ToString
+                assert-traits b Debug Eq Hash Compare ToString
+                assert-traits n Debug Eq Hash Compare ToString
+                assert-traits buf Debug
+              :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |struct-def-trait-dispatch-ignores-instance-impls
+              :code $ quote $ let
+                  CustomMarker $ deftrait CustomMarker $ .cmark
+                    Fn Self $ -> Number
+                  BoxBase $ defstruct BoxBase $ :x Number
+                  BoxHash $ impl-traits BoxBase $ defimpl BoxBase Hash
+                    .hash $ fn (self) 7
+                  BoxMark $ impl-traits BoxBase $ defimpl BoxBase CustomMarker
+                    .cmark $ fn (self) 9
+                  EnumBase $ defenum EnumBase $ :a Number
+                  EnumHash $ impl-traits EnumBase $ defimpl EnumBase Hash
+                    .hash $ fn (self) 11
+                  EnumMark $ impl-traits EnumBase $ defimpl EnumBase CustomMarker
+                    .cmark $ fn (self) 13
+                  box-inst $ BoxMark :x 1
+                  enum-inst $ EnumMark :a 1
+                assert= (hash BoxHash) (BoxHash .hash)
+                assert= (hash EnumHash) (EnumHash .hash)
+                assert= (hash BoxHash) (&trait-call Hash :hash BoxHash)
+                assert= (hash EnumHash) (&trait-call Hash :hash EnumHash)
+                assert= true $ &= BoxHash $ assert-traits BoxHash Debug
+                assert= true $ &= BoxHash $ assert-traits BoxHash Eq
+                assert= true $ &= BoxHash $ assert-traits BoxHash Hash
+                assert= true $ &= EnumHash $ assert-traits EnumHash Hash
+                assert= true $ &= box-inst $ assert-traits box-inst CustomMarker
+                assert= true $ &= enum-inst $ assert-traits enum-inst CustomMarker
+                assert= 9 $ &trait-call CustomMarker :cmark box-inst
+                assert= 13 $ &trait-call CustomMarker :cmark enum-inst
+                assert= true $ includes?
+                  map (&methods-of BoxMark) &str
+                  , |.cmark
+                assert= true $ includes?
+                  map (&methods-of EnumMark) &str
+                  , |.cmark
+                assert= true $ >
+                  count $ &trait-call Debug :debug BoxMark
+                  , 0
+                assert= true $ try
+                  do (assert-traits BoxMark CustomMarker) false
+                  fn (_err) true
+                assert= true $ try
+                  do (assert-traits EnumMark CustomMarker) false
+                  fn (_err) true
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
-            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
+            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -665,7 +808,7 @@
         '&core-list-impls $ %{} 'CodeEntry
           :doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add."
           :code $ quote $ def &core-list-impls
-            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
+            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-list
               &impl::new Emptyable $ :: :empty &list:empty
           :examples $ []
@@ -679,7 +822,7 @@
           :tags $ #{} :internal
         '&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote $ def &core-map-impls
-            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
+            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
               &impl::new Emptyable $ :: :empty &map:empty
           :examples $ []
           :schema $ quote Dynamic
@@ -692,7 +835,7 @@
           :tags $ #{} :internal
         '&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote $ def &core-number-impls
-            [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
+            [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
               &impl::new ToString $ :: :to-string &turn-string
               &impl::new Emptyable $ :: :empty &number:empty
           :examples $ []
@@ -704,11 +847,23 @@
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
-        '&core-ref-impls $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-ref-impls ([] &core-ref-methods)
+        '&core-ref-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for Ref: public methods plus Debug."
+          :code $ quote $ def &core-ref-impls
+            [] &core-ref-methods $ &impl::new Debug internal/&core-debug-impl
           :examples $ []
           :schema $ quote $ List Impl
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-for-ref)
+            :code $ quote $ let
+                r-num $ ref 1
+                r-nil $ ref nil
+                r-unit $ ref &unit
+              assert= true $ .starts-with? (r-num .debug) "|(&ref "
+              assert= true $ .starts-with? (r-nil .debug) "|(&ref "
+              assert= true $ .starts-with? (r-unit .debug) "|(&ref "
+              assert-traits r-num Debug
+            :tags $ #{} :core :unit
         '&core-ref-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-ref-methods
             &impl::new :&core-ref-methods $ :: :deref &atom:deref
@@ -716,15 +871,27 @@
           :schema $ quote Impl
           :tags $ #{} :internal
         '&core-scalar-impls $ %{} 'CodeEntry
-          :doc "|Built-in nominal Debug/Eq implementation list for Unit"
+          :doc "|Built-in nominal Debug/Eq/Hash/Compare implementation list for Unit"
           :code $ quote $ def &core-scalar-impls
-            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-unit-eq-hash-compare)
+              :code $ quote $ let
+                  u &unit
+                assert= true $ u .eq? &unit
+                assert= (hash &unit) (u .hash)
+                assert= 0 $ u .compare &unit
+                assert= 0 $ compare u &unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-unit-debug)
+              :code $ quote $ assert= |&unit (&unit .debug)
+              :tags $ #{} :core :unit
         '&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote $ def &core-set-impls
-            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
+            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
               &impl::new Emptyable $ :: :empty &set:empty
           :examples $ []
           :schema $ quote Dynamic
@@ -737,7 +904,7 @@
           :tags $ #{} :internal
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote $ def &core-string-impls
-            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-string
               &impl::new ToString $ :: :to-string &turn-string
               &impl::new Emptyable $ :: :empty &str:empty
@@ -759,7 +926,7 @@
                 assert= false $ includes? methods .write-file
         '&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote $ def &core-struct-impls
-            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl) (&impl::new ContainsField internal/&core-contains-field-struct-impl)
+            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl) (&impl::new ContainsField internal/&core-contains-field-struct-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -775,11 +942,47 @@
         '&core-text-scalar-impls $ %{} 'CodeEntry
           :doc "|Nil、Bool、Tag 与 Symbol 的内建实现；与 Unit/CirruQuote 的开放 scalar 列表分离。"
           :code $ quote $ def &core-text-scalar-impls
-            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
               &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-eq-hash-compare-for-tag-bool-nil)
+              :code $ quote $ let
+                  t :alpha
+                  b false
+                  n nil
+                assert= true $ t .eq? :alpha
+                assert= false $ b .eq? true
+                assert= true $ n .eq? nil
+                assert= (hash :alpha) (t .hash)
+                assert= (hash false) (b .hash)
+                assert= (hash nil) (n .hash)
+                assert= -1 $ t .compare :beta
+                assert= -1 $ b .compare true
+                assert= 0 $ n .compare nil
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-debug-for-tag-bool-nil)
+              :code $ quote $ let
+                  t :alpha
+                  b false
+                  n nil
+                assert= |:alpha $ t .debug
+                assert= |false $ b .debug
+                assert= | $ n .debug
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-debug-eq-hash-compare-for-symbol)
+              :code $ quote $ let
+                  s 'alpha
+                assert= |'alpha $ s .debug
+                assert= true $ s .eq? 'alpha
+                assert= false $ s .eq? 'beta
+                assert= (hash 'alpha) (s .hash)
+                assert= -1 $ s .compare 'beta
+                assert= 1 $ compare 'beta s
+                assert-traits s Debug Eq Hash Compare ToString
+              :tags $ #{} :core :unit
         '&data-to-code $ %{} 'CodeEntry
           :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
@@ -860,10 +1063,12 @@
                     swap! *counted &+ $ option:unwrap $ nth ([] 0 1 2) idx
                   assert= 3 @*counted
               :tags $ #{} :core :unit
-        '&edn:attach-children $ %{} 'CodeEntry (:doc "|Internal helper: attach indented child Cirru nodes to a line's AST, descending into trailing $ tail lists.")
+        '&edn:attach-children $ %{} 'CodeEntry
+          :doc "|Internal helper: attach indented child Cirru nodes to a line's AST, descending into trailing $ tail lists."
           :code $ quote $ defn &edn:attach-children (nodes dollar-depth children)
-            if (&= 0 (&list:count children)) nodes
-              if (&> dollar-depth 0)
+            if
+              &= 0 $ &list:count children
+              , nodes $ if (&> dollar-depth 0)
                 let
                     n $ &list:count nodes
                   if (&= n 0) (&list:concat nodes children)
@@ -881,33 +1086,43 @@
           :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number (List calcit.core/&edn:cirru-node)
             -> $ List calcit.core/&edn:cirru-node
           :tags $ #{} :internal
-        '&edn:cirru-node $ %{} 'CodeEntry (:doc "|Internal Cirru syntax tree node for pure-Calcit Cirru EDN parsing.")
+        '&edn:cirru-node $ %{} 'CodeEntry
+          :doc "|Internal Cirru syntax tree node for pure-Calcit Cirru EDN parsing."
           :code $ quote $ def &edn:cirru-node
             defenum &edn:cirru-node (:leaf String)
               :list $ List calcit.core/&edn:cirru-node
           :examples $ []
           :schema $ quote EnumDef
           :tags $ #{} :internal
-        '&edn:cirru-to-value $ %{} 'CodeEntry (:doc "|Internal helper: convert a parsed Cirru tree node into a closed EdnValue.")
+        '&edn:cirru-to-value $ %{} 'CodeEntry
+          :doc "|Internal helper: convert a parsed Cirru tree node into a closed EdnValue."
           :code $ quote $ defn &edn:cirru-to-value (node depth)
-            if (&> depth 32) (Result :err "|E_WASM_EDN_SYNTAX: Cirru EDN nesting exceeds depth limit")
+            if (&> depth 32)
+              Result :err "|E_WASM_EDN_SYNTAX: Cirru EDN nesting exceeds depth limit"
               match node
                 (:leaf text)
-                  if (= text |nil) (Result :ok (EdnValue :nil))
-                    if (= text |true) (Result :ok (EdnValue :bool true))
-                      if (= text |false) (Result :ok (EdnValue :bool false))
-                        if (&= 0 (&str:count text)) (Result :err "|E_WASM_EDN_SYNTAX: empty EDN token")
+                  if (= text |nil)
+                    Result :ok $ EdnValue :nil
+                    if (= text |true)
+                      Result :ok $ EdnValue :bool true
+                      if (= text |false)
+                        Result :ok $ EdnValue :bool false
+                        if
+                          &= 0 $ &str:count text
+                          Result :err "|E_WASM_EDN_SYNTAX: empty EDN token"
                           let
                               first-ch $ &str:slice text 0 1
-                            if (or (= first-ch ||) (= first-ch "|\""))
-                              Result :ok $ EdnValue :string (&str:rest text)
+                            if
+                              or (= first-ch ||) (= first-ch "|\"")
+                              Result :ok $ EdnValue :string $ &str:rest text
                               if (= first-ch |:)
-                                Result :ok $ EdnValue :tag (&str:rest text)
+                                Result :ok $ EdnValue :tag $ &str:rest text
                                 if (= first-ch |')
-                                  Result :ok $ EdnValue :symbol (&str:rest text)
+                                  Result :ok $ EdnValue :symbol $ &str:rest text
                                   match (&parse-float text)
                                     (:some n)
-                                      if (&= 0 (&- n n))
+                                      if
+                                        &= 0 $ &- n n
                                         Result :ok $ EdnValue :number n
                                         Result :err $ str "|E_WASM_EDN_SYNTAX: non-finite number: " text
                                     (:none)
@@ -934,19 +1149,22 @@
           :schema $ quote $ Fn calcit.core/&edn:cirru-node Number
             -> $ Result EdnValue String
           :tags $ #{} :internal
-        '&edn:comment-node? $ %{} 'CodeEntry (:doc "|Internal helper: check whether a Cirru node is a (; ...) comment list.")
+        '&edn:comment-node? $ %{} 'CodeEntry
+          :doc "|Internal helper: check whether a Cirru node is a (; ...) comment list."
           :code $ quote $ defn &edn:comment-node? (node)
             match node
               (:leaf _) false
               (:list xs)
-                if (&= 0 (&list:count xs)) false
-                  match (&list:nth xs 0)
+                if
+                  &= 0 $ &list:count xs
+                  , false $ match (&list:nth xs 0)
                     (:leaf head) (= head |;)
                     (:list _) false
           :examples $ []
           :schema $ quote $ Fn calcit.core/&edn:cirru-node (-> Bool)
           :tags $ #{} :internal
-        '&edn:decode-list $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru list items into EdnValue :list.")
+        '&edn:decode-list $ %{} 'CodeEntry
+          :doc "|Internal helper: decode Cirru list items into EdnValue :list."
           :code $ quote $ defn &edn:decode-list (xs idx total acc depth)
             if (&>= idx total)
               Result :ok $ EdnValue :list acc
@@ -962,7 +1180,8 @@
           :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (List EdnValue) Number
             -> $ Result EdnValue String
           :tags $ #{} :internal
-        '&edn:decode-map $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru map entry pairs into EdnValue :map.")
+        '&edn:decode-map $ %{} 'CodeEntry
+          :doc "|Internal helper: decode Cirru map entry pairs into EdnValue :map."
           :code $ quote $ defn &edn:decode-map (xs idx total acc depth)
             if (&>= idx total)
               Result :ok $ EdnValue :map acc
@@ -971,14 +1190,18 @@
                 if (&edn:comment-node? entry)
                   recur xs (&+ idx 1) total acc depth
                   match entry
-                    (:leaf _) (Result :err "|E_WASM_EDN_SYNTAX: map entry must be a key-value pair")
+                    (:leaf _)
+                      Result :err "|E_WASM_EDN_SYNTAX: map entry must be a key-value pair"
                     (:list pair)
-                      if (not (&= 2 (&list:count pair)))
+                      if
+                        not $ &= 2 $ &list:count pair
                         Result :err "|E_WASM_EDN_SYNTAX: map entry must have 2 elements"
-                        match (&edn:cirru-to-value (&list:nth pair 0) depth)
+                        match
+                          &edn:cirru-to-value (&list:nth pair 0) depth
                           (:err msg) (Result :err msg)
                           (:ok k)
-                            match (&edn:cirru-to-value (&list:nth pair 1) depth)
+                            match
+                              &edn:cirru-to-value (&list:nth pair 1) depth
                               (:err msg) (Result :err msg)
                               (:ok v)
                                 recur xs (&+ idx 1) total (&map:assoc acc k v) depth
@@ -986,7 +1209,8 @@
           :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (Map EdnValue EdnValue) Number
             -> $ Result EdnValue String
           :tags $ #{} :internal
-        '&edn:decode-set $ %{} 'CodeEntry (:doc "|Internal helper: decode Cirru set items into EdnValue :set.")
+        '&edn:decode-set $ %{} 'CodeEntry
+          :doc "|Internal helper: decode Cirru set items into EdnValue :set."
           :code $ quote $ defn &edn:decode-set (xs idx total acc depth)
             if (&>= idx total)
               Result :ok $ EdnValue :set acc
@@ -1002,9 +1226,22 @@
           :schema $ quote $ Fn (List calcit.core/&edn:cirru-node) Number Number (Set EdnValue) Number
             -> $ Result EdnValue String
           :tags $ #{} :internal
-        '&edn:fold-lines $ %{} 'CodeEntry (:doc "|Internal helper: fold indented Cirru line entries into nested Cirru nodes.")
+        '&edn:escape-cirru-str $ %{} 'CodeEntry
+          :doc "|Internal helper: escape a string using Cirru double-quoted escapes (\\n, \\t, \\r, \\\", \\\\)."
+          :code $ quote $ defn &edn:escape-cirru-str (text idx total acc)
+            if (&>= idx total) acc $ let
+                ch $ &str:slice text idx $ &+ idx 1
+                escaped $ if (= ch |\) |\\ $ if (= ch "|\"") "|\\\""
+                  if (= ch "|\n") |\n $ if (= ch "|\t") |\t $ if (= ch "|") |\r ch
+              recur text (&+ idx 1) total $ &str:concat acc escaped
+          :examples $ []
+          :schema $ quote $ Fn String Number Number String (-> String)
+          :tags $ #{} :internal
+        '&edn:fold-lines $ %{} 'CodeEntry
+          :doc "|Internal helper: fold indented Cirru line entries into nested Cirru nodes."
           :code $ quote $ defn &edn:fold-lines (lines idx total min-indent acc depth)
-            if (&> depth 32) (Result :err "|E_WASM_EDN_SYNTAX: Cirru indentation exceeds depth limit")
+            if (&> depth 32)
+              Result :err "|E_WASM_EDN_SYNTAX: Cirru indentation exceeds depth limit"
               if (&>= idx total)
                 Result :ok $ &edn:fold-result :nodes acc :idx idx
                 let
@@ -1014,20 +1251,21 @@
                     Result :ok $ &edn:fold-result :nodes acc :idx idx
                     if (&> indent min-indent)
                       Result :err "|E_WASM_EDN_SYNTAX: unexpected Cirru indentation jump"
-                      match (&edn:fold-lines lines (&+ idx 1) total (&+ min-indent 1) ([]) (&+ depth 1))
+                      match
+                        &edn:fold-lines lines (&+ idx 1) total (&+ min-indent 1) ([]) (&+ depth 1)
                         (:err msg) (Result :err msg)
                         (:ok child-res)
                           let
                               merged $ &edn:attach-children (:nodes entry) (:dollar-depth entry) (:nodes child-res)
-                              next-acc $ if (:is-comma entry)
-                                &list:concat acc merged
+                              next-acc $ if (:is-comma entry) (&list:concat acc merged)
                                 &list:append acc $ &edn:cirru-node :list merged
                             recur lines (:idx child-res) total min-indent next-acc depth
           :examples $ []
           :schema $ quote $ Fn (List calcit.core/&edn:line-entry) Number Number Number (List calcit.core/&edn:cirru-node) Number
             -> $ Result calcit.core/&edn:fold-result String
           :tags $ #{} :internal
-        '&edn:fold-result $ %{} 'CodeEntry (:doc "|Internal struct carrying folded Cirru nodes and next line index.")
+        '&edn:fold-result $ %{} 'CodeEntry
+          :doc "|Internal struct carrying folded Cirru nodes and next line index."
           :code $ quote $ def &edn:fold-result
             defstruct &edn:fold-result
               :nodes $ List calcit.core/&edn:cirru-node
@@ -1035,108 +1273,107 @@
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :internal
-        '&edn:format-expr $ %{} 'CodeEntry (:doc "|Internal recursive formatter for closed EdnValue in nested Cirru EDN expression position.")
+        '&edn:format-expr $ %{} 'CodeEntry
+          :doc "|Internal recursive formatter for closed EdnValue in nested Cirru EDN expression position."
           :code $ quote $ defn &edn:format-expr (value)
             match value
               (:nil) |nil
               (:bool b) (if b |true |false)
               (:number n) (json-stringify n)
-              (:string s) (&edn:format-leaf (&str:concat || s))
-              (:tag t) (&edn:format-leaf (&str:concat |: t))
-              (:symbol s) (&edn:format-leaf (&str:concat |' s))
+              (:string s)
+                &edn:format-leaf $ &str:concat || s
+              (:tag t)
+                &edn:format-leaf $ &str:concat |: t
+              (:symbol s)
+                &edn:format-leaf $ &str:concat |' s
               (:list xs)
-                if (&list:empty? xs) "|([])"
-                  str "|([] "
-                    join-string
-                      &list:map xs $ fn (item)
-                        hint-fn $ Fn EdnValue (-> String)
-                        &edn:format-expr item
-                      , "| "
-                    , "|)"
+                if (&list:empty? xs) "|([])" $ str "|([] "
+                  join-string
+                    &list:map xs $ fn (item)
+                      hint-fn $ Fn EdnValue $ -> String
+                      &edn:format-expr item
+                    , "| "
+                  , "|)"
               (:set xs)
-                if (&= 0 (&set:count xs)) "|(#{})"
-                  str "|(#{} "
+                if
+                  &= 0 $ &set:count xs
+                  , "|(#{})" $ str "|(#{} "
                     join-string
-                      &list:map (&set:to-list xs) $ fn (item)
-                        hint-fn $ Fn EdnValue (-> String)
-                        &edn:format-expr item
+                      &list:map (&set:to-list xs)
+                        fn (item)
+                          hint-fn $ Fn EdnValue $ -> String
+                          &edn:format-expr item
                       , "| "
                     , "|)"
               (:map m)
-                if (&map:empty? m) "|({})"
-                  str "|({} "
-                    join-string
-                      map-list-kv m $ fn (k v)
-                        hint-fn $ Fn EdnValue EdnValue (-> String)
-                        str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
-                      , "| "
-                    , "|)"
+                if (&map:empty? m) "|({})" $ str "|({} "
+                  join-string
+                    map-list-kv m $ fn (k v)
+                      hint-fn $ Fn EdnValue EdnValue $ -> String
+                      str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
+                    , "| "
+                  , "|)"
           :examples $ []
           :schema $ quote $ Fn EdnValue (-> String)
           :tags $ #{} :internal
-        '&edn:format-leaf $ %{} 'CodeEntry (:doc "|Internal helper: format a Cirru EDN leaf token, quoting with Cirru escapes when required.")
+        '&edn:format-leaf $ %{} 'CodeEntry
+          :doc "|Internal helper: format a Cirru EDN leaf token, quoting with Cirru escapes when required."
           :code $ quote $ defn &edn:format-leaf (text)
             let
                 n $ &str:count text
-              if (&= n 0) "|\"\""
-                let
-                    needs-quote $ &edn:leaf-needs-quote? text 0 n
-                  if needs-quote (&str:concat "|\"" (&str:concat (&edn:escape-cirru-str text 0 n |) "|\"")) text
+              if (&= n 0) "|\"\"" $ let
+                  needs-quote $ &edn:leaf-needs-quote? text 0 n
+                if needs-quote
+                  &str:concat "|\"" $ &str:concat (&edn:escape-cirru-str text 0 n |) "|\""
+                  , text
           :examples $ []
           :schema $ quote $ Fn String (-> String)
           :tags $ #{} :internal
-        '&edn:escape-cirru-str $ %{} 'CodeEntry (:doc "|Internal helper: escape a string using Cirru double-quoted escapes (\\n, \\t, \\r, \\\", \\\\).")
-          :code $ quote $ defn &edn:escape-cirru-str (text idx total acc)
-            if (&>= idx total) acc
-              let
-                  ch $ &str:slice text idx (&+ idx 1)
-                  escaped $ if (= ch "|\\") "|\\\\"
-                    if (= ch "|\"") "|\\\""
-                      if (= ch "|\n") "|\\n"
-                        if (= ch "|\t") "|\\t"
-                          if (= ch "|\r") "|\\r" ch
-                recur text (&+ idx 1) total (&str:concat acc escaped)
-          :examples $ []
-          :schema $ quote $ Fn String Number Number String (-> String)
-          :tags $ #{} :internal
-        '&edn:leaf-needs-quote? $ %{} 'CodeEntry (:doc "|Internal helper: check whether a Cirru leaf string contains whitespace, parens, quotes, backslashes, or control characters.")
+        '&edn:leaf-needs-quote? $ %{} 'CodeEntry
+          :doc "|Internal helper: check whether a Cirru leaf string contains whitespace, parens, quotes, backslashes, or control characters."
           :code $ quote $ defn &edn:leaf-needs-quote? (text idx total)
-            if (&>= idx total) false
-              let
-                  ch $ &str:slice text idx (&+ idx 1)
-                  code $ get-char-code ch
-                if
-                  or (&<= code 32) (&= code 127) (= ch "|\"") (= ch "|(") (= ch "|)") (= ch "|\\")
-                  , true
-                  recur text (&+ idx 1) total
+            if (&>= idx total) false $ let
+                ch $ &str:slice text idx $ &+ idx 1
+                code $ get-char-code ch
+              if
+                or (&<= code 32) (&= code 127) (= ch "|\"") (= ch "|(") (= ch "|)") (= ch |\)
+                , true $ recur text (&+ idx 1) total
           :examples $ []
           :schema $ quote $ Fn String Number Number (-> Bool)
           :tags $ #{} :internal
-        '&edn:line-entry $ %{} 'CodeEntry (:doc "|Internal struct for a parsed Cirru line with indentation level and trailing $ depth.")
+        '&edn:line-entry $ %{} 'CodeEntry
+          :doc "|Internal struct for a parsed Cirru line with indentation level and trailing $ depth."
           :code $ quote $ def &edn:line-entry
             defstruct &edn:line-entry (:indent Number) (:is-comma Bool) (:dollar-depth Number)
               :nodes $ List calcit.core/&edn:cirru-node
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :internal
-        '&edn:parse-lines $ %{} 'CodeEntry (:doc "|Internal helper: parse Cirru source lines into indentation-annotated line entries.")
+        '&edn:parse-lines $ %{} 'CodeEntry
+          :doc "|Internal helper: parse Cirru source lines into indentation-annotated line entries."
           :code $ quote $ defn &edn:parse-lines (raw-lines idx total acc)
             if (&>= idx total) (Result :ok acc)
               let
                   raw $ &list:nth raw-lines idx
                   raw-len $ &str:count raw
-                  line $ if (and (&> raw-len 0) (= (&str:slice raw (&- raw-len 1) raw-len) "|\r"))
-                    &str:slice raw 0 (&- raw-len 1)
+                  line $ if
+                    and (&> raw-len 0)
+                      =
+                        &str:slice raw (&- raw-len 1) raw-len
+                        , "|"
+                    &str:slice raw 0 $ &- raw-len 1
                     , raw
                   len $ &str:count line
                   spaces $ &edn:skip-spaces line 0 len
                 if (&>= spaces len)
                   recur raw-lines (&+ idx 1) total acc
-                  if (not (&= 0 (&number:rem spaces 2)))
+                  if
+                    not $ &= 0 $ &number:rem spaces 2
                     Result :err "|E_WASM_EDN_SYNTAX: odd Cirru indentation"
                     let
                         indent $ &/ spaces 2
-                      match (&edn:parse-seq line len spaces false ([]) 0)
+                      match
+                        &edn:parse-seq line len spaces false ([]) 0
                         (:err msg) (Result :err msg)
                         (:ok seq-res)
                           let
@@ -1149,92 +1386,101 @@
                                 , false
                               final-nodes $ if first-is-comma (&list:rest parsed-nodes) parsed-nodes
                               entry $ &edn:line-entry :indent indent :is-comma first-is-comma :dollar-depth (:dollar-depth seq-res) :nodes final-nodes
-                            recur raw-lines (&+ idx 1) total (&list:append acc entry)
+                            recur raw-lines (&+ idx 1) total $ &list:append acc entry
           :examples $ []
           :schema $ quote $ Fn (List String) Number Number (List calcit.core/&edn:line-entry)
             -> $ Result (List calcit.core/&edn:line-entry) String
           :tags $ #{} :internal
-        '&edn:parse-pure $ %{} 'CodeEntry (:doc "|Pure-Calcit Cirru EDN parser into closed EdnValue, used by WASM/WASI lowering of edn:parse without Dynamic.")
+        '&edn:parse-pure $ %{} 'CodeEntry
+          :doc "|Pure-Calcit Cirru EDN parser into closed EdnValue, used by WASM/WASI lowering of edn:parse without Dynamic."
           :code $ quote $ defn &edn:parse-pure (source)
-            if (&> (&str:utf8-byte-count source) 65536)
+            if
+              &> (&str:utf8-byte-count source) 65536
               Result :err "|E_WASM_EDN_INPUT_LIMIT: Cirru EDN input exceeds 65536 bytes"
               let
                   raw-lines $ split-lines source
-                match (&edn:parse-lines raw-lines 0 (&list:count raw-lines) ([]))
+                match
+                  &edn:parse-lines raw-lines 0 (&list:count raw-lines) ([])
                   (:err msg) (Result :err msg)
                   (:ok entries)
                     let
                         entry-count $ &list:count entries
-                      if (&= 0 entry-count)
-                        Result :err "|E_WASM_EDN_SYNTAX: empty Cirru EDN input"
-                        match (&edn:fold-lines entries 0 entry-count 0 ([]) 0)
+                      if (&= 0 entry-count) (Result :err "|E_WASM_EDN_SYNTAX: empty Cirru EDN input")
+                        match
+                          &edn:fold-lines entries 0 entry-count 0 ([]) 0
                           (:err msg) (Result :err msg)
                           (:ok folded)
                             let
                                 top-nodes $ :nodes folded
-                              if (not (&= 1 (&list:count top-nodes)))
+                              if
+                                not $ &= 1 $ &list:count top-nodes
                                 Result :err "|E_WASM_EDN_SYNTAX: expected a single top-level Cirru EDN expression"
                                 &edn:cirru-to-value (&list:nth top-nodes 0) 0
           :examples $ []
           :schema $ quote $ Fn String
             -> $ Result EdnValue String
           :tags $ #{} :internal
-        '&edn:parse-quoted $ %{} 'CodeEntry (:doc "|Internal helper: parse a double-quoted Cirru string token with backslash escapes.")
+        '&edn:parse-quoted $ %{} 'CodeEntry
+          :doc "|Internal helper: parse a double-quoted Cirru string token with backslash escapes."
           :code $ quote $ defn &edn:parse-quoted (line len pos acc)
-            if (&>= pos len)
-              Result :err "|E_WASM_EDN_SYNTAX: unclosed string literal"
+            if (&>= pos len) (Result :err "|E_WASM_EDN_SYNTAX: unclosed string literal")
               let
-                  ch $ &str:slice line pos (&+ pos 1)
+                  ch $ &str:slice line pos $ &+ pos 1
                 if (= ch "|\"")
-                  Result :ok $ &edn:parse-quoted-result :text acc :pos (&+ pos 1)
-                  if (= ch "|\\")
-                    if (&>= (&+ pos 1) len)
+                  Result :ok $ &edn:parse-quoted-result :text acc :pos $ &+ pos 1
+                  if (= ch |\)
+                    if
+                      &>= (&+ pos 1) len
                       Result :err "|E_WASM_EDN_SYNTAX: trailing backslash in string"
                       let
                           esc $ &str:slice line (&+ pos 1) (&+ pos 2)
-                          decoded $ if (= esc |n) "|\n"
-                            if (= esc |t) "|\t"
-                              if (= esc |r) "|\r"
-                                if (= esc "|\"") "|\""
-                                  if (= esc "|\\") "|\\" esc
+                          decoded $ if (= esc |n) "|\n" $ if (= esc |t) "|\t"
+                            if (= esc |r) "|" $ if (= esc "|\"") "|\"" $ if (= esc |\) |\ esc
                         recur line len (&+ pos 2) (&str:concat acc decoded)
                     recur line len (&+ pos 1) (&str:concat acc ch)
           :examples $ []
           :schema $ quote $ Fn String Number Number String
             -> $ Result calcit.core/&edn:parse-quoted-result String
           :tags $ #{} :internal
-        '&edn:parse-quoted-result $ %{} 'CodeEntry (:doc "|Internal struct carrying parsed quoted string text and next index.")
+        '&edn:parse-quoted-result $ %{} 'CodeEntry
+          :doc "|Internal struct carrying parsed quoted string text and next index."
           :code $ quote $ def &edn:parse-quoted-result
             defstruct &edn:parse-quoted-result (:text String) (:pos Number)
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :internal
-        '&edn:parse-seq $ %{} 'CodeEntry (:doc "|Internal helper: parse a sequence of Cirru tokens on a single line or inside parentheses.")
+        '&edn:parse-seq $ %{} 'CodeEntry
+          :doc "|Internal helper: parse a sequence of Cirru tokens on a single line or inside parentheses."
           :code $ quote $ defn &edn:parse-seq (line len pos in-paren acc depth)
             if (&> depth 32)
               Result :err "|E_WASM_EDN_SYNTAX: Cirru nesting exceeds depth limit"
               let
                   p $ &edn:skip-spaces line pos len
                 if (&>= p len)
-                  if in-paren
-                    Result :err "|E_WASM_EDN_SYNTAX: unclosed parenthesis"
+                  if in-paren (Result :err "|E_WASM_EDN_SYNTAX: unclosed parenthesis")
                     Result :ok $ &edn:parse-seq-result :nodes acc :pos p :dollar-depth 0
                   let
-                      ch $ &str:slice line p (&+ p 1)
+                      ch $ &str:slice line p $ &+ p 1
                     if (= ch "|)")
                       if in-paren
                         Result :ok $ &edn:parse-seq-result :nodes acc :pos (&+ p 1) :dollar-depth 0
                         Result :err "|E_WASM_EDN_SYNTAX: unexpected ')'"
                       if (= ch "|(")
-                        match (&edn:parse-seq line len (&+ p 1) true ([]) (&+ depth 1))
+                        match
+                          &edn:parse-seq line len (&+ p 1) true ([]) (&+ depth 1)
                           (:err msg) (Result :err msg)
                           (:ok child)
-                            recur line len (:pos child) in-paren (&list:append acc (&edn:cirru-node :list (:nodes child))) depth
+                            recur line len (:pos child) in-paren
+                              &list:append acc $ &edn:cirru-node :list $ :nodes child
+                              , depth
                         if (= ch "|\"")
-                          match (&edn:parse-quoted line len (&+ p 1) |)
+                          match
+                            &edn:parse-quoted line len (&+ p 1) |
                             (:err msg) (Result :err msg)
                             (:ok q)
-                              recur line len (:pos q) in-paren (&list:append acc (&edn:cirru-node :leaf (:text q))) depth
+                              recur line len (:pos q) in-paren
+                                &list:append acc $ &edn:cirru-node :leaf $ :text q
+                                , depth
                           let
                               end-p $ &edn:scan-token-end line p len
                             if (&<= end-p p)
@@ -1242,20 +1488,24 @@
                               let
                                   tok $ &str:slice line p end-p
                                 if (= tok |$)
-                                  match (&edn:parse-seq line len end-p in-paren ([]) (&+ depth 1))
+                                  match
+                                    &edn:parse-seq line len end-p in-paren ([]) (&+ depth 1)
                                     (:err msg) (Result :err msg)
                                     (:ok tail)
                                       let
-                                          new-nodes $ &list:append acc (&edn:cirru-node :list (:nodes tail))
+                                          new-nodes $ &list:append acc $ &edn:cirru-node :list (:nodes tail)
                                           new-pos $ :pos tail
-                                          new-depth $ &+ 1 (:dollar-depth tail)
+                                          new-depth $ &+ 1 $ :dollar-depth tail
                                         Result :ok $ &edn:parse-seq-result :nodes new-nodes :pos new-pos :dollar-depth new-depth
-                                  recur line len end-p in-paren (&list:append acc (&edn:cirru-node :leaf tok)) depth
+                                  recur line len end-p in-paren
+                                    &list:append acc $ &edn:cirru-node :leaf tok
+                                    , depth
           :examples $ []
           :schema $ quote $ Fn String Number Number Bool (List calcit.core/&edn:cirru-node) Number
             -> $ Result calcit.core/&edn:parse-seq-result String
           :tags $ #{} :internal
-        '&edn:parse-seq-result $ %{} 'CodeEntry (:doc "|Internal struct carrying parsed Cirru sequence nodes, cursor position, and trailing $ depth.")
+        '&edn:parse-seq-result $ %{} 'CodeEntry
+          :doc "|Internal struct carrying parsed Cirru sequence nodes, cursor position, and trailing $ depth."
           :code $ quote $ def &edn:parse-seq-result
             defstruct &edn:parse-seq-result
               :nodes $ List calcit.core/&edn:cirru-node
@@ -1264,25 +1514,25 @@
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :internal
-        '&edn:scan-token-end $ %{} 'CodeEntry (:doc "|Internal helper: scan to the end of an unquoted Cirru token.")
+        '&edn:scan-token-end $ %{} 'CodeEntry
+          :doc "|Internal helper: scan to the end of an unquoted Cirru token."
           :code $ quote $ defn &edn:scan-token-end (line pos len)
-            if (&>= pos len) pos
-              let
-                  ch $ &str:slice line pos (&+ pos 1)
-                if (or (= ch "| ") (= ch "|\t") (= ch "|(") (= ch "|)") (= ch "|\""))
-                  , pos
-                  recur line (&+ pos 1) len
+            if (&>= pos len) pos $ let
+                ch $ &str:slice line pos $ &+ pos 1
+              if
+                or (= ch "| ") (= ch "|\t") (= ch "|(") (= ch "|)") (= ch "|\"")
+                , pos $ recur line (&+ pos 1) len
           :examples $ []
           :schema $ quote $ Fn String Number Number (-> Number)
           :tags $ #{} :internal
-        '&edn:skip-spaces $ %{} 'CodeEntry (:doc "|Internal helper: skip ASCII space characters in a Cirru line.")
+        '&edn:skip-spaces $ %{} 'CodeEntry
+          :doc "|Internal helper: skip ASCII space characters in a Cirru line."
           :code $ quote $ defn &edn:skip-spaces (line pos len)
-            if (&>= pos len) pos
-              let
-                  ch $ &str:slice line pos (&+ pos 1)
-                if (= ch "| ")
-                  recur line (&+ pos 1) len
-                  , pos
+            if (&>= pos len) pos $ let
+                ch $ &str:slice line pos $ &+ pos 1
+              if (= ch "| ")
+                recur line (&+ pos 1) len
+                , pos
           :examples $ []
           :schema $ quote $ Fn String Number Number (-> Number)
           :tags $ #{} :internal
@@ -2131,9 +2381,14 @@
             identity &core-any-box-impls
             identity &core-text-scalar-impls
             identity &core-ref-impls
+            identity &core-buffer-impls
+            identity &core-buf-list-impls
+            identity &core-def-impls
             identity Add
+            identity Compare
             identity Debug
             identity Eq
+            identity Hash
             identity Len
             identity Mappable
             identity Multiply
@@ -2142,7 +2397,7 @@
             identity ToString
             if
               &= (&get-calcit-backend) :js
-              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls :anyBox &core-any-box-impls
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls :anyBox &core-any-box-impls :buffer &core-buffer-impls :buf-list &core-buf-list-impls :def &core-def-impls
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -2157,7 +2412,8 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
           :tags $ #{} :builtin :internal
-        '&json:pretty-at $ %{} 'CodeEntry (:doc "|Internal recursive pretty-printer for closed JsonValue with 2-space indentation.")
+        '&json:pretty-at $ %{} 'CodeEntry
+          :doc "|Internal recursive pretty-printer for closed JsonValue with 2-space indentation."
           :code $ quote $ defn &json:pretty-at (value depth)
             match value
               (:null) |null
@@ -2165,25 +2421,23 @@
               (:number n) (json-stringify n)
               (:string s) (json-stringify s)
               (:array xs)
-                if (&list:empty? xs) |[]
-                  let
-                      next-depth $ &+ depth 1
-                      pad $ join-string (repeat "|  " next-depth) |
-                      close-pad $ join-string (repeat "|  " depth) |
-                      items $ &list:map xs $ fn (item)
-                        hint-fn $ Fn JsonValue (-> String)
-                        str pad $ &json:pretty-at item next-depth
-                    str "|[\n" (join-string items "|,\n") "|\n" close-pad |]
+                if (&list:empty? xs) |[] $ let
+                    next-depth $ &+ depth 1
+                    pad $ join-string (repeat "|  " next-depth) |
+                    close-pad $ join-string (repeat "|  " depth) |
+                    items $ &list:map xs $ fn (item)
+                      hint-fn $ Fn JsonValue $ -> String
+                      str pad $ &json:pretty-at item next-depth
+                  str "|[\n" (join-string items "|,\n") "|\n" close-pad |]
               (:object m)
-                if (&map:empty? m) |{}
-                  let
-                      next-depth $ &+ depth 1
-                      pad $ join-string (repeat "|  " next-depth) |
-                      close-pad $ join-string (repeat "|  " depth) |
-                      items $ map-list-kv m $ fn (k v)
-                        hint-fn $ Fn String JsonValue (-> String)
-                        str pad (json-stringify k) "|: " (&json:pretty-at v next-depth)
-                    str "|{\n" (join-string items "|,\n") "|\n" close-pad |}
+                if (&map:empty? m) |{} $ let
+                    next-depth $ &+ depth 1
+                    pad $ join-string (repeat "|  " next-depth) |
+                    close-pad $ join-string (repeat "|  " depth) |
+                    items $ map-list-kv m $ fn (k v)
+                      hint-fn $ Fn String JsonValue $ -> String
+                      str pad (json-stringify k) "|: " $ &json:pretty-at v next-depth
+                  str "|{\n" (join-string items "|,\n") "|\n" close-pad |}
           :examples $ []
           :schema $ quote $ Fn JsonValue Number (-> String)
           :tags $ #{} :internal
@@ -2372,6 +2626,7 @@
           :schema $ quote $ Fn (List T)
             -> $ List T
             :generics T
+            :where $ T Eq Hash
           :tags $ #{} :builtin :internal
         '&list:empty $ %{} 'CodeEntry (:doc "|internal helper for list :empty method entry")
           :code $ quote $ defn &list:empty (_xs) ([])
@@ -2677,6 +2932,7 @@
           :schema $ quote $ Fn (List T) T Number
             -> $ Option Number
             :generics T
+            :where $ T Eq
         '&list:last $ %{} 'CodeEntry
           :doc "|Internal last-element reader: `Option :some last-element`, or `Option :none` for an empty list."
           :code $ quote $ &runtime-implementation
@@ -2707,6 +2963,7 @@
           :schema $ quote $ Fn (List T) T
             -> $ Option Number
             :generics T
+            :where $ T Eq
           :tags $ #{} :internal
         '&list:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map (xs f)
@@ -2982,14 +3239,26 @@
                 Fn T (-> K) (:features :pass)
                 -> $ List T
                 :generics T K
+                :where $ K Compare
               Fn (List T) Tag
                 -> $ List T
                 :generics T
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |sorts-by-function-key)
-            :code $ quote $ assert= ([] 1 2 3 4)
-              &list:sort-by ([] 4 1 3 2) identity
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |sorts-by-function-key)
+              :code $ quote $ do
+                assert= ([] 1 2 3 4)
+                  &list:sort-by ([] 4 1 3 2) identity
+                assert= ([] 1 2 3)
+                  .sort-by ([] 3 1 2) identity
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |method-syntax-sort-by-with-hinted-key-fn)
+              :code $ quote $ assert= ([] 1 2 3)
+                .sort-by ([] 3 1 2)
+                  fn (x)
+                    hint-fn $ Fn Number $ -> Number
+                    , x
+              :tags $ #{} :core :unit
         '&list:to-set $ %{} 'CodeEntry
           :doc "|internal function for converting list to set\nSyntax: (&list:to-set list)\nParams: list (list)\nReturns: set\nConverts list to set, removing duplicates"
           :code $ quote &runtime-implementation
@@ -2997,6 +3266,7 @@
           :schema $ quote $ Fn (List T)
             -> $ Set T
             :generics T
+            :where $ T Eq Hash
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |deduplicates-list-members)
             :code $ quote $ assert= (#{} 1)
@@ -4750,7 +5020,8 @@
                   do (println |left) 1
                   do (println |right) true
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |compares-nested-sets-and-collections-structurally)
+            %{} 'TestEntry
+              :name |compares-nested-sets-and-collections-structurally
               :code $ quote $ let
                   a $ #{} (#{} 1 2) (#{} 3 4)
                   b $ #{} (#{} 4 3) (#{} 2 1)
@@ -4758,27 +5029,33 @@
                   deduped $ #{} (#{} 1 2) (#{} 2 1)
                   nested-lists $ #{} ([] 1 2) ([] 3 4)
                   nested-lists-b $ #{} ([] 3 4) ([] 1 2)
-                  set-key-map $ {} ((#{} 1 2) 10) ((#{} 3 4) 20)
+                  set-key-map $ {}
+                      #{} 1 2
+                      , 10
+                    (#{} 3 4) 20
                 assert= true $ = a b
                 assert= true $ &= a b
                 assert= false $ = a c
                 assert= true $ not= a c
                 assert= 1 $ count deduped
-                assert= true $ .includes? a (#{} 2 1)
-                assert= false $ .includes? a (#{} 1 3)
-                assert= true $ includes? a (#{} 2 1)
+                assert= true $ .includes? a $ #{} 2 1
+                assert= false $ .includes? a $ #{} 1 3
+                assert= true $ includes? a $ #{} 2 1
                 assert= true $ = nested-lists nested-lists-b
-                assert= true $ .includes? nested-lists ([] 1 2)
+                assert= true $ .includes? nested-lists $ [] 1 2
                 assert= true $ =
                   #{} (#{} 1 2) (#{} 3 4)
-                  union (#{} (#{} 1 2)) (#{} (#{} 2 1) (#{} 4 3))
+                  union
+                    #{} $ #{} 1 2
+                    #{} (#{} 2 1) (#{} 4 3)
                 assert= true $ =
-                  #{} (#{} 3 4)
-                  difference a (#{} (#{} 2 1))
+                  #{} $ #{} 3 4
+                  difference a $ #{} $ #{} 2 1
                 assert= true $ =
-                  #{} (#{} 1 2)
-                  intersection a (#{} (#{} 2 1) (#{} 9))
-                assert= (Some 10) (&map:get set-key-map (#{} 2 1))
+                  #{} $ #{} 1 2
+                  intersection a $ #{} (#{} 2 1) (#{} 9)
+                assert= (Some 10)
+                  &map:get set-key-map $ #{} 2 1
               :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
@@ -4838,7 +5115,7 @@
               assert= false $ result:ok? $ try-decode-map-as ([] |a 1) (List CirruNode)
             :tags $ #{} :core :unit
         'Compare $ %{} 'CodeEntry
-          :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
+          :doc "|Core trait for three-way comparison returning -1, 0, or 1. Number, String, Tag, Bool, Symbol, Nil, and Unit implement it."
           :code $ quote $ deftrait Compare
             .compare $ Fn Self Self $ -> Number
           :examples $ []
@@ -4866,9 +5143,7 @@
         'ControlFlow $ %{} 'CodeEntry
           :doc "|Step result returned by fold-while reducers: :continue carries the next accumulator, :break stops the fold and returns its value."
           :code $ quote $ def ControlFlow
-            impl-traits
-              defenum ControlFlow (:generics A) (:continue A) (:break A)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum ControlFlow (:generics A) (:continue A) (:break A)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -4913,75 +5188,109 @@
                 :list $ List EdnValue
                 :set $ Set EdnValue
                 :map $ Map EdnValue EdnValue
-              , internal/&core-debug-impl internal/&core-eq-impl EdnValueOpsImpl
+              , EdnValueOpsImpl
           :examples $ []
             quote $ edn:parse "|{} (:ok true) (:items ([] 1 |a nil))"
-            quote $ .to-edn $ EdnValue :list $ [] (EdnValue :tag |k) (EdnValue :number 1)
+            quote $ .to-edn $ EdnValue :list
+              [] (EdnValue :tag |k) (EdnValue :number 1)
           :schema $ quote EnumDef
           :tags $ #{} :core :data
           :tests $ []
-            %{} 'TestEntry (:name |constructs-matches-and-compares-recursive-edn-values)
+            %{} 'TestEntry
+              :name |constructs-matches-and-compares-recursive-edn-values
               :code $ quote $ let
-                  sample $ EdnValue :map
-                    {}
-                      (EdnValue :tag |name) (EdnValue :string |calcit)
-                      (EdnValue :tag |ok) (EdnValue :bool true)
-                      (EdnValue :tag |sym) (EdnValue :symbol |foo)
-                      (EdnValue :tag |items)
-                        EdnValue :list $ [] (EdnValue :number 1) (EdnValue :nil)
-                      (EdnValue :tag |tags)
-                        EdnValue :set $ #{} (EdnValue :tag |a) (EdnValue :number 0) (EdnValue :bool false)
-                      (EdnValue :list ([] (EdnValue :number 1))) (EdnValue :string |list-key)
-                do
-                  assert-type sample EdnValue
-                  assert= sample sample
-                  assert= false $ = sample (EdnValue :nil)
+                  sample $ EdnValue :map $ {}
+                      EdnValue :tag |name
+                      EdnValue :string |calcit
+                    (EdnValue :tag |ok) (EdnValue :bool true)
+                    (EdnValue :tag |sym) (EdnValue :symbol |foo)
+                    (EdnValue :tag |items)
+                      EdnValue :list $ [] (EdnValue :number 1) (EdnValue :nil)
+                    (EdnValue :tag |tags)
+                      EdnValue :set $ #{} (EdnValue :tag |a) (EdnValue :number 0) (EdnValue :bool false)
+                    (EdnValue :list ([] (EdnValue :number 1)))
+                      EdnValue :string |list-key
+                do (assert-type sample EdnValue) (assert= sample sample)
+                  assert= false $ = sample $ EdnValue :nil
                   assert= 6 $ match sample
                     (:map m) (&map:count m)
                     _ 0
-                  assert= (Result :ok sample) (edn:parse (.to-edn sample))
-                  assert= (Result :ok sample) (edn:parse (edn:format sample))
+                  assert= (Result :ok sample)
+                    edn:parse $ .to-edn sample
+                  assert= (Result :ok sample)
+                    edn:parse $ edn:format sample
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |parses-and-formats-scalars-collections-and-multiline-cirru-edn)
+            %{} 'TestEntry
+              :name |parses-and-formats-scalars-collections-and-multiline-cirru-edn
               :code $ quote $ do
-                assert= (Result :ok (EdnValue :nil)) (edn:parse "|do nil")
-                assert= (Result :ok (EdnValue :bool true)) (edn:parse "|do true")
-                assert= (Result :ok (EdnValue :bool false)) (edn:parse "|do false")
-                assert= (Result :ok (EdnValue :number -12.5)) (edn:parse "|do -12.5")
-                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do +1")
-                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do 01")
-                assert= (Result :ok (EdnValue :number 1)) (edn:parse "|do 1.")
-                assert= (Result :ok (EdnValue :number 0.5)) (edn:parse "|do .5")
+                assert=
+                  Result :ok $ EdnValue :nil
+                  edn:parse "|do nil"
+                assert=
+                  Result :ok $ EdnValue :bool true
+                  edn:parse "|do true"
+                assert=
+                  Result :ok $ EdnValue :bool false
+                  edn:parse "|do false"
+                assert=
+                  Result :ok $ EdnValue :number -12.5
+                  edn:parse "|do -12.5"
+                assert=
+                  Result :ok $ EdnValue :number 1
+                  edn:parse "|do +1"
+                assert=
+                  Result :ok $ EdnValue :number 1
+                  edn:parse "|do 01"
+                assert=
+                  Result :ok $ EdnValue :number 1
+                  edn:parse "|do 1."
+                assert=
+                  Result :ok $ EdnValue :number 0.5
+                  edn:parse "|do .5"
                 let
                     ctrl $ str |a (char-from-code 8) |b
-                    ctrl-val $ EdnValue :map
-                      {}
-                        (EdnValue :string ctrl) (EdnValue :tag ctrl)
-                  assert= (Result :ok ctrl-val) (edn:parse (.to-edn ctrl-val))
-                assert= (Result :ok (EdnValue :string "|hello world\n\"ok\"")) (edn:parse "|do \"|hello world\\n\\\"ok\\\"\"")
-                assert= (Result :ok (EdnValue :tag |unseen-dynamic-tag)) (edn:parse "|do :unseen-dynamic-tag")
-                assert= (Result :ok (EdnValue :symbol |unseen-symbol)) (edn:parse "|do 'unseen-symbol")
-                assert= (Result :ok (EdnValue :list ([]))) (edn:parse |[])
-                assert= (Result :ok (EdnValue :set (#{}))) (edn:parse |#{})
-                assert= (Result :ok (EdnValue :map ({}))) (edn:parse |{})
-                assert= "|do nil" $ .to-edn (EdnValue :nil)
-                assert= "|do :ok" $ .to-edn (EdnValue :tag |ok)
-                assert= "|do 'sym" $ .to-edn (EdnValue :symbol |sym)
-                assert= "|do \"|a b\"" $ .to-edn (EdnValue :string "|a b")
+                    ctrl-val $ EdnValue :map $ {}
+                        EdnValue :string ctrl
+                        EdnValue :tag ctrl
+                  assert= (Result :ok ctrl-val)
+                    edn:parse $ .to-edn ctrl-val
+                assert=
+                  Result :ok $ EdnValue :string "|hello world\n\"ok\""
+                  edn:parse "|do \"|hello world\\n\\\"ok\\\"\""
+                assert=
+                  Result :ok $ EdnValue :tag |unseen-dynamic-tag
+                  edn:parse "|do :unseen-dynamic-tag"
+                assert=
+                  Result :ok $ EdnValue :symbol |unseen-symbol
+                  edn:parse "|do 'unseen-symbol"
+                assert=
+                  Result :ok $ EdnValue :list $ []
+                  edn:parse |[]
+                assert=
+                  Result :ok $ EdnValue :set $ #{}
+                  edn:parse |#{}
+                assert=
+                  Result :ok $ EdnValue :map $ {}
+                  edn:parse |{}
+                assert= "|do nil" $ .to-edn $ EdnValue :nil
+                assert= "|do :ok" $ .to-edn $ EdnValue :tag |ok
+                assert= "|do 'sym" $ .to-edn $ EdnValue :symbol |sym
+                assert= "|do \"|a b\"" $ .to-edn $ EdnValue :string "|a b"
                 let
                     multiline "|{}\n  ; comment\n  :a $ []\n    , 1\n    , |中文😀\n  :b $ #{} :x :y\n"
-                    expected $ EdnValue :map
-                      {}
-                        (EdnValue :tag |a)
-                          EdnValue :list $ [] (EdnValue :number 1) (EdnValue :string "|中文😀")
-                        (EdnValue :tag |b)
-                          EdnValue :set $ #{} (EdnValue :tag |x) (EdnValue :tag |y)
+                    expected $ EdnValue :map $ {}
+                        EdnValue :tag |a
+                        EdnValue :list $ [] (EdnValue :number 1) (EdnValue :string "|中文😀")
+                      (EdnValue :tag |b)
+                        EdnValue :set $ #{} (EdnValue :tag |x) (EdnValue :tag |y)
                   do
                     assert= (Result :ok expected) (edn:parse multiline)
                     assert= (Result :ok expected) (&edn:parse-pure multiline)
-                    assert= (Result :ok expected) (edn:parse (.to-edn expected))
+                    assert= (Result :ok expected)
+                      edn:parse $ .to-edn expected
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |rejects-invalid-syntax-overflow-and-unsupported-forms)
+            %{} 'TestEntry
+              :name |rejects-invalid-syntax-overflow-and-unsupported-forms
               :code $ quote $ do
                 assert= true $ .err? $ edn:parse |
                 assert= true $ .err? $ edn:parse "|("
@@ -4994,9 +5303,10 @@
                 assert= true $ .err? $ &edn:parse-pure "|[]\t1"
                 assert= true $ .err? $ edn:parse "|[]\t1"
               :tags $ #{} :core :unit
-        'EdnValueOps $ %{} 'CodeEntry (:doc "|Internal method contract for closed EdnValue formatting.")
+        'EdnValueOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for closed EdnValue formatting."
           :code $ quote $ deftrait EdnValueOps
-            .to-edn $ Fn EdnValue (-> String)
+            .to-edn $ Fn EdnValue $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :internal :trait
@@ -5090,6 +5400,59 @@
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
+        'Hash $ %{} 'CodeEntry
+          :doc "|Core trait: Hash. Value-equality types implement .hash returning Number consistent with Eq."
+          :code $ quote $ deftrait Hash
+            .hash $ Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+          :tags $ #{} :trait
+          :tests $ []
+            %{} 'TestEntry (:name |hashes-values-consistently-across-types)
+              :code $ quote $ let
+                  o1 $ Some 1
+                  o2 $ Some 1
+                  o3 $ Some 2
+                assert= (hash 42) (.hash 42)
+                assert= (hash |hello) (.hash |hello)
+                assert= (hash :ready) (.hash :ready)
+                assert= (hash true) (.hash true)
+                assert= (hash nil) (.hash nil)
+                assert= (hash &unit) (.hash &unit)
+                assert=
+                  hash $ [] 1 2
+                  .hash $ [] 1 2
+                assert=
+                  hash $ {} $ :a 1
+                  .hash $ {} $ :a 1
+                assert=
+                  hash $ #{} 1 2
+                  .hash $ #{} 1 2
+                assert= (hash o1) (hash o2)
+                assert= false $ = (hash o1) (hash o3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |hashes-closed-defunion-values)
+              :code $ quote $ let
+                  hash-of $ fn (v)
+                    hint-fn $ Fn T (-> Number) (:generics T)
+                      :where $ T Hash
+                    v .hash
+                  hash-node $ fn (node)
+                    hint-fn $ Fn CirruNode $ -> Number
+                    hash node
+                  t $ %:: _ :pair 1 |a
+                  r1 $ Result :ok |ok
+                  r2 $ Result :ok |ok
+                assert=
+                  hash-of $ Some 1
+                  hash $ Some 1
+                assert= (hash t) (.hash t)
+                assert= (hash r1) (hash r2)
+                assert= (hash-node |leaf) (hash |leaf)
+                assert=
+                  hash-node $ [] |fn $ [] |x
+                  hash $ [] |fn $ [] |x
+              :tags $ #{} :core :unit
         'HttpBody $ %{} 'CodeEntry
           :doc "|Nominal HTTP message body: :empty, :text String, or :bytes Buffer."
           :code $ quote $ defenum HttpBody (:empty) (:text String) (:bytes Buffer)
@@ -5194,14 +5557,16 @@
               defenum JsonValue (:null) (:bool Bool) (:number Number) (:string String)
                 :array $ List JsonValue
                 :object $ Map String JsonValue
-              , internal/&core-debug-impl internal/&core-eq-impl JsonValueOpsImpl
+              , JsonValueOpsImpl
           :examples $ []
             quote $ json:parse "|{\"ok\":true,\"items\":[1,\"a\",null]}"
-            quote $ .to-json $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
+            quote $ .to-json $ JsonValue :array
+              [] (JsonValue :number 1) (JsonValue :null)
           :schema $ quote EnumDef
           :tags $ #{} :core :data
           :tests $ []
-            %{} 'TestEntry (:name |constructs-matches-and-compares-recursive-variants)
+            %{} 'TestEntry
+              :name |constructs-matches-and-compares-recursive-variants
               :code $ quote $ let
                   empty-arr $ JsonValue :array $ []
                   empty-obj $ JsonValue :object $ {}
@@ -5210,26 +5575,25 @@
                     |flag $ JsonValue :bool true
                     |count $ JsonValue :number 42
                     |name $ JsonValue :string |calcit
-                    |items $ JsonValue :array $ []
-                      JsonValue :number 1
-                      JsonValue :bool false
-                      , empty-arr empty-obj
+                    |items $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :bool false) empty-arr empty-obj
                   describe $ fn (v)
-                    hint-fn $ Fn JsonValue (-> String)
+                    hint-fn $ Fn JsonValue $ -> String
                     match v
                       (:null) |null
                       (:bool b) (if b |true |false)
                       (:number n) (to-string n)
                       (:string s) s
-                      (:array xs) (str "|array:" (count xs))
-                      (:object m) (str "|object:" (count m))
+                      (:array xs)
+                        str |array: $ count xs
+                      (:object m)
+                        str |object: $ count m
                 assert= (JsonValue :null) (JsonValue :null)
                 assert= false $ = (JsonValue :null) (JsonValue :bool false)
                 assert= false $ = (JsonValue :number 0) (JsonValue :bool false)
-                assert= |null $ describe (JsonValue :null)
-                assert= |true $ describe (JsonValue :bool true)
-                assert= |42 $ describe (JsonValue :number 42)
-                assert= |calcit $ describe (JsonValue :string |calcit)
+                assert= |null $ describe $ JsonValue :null
+                assert= |true $ describe $ JsonValue :bool true
+                assert= |42 $ describe $ JsonValue :number 42
+                assert= |calcit $ describe $ JsonValue :string |calcit
                 assert= |array:0 $ describe empty-arr
                 assert= |object:5 $ describe nested
               :tags $ #{} :core :unit
@@ -5239,66 +5603,67 @@
                   parsed $ json:parse sample
                   expected $ JsonValue :object $ {}
                     |a $ JsonValue :number 1
-                    |b $ JsonValue :array $ []
-                      JsonValue :bool true
-                      JsonValue :bool false
-                      JsonValue :null
-                      JsonValue :string "|hi\n\"q\""
+                    |b $ JsonValue :array $ [] (JsonValue :bool true) (JsonValue :bool false) (JsonValue :null) (JsonValue :string "|hi\n\"q\"")
                     |c $ JsonValue :object $ {}
-                assert-type parsed (Result JsonValue String)
+                assert-type parsed $ Result JsonValue String
                 assert= (Result :ok expected) parsed
                 match parsed
                   (:ok v)
                     do
-                      assert= (Result :ok expected) (json:parse (.to-json v))
-                      assert= (Result :ok expected) (json:parse (.to-json-pretty v))
-                      assert= (Result :ok expected) (json:parse (json:stringify v))
-                      assert= (Result :ok expected) (json:parse (json:pretty v))
+                      assert= (Result :ok expected)
+                        json:parse $ .to-json v
+                      assert= (Result :ok expected)
+                        json:parse $ .to-json-pretty v
+                      assert= (Result :ok expected)
+                        json:parse $ json:stringify v
+                      assert= (Result :ok expected)
+                        json:parse $ json:pretty v
                   (:err msg) (raise msg)
                 assert= true $ .err? $ json:parse |{
                 assert= true $ .err? $ json:parse "|[1, 2"
                 assert= true $ .err? $ json:parse |
                 assert= true $ .err? $ json:parse "|1 2"
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |formats-compact-and-pretty-json-deterministically)
+            %{} 'TestEntry
+              :name |formats-compact-and-pretty-json-deterministically
               :code $ quote $ do
-                assert= |null $ .to-json (JsonValue :null)
-                assert= |true $ .to-json (JsonValue :bool true)
-                assert= |false $ .to-json (JsonValue :bool false)
-                assert= |42 $ .to-json (JsonValue :number 42)
-                assert= |1.5 $ .to-json (JsonValue :number 1.5)
-                assert= "|\"hello\\nworld\"" $ .to-json (JsonValue :string "|hello\nworld")
-                assert= |[] $ .to-json (JsonValue :array ([]))
-                assert= |{} $ .to-json (JsonValue :object ({}))
-                assert= |[1,true,null] $ .to-json
-                  JsonValue :array $ [] (JsonValue :number 1) (JsonValue :bool true) (JsonValue :null)
-                assert= "|{\"k\":1}" $ .to-json
-                  JsonValue :object $ {} (|k (JsonValue :number 1))
-                assert= "|{\n  \"k\": [\n    1,\n    \"x\"\n  ]\n}" $ .to-json-pretty
-                  JsonValue :object $ {}
-                    |k $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :string |x)
+                assert= |null $ .to-json $ JsonValue :null
+                assert= |true $ .to-json $ JsonValue :bool true
+                assert= |false $ .to-json $ JsonValue :bool false
+                assert= |42 $ .to-json $ JsonValue :number 42
+                assert= |1.5 $ .to-json $ JsonValue :number 1.5
+                assert= "|\"hello\\nworld\"" $ .to-json $ JsonValue :string "|hello\nworld"
+                assert= |[] $ .to-json $ JsonValue :array ([])
+                assert= |{} $ .to-json $ JsonValue :object ({})
+                assert= |[1,true,null] $ .to-json $ JsonValue :array
+                  [] (JsonValue :number 1) (JsonValue :bool true) (JsonValue :null)
+                assert= "|{\"k\":1}" $ .to-json $ JsonValue :object
+                  {} $ |k $ JsonValue :number 1
+                assert= "|{\n  \"k\": [\n    1,\n    \"x\"\n  ]\n}" $ .to-json-pretty $ JsonValue :object
+                  {} $ |k $ JsonValue :array
+                    [] (JsonValue :number 1) (JsonValue :string |x)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |handles-duplicate-keys-arbitrary-keys-unicode-and-overflow)
+            %{} 'TestEntry
+              :name |handles-duplicate-keys-arbitrary-keys-unicode-and-overflow
               :code $ quote $ do
                 assert=
-                  Result :ok $ JsonValue :object $ {} (|dup (JsonValue :number 2))
+                  Result :ok $ JsonValue :object $ {}
+                    |dup $ JsonValue :number 2
                   json:parse "|{\"dup\":1,\"dup\":2}"
                 assert=
                   Result :ok $ JsonValue :object $ {}
                     "|unseen dynamic key 中文" $ JsonValue :string "|中文😀"
                   json:parse "|{\"unseen dynamic key \\u4e2d\\u6587\":\"\\u4e2d\\u6587\\uD83D\\uDE00\"}"
                 assert=
-                  Result :ok $ JsonValue :array $ []
-                    JsonValue :number -0.25
-                    JsonValue :number 1e-5
-                    JsonValue :number 1000000
+                  Result :ok $ JsonValue :array $ [] (JsonValue :number -0.25) (JsonValue :number 1e-5) (JsonValue :number 1000000)
                   json:parse "|[-0.25, 1e-5, 1e6]"
                 assert= true $ .err? $ json:parse |1e400
               :tags $ #{} :core :unit
-        'JsonValueOps $ %{} 'CodeEntry (:doc "|Internal method contract for closed JsonValue formatting.")
+        'JsonValueOps $ %{} 'CodeEntry
+          :doc "|Internal method contract for closed JsonValue formatting."
           :code $ quote $ deftrait JsonValueOps
-            .to-json $ Fn JsonValue (-> String)
-            .to-json-pretty $ Fn JsonValue (-> String)
+            .to-json $ Fn JsonValue $ -> String
+            .to-json-pretty $ Fn JsonValue $ -> String
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :internal :trait
@@ -5338,9 +5703,7 @@
         'MapEntryDecision $ %{} 'CodeEntry
           :doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry."
           :code $ quote $ def MapEntryDecision
-            impl-traits
-              defenum MapEntryDecision (:generics K V) (:keep K V) (:drop)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum MapEntryDecision (:generics K V) (:keep K V) (:drop)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5381,7 +5744,7 @@
           :code $ quote $ def Option
             impl-traits
               defenum Option (:generics T) (:some T) (:none)
-              , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
+              , OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5456,9 +5819,7 @@
         'PathError $ %{} 'CodeEntry
           :doc "|get-in 的失败值：:missing 表示路径不存在或遍历中遇到 nil；:shape 携带说明，表示中间值不是可遍历的集合。"
           :code $ quote $ def PathError
-            impl-traits
-              defenum PathError (:missing) (:shape String)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum PathError (:missing) (:shape String)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5478,7 +5839,7 @@
           :code $ quote $ def Result
             impl-traits
               defenum Result (:generics T E) (:ok T) (:err E)
-              , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
+              , ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -6818,6 +7179,35 @@
                 do (construct |not-a-quote) :accepted
                 fn (error) :rejected
             :tags $ #{} :core :js :native :shared :unit
+        'compare $ %{} 'CodeEntry
+          :doc "|按 Compare 合同比较两个同类型值，返回 -1、0 或 1；泛型参数须声明 Compare 约束（要求同型双操作数，不跨异构 defunion 传播）。低层 &compare 仍接受任意 Dynamic。"
+          :code $ quote $ defn compare (a b) (.compare a b)
+          :examples $ []
+            quote $ assert= -1 $ compare 1 2
+            quote $ assert= 0 $ compare |a |a
+            quote $ assert= -1 $ compare :a :b
+          :schema $ quote $ Fn T T (-> Number) (:generics T)
+            :where $ T Compare
+          :tags $ #{} :core
+          :tests $ [] $ %{} 'TestEntry (:name |compares-ordered-values-with-trait-bound)
+            :code $ quote $ let
+                cmp-pair $ fn (x y)
+                  hint-fn $ Fn T T (-> Number) (:generics T)
+                    :where $ T Compare
+                  compare x y
+              assert= -1 $ cmp-pair 1 2
+              assert= 1 $ cmp-pair 2 1
+              assert= 0 $ cmp-pair 2 2
+              assert= -1 $ cmp-pair |a |b
+              assert= -1 $ cmp-pair :a :b
+              assert= -1 $ cmp-pair :b ":😀"
+              assert= 1 $ cmp-pair ":😀" :b
+              assert= 0 $ cmp-pair ":😀" ":😀"
+              assert= -1 $ cmp-pair false true
+              assert= 0 $ cmp-pair false false
+              assert= 0 $ cmp-pair nil nil
+              assert= 0 $ cmp-pair &unit &unit
+            :tags $ #{} :core :unit
         'concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn concat (& args)
             &list-match-internal args ([]) (a0 as) (&list:concat a0 & as)
@@ -8830,6 +9220,7 @@
           :schema $ quote $ Fn (List T)
             -> $ List T
             :generics T
+            :where $ T Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |keeps-first-occurrence-order)
             :code $ quote $ assert= ([] 1 2 3)
               distinct $ [] 1 2 3 1 2
@@ -8845,6 +9236,7 @@
           :schema $ quote $ Fn (Map K V)
             -> $ Set V
             :generics K V
+            :where $ V Eq Hash
           :tests $ []
             %{} 'TestEntry (:name |deduplicates-values)
               :code $ quote $ assert= (#{} 1 2)
@@ -8941,36 +9333,37 @@
             match value
               (:nil) "|do nil"
               (:bool b) (if b "|do true" "|do false")
-              (:number n) (str "|do " (json-stringify n))
-              (:string s) (str "|do " (&edn:format-leaf (&str:concat || s)))
-              (:tag t) (str "|do " (&edn:format-leaf (&str:concat |: t)))
-              (:symbol s) (str "|do " (&edn:format-leaf (&str:concat |' s)))
+              (:number n)
+                str "|do " $ json-stringify n
+              (:string s)
+                str "|do " $ &edn:format-leaf $ &str:concat || s
+              (:tag t)
+                str "|do " $ &edn:format-leaf $ &str:concat |: t
+              (:symbol s)
+                str "|do " $ &edn:format-leaf $ &str:concat |' s
               (:list xs)
-                if (&list:empty? xs) |[]
-                  str "|[] "
-                    join-string
-                      &list:map xs $ fn (item)
-                        hint-fn $ Fn EdnValue (-> String)
-                        &edn:format-expr item
-                      , "| "
+                if (&list:empty? xs) |[] $ str "|[] " $ join-string
+                  &list:map xs $ fn (item)
+                    hint-fn $ Fn EdnValue $ -> String
+                    &edn:format-expr item
+                  , "| "
               (:set xs)
-                if (&= 0 (&set:count xs)) |#{}
-                  str "|#{} "
-                    join-string
-                      &list:map (&set:to-list xs) $ fn (item)
-                        hint-fn $ Fn EdnValue (-> String)
+                if
+                  &= 0 $ &set:count xs
+                  , |#{} $ str "|#{} " $ join-string
+                    &list:map (&set:to-list xs)
+                      fn (item)
+                        hint-fn $ Fn EdnValue $ -> String
                         &edn:format-expr item
-                      , "| "
+                    , "| "
               (:map m)
-                if (&map:empty? m) |{}
-                  str "|{} "
-                    join-string
-                      map-list-kv m $ fn (k v)
-                        hint-fn $ Fn EdnValue EdnValue (-> String)
-                        str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
-                      , "| "
-          :examples $ []
-            quote $ edn:format $ EdnValue :list $ [] (EdnValue :tag |a) (EdnValue :number 1)
+                if (&map:empty? m) |{} $ str "|{} " $ join-string
+                  map-list-kv m $ fn (k v)
+                    hint-fn $ Fn EdnValue EdnValue $ -> String
+                    str "|(" (&edn:format-expr k) "| " (&edn:format-expr v) "|)"
+                  , "| "
+          :examples $ [] $ quote
+            edn:format $ EdnValue :list $ [] (EdnValue :tag |a) (EdnValue :number 1)
           :schema $ quote $ Fn EdnValue (-> String)
           :tags $ #{} :core :data
         'edn:parse $ %{} 'CodeEntry
@@ -10270,6 +10663,7 @@
           :schema $ quote $ Fn (List T)
             -> $ Map T Number
             :generics T
+            :where $ T Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |counts-repeated-list-members)
             :code $ quote $ do
               assert= (&{} 1 1 2 2 3 3)
@@ -10700,6 +11094,7 @@
             Fn T (-> K) (:features :pass)
             -> $ Map K $ List T
             :generics T K
+            :where $ K Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |groups-list-by-derived-key)
             :code $ quote $ do
               assert=
@@ -10709,6 +11104,39 @@
               assert= (&{})
                 group-by ([])
                   fn (x) 'Number x
+            :tags $ #{} :core :unit
+        'hash $ %{} 'CodeEntry
+          :doc "|按 Hash 合同计算值的哈希值，返回 Number；泛型参数须声明 Hash 约束。低层 &hash 仍接受 Dynamic 供运行时容器与内部实现使用。"
+          :code $ quote $ defn hash (value) (.hash value)
+          :examples $ []
+            quote $ assert= true $ = (hash 42) (hash 42)
+            quote $ assert= true $ = (hash :ready) (hash :ready)
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Hash
+          :tags $ #{} :core
+          :tests $ [] $ %{} 'TestEntry (:name |computes-hash-for-hashable-types)
+            :code $ quote $ let
+                wrap-hash $ fn (v)
+                  hint-fn $ Fn T (-> Number) (:generics T)
+                    :where $ T Hash
+                  hash v
+                m $ {} (:a 1) (:b 2)
+                s $ #{} 1 2 3
+                p $ FsPath :value |/tmp
+                o $ Some :x
+              assert= (wrap-hash 10) (.hash 10)
+              assert= (wrap-hash |abc) (.hash |abc)
+              assert= (wrap-hash :tag) (.hash :tag)
+              assert= (wrap-hash true) (.hash true)
+              assert= (wrap-hash nil) (.hash nil)
+              assert= (wrap-hash &unit) (.hash &unit)
+              assert=
+                wrap-hash $ [] 1 2
+                .hash $ [] 1 2
+              assert= (wrap-hash m) (.hash m)
+              assert= (wrap-hash s) (.hash s)
+              assert= (wrap-hash p) (.hash p)
+              assert= (wrap-hash o) (.hash o)
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
           :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n0.32.0 已删除两参数形式 (hint-fn f schema)，写出时报 E_LEGACY_HINT_FN_TARGET；把类型移到定义 f 的函数体内。\n限制：错误 wrapper、参数数量、旧子句写法会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
@@ -11191,9 +11619,11 @@
                 assert= &unit $ run-if true
                 assert= &unit $ run-if false
                 assert= &unit $ if (&= 1 2) (raise |unselected)
-                assert= &unit $ if false (do &unit)
+                assert= &unit $ if false $ do &unit
                 assert-type (run-if false) Unit
-                assert-type (if (&= 1 2) (do &unit)) Unit
+                assert-type
+                  if (&= 1 2) (do &unit)
+                  , Unit
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |condition-and-selected-branch-errors-propagate)
               :code $ quote $ do
@@ -11434,6 +11864,7 @@
           :schema $ quote $ Fn (List T) T
             -> $ Option Number
             :generics T
+            :where $ T Eq
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-index-or-none)
             :code $ quote $ do
               assert= (Some 0)
@@ -11725,8 +12156,9 @@
         'json:pretty $ %{} 'CodeEntry
           :doc "|Format a closed `JsonValue` into 2-space indented RFC 8259 JSON text. User code can also call `.to-json-pretty` on `JsonValue`."
           :code $ quote $ defn json:pretty (value) (&json:pretty-at value 0)
-          :examples $ []
-            quote $ json:pretty $ JsonValue :object $ {} (|a (JsonValue :number 1))
+          :examples $ [] $ quote
+            json:pretty $ JsonValue :object $ {}
+              |a $ JsonValue :number 1
           :schema $ quote $ Fn JsonValue (-> String)
           :tags $ #{} :core :data
         'json:stringify $ %{} 'CodeEntry
@@ -11738,25 +12170,23 @@
               (:number n) (json-stringify n)
               (:string s) (json-stringify s)
               (:array xs)
-                if (&list:empty? xs) |[]
-                  str |[
-                    join-string
-                      &list:map xs $ fn (item)
-                        hint-fn $ Fn JsonValue (-> String)
-                        json:stringify item
-                      , |,
-                    , |]
+                if (&list:empty? xs) |[] $ str |[
+                  join-string
+                    &list:map xs $ fn (item)
+                      hint-fn $ Fn JsonValue $ -> String
+                      json:stringify item
+                    , |,
+                  , |]
               (:object m)
-                if (&map:empty? m) |{}
-                  str |{
-                    join-string
-                      map-list-kv m $ fn (k v)
-                        hint-fn $ Fn String JsonValue (-> String)
-                        str (json-stringify k) |: (json:stringify v)
-                      , |,
-                    , |}
-          :examples $ []
-            quote $ json:stringify $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
+                if (&map:empty? m) |{} $ str |{
+                  join-string
+                    map-list-kv m $ fn (k v)
+                      hint-fn $ Fn String JsonValue $ -> String
+                      str (json-stringify k) |: $ json:stringify v
+                    , |,
+                  , |}
+          :examples $ [] $ quote
+            json:stringify $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
           :schema $ quote $ Fn JsonValue (-> String)
           :tags $ #{} :core :data
         'keys $ %{} 'CodeEntry
@@ -14286,6 +14716,15 @@
             Fn T T (-> Number) (:features :pass)
             -> $ List T
             :generics T
+            :cases
+              Fn (List T)
+                -> $ List T
+                :generics T
+                :where $ T Compare
+              Fn (List T)
+                Fn T T (-> Number) (:features :pass)
+                -> $ List T
+                :generics T
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |orders-list-with-default-comparator)
@@ -14311,6 +14750,19 @@
                 assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
                   sort ([] 3 not-a-number 1 positive-infinity 0 not-a-number -1)
                     fn (a b) (&compare a b)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-tags-in-utf8-order)
+              :code $ quote $ assert= ([] :a :b ":😀")
+                sort $ [] ":😀" :b :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-custom-values-with-comparator)
+              :code $ quote $ let
+                  a $ FsPath :value |a
+                  b $ FsPath :value |b
+                  sorted $ sort ([] b a)
+                    fn (x y)
+                      compare (:value x) (:value y)
+                assert= ([] a b) sorted
               :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
           :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
@@ -16057,6 +16509,12 @@
             &impl::new :&core-add-string-impl $ :: :add &str:concat
           :examples $ []
           :schema $ quote Dynamic
+        '&core-compare-impl $ %{} 'CodeEntry
+          :doc "|Core trait impl for Compare on comparable scalars"
+          :code $ quote $ def &core-compare-impl
+            &impl::new :&core-compare-impl $ :: :compare &compare
+          :examples $ []
+          :schema $ quote Impl
         '&core-compare-number-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-compare-number-impl
             &impl::new :&core-compare-number-impl $ :: :compare &compare
@@ -16135,6 +16593,11 @@
             &impl::new :&core-eq-impl $ :: :eq? &=
           :examples $ []
           :schema $ quote Dynamic
+        '&core-hash-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Hash")
+          :code $ quote $ def &core-hash-impl
+            &impl::new :&core-hash-impl $ :: :hash &hash
+          :examples $ []
+          :schema $ quote Impl
         '&core-len-list-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on list")
           :code $ quote $ def &core-len-list-impl
             &impl::new :&core-len-list-impl $ :: :len &list:count

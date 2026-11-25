@@ -374,6 +374,7 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   enum DefaultSortElemKind {
     Number,
     String,
+    Tag,
     Bool,
     Nil,
     Unit,
@@ -383,6 +384,7 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     match elem {
       CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some(DefaultSortElemKind::Number),
       CalcitTypeAnnotation::String => Some(DefaultSortElemKind::String),
+      CalcitTypeAnnotation::Tag => Some(DefaultSortElemKind::Tag),
       CalcitTypeAnnotation::Bool => Some(DefaultSortElemKind::Bool),
       CalcitTypeAnnotation::Nil => Some(DefaultSortElemKind::Nil),
       CalcitTypeAnnotation::Unit => Some(DefaultSortElemKind::Unit),
@@ -394,6 +396,7 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     Arc::new(match kind {
       DefaultSortElemKind::Number => CalcitTypeAnnotation::Number,
       DefaultSortElemKind::String => CalcitTypeAnnotation::String,
+      DefaultSortElemKind::Tag => CalcitTypeAnnotation::Tag,
       DefaultSortElemKind::Bool => CalcitTypeAnnotation::Bool,
       DefaultSortElemKind::Nil => CalcitTypeAnnotation::Nil,
       DefaultSortElemKind::Unit => CalcitTypeAnnotation::Unit,
@@ -2061,8 +2064,8 @@ mod sort_tests {
       })
     };
     for unsupported_type in [
-      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Tag))),
-      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![Arc::new(CalcitTypeAnnotation::Tag)]))),
+      Arc::new(CalcitTypeAnnotation::Dynamic),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic))),
       Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![
         Arc::new(CalcitTypeAnnotation::Number),
         Arc::new(CalcitTypeAnnotation::Bool),
@@ -2078,8 +2081,23 @@ mod sort_tests {
         .local_types
         .insert("xs".into(), WasmTypeEvidence::contract(unsupported_type.clone()));
       let error = emit_list_sort(&mut ctx, &[make_typed_local(unsupported_type)])
-        .expect_err("tag and heterogeneous tuple default sorting must require an explicit comparator");
+        .expect_err("dynamic and heterogeneous tuple default sorting must require an explicit comparator");
       assert!(error.contains("explicit 2-argument comparator"), "error: {error}");
+    }
+
+    for tag_sort_type in [
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Tag))),
+      Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(vec![Arc::new(CalcitTypeAnnotation::Tag)]))),
+    ] {
+      let mut tag_ctx = empty_context();
+      tag_ctx.tag_index.insert("list".into(), 1);
+      tag_ctx.runtime_fn_index.insert("__rt_copy_f64_slots".into(), 0);
+      tag_ctx.locals.insert("xs".into(), 0);
+      tag_ctx
+        .local_types
+        .insert("xs".into(), WasmTypeEvidence::contract(tag_sort_type.clone()));
+      emit_list_sort(&mut tag_ctx, &[make_typed_local(tag_sort_type)])
+        .expect("list/tuple of tags should support 1-argument default sort in wasm");
     }
 
     // Proven numeric tuples (including integers in the heap address range such

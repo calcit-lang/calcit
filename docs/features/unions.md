@@ -14,7 +14,7 @@ parent: core/features
 
 # Unions (defunion)
 
-`defunion` 给已有的“几种已知类型之一”的数据加一个可检查的闭合边界。union 值在运行时没有包装，`CssValue` 的值就是一个 String 或一个 Number。它不是通用类型能力：不推断、不做谓词窄化、不参与 trait，值必须先用 `match` 的类型模式拆成具体类型才能继续使用。
+`defunion` 给已有的“几种已知类型之一”的数据加一个可检查的闭合边界。union 值在运行时没有包装，`CssValue` 的值就是一个 String 或一个 Number。它本身没有自己的方法，直接调用 `.method` 须先用 `match` 的类型模式拆解；当闭合 `defunion` 的全部成员都满足 `Debug`、`Eq`、`Hash` 等单值或结构等价 trait 时，该 union 类型也会自动满足相应的泛型 `:where` 约束（例如递归 union `CirruNode` 满足 `Debug`、`Eq`、`Hash`，可直接传入 `hash`、`distinct`、`frequencies`、`group-by`、`index-of`），而要求两个操作数具备同一具体类型的二元 trait（例如 `Compare`）不跨变体传播，`compare` 与单参数 `sort` 仍须先通过 `match` 拆解或改用双参数 `(sort xs cmp)`。
 
 需要给变体起名字或带多个字段时，用 [Enums](enums.md)。
 
@@ -144,7 +144,7 @@ defn child-text (c)
 - union 可以传给成员更多的 union，`Label`（String、Point）可以传给 `Geo`（Point、Shape、String）。
 - union 可以传给 `Dynamic` 位置和无约束的泛型参数，所以可以放进 `List Geo` 再用 `.map` 处理。
 - union 可以传给同一个 union 的 JS 可空位置 `JsNullish Geo`，不可变 `Map`/`List`/`Set` 里也一样，例如 `Map Tag Geo` 可以传给 `Map Tag (JsNullish Geo)`；`Ref` 仍然不变。
-- union 不能直接传给某个成员类型，也不满足任何 `:where` trait 约束，会报类型不匹配，要先 `match`。
+- union 不能直接传给某个成员类型；当所有展开成员都满足 `Debug`、`Eq`、`Hash` 等单值/结构等价约束时，可满足对应的泛型 `:where` trait 约束（例如传入 `hash`、`distinct`），但仍不满足 `Compare` 等要求同型双操作数的二元约束，且直接调用 `.method` 仍须先 `match`。
 - Dynamic 不能直接传给 union，报 `E_CALL_ARGUMENT_UNPROVEN`，要先经过受检的解码，见下一节。
 - 没有期望类型时不推断 union，`if b 1 |a` 的推断结果保持不变。
 

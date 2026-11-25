@@ -50,7 +50,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, instantiate_fn_case_expected_types, resolve_bound_type_slot_chain,
   resolve_checked_call_contract, select_fn_case,
@@ -6601,6 +6601,28 @@ fn preprocess_list_call(
           reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
         }
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
+        // Enforce specialized callable contracts before warning-emitting checks, matching postfix call order (#2637).
+        if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form
+          && let Some(receiver) = processed_args.first()
+          && let Some(type_value) = resolve_type_value(receiver, scope_types)
+          && let Some(context) = expected_method_argument_types(type_value.as_ref(), method_name, &processed_args, scope_types)
+          && context.receiver_specialized
+          && context
+            .argument_types
+            .iter()
+            .any(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
+          && let Ok(method_args) = processed_args.skip(1)
+        {
+          reject_strict_unproven_specialized_contract(
+            &head_form,
+            &method_args,
+            &context.argument_types,
+            context.receiver_specialized,
+            scope_types,
+            file_ns,
+            call_stack,
+          )?;
+        }
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_construction_fields(
@@ -6742,24 +6764,6 @@ fn preprocess_list_call(
           && let Some(receiver) = processed_args.first()
           && let Some(type_value) = resolve_type_value(receiver, scope_types)
         {
-          if let Some(context) = expected_method_argument_types(type_value.as_ref(), method_name, &processed_args, scope_types)
-            && context.receiver_specialized
-            && context
-              .argument_types
-              .iter()
-              .any(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
-            && let Ok(method_args) = processed_args.skip(1)
-          {
-            reject_strict_unproven_specialized_contract(
-              &head_form,
-              &method_args,
-              &context.argument_types,
-              context.receiver_specialized,
-              scope_types,
-              file_ns,
-              call_stack,
-            )?;
-          }
           // Reconstruct the list with updated Method node carrying inferred type
           let is_external = trait_list_for_receiver(type_value.as_ref(), scope_types)
             .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -7481,7 +7485,7 @@ fn preprocess_known_function_call(
       checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
     let can_refresh_core_types = info.def_ns.as_ref() == calcit::CORE_NS
       && ((args.len() == 3 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce"))
-        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "sort")));
+        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "group-by" | "sort")));
     let callee_cases_schema = match program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
       CalcitTypeAnnotation::Fn(fn_annot) if !fn_annot.cases.is_empty() => Some(fn_annot.clone()),
       _ => None,
@@ -8089,6 +8093,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
     _ => None,
   };
 
+  // Method-call syntax `(Type .method ...)` passes `Calcit::Method` as the
+  // first argument and must fall through to postfix method dispatch below.
+  if matches!(args.first(), Some(Calcit::Method(..))) {
+    return Ok(None);
+  }
+
   let Some(type_info) = resolve_type_value(head_form, scope_types) else {
     return Ok(None);
   };
@@ -8100,13 +8110,6 @@ fn try_rewrite_struct_enum_constructor_head_call(
   if constructor_kind == Some("defstruct")
     && let Some((struct_def, ns_def_path)) = resolved_struct_definition
   {
-    // Only attempt constructor-style rewriting for tag/value-style positional args.
-    // Method-call syntax (expr .method ...) is represented as `Method` in the first arg
-    // and must be handled by the method-branch below.
-    if matches!(args.first(), Some(Calcit::Method(..))) {
-      return Ok(None);
-    }
-
     if !args.len().is_multiple_of(2) {
       gen_check_warning_code(
         format!(
@@ -9674,6 +9677,45 @@ fn preferred_source_call_location(location: Option<NodeLocation>, call_stack: &C
     })
 }
 
+/// Prove a method callback argument when compatibility leaves generic
+/// callbacks uninstantiated or leaves empty-receiver generics (`Never`) unbound.
+fn method_callback_proof_matches(
+  signature_generics: &[Arc<str>],
+  expected_receiver: Option<&Arc<CalcitTypeAnnotation>>,
+  receiver_type: &CalcitTypeAnnotation,
+  expected_arg: &CalcitTypeAnnotation,
+  actual_arg: &CalcitTypeAnnotation,
+  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  scope_types: &ScopeTypes,
+) -> bool {
+  let generic_callback = matches!(actual_arg, CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty());
+  let empty_receiver_callback = receiver_type.contains_never() && expected_arg.resolve_to_nonoptional_fn().is_some();
+  if (!generic_callback && !empty_receiver_callback) || expected_arg.resolve_to_nonoptional_fn().is_none() {
+    return false;
+  }
+  let expected = expected_arg.substitute_type_vars(bindings);
+  let mut expected_inputs = Vec::with_capacity(2);
+  let mut actual_inputs = Vec::with_capacity(2);
+  if let Some(exp_recv) = expected_receiver {
+    expected_inputs.push(exp_recv.clone());
+    actual_inputs.push(Arc::new(receiver_type.clone()));
+  }
+  expected_inputs.push(expected.clone());
+  actual_inputs.push(Arc::new(actual_arg.clone()));
+  let mut proof = scope_types.call_type_proof(signature_generics, &expected_inputs, &actual_inputs);
+  if let Some(exp_recv) = expected_receiver
+    && proof.prove(receiver_type, exp_recv.as_ref()).is_mismatch()
+  {
+    return false;
+  }
+  let result = proof.prove(actual_arg, &expected);
+  if generic_callback {
+    result.is_proven()
+  } else {
+    !result.is_mismatch()
+  }
+}
+
 /// Validate method argument count and types against the receiver contract.
 fn check_struct_method_args(
   head: &Calcit,
@@ -9744,16 +9786,18 @@ fn check_struct_method_args(
   // Get function info from method entry
   let declared_schema = match method_entry {
     Calcit::Import(import) => Some((
+      import.ns.as_ref(),
       program::lookup_def_schema(&import.ns, &import.def),
       format!("{} / {}", import.ns, import.def),
     )),
     Calcit::Fn { info, .. } if info.def_ref.is_some() => Some((
+      info.def_ns.as_ref(),
       program::lookup_def_schema(&info.def_ns, &info.name),
       format!("{} / {}", info.def_ns, info.name),
     )),
     _ => None,
   };
-  if let Some((schema, implementation_name)) = declared_schema
+  if let Some((schema_ns, schema, implementation_name)) = declared_schema
     && schema.contains_type_var()
     && type_value.as_ref().resolve_to_enum().is_some()
   {
@@ -9795,19 +9839,15 @@ fn check_struct_method_args(
       }
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
         && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-        // Instantiate a first-class generic callback using the receiver-bound
-        // contract. Keep the sibling return bindings from ordinary checks.
-        && !(matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty())
-          && expected_type.resolve_to_nonoptional_fn().is_some()
-          && {
-            let expected = expected_type.substitute_type_vars(&bindings);
-            let mut proof = CallTypeProof::new(
-              &signature.generics,
-              std::slice::from_ref(&expected),
-              std::slice::from_ref(&actual_type),
-            );
-            proof.prove(&actual_type, &expected).is_proven()
-          })
+        && !method_callback_proof_matches(
+          &signature.generics,
+          signature.arg_types.first(),
+          type_value.as_ref(),
+          expected_type.as_ref(),
+          actual_type.as_ref(),
+          &bindings,
+          scope_types,
+        )
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
@@ -9823,6 +9863,19 @@ fn check_struct_method_args(
         );
       }
     }
+    type_checking::check_enum_method_where_bounds(
+      head,
+      (schema_ns, &schema, signature),
+      args,
+      &bindings,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
     return;
   }
 
@@ -9865,12 +9918,34 @@ fn check_struct_method_args(
     }
     return;
   };
+  let declared_method_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
+  let declared_method = Some((fn_info.def_ns.as_ref(), &declared_method_schema));
   // Core methods report against the same receiver-bound contract that
   // `method_call_signature` proves, so the lowered direct call agrees.
   if let Some(signature) = type_inference::checked_method_signature(fn_info, args, scope_types) {
-    type_checking::check_method_call_arg_types(
+    type_checking::check_method_call_arg_types_with_declared(
       head,
       &signature,
+      declared_method,
+      args,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
+    return;
+  }
+
+  if let Some(schema_fn) = declared_method_schema.resolve_to_fn()
+    && let Some(selected_case) = checked_call_contract::select_fn_case(schema_fn.as_ref(), &fn_info.def_ns, args, scope_types)
+  {
+    type_checking::check_method_call_arg_types_with_declared(
+      head,
+      &selected_case,
+      declared_method,
       args,
       scope_types,
       &CallTypeCheckInfo {
@@ -9900,9 +9975,10 @@ fn check_struct_method_args(
     || matches!(fn_info.args.as_ref(), CalcitFnArgs::MarkedArgs(xs) if xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
 
   if has_variadic || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    type_checking::check_method_call_arg_types(
+    type_checking::check_method_call_arg_types_with_declared(
       head,
       &effective_user_call_schema(fn_info),
+      declared_method,
       args,
       scope_types,
       &CallTypeCheckInfo {
@@ -9953,7 +10029,24 @@ fn check_struct_method_args(
       let actual_type =
         type_checking::callback_tail_tuple_evidence(arg, &actual_type, expected_type, scope_types).unwrap_or(actual_type);
       // Compare types
-      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings) {
+      let method_generics = if fn_info.generics.is_empty() {
+        declared_method_schema
+          .resolve_to_fn()
+          .map_or_else(Vec::new, |schema| schema.generics.as_ref().clone())
+      } else {
+        fn_info.generics.as_ref().clone()
+      };
+      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+        && !method_callback_proof_matches(
+          &method_generics,
+          fn_info.arg_types.first(),
+          type_value.as_ref(),
+          expected_type.as_ref(),
+          actual_type.as_ref(),
+          &bindings,
+          scope_types,
+        )
+      {
         let expected_str = expected_type.substitute_type_vars(&bindings).describe();
         let actual_str = actual_type.as_ref().describe();
         let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {
@@ -9974,6 +10067,19 @@ fn check_struct_method_args(
       }
     }
   }
+  type_checking::check_fn_where_bounds(
+    head,
+    fn_info,
+    args,
+    &bindings,
+    scope_types,
+    &CallTypeCheckInfo {
+      file_ns,
+      def_name,
+      call_location,
+    },
+    check_warnings,
+  );
 }
 
 /// Method inputs and whether they rely on a receiver-specific callback relation.
@@ -13856,7 +13962,7 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     CalcitTypeAnnotation::Map(_, _) => "&core-map-methods",
     CalcitTypeAnnotation::Set(_) => "&core-set-methods",
     CalcitTypeAnnotation::Ref(_) => "&core-ref-methods",
-    CalcitTypeAnnotation::Number => "&core-number-methods",
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => "&core-number-methods",
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => "&core-fn-methods",
     CalcitTypeAnnotation::CirruQuote => "&core-cirru-quote-methods",
     _ => return false,
@@ -13959,21 +14065,40 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Symbol => {
       Some("&core-text-scalar-impls")
     }
+    CalcitTypeAnnotation::Unit => Some("&core-scalar-impls"),
     CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("&core-list-impls"),
     CalcitTypeAnnotation::String => Some("&core-string-impls"),
     CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
     CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
     CalcitTypeAnnotation::Ref(_) => Some("&core-ref-impls"),
-    CalcitTypeAnnotation::Number => Some("&core-number-impls"),
+    CalcitTypeAnnotation::Buffer => Some("&core-buffer-impls"),
+    CalcitTypeAnnotation::BufList => Some("&core-buf-list-impls"),
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
     CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
+    CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("&core-def-impls"),
+    CalcitTypeAnnotation::Custom(value)
+      if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
+        || matches!(
+          value.as_ref(),
+          Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
+        ) =>
+    {
+      Some("&core-def-impls")
+    }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
-    // A schema alias such as `Coord` for `List Number` dispatches through the
-    // core impls of the schema it names (#2590).
-    CalcitTypeAnnotation::TypeRef(..) => type_value
-      .resolve_schema_alias()
-      .and_then(|schema| core_impl_list_symbol_from_type_annotation(schema.as_ref())),
+    // A `deftype` or non-constructor schema alias such as `Coord` for `List Number`
+    // dispatches through the core impls of the target it names (#2590), while
+    // nominal struct/enum/union references remain instance types rather than constructors.
+    CalcitTypeAnnotation::TypeRef(..) => {
+      let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&Arc::new(type_value.clone()));
+      if matches!(expanded.as_ref(), CalcitTypeAnnotation::TypeRef(..)) {
+        None
+      } else {
+        core_impl_list_symbol_from_type_annotation(expanded.as_ref())
+      }
+    }
     _ => None,
   }
 }

@@ -14,7 +14,8 @@ export class CalcitRef {
     this.cachedHash = null;
   }
   toString(): string {
-    return `(&ref ${this.value.toString()})`;
+    const inner = this.value === null ? "nil" : this.value === undefined ? "&unit" : this.value.toString();
+    return `(&ref ${inner})`;
   }
 }
 

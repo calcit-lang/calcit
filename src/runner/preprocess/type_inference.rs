@@ -1268,6 +1268,7 @@ fn resolve_generic_return_type_parts<'a>(
   expected_types.push(return_type.clone());
   let mut call_proof = scope_types.call_type_proof(generics, &expected_types, &actual_types);
   let mut resolved_args = Vec::with_capacity(call_args.len());
+  let mut deferred_empty_args = Vec::new();
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
@@ -1277,9 +1278,6 @@ fn resolve_generic_return_type_parts<'a>(
       break;
     };
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
-      continue;
-    }
-    if super::empty_container_has_no_type_evidence(arg, expected_type) {
       continue;
     }
     let actual_type = resolve_type_value(arg, scope_types).or_else(|| match arg {
@@ -1292,6 +1290,12 @@ fn resolve_generic_return_type_parts<'a>(
       _ => None,
     })?;
     if core_option_none_without_payload(arg, &actual_type, expected_type) {
+      continue;
+    }
+    if super::empty_container_has_no_type_evidence(arg, expected_type) {
+      if actual_type.contains_never() {
+        deferred_empty_args.push((actual_type, expected_type));
+      }
       continue;
     }
     resolved_args.push((arg, actual_type, expected_type));
@@ -1309,6 +1313,14 @@ fn resolve_generic_return_type_parts<'a>(
     let (actual, expected) =
       core_result_err_payload_types(arg, actual.as_ref(), expected.as_ref()).unwrap_or_else(|| (actual.as_ref(), expected.as_ref()));
     if call_proof.prove(actual, expected).is_mismatch() {
+      return None;
+    }
+  }
+  // Prove empty containers (`[]`, `{}`, `#{}`) only after non-empty arguments
+  // so `Acc` in `foldl xs ([]) f` binds from `f`, while `(distinct ([]))`
+  // still retains `Never` instead of widening unbound generics to `Dynamic`.
+  for (actual, expected) in &deferred_empty_args {
+    if call_proof.prove(actual.as_ref(), expected.as_ref()).is_mismatch() {
       return None;
     }
   }
@@ -2240,6 +2252,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Struct(struct_value) => Some(infer_struct_value_annotation(struct_value, scope_types)),
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(struct_def.to_owned()))),
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(enum_def.to_owned()))),
+    Calcit::UnionDef(_) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("union-def"))))),
     Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
       trait_def.to_owned(),
     ))))),
@@ -3801,13 +3814,25 @@ pub(super) fn checked_method_signature(
   if expected_types.len() != arguments.len() || info.rest_type.is_some() {
     return None;
   }
+  let declared = program::lookup_def_schema(&info.def_ns, &info.name);
+  let schema_fn = declared.resolve_to_fn();
+  let selected_case = schema_fn
+    .as_deref()
+    .and_then(|fn_annot| super::checked_call_contract::select_fn_case(fn_annot, &info.def_ns, arguments, scope_types));
+  let where_bounds = selected_case.as_deref().map(|case| case.where_bounds.clone()).unwrap_or_else(|| {
+    if info.where_bounds.is_empty() {
+      schema_fn.map_or_else(|| info.where_bounds.clone(), |s| s.where_bounds.clone())
+    } else {
+      info.where_bounds.clone()
+    }
+  });
   Some(Arc::new(CalcitFnTypeAnnotation {
     open_reason: Default::default(),
     cases: Default::default(),
     guard: None,
     runtime_arity: None,
     generics: info.generics.clone(),
-    where_bounds: Arc::new(vec![]),
+    where_bounds,
     arg_types: expected_types,
     return_type: contract.return_type,
     fn_kind: SchemaKind::Fn,
@@ -3877,11 +3902,18 @@ fn infer_typed_method_result<'a>(
         Some((*argument, actual.as_ref(), expected.as_ref()))
       }),
   );
+  let mut deferred_empty_args = Vec::new();
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
     let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
     };
     if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
+      continue;
+    }
+    if super::empty_container_has_no_type_evidence(argument, expected.as_ref()) {
+      if actual.contains_never() {
+        deferred_empty_args.push((actual, expected));
+      }
       continue;
     }
     let proven =
@@ -3891,6 +3923,11 @@ fn infer_typed_method_result<'a>(
         proof.prove(actual.as_ref(), expected.as_ref())
       };
     if !proven.is_proven() {
+      return calcit::DYNAMIC_TYPE.clone();
+    }
+  }
+  for (actual, expected) in deferred_empty_args {
+    if !proof.prove(actual.as_ref(), expected.as_ref()).is_proven() {
       return calcit::DYNAMIC_TYPE.clone();
     }
   }
@@ -4964,6 +5001,12 @@ fn infer_struct_applied_args<'a>(
     .enumerate()
     .filter_map(|(index, value)| {
       let expected = resolve_struct_field_type_by_index(&prototype, index)?;
+      // Empty collection literals (`[]`, `{}`, `#{}`) carry no element/entry
+      // type evidence on their own, so return-context instantiation leaves
+      // unbound container generics open rather than fixing them to `Never`.
+      if super::empty_container_has_no_type_evidence(value, expected.as_ref()) {
+        return None;
+      }
       // A field with no declared generic cannot contribute to its bindings.
       // Its ordinary constructor check still validates the field independently.
       struct_def

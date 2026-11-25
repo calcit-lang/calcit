@@ -50,6 +50,9 @@ const CORE_BUILTIN_IMPL_DEFS: &[&str] = &[
   "&core-enum-impls",
   "&core-scalar-impls",
   "&core-any-box-impls",
+  "&core-buffer-impls",
+  "&core-buf-list-impls",
+  "&core-def-impls",
 ];
 
 pub(super) struct ReachableProgram {

@@ -627,11 +627,11 @@ impl CalcitProc {
     let Some(CalcitTypeAnnotation::Fn(schema)) = core.defs.get(name).map(|entry| entry.schema.as_ref()) else {
       panic!("bundled proc {name} requires a function schema");
     };
-    // Call-site effect checking reads the proc effect contract separately.
-    // This projection cannot represent outer generic bounds.
+    // Call-site effect checking and outer generic where-bounds read the full
+    // core definition schema separately via `lookup_def_schema`.
     assert!(
-      schema.fn_kind == super::type_annotation::SchemaKind::Fn && schema.where_bounds.is_empty(),
-      "bundled proc {name} requires a function schema without outer bounds"
+      schema.fn_kind == super::type_annotation::SchemaKind::Fn,
+      "bundled proc {name} requires a function schema"
     );
 
     let qualify = |annotation: &Arc<CalcitTypeAnnotation>| {

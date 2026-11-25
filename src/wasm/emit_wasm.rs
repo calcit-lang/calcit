@@ -6177,6 +6177,8 @@ struct WasmTypeEvidence {
   list_element_types: Option<Vec<Arc<CalcitTypeAnnotation>>>,
   /// Retains concrete scalar or Option payload origin across local `assert-type` widening.
   scalar_origin: Option<Arc<CalcitTypeAnnotation>>,
+  /// Retains a known non-inline callable target carried through a local or parameter.
+  known_function: Option<CalcitImport>,
   /// The value's actual construction/transport proves its attached impl table.
   /// A declared nominal data contract alone does not establish this identity.
   exact_impls: bool,
@@ -6196,6 +6198,7 @@ impl WasmTypeEvidence {
       set_member_types: None,
       list_element_types: None,
       scalar_origin: None,
+      known_function: None,
       exact_impls: false,
     }
   }
@@ -6319,11 +6322,8 @@ fn join_collection_branch_evidences(left: &WasmTypeEvidence, right: &WasmTypeEvi
   };
   Some(WasmTypeEvidence {
     annotation,
-    codec_hint: None,
     set_member_types: join_branch_member_types(left.set_member_types.clone(), right.set_member_types.clone()),
-    list_element_types: None,
-    scalar_origin: None,
-    exact_impls: false,
+    ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
   })
 }
 
@@ -7592,6 +7592,29 @@ fn resolved_struct_fields_for_annotation(
   }
 }
 
+/// Infer the static call result when a local variable refers to an inline closure,
+/// a known non-inline callable target, or a typed function value.
+fn infer_local_call_result(
+  ctx: &WasmGenCtx,
+  name: &str,
+  items: &crate::wasm::host::calcit::CalcitList,
+  local_types: &HashMap<String, WasmTypeEvidence>,
+  closures: &HashMap<String, Arc<InlineClosure>>,
+  visiting: &mut HashSet<String>,
+) -> Option<WasmTypeEvidence> {
+  if let Some(closure) = closures.get(name) {
+    return infer_inline_closure_result(ctx, closure, &items.drop_left().to_vec(), local_types, closures, visiting);
+  }
+  let bound = local_types.get(name)?;
+  if let Some(known_fn) = &bound.known_function {
+    let mut direct = vec![Calcit::Import(known_fn.clone())];
+    direct.extend(items.iter().skip(1).cloned());
+    return infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, closures, visiting);
+  }
+  let fn_sig = bound.annotation.resolve_to_fn()?;
+  (!fn_sig.return_type.contains_type_var()).then(|| WasmTypeEvidence::contract(fn_sig.return_type.clone()))
+}
+
 fn infer_wasm_evidence_in_scope(
   ctx: &WasmGenCtx,
   expr: &Calcit,
@@ -7630,7 +7653,10 @@ fn infer_wasm_evidence_in_scope(
           Some(bound.clone())
         }
       } else {
-        Some(WasmTypeEvidence::contract(local.type_info.clone()))
+        Some(WasmTypeEvidence {
+          known_function: resolve_known_function_value(ctx, expr),
+          ..WasmTypeEvidence::contract(local.type_info.clone())
+        })
       }
     }
     Calcit::Symbol { sym, .. } if local_types.contains_key(sym.as_ref()) => local_types.get(sym.as_ref()).cloned(),
@@ -7663,11 +7689,17 @@ fn infer_wasm_evidence_in_scope(
         } else {
           None
         };
+        let known_function = if consequent.known_function == alternative.known_function {
+          consequent.known_function.clone()
+        } else {
+          None
+        };
         let set_member_types = join_branch_member_types(consequent.set_member_types.clone(), alternative.set_member_types);
         let list_element_types = join_branch_member_types(consequent.list_element_types.clone(), alternative.list_element_types);
         Some(WasmTypeEvidence {
           codec_hint,
           scalar_origin,
+          known_function,
           set_member_types,
           list_element_types,
           ..consequent
@@ -7740,10 +7772,8 @@ fn infer_wasm_evidence_in_scope(
         WasmTypeEvidence {
           annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(definition))),
           codec_hint,
-          set_member_types: None,
-          list_element_types: None,
-          scalar_origin: None,
           exact_impls: true,
+          ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
         }
       }),
     Calcit::List(items) => items
@@ -7897,11 +7927,8 @@ fn infer_wasm_evidence_in_scope(
           {
             Some(WasmTypeEvidence {
               annotation: base_ev.annotation,
-              codec_hint: None,
               set_member_types: base_ev.set_member_types,
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             })
           } else {
             None
@@ -7950,12 +7977,14 @@ fn infer_wasm_evidence_in_scope(
               None
             }
           });
+          let known_function = inner.as_ref().and_then(|ev| ev.known_function.clone());
           Some(WasmTypeEvidence {
             annotation: target,
             codec_hint: inner.as_ref().and_then(|ev| ev.codec_hint.clone()),
             set_member_types,
             list_element_types: None,
             scalar_origin,
+            known_function,
             exact_impls: inner.is_some_and(|ev| ev.exact_impls),
           })
         }
@@ -8012,10 +8041,7 @@ fn infer_wasm_evidence_in_scope(
           Some(WasmTypeEvidence {
             annotation,
             codec_hint: Some(codec_hint),
-            set_member_types: None,
-            list_element_types: None,
-            scalar_origin: None,
-            exact_impls: false,
+            ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
           })
         }
         Calcit::Syntax(CalcitSyntax::DecodeMapAs | CalcitSyntax::ParseCirruEdnAs, _) => {
@@ -8036,29 +8062,9 @@ fn infer_wasm_evidence_in_scope(
           direct.extend(items.iter().skip(1).cloned());
           infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, closures, visiting)
         }
-        Calcit::Local(local) => {
-          if let Some(closure) = closures.get(local.sym.as_ref()) {
-            infer_inline_closure_result(ctx, closure, &items.drop_left().to_vec(), local_types, closures, visiting)
-          } else if let Some(bound) = local_types.get(local.sym.as_ref())
-            && let Some(fn_sig) = bound.annotation.resolve_to_fn()
-            && !fn_sig.return_type.contains_type_var()
-          {
-            Some(WasmTypeEvidence::contract(fn_sig.return_type.clone()))
-          } else {
-            None
-          }
-        }
+        Calcit::Local(local) => infer_local_call_result(ctx, local.sym.as_ref(), items, local_types, closures, visiting),
         Calcit::Symbol { sym, .. } if closures.contains_key(sym.as_ref()) || local_types.contains_key(sym.as_ref()) => {
-          if let Some(closure) = closures.get(sym.as_ref()) {
-            infer_inline_closure_result(ctx, closure, &items.drop_left().to_vec(), local_types, closures, visiting)
-          } else if let Some(bound) = local_types.get(sym.as_ref())
-            && let Some(fn_sig) = bound.annotation.resolve_to_fn()
-            && !fn_sig.return_type.contains_type_var()
-          {
-            Some(WasmTypeEvidence::contract(fn_sig.return_type.clone()))
-          } else {
-            None
-          }
+          infer_local_call_result(ctx, sym.as_ref(), items, local_types, closures, visiting)
         }
         head
           if (matches!(head, Calcit::List(_)) || matches!(head, Calcit::Fn { .. })) && direct_definition_reference(head).is_none() =>
@@ -8143,11 +8149,8 @@ fn infer_wasm_evidence_in_scope(
             {
               return Some(WasmTypeEvidence {
                 annotation: base_ev.annotation,
-                codec_hint: None,
                 set_member_types: base_ev.set_member_types,
-                list_element_types: None,
-                scalar_origin: None,
-                exact_impls: false,
+                ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
               });
             }
             return None;
@@ -8415,9 +8418,7 @@ fn infer_wasm_evidence_in_scope(
               annotation,
               codec_hint: list_codec_hint,
               set_member_types: all_collection_members_known.then_some(combined_collection_members),
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             });
           }
           if matches!(proc, CalcitProc::NativeListNth)
@@ -8452,10 +8453,7 @@ fn infer_wasm_evidence_in_scope(
                   return Some(WasmTypeEvidence {
                     annotation: slot_ty.clone(),
                     codec_hint: elem_codec_hint,
-                    set_member_types: None,
-                    list_element_types: None,
-                    scalar_origin: None,
-                    exact_impls: false,
+                    ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
                   });
                 }
               }
@@ -8464,9 +8462,7 @@ fn infer_wasm_evidence_in_scope(
                   annotation: elem_ty.clone(),
                   codec_hint: elem_codec_hint,
                   set_member_types: list_ev.set_member_types,
-                  list_element_types: None,
-                  scalar_origin: None,
-                  exact_impls: false,
+                  ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
                 });
               }
               _ => {}
@@ -8491,22 +8487,12 @@ fn infer_wasm_evidence_in_scope(
             };
             return Some(WasmTypeEvidence {
               annotation,
-              codec_hint: None,
               set_member_types: Some(member_types),
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             });
           }
           if matches!(proc, CalcitProc::JsonParse) {
-            return Some(WasmTypeEvidence {
-              annotation: DYNAMIC_TYPE.clone(),
-              codec_hint: None,
-              set_member_types: None,
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
-            });
+            return Some(WasmTypeEvidence::contract(DYNAMIC_TYPE.clone()));
           }
           if matches!(proc, CalcitProc::NativeStructNth)
             && items.len() >= 3
@@ -8544,11 +8530,8 @@ fn infer_wasm_evidence_in_scope(
             let tag_ty = Arc::new(CalcitTypeAnnotation::Tag);
             return Some(WasmTypeEvidence {
               annotation: Arc::new(CalcitTypeAnnotation::Map(tag_ty.clone(), val_ty)),
-              codec_hint: None,
               set_member_types: Some(vec![tag_ty]),
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             });
           }
           if matches!(proc, CalcitProc::NativeMap) && (items.len() - 1).is_multiple_of(2) {
@@ -8606,9 +8589,7 @@ fn infer_wasm_evidence_in_scope(
               annotation,
               codec_hint,
               set_member_types: Some(key_types),
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             });
           }
           if matches!(
@@ -8695,11 +8676,8 @@ fn infer_wasm_evidence_in_scope(
             });
             return Some(WasmTypeEvidence {
               annotation,
-              codec_hint: None,
               set_member_types: Some(combined),
-              list_element_types: None,
-              scalar_origin: None,
-              exact_impls: false,
+              ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
             });
           }
           if matches!(
@@ -8762,11 +8740,8 @@ fn infer_wasm_evidence_in_scope(
               };
               return Some(WasmTypeEvidence {
                 annotation,
-                codec_hint: None,
                 set_member_types: Some(combined),
-                list_element_types: None,
-                scalar_origin: None,
-                exact_impls: false,
+                ..WasmTypeEvidence::contract(DYNAMIC_TYPE.clone())
               });
             }
           }
@@ -8793,11 +8768,7 @@ fn infer_wasm_evidence_in_scope(
               .map(|annotation| WasmTypeEvidence {
                 exact_impls: matches!(proc, CalcitProc::NativeEnumNew | CalcitProc::NativeNamedEnumNew)
                   && annotation.resolve_to_enum().is_some(),
-                codec_hint: None,
-                set_member_types: None,
-                list_element_types: None,
-                scalar_origin: None,
-                annotation,
+                ..WasmTypeEvidence::contract(annotation)
               })
               .or_else(|| Some(WasmTypeEvidence::contract(signature.return_type.clone())));
           }
@@ -8818,34 +8789,30 @@ fn infer_wasm_evidence_in_scope(
     Calcit::Proc(CalcitProc::NativeMap) => {
       let never = crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone();
       Some(WasmTypeEvidence {
-        annotation: Arc::new(CalcitTypeAnnotation::Map(never.clone(), never)),
-        codec_hint: None,
         set_member_types: Some(vec![]),
-        list_element_types: None,
-        scalar_origin: None,
-        exact_impls: false,
+        ..WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Map(never.clone(), never)))
       })
     }
     Calcit::Proc(CalcitProc::Set) => {
       let never = crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone();
       Some(WasmTypeEvidence {
-        annotation: Arc::new(CalcitTypeAnnotation::Set(never)),
-        codec_hint: None,
         set_member_types: Some(vec![]),
-        list_element_types: None,
-        scalar_origin: None,
-        exact_impls: false,
+        ..WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Set(never)))
       })
     }
     Calcit::Enum(_) | Calcit::Struct(_) => infer_static_type_from_expr(expr).map(|annotation| WasmTypeEvidence {
       exact_impls: annotation.resolve_to_enum().is_some() || annotation.resolve_to_struct().is_some(),
-      codec_hint: None,
-      set_member_types: None,
-      list_element_types: None,
-      scalar_origin: None,
-      annotation,
+      ..WasmTypeEvidence::contract(annotation)
     }),
-    _ => infer_static_type_from_expr(expr).map(WasmTypeEvidence::contract),
+    _ => {
+      let known_function = resolve_known_function_value(ctx, expr);
+      infer_static_type_from_expr(expr)
+        .or_else(|| known_function.is_some().then(|| DYNAMIC_TYPE.clone()))
+        .map(|annotation| WasmTypeEvidence {
+          known_function,
+          ..WasmTypeEvidence::contract(annotation)
+        })
+    }
   };
   if let Some(ref mut evidence) = result
     && evidence.codec_hint.is_none()
@@ -9159,10 +9126,16 @@ fn join_optional_recur_evidence(init_ev: WasmTypeEvidence, r_ev: Option<WasmType
     } else {
       None
     };
+    let known_function = if init_ev.known_function == r_ev.known_function {
+      init_ev.known_function.clone()
+    } else {
+      None
+    };
     let set_member_types = join_branch_member_types(init_ev.set_member_types, r_ev.set_member_types);
     let list_element_types = join_branch_member_types(init_ev.list_element_types, r_ev.list_element_types);
     return WasmTypeEvidence {
       codec_hint,
+      known_function,
       set_member_types,
       list_element_types,
       exact_impls: init_ev.exact_impls && r_ev.exact_impls,
@@ -12858,6 +12831,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(b));
       let a_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
       let b_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let scalar_compare_rank = |ty: Option<&CalcitTypeAnnotation>| -> Option<u8> {
+        match ty {
+          Some(CalcitTypeAnnotation::Nil) => Some(0),
+          Some(CalcitTypeAnnotation::Unit) => Some(1),
+          Some(CalcitTypeAnnotation::Bool) => Some(2),
+          Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => Some(3),
+          Some(CalcitTypeAnnotation::Tag) => Some(4),
+          Some(CalcitTypeAnnotation::String) => Some(5),
+          _ => None,
+        }
+      };
+      if let (Some(left_rank), Some(right_rank)) = (scalar_compare_rank(a_ty.as_deref()), scalar_compare_rank(b_ty.as_deref()))
+        && left_rank != right_rank
+      {
+        ctx.emit(f64_const(if left_rank < right_rank { -1.0 } else { 1.0 }));
+        return Ok(());
+      }
       let is_proven_numeric_scalar = |ty: Option<&CalcitTypeAnnotation>| {
         matches!(
           ty,
@@ -12870,7 +12860,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           )
         )
       };
-      if is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()) {
+      // `Tag` values are interned into monotonically increasing UTF-8-sorted IDs
+      // in `tag_index`, so comparing two proven `Tag` operands compares UTF-8 order.
+      if (is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()))
+        || (matches!(a_ty.as_deref(), Some(CalcitTypeAnnotation::Tag)) && matches!(b_ty.as_deref(), Some(CalcitTypeAnnotation::Tag)))
+      {
         ctx.emit(Instruction::LocalGet(a));
         ctx.emit(Instruction::LocalGet(b));
         ctx.emit(Instruction::F64Lt);
@@ -16573,12 +16567,8 @@ fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::cod
     let expanded = CalcitTypeAnnotation::expand_schema_alias(&ev.annotation);
     match expanded.as_ref() {
       CalcitTypeAnnotation::List(elem) => Some(WasmTypeEvidence {
-        annotation: elem.clone(),
-        codec_hint: None,
         set_member_types: ev.set_member_types.clone(),
-        list_element_types: None,
-        scalar_origin: None,
-        exact_impls: false,
+        ..WasmTypeEvidence::contract(elem.clone())
       }),
       _ => None,
     }
@@ -17107,20 +17097,12 @@ mod tests {
       ..(*left.impls[0]).clone()
     });
     let expected = WasmTypeEvidence {
-      annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left))),
-      codec_hint: None,
-      set_member_types: None,
-      list_element_types: None,
-      scalar_origin: None,
       exact_impls: true,
+      ..WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(left))))
     };
     let changed = WasmTypeEvidence {
-      annotation: Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right))),
-      codec_hint: None,
-      set_member_types: None,
-      list_element_types: None,
-      scalar_origin: None,
       exact_impls: true,
+      ..WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(right))))
     };
     assert!(
       changed.annotation.is_proven_for(&expected.annotation),
@@ -17205,12 +17187,8 @@ mod tests {
         limit_ctx.local_types.insert(
           name.clone(),
           WasmTypeEvidence {
-            annotation: annotation.clone(),
-            codec_hint: None,
-            set_member_types: None,
-            list_element_types: None,
-            scalar_origin: None,
             exact_impls: true,
+            ..WasmTypeEvidence::contract(annotation.clone())
           },
         );
         local(&name, annotation)
@@ -20882,12 +20860,8 @@ mod tests {
       at_def: Arc::from("recur-scalar-origin"),
     });
     let dyn_num = WasmTypeEvidence {
-      annotation: super::DYNAMIC_TYPE.clone(),
-      codec_hint: None,
-      set_member_types: None,
-      list_element_types: None,
       scalar_origin: Some(Arc::new(CalcitTypeAnnotation::Number)),
-      exact_impls: false,
+      ..WasmTypeEvidence::contract(super::DYNAMIC_TYPE.clone())
     };
     let dyn_bool = WasmTypeEvidence {
       scalar_origin: Some(Arc::new(CalcitTypeAnnotation::Bool)),
