@@ -5593,6 +5593,25 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Whether this type resolves directly or through `deftype`/non-constructor aliases to a closed union.
+  fn expands_to_union(&self) -> bool {
+    self.resolve_to_union().is_some()
+      || (matches!(self, Self::TypeRef(_, _) | Self::TypeSlot(_))
+        && Self::expand_value_type_aliases(&Arc::new(self.clone()))
+          .resolve_to_union()
+          .is_some())
+  }
+
+  /// Resolve a `TypeRef` via value aliases first so nominal definitions keep their value semantics
+  /// instead of collapsing to constructor `:schema` metadata (`StructDef`/`EnumDef`/`Custom`).
+  fn resolve_value_or_schema_alias(&self, name: &str, args: &[Arc<Self>]) -> Option<Arc<Self>> {
+    let expanded = Self::expand_value_type_aliases(&Arc::new(self.clone()));
+    (expanded.as_ref() != self)
+      .then_some(expanded)
+      .or_else(|| self.resolve_schema_alias())
+      .or_else(|| resolve_type_ref_as_schema(name, args))
+  }
+
   /// Resolve this type annotation to a `Fn` type, unwrapping Optional/TypeRef/TypeSlot layers.
   pub fn resolve_to_fn(&self) -> Option<Arc<CalcitFnTypeAnnotation>> {
     self.resolve_fn_with_optionality().map(|(signature, _)| signature)
@@ -5937,7 +5956,13 @@ impl CalcitTypeAnnotation {
       Self::Struct(struct_def, _) | Self::StructValue(struct_def) => Some(struct_def.impls.to_vec()),
       Self::Enum(enum_def, _) | Self::EnumValue(enum_def) => Some(enum_def.impls().to_vec()),
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.collect_static_impls(),
-      Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.collect_static_impls()),
+      Self::TypeRef(name, args) => {
+        if self.expands_to_union() {
+          None
+        } else {
+          resolve_type_ref_as_schema(name, args).and_then(|schema| schema.collect_static_impls())
+        }
+      }
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.collect_static_impls()),
       _ => self.core_impl_list_symbol().and_then(|symbol| {
         lookup_runtime_ready_registered(CORE_NS, symbol)
@@ -6086,6 +6111,20 @@ impl CalcitTypeAnnotation {
   }
 
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+    if matches!(self, Self::TypeRef(_, _) | Self::TypeSlot(_))
+      && self.resolve_nominal_instance_type().is_none()
+      && self.resolve_to_union().is_none()
+    {
+      // Expand `deftype`/non-constructor aliases without following nominal definitions
+      // into constructor metadata (`Custom(Tag "union-def")`), so closed-union aliases
+      // undergo member-by-member checking rather than inheriting `&core-def-impls`.
+      let expanded = Self::expand_value_type_aliases(&Arc::new(self.clone()));
+      return expanded.satisfies_trait_bound_normalized(expected_trait);
+    }
+    self.satisfies_trait_bound_normalized(expected_trait)
+  }
+
+  fn satisfies_trait_bound_normalized(&self, expected_trait: &CalcitTrait) -> bool {
     // A tuple keeps its arity and slot types, so it only has the capabilities
     // that do not return a value of its own type: slicing or emptying would
     // claim the same tuple type for a different length. Mapping needs one
@@ -6102,12 +6141,6 @@ impl CalcitTypeAnnotation {
     }
     if let Some(union_def) = self.resolve_to_union() {
       return self.union_satisfies_trait_bound(&union_def, expected_trait);
-    }
-    if matches!(self, Self::TypeRef(_, _)) && self.resolve_schema_alias().is_some() {
-      let expanded = Self::expand_schema_alias(&Arc::new(self.clone()));
-      if let Some(union_def) = expanded.resolve_to_union() {
-        return expanded.union_satisfies_trait_bound(&union_def, expected_trait);
-      }
     }
     match self {
       Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
@@ -7054,28 +7087,28 @@ impl CalcitTypeAnnotation {
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
-      (actual, Self::Trait(expected)) if actual.resolve_to_union().is_some() => {
+      (actual, Self::Trait(expected)) if actual.expands_to_union() => {
         if actual.satisfies_trait_bound(expected.as_ref()) {
           Proven
         } else {
           Mismatch
         }
       }
-      (actual, Self::TraitSet(expected)) if actual.resolve_to_union().is_some() => {
+      (actual, Self::TraitSet(expected)) if actual.expands_to_union() => {
         if actual.satisfies_trait_bounds(expected.as_ref()) {
           Proven
         } else {
           Mismatch
         }
       }
-      (Self::TypeRef(name, args), other) => match self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
+      (Self::TypeRef(name, args), other) => match self.resolve_value_or_schema_alias(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
           Ok(_guard) => resolved.prove_with_staged_bindings_in_fresh(other, bindings, bind_never_vars),
           Err(reason) => NeedsBoundary(reason),
         },
         None => Mismatch,
       },
-      (other, Self::TypeRef(name, args)) => match expected.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
+      (other, Self::TypeRef(name, args)) => match expected.resolve_value_or_schema_alias(name, args) {
         Some(resolved) => match enter_alias_relation(name, other, false, true) {
           Ok(_guard) => other.prove_with_staged_bindings_in_fresh(resolved.as_ref(), bindings, bind_never_vars),
           Err(reason) => NeedsBoundary(reason),

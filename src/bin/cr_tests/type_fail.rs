@@ -7984,6 +7984,8 @@ ns app.main
 defunion Tree Number (List Tree)
 defunion OrderedScalar Number String Tag Bool Symbol
 defunion MixedDebug String (Ref Number)
+deftype OrderedAlias OrderedScalar
+deftype MixedAlias MixedDebug
 
 defn debug-generic (x)
   hint-fn $ Fn T (-> String) (:generics T) (:where $ T Debug)
@@ -8020,9 +8022,21 @@ defn check-mixed-debug (m)
   hint-fn $ Fn MixedDebug (-> String)
   debug-generic m
 
+defn check-ordered-alias (a b)
+  hint-fn $ Fn OrderedAlias OrderedAlias (-> (List OrderedAlias))
+  let
+      _d $ debug-generic a
+      _xs $ distinct ([] a b)
+      _h $ hash a
+    sort ([] a b) (fn (_x _y) 0)
+
+defn check-mixed-alias (m)
+  hint-fn $ Fn MixedAlias (-> String)
+  debug-generic m
+
 defn main! ()
   hint-fn $ Fn (-> Unit)
-  , check-tree check-cirru check-ordered check-mixed-debug
+  , check-tree check-cirru check-ordered check-mixed-debug check-ordered-alias check-mixed-alias
   , &unit
 "#;
     let (res, warnings, entries) = run_app(positive_code);
@@ -8031,7 +8045,7 @@ defn main! ()
     run_check_only(&entries).expect("positive closed-defunion snapshot should pass check-only");
 
     // Negative cases: CirruNode / Tree / OrderedScalar reject Compare (compare & 1-arg sort);
-    // MixedDebug rejects Eq / Hash / Compare.
+    // MixedDebug (and deftype aliases to closed unions) reject Eq / Hash / Compare accordingly.
     for (label, bad_code) in [
       (
         "CirruNode rejected by sort Compare",
@@ -8040,6 +8054,10 @@ defn main! ()
       (
         "OrderedScalar rejected by compare Compare",
         "ns app.main\ndefunion OrderedScalar Number String Tag Bool Symbol\ndefn bad (a b)\n  hint-fn $ Fn OrderedScalar OrderedScalar (-> Number)\n  compare a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "OrderedAlias rejected by compare Compare",
+        "ns app.main\ndefunion OrderedScalar Number String Tag Bool Symbol\ndeftype OrderedAlias OrderedScalar\ndefn bad (a b)\n  hint-fn $ Fn OrderedAlias OrderedAlias (-> Number)\n  compare a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
       ),
       (
         "OrderedScalar rejected by 1-arg sort Compare",
@@ -8052,6 +8070,14 @@ defn main! ()
       (
         "MixedDebug rejected by hash Hash",
         "ns app.main\ndefunion MixedDebug String (Ref Number)\ndefn bad (m)\n  hint-fn $ Fn MixedDebug (-> Number)\n  hash m\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "MixedAlias rejected by index-of Eq",
+        "ns app.main\ndefunion MixedDebug String (Ref Number)\ndeftype MixedAlias MixedDebug\ndefn bad (m)\n  hint-fn $ Fn MixedAlias (-> (Option Number))\n  index-of ([] m) m\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "MixedAlias rejected by hash Hash",
+        "ns app.main\ndefunion MixedDebug String (Ref Number)\ndeftype MixedAlias MixedDebug\ndefn bad (m)\n  hint-fn $ Fn MixedAlias (-> Number)\n  hash m\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
       ),
       (
         "MixedDebug rejected by distinct Eq Hash",
