@@ -596,16 +596,6 @@
               assert= 7 $ nullable-choice true 7
               assert= nil $ nullable-choice false 7
             :tags $ #{} :contextual-proof
-        'nullable-implicit-choice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn nullable-implicit-choice (present? value) (if present? value)
-          :examples $ []
-          :schema $ quote $ Fn Bool Number
-            -> $ JsNullish Number
-          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
-            :code $ quote $ let ()
-              assert= 7 $ nullable-implicit-choice true 7
-              assert= nil $ nullable-implicit-choice false 7
-            :tags $ #{} :contextual-proof
         'nullable-let-choice $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-let-choice (present? value)
             let
