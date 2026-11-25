@@ -7801,6 +7801,7 @@ mod tests {
 
   #[test]
   fn coherent_nominal_parameter_and_type_ref_preserve_impl_completeness() {
+    let _program_state = crate::program::lock_program_test_state();
     let coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/CoherentWidget");
     let non_coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/NonCoherentWidget");
     crate::program::record_non_coherent_nominal_def(&non_coherent_ref);
