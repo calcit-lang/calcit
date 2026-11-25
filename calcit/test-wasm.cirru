@@ -1940,7 +1940,7 @@
                 and
                   = (:x point) 1
                   = (:z different) 3
-                  =
+                  &=
                     .unwrap $ &map:get (&struct:to-map different) :z
                     , 3
                   = (&struct:get-name different) :Point

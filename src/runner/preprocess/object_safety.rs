@@ -600,8 +600,11 @@ fn dyn_box_nested_open_type_reason(annotation: &CalcitTypeAnnotation) -> Option<
     CalcitTypeAnnotation::Custom(_) => Some("untyped custom type"),
     CalcitTypeAnnotation::Nullable(_, _) => Some("nullable type"),
     CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => Some("bare trait constraint"),
-    CalcitTypeAnnotation::JsObject => Some("opaque `JsObject` host value"),
-    CalcitTypeAnnotation::FfiResource => Some("opaque `FfiResource` handle"),
+    CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::FfiResource => match annotation.host_target() {
+      Some(crate::ffi_boundary::HostTarget::Js) => Some("opaque `JsObject` host value"),
+      Some(crate::ffi_boundary::HostTarget::Native) => Some("opaque `FfiResource` handle"),
+      Some(crate::ffi_boundary::HostTarget::Wasm) | None => unreachable!("host-target partition covers JsObject and FfiResource"),
+    },
     CalcitTypeAnnotation::Macro(_) | CalcitTypeAnnotation::Syntax(_) => Some("compile-time macro/syntax value"),
     CalcitTypeAnnotation::Variadic(_) => Some("variadic parameter constraint"),
     CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("type definition value"),

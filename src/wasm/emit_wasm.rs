@@ -13008,7 +13008,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeLessThan => emit_numeric_cmp(ctx, Instruction::F64Lt, args),
     CalcitProc::NativeGreaterThan => emit_numeric_cmp(ctx, Instruction::F64Gt, args),
     CalcitProc::NativeEquals => emit_equals(ctx, args),
-    CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
+    CalcitProc::Identical => {
+      emit_identical_as_i32(ctx, args)?;
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
     CalcitProc::NativeCompare => {
       // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
       expect_arity(2, args, "&compare")?;
@@ -15628,6 +15632,26 @@ fn emit_identical_as_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   let left_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| expand_wasm_value_type(&ty));
   let right_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| expand_wasm_value_type(&ty));
   if let (Some(l), Some(r)) = (left_ty.as_ref(), right_ty.as_ref()) {
+    if matches!(
+      (l.as_ref(), r.as_ref()),
+      (CalcitTypeAnnotation::String, CalcitTypeAnnotation::String)
+    ) {
+      let a_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+      let b_ptr = emit_ptr_to_i32(ctx, &args[1])?;
+      ctx.emit(Instruction::LocalGet(a_ptr));
+      ctx.emit(Instruction::LocalGet(b_ptr));
+      ctx.emit(Instruction::I32Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+      ctx.emit(Instruction::I32Const(1));
+      ctx.emit(Instruction::Else);
+      ctx.emit(Instruction::LocalGet(a_ptr));
+      ctx.emit(Instruction::LocalGet(b_ptr));
+      ctx.call_rt("__rt_str_compare");
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::End);
+      return Ok(());
+    }
     let lr = NativeValRepr::from_type_annotation(l);
     let rr = NativeValRepr::from_type_annotation(r);
     if lr == rr
@@ -15647,9 +15671,50 @@ fn emit_identical_as_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
       return Ok(());
     }
   }
+  let left_non_string = left_ty
+    .as_deref()
+    .and_then(proven_disjoint_value_kind)
+    .is_some_and(|kind| kind != "string");
+  let right_non_string = right_ty
+    .as_deref()
+    .and_then(proven_disjoint_value_kind)
+    .is_some_and(|kind| kind != "string");
+  if left_non_string || right_non_string {
+    emit_expr(ctx, &args[0])?;
+    emit_expr(ctx, &args[1])?;
+    ctx.emit(Instruction::F64Eq);
+    return Ok(());
+  }
+
+  let a_val = ctx.alloc_local_typed(ValType::F64);
+  let b_val = ctx.alloc_local_typed(ValType::F64);
   emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(a_val));
   emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(b_val));
+  ctx.emit(Instruction::LocalGet(a_val));
+  ctx.emit(Instruction::LocalGet(b_val));
   ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::Else);
+  let a_is_str = emit_is_string(ctx, a_val)?;
+  let b_is_str = emit_is_string(ctx, b_val)?;
+  ctx.emit(Instruction::LocalGet(a_is_str));
+  ctx.emit(Instruction::LocalGet(b_is_str));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::LocalGet(a_val));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalGet(b_val));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.call_rt("__rt_str_compare");
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

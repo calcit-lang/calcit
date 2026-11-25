@@ -174,7 +174,7 @@ pub fn check_host_ffi(operation: &str, call_stack: &CallStackList) -> Result<(),
 }
 
 pub fn check_method(name: &str, kind: &MethodKind, call_stack: &CallStackList) -> Result<(), CalcitErr> {
-  if matches!(kind, MethodKind::Invoke(_) | MethodKind::TagAccess) {
+  if !kind.is_host_ffi() {
     Ok(())
   } else {
     check_policy(

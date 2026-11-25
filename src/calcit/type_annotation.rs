@@ -721,6 +721,34 @@ impl CallTypeProof {
     constraints
   }
 
+  /// Returns the closed meta-type annotation shared by all entries when every
+  /// peer describes the same runtime definition kind (`StructDef`, `EnumDef`,
+  /// `Trait`, or `Impl`), without ever widening across unrelated kinds.
+  fn closed_definition_supertype(evidence: &[Arc<CalcitTypeAnnotation>]) -> Option<Arc<CalcitTypeAnnotation>> {
+    let kind_of = |annotation: &CalcitTypeAnnotation| -> Option<&'static str> {
+      match annotation {
+        CalcitTypeAnnotation::StructDef(_) => Some("struct-def"),
+        CalcitTypeAnnotation::EnumDef(_) => Some("enum-def"),
+        CalcitTypeAnnotation::Custom(value) => match value.as_ref() {
+          Calcit::Trait(_) => Some("trait"),
+          Calcit::Impl(_) => Some("impl"),
+          _ if CalcitTypeAnnotation::custom_keyword_matches(value, "struct-def") => Some("struct-def"),
+          _ if CalcitTypeAnnotation::custom_keyword_matches(value, "enum-def") => Some("enum-def"),
+          _ if CalcitTypeAnnotation::custom_keyword_matches(value, "trait") => Some("trait"),
+          _ if CalcitTypeAnnotation::custom_keyword_matches(value, "impl") => Some("impl"),
+          _ => None,
+        },
+        _ => None,
+      }
+    };
+    let first_kind = kind_of(evidence.first()?.as_ref())?;
+    if evidence.iter().all(|item| kind_of(item.as_ref()) == Some(first_kind)) {
+      Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag(first_kind)))))
+    } else {
+      None
+    }
+  }
+
   fn reconcile_prepared_constraints(&mut self, constraints: HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>>) {
     let rigidly_proves = |actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation| {
       Self::default()
@@ -744,6 +772,11 @@ impl CallTypeProof {
           candidate = actual.clone();
         }
       }
+      let definition_evidence: Vec<_> = evidence
+        .iter()
+        .filter(|actual| !matches!(actual.as_ref(), CalcitTypeAnnotation::Never))
+        .cloned()
+        .collect();
       if evidence.iter().all(|actual| rigidly_proves(actual, &candidate)) {
         // Only a closed common bound may widen an earlier argument: an open
         // peer such as `Map Tag Dynamic` must not relax a narrower contract.
@@ -751,6 +784,14 @@ impl CallTypeProof {
           self.widened_inputs.insert(name.clone());
         }
         self.bindings.insert(name, candidate);
+      } else if let Some(supertype) = Self::closed_definition_supertype(&definition_evidence)
+        && evidence.iter().all(|actual| rigidly_proves(actual, &supertype))
+      {
+        // Distinct definition values (`StructDef`, `EnumDef`, `Trait`, `Impl`)
+        // share their closed meta-type contract (`&core-def-impls`) when compared
+        // or merged across two definitions.
+        self.widened_inputs.insert(name.clone());
+        self.bindings.insert(name, supertype);
       } else {
         // Keep unrelated projections available, but no later speculative
         // argument match may expose a conflicted narrow binding as a result.
@@ -5913,7 +5954,7 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
       Self::Any => Some("&core-any-box-impls"),
-      Self::StructDef(_) | Self::EnumDef(_) => Some("&core-def-impls"),
+      Self::StructDef(_) | Self::EnumDef(_) | Self::Method => Some("&core-def-impls"),
       Self::Custom(value)
         if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
           || matches!(
@@ -7824,6 +7865,8 @@ impl CalcitTypeAnnotation {
           format!("enum {}<{}>", enum_def.name(), rendered)
         }
       }
+      Self::StructDef(struct_def) => format!("struct-def {}", struct_def.name),
+      Self::EnumDef(enum_def) => format!("enum-def {}", enum_def.name()),
       Self::StructValue(struct_def) => format!("struct {}", struct_def.name),
       Self::EnumValue(enum_def) => format!("enum {}", enum_def.name()),
       Self::DynTrait(trait_def) => format!("dyn {}", trait_def.name),
@@ -9167,6 +9210,7 @@ mod tests {
       ),
       (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("trait"))), "&core-def-impls"),
       (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("impl"))), "&core-def-impls"),
+      (CalcitTypeAnnotation::Method, "&core-def-impls"),
     ];
 
     for (annotation, definition) in cases {
@@ -10359,6 +10403,73 @@ mod tests {
     proof.prepare_inputs([(&*trait_type, &*t)]);
     proof.prepare_deferred_inputs([(&*num, &*t)]);
     assert_eq!(proof.result(&t), Some(trait_type));
+  }
+
+  #[test]
+  fn call_type_proof_reconciles_distinct_definition_values_to_closed_meta_type() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let left_struct = Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::new("LeftRecord"),
+      vec![EdnTag::new("x")],
+    ))));
+    let right_struct = Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(CalcitStructDef::from_fields(
+      EdnTag::new("RightRecord"),
+      vec![EdnTag::new("y")],
+    ))));
+    let make_enum = |name: &str, variant: &str| {
+      let struct_ref = Arc::new(CalcitStructDef::from_fields(EdnTag::new(name), vec![EdnTag::new(variant)]));
+      let values = Arc::new(vec![Calcit::from(CalcitList::default())]);
+      Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(
+        CalcitEnumDef::from_struct(CalcitStructValue { struct_ref, values }).expect("enum def"),
+      )))
+    };
+    let left_enum = make_enum("LeftEnum", "a");
+    let right_enum = make_enum("RightEnum", "b");
+
+    assert_eq!(left_struct.describe(), "struct-def LeftRecord");
+    assert_eq!(left_enum.describe(), "enum-def LeftEnum");
+
+    let mut struct_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[t.clone(), t.clone()],
+      &[left_struct.clone(), right_struct.clone()],
+    );
+    struct_proof.prepare_inputs([(&*left_struct, &*t), (&*right_struct, &*t)]);
+    let resolved_struct = struct_proof.result(&t).expect("distinct struct defs reconcile to StructDef");
+    assert!(matches!(
+      resolved_struct.as_ref(),
+      CalcitTypeAnnotation::Custom(tag) if CalcitTypeAnnotation::custom_keyword_matches(tag, "struct-def")
+    ));
+    assert!(resolved_struct.satisfies_trait_bound(&CalcitTrait::new_reference("calcit.core/Eq")));
+
+    let mut enum_proof = CallTypeProof::new(&[Arc::from("T")], &[t.clone(), t.clone()], &[left_enum.clone(), right_enum.clone()]);
+    enum_proof.prepare_inputs([(&*left_enum, &*t), (&*right_enum, &*t)]);
+    let resolved_enum = enum_proof.result(&t).expect("distinct enum defs reconcile to EnumDef");
+    assert!(matches!(
+      resolved_enum.as_ref(),
+      CalcitTypeAnnotation::Custom(tag) if CalcitTypeAnnotation::custom_keyword_matches(tag, "enum-def")
+    ));
+    assert!(resolved_enum.satisfies_trait_bound(&CalcitTrait::new_reference("calcit.core/Eq")));
+
+    let mut mixed_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[t.clone(), t.clone()],
+      &[left_struct.clone(), left_enum.clone()],
+    );
+    mixed_proof.prepare_inputs([(&*left_struct, &*t), (&*left_enum, &*t)]);
+    assert!(mixed_proof.result(&t).is_none());
+
+    let never = Arc::new(CalcitTypeAnnotation::Never);
+    let mut never_and_struct_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[t.clone(), t.clone(), t.clone()],
+      &[never.clone(), left_struct.clone(), right_struct.clone()],
+    );
+    never_and_struct_proof.prepare_inputs([(&*never, &*t), (&*left_struct, &*t), (&*right_struct, &*t)]);
+    assert!(matches!(
+      never_and_struct_proof.result(&t).as_deref(),
+      Some(CalcitTypeAnnotation::Custom(tag)) if CalcitTypeAnnotation::custom_keyword_matches(tag, "struct-def")
+    ));
   }
 
   #[test]

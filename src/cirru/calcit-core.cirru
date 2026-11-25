@@ -686,6 +686,16 @@
                 assert-traits CirruNode Debug Eq Hash
                 assert-traits Hash Debug Eq Hash
                 assert-traits sample-impl Debug Eq Hash
+                let
+                    m1 .list?
+                    m2 .leaf?
+                  assert= true $ = m1 m1
+                  assert= false $ = m1 m2
+                  assert= true $ m1 .eq? m1
+                  assert= false $ m1 .eq? m2
+                  assert= (hash m1) (m1 .hash)
+                  assert= |.list? $ m1 .debug
+                  assert-traits m1 Debug Eq Hash
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |verifies-builtin-trait-assertions)
               :code $ quote $ let
@@ -2952,6 +2962,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn (List T) T (-> Bool) (:generics T)
+            :where $ T Eq
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |checks-list-elements)
@@ -4915,6 +4926,7 @@
             quote $ assert= true $ /= 1 2
             quote $ assert= false $ /= :same :same
           :schema $ quote $ Fn T T (-> Bool) (:generics T)
+            :where $ T Eq
           :tests $ [] $ %{} 'TestEntry (:name |homogeneous-inequality-alias)
             :code $ quote $ do
               assert= true $ /= 1 2
@@ -4987,6 +4999,7 @@
             quote $ assert= false $ = 1 2
             quote $ assert= true $ = ([] 1 2) ([] 1 2)
           :schema $ quote $ Fn T (& T) (-> Bool) (:generics T)
+            :where $ T Eq
           :tests $ []
             %{} 'TestEntry (:name |homogeneous-variadic-equality)
               :code $ quote $ do
@@ -4997,9 +5010,9 @@
             %{} 'TestEntry (:name |compares-open-binding-symmetrically)
               :code $ quote $ let
                   x $ assert-type 1 Dynamic
-                assert= true $ = x 1
-                assert= true $ = 1 x
-                assert= false $ = 2 x
+                assert= true $ &= x 1
+                assert= true $ &= 1 x
+                assert= false $ &= 2 x
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |compares-nested-option-and-enum)
               :code $ quote $ do
@@ -5047,20 +5060,20 @@
                   x $ assert-type 1 Dynamic
                   z $ assert-type 0 Dynamic
                   f $ assert-type false Dynamic
-                assert= false $ = x true
-                assert= false $ = true x
-                assert= false $ = z false
-                assert= false $ = false z
-                assert= false $ = z nil
-                assert= false $ = nil z
-                assert= false $ = f nil
-                assert= false $ = nil f
-                assert= false $ = :a x
-                assert= false $ = x :a
-                assert= true $ not= x true
-                assert= true $ not= z false
-                assert= true $ not= z nil
-                assert= true $ not= f nil
+                assert= false $ &= x true
+                assert= false $ &= true x
+                assert= false $ &= z false
+                assert= false $ &= false z
+                assert= false $ &= z nil
+                assert= false $ &= nil z
+                assert= false $ &= f nil
+                assert= false $ &= nil f
+                assert= false $ &= :a x
+                assert= false $ &= x :a
+                assert= true $ not $ &= x true
+                assert= true $ not $ &= z false
+                assert= true $ not $ &= z nil
+                assert= true $ not $ &= f nil
                 assert= false $ &=
                   do (println |left) 1
                   do (println |right) true
@@ -6091,9 +6104,9 @@
                 xs $ [] (dyn:box 42 ToString) (dyn:box |ok ToString) (dyn:box true ToString) (dyn:box false ToString) (dyn:box :ready ToString) (dyn:box nil ToString)
                 rendered $ map xs as-text
               assert= ([] |42 |ok |true |false |ready |) rendered
-              assert= true $ = (dyn:box 42 ToString) (dyn:box 42 ToString)
-              assert= false $ = (dyn:box 1 ToString) (dyn:box true ToString)
-              assert= false $ = (dyn:box 0 ToString) (dyn:box nil ToString)
+              assert= true $ &= (dyn:box 42 ToString) (dyn:box 42 ToString)
+              assert= false $ &= (dyn:box 1 ToString) (dyn:box true ToString)
+              assert= false $ &= (dyn:box 0 ToString) (dyn:box nil ToString)
               assert= "|(&dyn ToString)" $ &str $ &list:nth xs 0
               assert= :dyn-trait $ type-of $ &list:nth xs 0
             :tags $ #{} :core :unit
@@ -8697,7 +8710,13 @@
                                                 or
                                                   syntax? $ &list:nth type-form 0
                                                   symbol? $ &list:nth items 1
-                                              if (includes? generics type-form)
+                                              if
+                                                loop
+                                                    i 0
+                                                    n $ &list:count generics
+                                                  if (&>= i n) false $ if
+                                                    &= (&list:nth generics i) type-form
+                                                    , true $ recur (&+ i 1) n
                                                 quasiquote $ [] (~ field-name)
                                                   quote $ ~ type-form
                                                 quasiquote $ [] (~ field-name) (~ type-form)
@@ -8836,7 +8855,7 @@
                   .label $ quote $ Fn (-> String)
                 macroexpand $ quote $ deftrait Child ('requires Parent)
                   .label $ quote $ Fn (-> String)
-              assert "|requires clause changes the expansion" $ not=
+              assert "|requires clause changes the expansion" $ not $ &=
                 macroexpand $ quote $ deftrait Child (requires Parent)
                   .label $ quote $ Fn (-> String)
                 macroexpand $ quote $ deftrait Child
@@ -8854,13 +8873,13 @@
                   if (list? form)
                     if
                       &> (&list:count form) 0
-                      = :generics $ &list:nth form 0
+                      &= :generics $ &list:nth form 0
                       , false
                     , false
-                if (= n 1)
+                if (&= n 1)
                   quasiquote $ quote $ ~ (&list:nth clauses 0)
                   if
-                    and (= n 2)
+                    and (&= n 2)
                       generics-clause? $ &list:nth clauses 0
                     quasiquote $ quote $ ~ (&list:nth clauses 1)
                     raise "|deftype expects (deftype Name Type) or (deftype Name (:generics A ...) Type)"
@@ -9736,9 +9755,12 @@
                   equivalent $ defenum Entry $ :item String
                   different $ defenum Entry $ :item Number
                   arity $ defenum Entry $ :item String String
-                assert= true $ = original equivalent
-                assert= false $ = original different
-                assert= false $ = original arity
+                  equal-definition? $ fn (a b)
+                    hint-fn $ Fn EnumDef EnumDef $ -> Bool
+                    = a b
+                assert= true $ equal-definition? original equivalent
+                assert= false $ equal-definition? original different
+                assert= false $ equal-definition? original arity
                 assert= (&hash original) (&hash equivalent)
                 assert= 0 $ &compare original equivalent
                 assert= 1 $ &compare original different
@@ -10988,7 +11010,7 @@
                       {} $ :status :active
                     Ref $ Map Number $ Map Tag Dynamic
                 assert= &unit $ when
-                  = :active $ option:unwrap $ get
+                  &= :active $ option:unwrap $ get
                     option:unwrap $ get @states 1
                     , :status
                   , :active
@@ -11662,6 +11684,23 @@
                 assert= true $ identical? true true
                 assert= false $ identical? 1 |1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |compares-concatenated-strings-and-opaque-values-across-targets)
+              :code $ quote $ let
+                  joined $ &str:concat |a |b
+                  dyn-joined $ assert-type (&str:concat |x |y) Dynamic
+                  dyn-box-a $ dyn:box 1 Debug
+                  dyn-box-b $ dyn:box 1 Debug
+                  dyn-box-alias dyn-box-a
+                  value-eq $ identity $ identical? joined |ab
+                assert= true value-eq
+                assert= true $ identical? joined |ab
+                assert= true $ identical? dyn-joined |xy
+                assert= false $ identical? joined |ac
+                assert= true $ identical? inc inc
+                assert= false $ identical? inc dec
+                assert= true $ identical? dyn-box-a dyn-box-alias
+                assert= false $ identical? dyn-box-a dyn-box-b
+              :tags $ #{} :core :unit
         'identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn identity (x) x
           :examples $ []
@@ -11921,7 +11960,13 @@
               :tags $ #{} :core :naming-contract :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
-            if (list? x) (&list:includes? x k)
+            if (list? x)
+              loop
+                  i 0
+                  n $ &list:count x
+                if (&>= i n) false $ if
+                  &= (&list:nth x i) k
+                  , true $ recur (&+ i 1) n
               if (map? x) (&map:includes? x k)
                 &let
                   result $ .includes? x k
@@ -11930,6 +11975,7 @@
           :schema $ quote $ Fn Dynamic Dynamic (-> Bool) (:open :intrinsic)
             :cases
               Fn (List T) T (-> Bool) (:generics T)
+                :where $ T Eq
               Fn (Set T) T (-> Bool) (:generics T)
               Fn (Map K V) V (-> Bool) (:generics K V)
               Fn String String $ -> Bool
@@ -13276,6 +13322,7 @@
             quote $ assert= false $ not= :a :a
             quote $ assert= true $ not= |a |b
           :schema $ quote $ Fn T T (-> Bool) (:generics T)
+            :where $ T Eq
           :tests $ [] $ %{} 'TestEntry (:name |homogeneous-inequality)
             :code $ quote $ do
               assert= true $ not= |a |b
@@ -14366,7 +14413,8 @@
               assert= &unit $ remove-watch! counter :count
               reset! counter 9
               assert= 1 @calls
-              assert= false $ = counter legacy
+              assert= false $ identical? counter legacy
+              assert= true $ identical? counter counter
             :tags $ #{} :core :state :unit
         'ref? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ref? (x)
@@ -14457,7 +14505,7 @@
                   replacement $ assert-type dec AnyFn
                 reset! cell replacement
                 assert= true $ fn? @cell
-                assert= true $ = @cell dec
+                assert= true $ identical? @cell dec
               :tags $ #{} :core :reset-proof :types :unit
         'rest $ %{} 'CodeEntry
           :doc "|Return the same receiver type without its first item, using the Sliceable and Countable capabilities; an empty receiver is returned unchanged. A receiver without these capabilities is rejected during checking."
@@ -16559,7 +16607,7 @@
             &let
               xs $ &list:filter body $ defn &{,} (x)
                 hint-fn $ {} $ :return 'Bool
-                not= x ',
+                not $ &= x ',
               quasiquote $ pairs-map $ chunks ([] ~@xs) 2
           :examples $ []
           :schema $ quote $ Macro (& Syntax)
@@ -16825,7 +16873,7 @@
               :tags $ #{} :unit
         'is-not= $ %{} 'CodeEntry (:doc "|Assert that two values differ.")
           :code $ quote $ defmacro is-not= (left right)
-            quasiquote $ assert |Expected-values-to-differ: $ not= ~left ~right
+            quasiquote $ assert |Expected-values-to-differ: $ not $ &= ~left ~right
           :examples $ []
           :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic)
             -> $ Expr Unit

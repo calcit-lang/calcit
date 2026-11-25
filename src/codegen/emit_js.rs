@@ -24,14 +24,15 @@ use std::sync::{LazyLock, RwLock};
 use cirru_edn::EdnTag;
 use md5::{Digest, Md5};
 
+use crate::builtins::is_proc_name;
 use crate::builtins::meta::{js_gensym, reset_js_gensym_index};
 use crate::builtins::syntax::get_raw_args_fn;
-use crate::builtins::{is_js_syntax_procs, is_proc_name};
 use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::calcit::{self, CalcitArgLabel, CalcitFnArgs, CalcitImport, CalcitList, CalcitLocal, CalcitProc, MethodKind};
 use crate::calcit::{Calcit, CalcitSyntax, CalcitTypeAnnotation, ImportInfo};
 use crate::call_stack::StackKind;
 use crate::codegen::skip_arity_check;
+use crate::ffi_boundary::is_js_syntax_procs;
 use crate::js_ffi_source::{JsFfiSource, validate_js_source};
 use crate::program;
 use crate::util::string::{has_ns_part, matches_js_var, wrap_js_str};

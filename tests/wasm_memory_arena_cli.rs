@@ -3105,11 +3105,11 @@ fn core_wasm_dyn_trait_cross_ns_str_and_scalar_aliasing_equality() {
                 ds $ dyn:box s calcit.core/ToString
                 dn-same $ dyn:box 67368 calcit.core/ToString
                 m $ {} (dn-same :num) (ds :str)
-              assert= true $ = (dyn:box 67368 calcit.core/ToString) dn-same
+              assert= true $ &= (dyn:box 67368 calcit.core/ToString) dn-same
               assert= (Some :num) $ .get m (dyn:box 67368 calcit.core/ToString)
               assert= (Some :str) $ .get m (dyn:box (&str:concat |dyn- |alias-test) calcit.core/ToString)
               foldl (range 16384 300000 8) 0 $ fn (hits addr)
-                if (= (dyn:box addr calcit.core/ToString) ds)
+                if (&= (dyn:box addr calcit.core/ToString) ds)
                   &+ hits 1
                   , hits
           :examples $ []
@@ -3134,8 +3134,8 @@ fn core_wasm_dyn_trait_cross_ns_str_and_scalar_aliasing_equality() {
                 xs @*dyn-pair
                 a $ &list:nth xs 0
                 b $ &list:nth xs 1
-              assert= false $ = a b
-              assert= true $ = a (dyn:box 262152 calcit.core/ToString)
+              assert= false $ &= a b
+              assert= true $ &= a (dyn:box 262152 calcit.core/ToString)
               &str:concat (.to-string a) $ &str:concat |; (.to-string b)
           :examples $ []
           :schema $ quote $ Fn (-> String)

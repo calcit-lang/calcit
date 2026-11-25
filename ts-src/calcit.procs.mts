@@ -3381,6 +3381,9 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait, includeDefIns
   } else if (typeof obj === "string") {
     tag = "&core-string-methods";
     impls = normalize_builtin_impls(scoped?.string ?? calcit_builtin_impls.string);
+  } else if (isMethodValue(obj)) {
+    tag = "&core-def-impls";
+    impls = normalize_builtin_impls(scoped?.def ?? calcit_builtin_impls.def);
   } else if (typeof obj === "function") {
     tag = "&core-fn-methods";
     impls = normalize_builtin_impls(scoped?.fn ?? calcit_builtin_impls.fn);

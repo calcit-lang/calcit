@@ -243,8 +243,8 @@
             let
                 a js/{}
                 b js/{}
-              assert= false $ = a b
-              assert= true $ = a a
+              assert= false $ &= a b
+              assert= true $ &= a a
               assert= 2 $ count $ #{} a b a
             let
                 a js/{}

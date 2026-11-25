@@ -5265,19 +5265,23 @@ fn literal_equality_narrows_only_the_true_branch() {
       format!("let\n    probe $ fn ({params})\n      hint-fn $ {schema}\n      {body}\n  , probe")
     };
     for (label, snippet, passes) in [
-      ("tag", probe("x", "Fn Dynamic (-> Tag)", "if (= x :a) x :b"), true),
-      ("tag-literal-first", probe("x", "Fn Dynamic (-> Tag)", "if (= :a x) x :b"), true),
-      ("string", probe("x", "Fn Dynamic (-> Number)", "if (= x |a) (&str:count x) 0"), true),
+      ("tag", probe("x", "Fn Dynamic (-> Tag)", "if (&= x :a) x :b"), true),
+      ("tag-literal-first", probe("x", "Fn Dynamic (-> Tag)", "if (&= :a x) x :b"), true),
+      (
+        "string",
+        probe("x", "Fn Dynamic (-> Number)", "if (&= x |a) (&str:count x) 0"),
+        true,
+      ),
       (
         "number-native",
         probe("x", "Fn Dynamic (-> Number)", "if (&= x 1) (&+ x 1) 0"),
         true,
       ),
-      ("bool", probe("x", "Fn Dynamic (-> Bool)", "if (= x true) x false"), true),
-      ("cond", probe("x", "Fn Dynamic (-> Tag)", "cond ((= x :a) x) (true :b)"), true),
-      ("false-branch", probe("x", "Fn Dynamic (-> Tag)", "if (= x :a) :b x"), false),
-      ("two-locals", probe("x y", "Fn Dynamic Dynamic (-> Tag)", "if (= x y) x :b"), false),
-      ("nil-literal", probe("x", "Fn Dynamic (-> Tag)", "if (= x nil) x :b"), false),
+      ("bool", probe("x", "Fn Dynamic (-> Bool)", "if (&= x true) x false"), true),
+      ("cond", probe("x", "Fn Dynamic (-> Tag)", "cond ((&= x :a) x) (true :b)"), true),
+      ("false-branch", probe("x", "Fn Dynamic (-> Tag)", "if (&= x :a) :b x"), false),
+      ("two-locals", probe("x y", "Fn Dynamic Dynamic (-> Tag)", "if (&= x y) x :b"), false),
+      ("nil-literal", probe("x", "Fn Dynamic (-> Tag)", "if (&= x nil) x :b"), false),
     ] {
       assert_strict_snippet(&snippet, passes, label);
     }
@@ -8886,14 +8890,14 @@ defwasm-export check-all-dyn-edge-cases ()
   let
       spread-res $ run-closed-spread
       nan-val $ &/ 0.0 0.0
-      nan-eq $ = (dyn:box nan-val ToString) (dyn:box nan-val ToString)
+      nan-eq $ &= (dyn:box nan-val ToString) (dyn:box nan-val ToString)
       json-res $ try-parse-json |true
       boxed-bool-hash $ match json-res
         (:ok raw) (&hash (assert-type raw Bool))
         (:err _) 0
       num-hash-ok $ &= (&hash 16392) (&hash (assert-type 16392 Number))
-      disjoint-scalars $ and (not (= (dyn:box false ToString) (dyn:box 0 ToString))) (not (= (dyn:box true ToString) (dyn:box 1 ToString))) (not (= (dyn:box nil ToString) (dyn:box 0 ToString)))
-      refined-eq $ = (dyn:box 1 ToString) (dyn:box (assert-type 1 Int32) ToString)
+      disjoint-scalars $ and (not (&= (dyn:box false ToString) (dyn:box 0 ToString))) (not (&= (dyn:box true ToString) (dyn:box 1 ToString))) (not (&= (dyn:box nil ToString) (dyn:box 0 ToString)))
+      refined-eq $ &= (dyn:box 1 ToString) (dyn:box (assert-type 1 Int32) ToString)
       refined-hash-eq $ &= (&hash (dyn:box 1 ToString)) (&hash (dyn:box (assert-type 1 Int32) ToString))
     if (and (&= spread-res 26) nan-eq num-hash-ok (&= boxed-bool-hash (&hash true)) disjoint-scalars refined-eq refined-hash-eq) 1 0
 
@@ -8918,5 +8922,120 @@ defn main! ()
 
     let wasm_bytes = fs::read(out_dir.path().join("program.wasm")).expect("program.wasm");
     assert_eq!(call_core_wasm_f64(&wasm_bytes, "check-all-dyn-edge-cases"), 1.0);
+  });
+}
+
+#[test]
+fn eq_where_bounds_reject_non_eq_types_and_accept_method() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let prepare_app = |app_code: &str| {
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+      );
+      prepare_snapshot_entries(snap)
+    };
+    let run_app = |app_code: &str| {
+      let entries = prepare_app(app_code);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let compile_res =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      (compile_res, warnings.into_inner(), entries)
+    };
+
+    let positive = r#"
+ns app.main
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      m1 .list?
+      m2 .leaf?
+      methods $ &methods-of $ cirru-quote x
+      _a $ = 1 1 1
+      _b $ not= |a |b
+      _c $ /= :x :y
+      _d $ = m1 m1
+      _e $ not= m1 m2
+      _f $ /= m1 m2
+      _g $ &list:includes? methods m1
+      _h $ includes? methods m1
+      _i $ &list:includes? ([] 1 2) 1
+      _j $ includes? ([] 1 2) 1
+    , &unit
+"#;
+    let (res, warnings, _entries) = run_app(positive);
+    assert!(res.is_ok(), "eq positive test failed: {res:?}");
+    assert!(warnings.is_empty(), "eq positive test warnings: {warnings:?}");
+    let fresh_entries = prepare_app(positive);
+    run_check_only(&fresh_entries).expect("eq positive test should pass check-only");
+
+    for (label, bad_code) in [
+      (
+        "= rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (= inc dec)))\n    , &unit",
+      ),
+      (
+        "= rejects Ref",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((a (ref 1)) (b (ref 1)) (_x (= a b)))\n    , &unit",
+      ),
+      (
+        "= rejects JsObject",
+        "ns app.main\ndefn check-js (a b)\n  hint-fn $ Fn JsObject JsObject (-> Bool)\n  = a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , check-js\n  , &unit",
+      ),
+      (
+        "= rejects FfiResource",
+        "ns app.main\ndefn check-res (a b)\n  hint-fn $ Fn FfiResource FfiResource (-> Bool)\n  = a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , check-res\n  , &unit",
+      ),
+      (
+        "= rejects Any",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((a (any:box 1)) (b (any:box 1)) (_x (= a b)))\n    , &unit",
+      ),
+      (
+        "= rejects DynTrait",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((a (dyn:box 1 ToString)) (b (dyn:box 1 ToString)) (_x (= a b)))\n    , &unit",
+      ),
+      (
+        "= rejects unproven Dynamic",
+        "ns app.main\ndefn check-dyn (a b)\n  hint-fn $ Fn Dynamic Dynamic (-> Bool)\n  = a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , check-dyn\n  , &unit",
+      ),
+      (
+        "not= rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (not= inc dec)))\n    , &unit",
+      ),
+      (
+        "/= rejects Ref",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((a (ref 1)) (b (ref 1)) (_x (/= a b)))\n    , &unit",
+      ),
+      (
+        "&list:includes? rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:includes? ([] inc dec) inc)))\n    , &unit",
+      ),
+      (
+        "&list:includes? rejects Dynamic",
+        "ns app.main\ndefn check-list (xs item)\n  hint-fn $ Fn (List Dynamic) Dynamic (-> Bool)\n  &list:includes? xs item\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , check-list\n  , &unit",
+      ),
+      (
+        "includes? on List rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (includes? ([] inc dec) inc)))\n    , &unit",
+      ),
+    ] {
+      let (_res, warnings, _entries) = run_app(bad_code);
+      assert!(
+        warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
+        "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
+      );
+      let fresh_entries = prepare_app(bad_code);
+      let check_err = run_check_only(&fresh_entries).expect_err(&format!("{label} should fail strict check-only"));
+      assert!(
+        check_err.contains("E_GENERIC_WHERE_BOUND_MISMATCH") || check_err.contains("Found 1 errors during preprocessing"),
+        "{label} check-only error should cite E_GENERIC_WHERE_BOUND_MISMATCH or fail preprocessing: {check_err}"
+      );
+    }
   });
 }
