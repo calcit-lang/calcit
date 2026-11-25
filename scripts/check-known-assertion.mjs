@@ -1975,12 +1975,12 @@ try {
       const truthinessOriginal = await readFile(truthinessCore);
       const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
       const truthinessReport = JSON.parse(truthinessRun("test", "--tag", "truthiness", "--summary-only", "--require-match", "--format", "json"));
-      assert.equal(truthinessReport.selected, 12);
-      assert.equal(truthinessReport.passed, 12);
+      assert.equal(truthinessReport.selected, 13);
+      assert.equal(truthinessReport.passed, 13);
       const truthinessTests = ["if", "or", "and"].flatMap(name =>
         JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
           .filter(test => test.tags.includes("truthiness")));
-      assert.equal(truthinessTests.length, 12);
+      assert.equal(truthinessTests.length, 13);
       const truthinessSnapshot = join(project, "truthiness.cirru");
       await copyFile(truthinessCore, truthinessSnapshot);
       const replay = (...args) => execFileSync(binary, [truthinessSnapshot, ...args], options);
@@ -2799,12 +2799,12 @@ try {
       run("edit", "rm-def", pendingTarget);
       // Check the stored exits, not a nullable join masquerading as a conversion.
       const returnNames = ["nullable-choice", "nullable-reversed-choice", "nullable-match", "nullable-let-choice",
-        "nullable-implicit-choice", "nullable-shadow-choice", "nullable-callback-choice", "nullable-raised-choice"];
+        "nullable-shadow-choice", "nullable-callback-choice", "nullable-raised-choice"];
       run("test", "--tag", "contextual-proof", "--require-match");
       const contextualTests = returnNames.flatMap(name =>
         JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
           .filter(test => test.tags.includes("contextual-proof")));
-      assert.equal(contextualTests.length, 8);
+      assert.equal(contextualTests.length, 7);
       for (const name of returnNames) {
         const before = await readFile(snapshot);
         run("fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main", "--def", name, "--format", "edn");
@@ -2821,9 +2821,10 @@ try {
       (await import(pathToFileURL(join(contextualOutput, "test-struct.main.mjs")).href)).contextual_replay();
       const nullableNumber = ":: 'JsNullish 'Number";
       const nullableCallback = ":: 'JsNullish 'test-struct.main/NullableEvent";
-      for (const [label, parameters, argumentTypes, body, resultType, definite] of [
+      for (const [label, parameters, argumentTypes, body, resultType, definite, diagnostic = /E_FN_RETURN_TYPE_MISMATCH/] of [
         ["wrong-live-payload", [], "[]", "if flag |bad nil", nullableNumber, true],
         ["wrong-reversed-payload", [], "[]", "if flag nil |bad", nullableNumber, true],
+        ["two-arg-if-unit-branch", [], "[]", "if flag 7", nullableNumber, true, /E_BRANCH_TYPE_MISMATCH/],
         ["open-live-payload", ["raw"], "[] 'Dynamic", "if flag raw nil", nullableNumber, false],
         ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (let ((selected raw)) selected)", nullableNumber, false],
         ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (nil->option (if flag 7 nil)))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
@@ -2847,7 +2848,7 @@ try {
           "--def", "contextual-rejected", "--format", "edn"], options);
         if (audit.error) throw audit.error;
         assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
-        assert.match(`${audit.stdout}\n${audit.stderr}`, /E_FN_RETURN_UNPROVEN|E_FN_RETURN_TYPE_MISMATCH/);
+        assert.match(`${audit.stdout}\n${audit.stderr}`, new RegExp(`E_FN_RETURN_UNPROVEN|${diagnostic.source}`));
         assert.deepEqual(await readFile(snapshot), original);
         // Ordinary compilation retains its migration policy for open returns,
         // while definite contradictions must fail on both existing backends.
@@ -2858,9 +2859,9 @@ try {
               "--emit-path", output, ...mode], options);
             if (rejected.error) throw rejected.error;
             assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
-            assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_TYPE_MISMATCH/);
+            assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
             assert.deepEqual(await readFile(snapshot), original);
-            if (mode[0] === "js") await assertRejectedArtifacts(output, label, /E_FN_RETURN_TYPE_MISMATCH/, true);
+            if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
           }
         }
       }
