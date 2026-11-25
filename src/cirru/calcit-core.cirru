@@ -11691,6 +11691,8 @@
                   dyn-box-a $ dyn:box 1 Debug
                   dyn-box-b $ dyn:box 1 Debug
                   dyn-box-alias dyn-box-a
+                  value-eq $ identity $ identical? joined |ab
+                assert= true value-eq
                 assert= true $ identical? joined |ab
                 assert= true $ identical? dyn-joined |xy
                 assert= false $ identical? joined |ac
@@ -16871,7 +16873,7 @@
               :tags $ #{} :unit
         'is-not= $ %{} 'CodeEntry (:doc "|Assert that two values differ.")
           :code $ quote $ defmacro is-not= (left right)
-            quasiquote $ assert |Expected-values-to-differ: $ not= ~left ~right
+            quasiquote $ assert |Expected-values-to-differ: $ not $ &= ~left ~right
           :examples $ []
           :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic)
             -> $ Expr Unit

@@ -13008,7 +13008,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeLessThan => emit_numeric_cmp(ctx, Instruction::F64Lt, args),
     CalcitProc::NativeGreaterThan => emit_numeric_cmp(ctx, Instruction::F64Gt, args),
     CalcitProc::NativeEquals => emit_equals(ctx, args),
-    CalcitProc::Identical => emit_cmp(ctx, Instruction::F64Eq, args),
+    CalcitProc::Identical => {
+      emit_identical_as_i32(ctx, args)?;
+      ctx.emit(Instruction::F64ConvertI32U);
+      Ok(())
+    }
     CalcitProc::NativeCompare => {
       // &compare a b → -1.0 if a<b, 0.0 if a==b, 1.0 if a>b
       expect_arity(2, args, "&compare")?;

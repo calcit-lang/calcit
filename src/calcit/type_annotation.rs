@@ -772,6 +772,11 @@ impl CallTypeProof {
           candidate = actual.clone();
         }
       }
+      let definition_evidence: Vec<_> = evidence
+        .iter()
+        .filter(|actual| !matches!(actual.as_ref(), CalcitTypeAnnotation::Never))
+        .cloned()
+        .collect();
       if evidence.iter().all(|actual| rigidly_proves(actual, &candidate)) {
         // Only a closed common bound may widen an earlier argument: an open
         // peer such as `Map Tag Dynamic` must not relax a narrower contract.
@@ -779,7 +784,7 @@ impl CallTypeProof {
           self.widened_inputs.insert(name.clone());
         }
         self.bindings.insert(name, candidate);
-      } else if let Some(supertype) = Self::closed_definition_supertype(&evidence)
+      } else if let Some(supertype) = Self::closed_definition_supertype(&definition_evidence)
         && evidence.iter().all(|actual| rigidly_proves(actual, &supertype))
       {
         // Distinct definition values (`StructDef`, `EnumDef`, `Trait`, `Impl`)
@@ -10453,6 +10458,18 @@ mod tests {
     );
     mixed_proof.prepare_inputs([(&*left_struct, &*t), (&*left_enum, &*t)]);
     assert!(mixed_proof.result(&t).is_none());
+
+    let never = Arc::new(CalcitTypeAnnotation::Never);
+    let mut never_and_struct_proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[t.clone(), t.clone(), t.clone()],
+      &[never.clone(), left_struct.clone(), right_struct.clone()],
+    );
+    never_and_struct_proof.prepare_inputs([(&*never, &*t), (&*left_struct, &*t), (&*right_struct, &*t)]);
+    assert!(matches!(
+      never_and_struct_proof.result(&t).as_deref(),
+      Some(CalcitTypeAnnotation::Custom(tag)) if CalcitTypeAnnotation::custom_keyword_matches(tag, "struct-def")
+    ));
   }
 
   #[test]
