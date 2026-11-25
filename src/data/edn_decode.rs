@@ -201,10 +201,20 @@ impl MapDecoder<'_> {
           return Err(map_kind_mismatch(path, "list", input));
         };
         let mut values = Vec::with_capacity(items.len());
+        let mut unchanged = true;
         for (idx, item) in items.iter().enumerate() {
-          values.push(self.decode_node(*inner, item, &format!("{path}[{idx}]"), depth + 1)?);
+          let decoded = self.decode_node(*inner, item, &format!("{path}[{idx}]"), depth + 1)?;
+          unchanged &= match (item, &decoded) {
+            (Calcit::Number(a), Calcit::Number(b)) => a.to_bits() == b.to_bits(),
+            _ => crate::builtins::is_identical(item, &decoded),
+          };
+          values.push(decoded);
         }
-        Ok(Calcit::List(Arc::new(CalcitList::Vector(values))))
+        if unchanged {
+          Ok(input.to_owned())
+        } else {
+          Ok(Calcit::List(Arc::new(CalcitList::Vector(values))))
+        }
       }
       DataShapeNode::Tuple(slots) => {
         let Calcit::List(items) = input else {
@@ -743,6 +753,39 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       impls: vec![],
     })
+  }
+
+  #[test]
+  fn runtime_list_decode_keeps_identity_only_when_every_element_is_unchanged() {
+    let numbers = DataShapeGraph::from_nodes(0, vec![DataShapeNode::List(1), DataShapeNode::Number]).unwrap();
+    let input = Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Number(2.0)])));
+    let decoded = decode_map(&numbers, &input).expect("valid list");
+    assert!(crate::builtins::is_identical(&input, &decoded));
+    let unusual = Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::Number(f64::NAN), Calcit::Number(-0.0)])));
+    let decoded = decode_map(&numbers, &unusual).expect("valid non-finite number");
+    assert!(crate::builtins::is_identical(&unusual, &decoded));
+
+    let invalid = Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::Number(1.0), Calcit::Bool(false)])));
+    assert_eq!(decode_map(&numbers, &invalid).unwrap_err().path, "$[1]");
+
+    let option = option_enum();
+    let optional_numbers = DataShapeGraph::from_nodes(
+      0,
+      vec![
+        DataShapeNode::List(1),
+        DataShapeNode::MapOption {
+          nominal: option,
+          nominal_path: None,
+          inner: 2,
+        },
+        DataShapeNode::Number,
+      ],
+    )
+    .unwrap();
+    let converted = decode_map(&optional_numbers, &input).expect("raw numbers lift to Option");
+    assert!(!crate::builtins::is_identical(&input, &converted));
+    let Calcit::List(items) = converted else { panic!("expected list") };
+    assert!(matches!(items.first(), Some(Calcit::Enum(_))));
   }
 
   fn option_enum() -> Arc<CalcitEnumDef> {

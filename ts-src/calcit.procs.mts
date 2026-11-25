@@ -2725,7 +2725,13 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
         return map_decode_error(path, `expected list, got ${typed_edn_kind(input)}`);
       }
-      return new CalcitSliceList(Array.from(input.items()).map((value, idx) => decode_runtime_map_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1)));
+      let unchanged = true;
+      const values = Array.from(input.items()).map((value, idx) => {
+        const decoded = decode_runtime_map_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1);
+        unchanged &&= Object.is(decoded, value);
+        return decoded;
+      });
+      return unchanged ? input : new CalcitSliceList(values);
     }
     case "tuple": {
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {

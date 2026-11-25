@@ -601,6 +601,26 @@ try {
   assert.equal(runtimeA.type_of(undefined).value, "unit", "&unit must keep its own runtime type");
   assert.equal(runtimeA.nil_$q_(null), true);
   assert.equal(runtimeA.nil_$q_(undefined), false, "&unit must not satisfy nil?");
+  const listShape = { version: 3, root: 0, fingerprint: "list-identity", nodes: [{ kind: "list", inner: 1 }, { kind: "number" }] };
+  const numbers = runtimeA._$L_(1, 2);
+  assert.equal(runtimeA.decode_map_as(numbers, listShape), numbers, "validated unchanged list keeps its identity");
+  const unusualNumbers = runtimeA._$L_(NaN, -0);
+  assert.equal(runtimeA.decode_map_as(unusualNumbers, listShape), unusualNumbers, "unchanged NaN and signed zero retain the input list");
+  assert.throws(() => runtimeA.decode_map_as(runtimeA._$L_(1, false), listShape), /\$\[1\].*number/);
+  const cursorShape = { version: 3, root: 0, fingerprint: "cursor-list-identity", nodes: [
+    { kind: "list", inner: 1 }, { kind: "union", name: "StateKey", members: [2, 3, 4] },
+    { kind: "tag" }, { kind: "string" }, { kind: "number" },
+  ] };
+  const cursor = runtimeA._$L_(runtimeA.newTag("root"), "panel", 7);
+  assert.equal(runtimeA.decode_map_as(cursor, cursorShape), cursor, "mixed cursor retains its identity");
+  assert.throws(() => runtimeA.decode_map_as(runtimeA._$L_(runtimeA.newTag("root"), false), cursorShape), /\$\[1\]/);
+  const nestedMapShape = { version: 3, root: 0, fingerprint: "list-map-conversion", nodes: [
+    { kind: "list", inner: 1 }, { kind: "map", key: 2, value: 3 }, { kind: "tag" }, { kind: "number" },
+  ] };
+  const maps = runtimeA._$L_(runtimeA._$n__$M_(runtimeA.newTag("x"), 1));
+  const decodedMaps = runtimeA.decode_map_as(maps, nestedMapShape);
+  assert.notEqual(decodedMaps, maps, "a converted child requires a new list");
+  assert.equal(runtimeA._$n__$e_(decodedMaps, maps), true, "conversion retains values");
   assert.equal(runtimeA._$n__$e_(null, undefined), false, "nil and &unit must not compare equal");
   assert.notEqual(runtimeA.hashFunction(null), runtimeA.hashFunction(undefined), "nil and &unit need distinct hashes");
   assert.equal(runtimeA.toString(null, true), "nil");
