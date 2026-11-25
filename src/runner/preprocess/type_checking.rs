@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::{instantiate_fn_case_expected_types, resolve_checked_call_contract, select_fn_case};
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
-use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof, free_type_variable_names};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::union_def::UnionMemberKind;
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
@@ -96,13 +96,22 @@ fn append_option_migration_hint(
   message
 }
 
-fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
-  let declared = match ctx.head_form {
-    Calcit::Import(import) => Some((import.ns.as_ref(), program::lookup_def_schema(&import.ns, &import.def))),
-    Calcit::Proc(proc) => Some((calcit::CORE_NS, program::lookup_def_schema(calcit::CORE_NS, proc.as_ref()))),
-    _ => resolve_type_value(ctx.head_form, ctx.scope_types).map(|annotation| (ctx.file_ns, annotation)),
-  };
-  check_generic_trait_bounds_with_declared(ctx, bindings, declared.as_ref().map(|(ns, schema)| (*ns, schema)));
+fn check_generic_trait_bounds(
+  ctx: &CheckContext<'_>,
+  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  call_loop_proof: Option<&CallTypeProof>,
+  declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
+) {
+  let declared_from_head = declared
+    .is_none()
+    .then(|| match ctx.head_form {
+      Calcit::Import(import) => Some((import.ns.as_ref(), program::lookup_def_schema(&import.ns, &import.def))),
+      Calcit::Proc(proc) => Some((calcit::CORE_NS, program::lookup_def_schema(calcit::CORE_NS, proc.as_ref()))),
+      _ => resolve_type_value(ctx.head_form, ctx.scope_types).map(|annotation| (ctx.file_ns, annotation)),
+    })
+    .flatten();
+  let declared = declared.or_else(|| declared_from_head.as_ref().map(|(ns, schema)| (*ns, schema)));
+  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, call_loop_proof, declared);
 }
 
 pub(super) fn check_fn_where_bounds(
@@ -226,10 +235,15 @@ fn check_generic_trait_bounds_with_declared(
   bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
 ) {
-  if ctx.where_bounds.is_empty() {
-    return;
-  }
+  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, None, declared);
+}
 
+fn check_generic_trait_bounds_with_proof_and_declared(
+  ctx: &CheckContext<'_>,
+  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  call_loop_proof: Option<&CallTypeProof>,
+  declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
+) {
   // Core specialization can replace a declared generic parameter with a
   // concrete receiver/callback contract. Recover bound evidence from the
   // declaration rather than treating that erased slot as an unknown input.
@@ -242,6 +256,9 @@ fn check_generic_trait_bounds_with_declared(
   let where_bounds = signature
     .as_ref()
     .map_or(ctx.where_bounds, |signature| signature.where_bounds.as_slice());
+  if where_bounds.is_empty() {
+    return;
+  }
   let call_proof = signature.as_ref().map(|signature| {
     let parameters = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
     let actual_types = ctx
@@ -290,6 +307,7 @@ fn check_generic_trait_bounds_with_declared(
     let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
     let actual_type = call_proof
       .as_ref()
+      .or(call_loop_proof)
       .and_then(|proof| proof.result(&variable))
       .or_else(|| call_proof.is_none().then(|| bindings.get(&bound.name).cloned()).flatten())
       .or_else(|| {
@@ -868,6 +886,13 @@ fn check_arg_types_loop<F>(ctx: CheckContext<'_>, make_warning: F)
 where
   F: Fn(usize, &str, &str, String) -> String,
 {
+  check_arg_types_loop_with_declared(ctx, None, make_warning);
+}
+
+fn check_arg_types_loop_with_declared<F>(ctx: CheckContext<'_>, declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>, make_warning: F)
+where
+  F: Fn(usize, &str, &str, String) -> String,
+{
   let broad_slot_owner = super::broad_type_evidence::take_call_owner();
   let expanded_args;
   let expanded_types;
@@ -1074,7 +1099,7 @@ where
   }
 
   if complete_arguments {
-    check_generic_trait_bounds(&ctx, &bindings);
+    check_generic_trait_bounds(&ctx, &bindings, Some(&proof), declared);
   }
 }
 
@@ -1874,6 +1899,19 @@ pub(super) fn check_method_call_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  check_method_call_arg_types_with_declared(head, signature, None, args, scope_types, call_info, check_warnings);
+}
+
+/// Check method arity and argument/where bounds with optional declared fn schema.
+pub(super) fn check_method_call_arg_types_with_declared(
+  head: &Calcit,
+  signature: &crate::calcit::CalcitFnTypeAnnotation,
+  declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_info: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
   let fixed_count = signature.arg_types.len();
   let has_rest = signature.rest_type.is_some();
   let spread = args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
@@ -1905,7 +1943,7 @@ pub(super) fn check_method_call_arg_types(
     return;
   }
   let expected_types = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
-  check_arg_types_loop(
+  check_arg_types_loop_with_declared(
     CheckContext {
       head_form: head,
       args,
@@ -1918,6 +1956,7 @@ pub(super) fn check_method_call_arg_types(
       warning_code: "E_METHOD_ARG_TYPE_MISMATCH",
       check_warnings,
     },
+    declared,
     |index, expected, actual, _| {
       let role = if has_rest && index > fixed_count { "variadic " } else { "" };
       format!(

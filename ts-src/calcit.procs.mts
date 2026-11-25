@@ -346,8 +346,7 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
     throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
   }
   const impls = pair[0];
-  const reverse =
-    value instanceof CalcitStructValue || value instanceof CalcitEnumValue || value instanceof CalcitStructDef || value instanceof CalcitEnumDef;
+  const reverse = value instanceof CalcitStructValue || value instanceof CalcitEnumValue;
   const ordered = reverse ? [...impls].reverse() : impls;
   const selected = ordered.find((impl) => impl != null && impl.origin === traitDef);
   if (selected == null) {
@@ -3319,7 +3318,7 @@ function normalize_builtin_impls(entry: CalcitImplEntry): CalcitImpl[] | null {
   return null;
 }
 
-function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[], string] {
+function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait, includeDefInstanceImpls = false): [CalcitImpl[], string] {
   const scoped = traitOrigin == null ? undefined : calcit_builtin_impls_by_trait.get(traitOrigin);
   let impls: CalcitImpl[];
   let tag: string;
@@ -3354,14 +3353,14 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
     impls = normalize_builtin_impls(scoped?.set ?? calcit_builtin_impls.set);
-  } else if (obj instanceof CalcitStructDef) {
+  } else if (obj instanceof CalcitStructDef && includeDefInstanceImpls) {
     // Bare type definitions (not yet instantiated) carry their own attached
     // impls, so introspection tools like `&methods-of` can answer "what
     // methods will instances of this type have" without a concrete instance.
     tag = obj.name.toString();
     const builtinRecordImpls = normalize_builtin_impls(scoped?.struct ?? calcit_builtin_impls.struct) ?? [];
     impls = [...builtinRecordImpls, ...(obj.impls ?? [])];
-  } else if (obj instanceof CalcitEnumDef) {
+  } else if (obj instanceof CalcitEnumDef && includeDefInstanceImpls) {
     tag = obj.name();
     const builtinTupleImpls = normalize_builtin_impls(scoped?.enum ?? calcit_builtin_impls.enum) ?? [];
     impls = [...builtinTupleImpls, ...(obj.impls ?? [])];
@@ -3400,7 +3399,13 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[
   } else if (obj instanceof CalcitBufList) {
     tag = "&core-buf-list-impls";
     impls = normalize_builtin_impls(scoped?.bufList ?? calcit_builtin_impls.bufList);
-  } else if (obj instanceof CalcitUnionDef || obj instanceof CalcitTrait || obj instanceof CalcitImpl) {
+  } else if (
+    obj instanceof CalcitStructDef ||
+    obj instanceof CalcitEnumDef ||
+    obj instanceof CalcitUnionDef ||
+    obj instanceof CalcitTrait ||
+    obj instanceof CalcitImpl
+  ) {
     tag = "&core-def-impls";
     impls = normalize_builtin_impls(scoped?.def ?? calcit_builtin_impls.def);
   } else {
@@ -3508,7 +3513,7 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
   if (obj instanceof CalcitTrait) {
     return new CalcitSliceList(obj.methods.map((m) => invoke_method_closure(m.value)));
   }
-  let pair = lookup_impls(obj);
+  let pair = lookup_impls(obj, undefined, true);
   if (pair == null) {
     throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
   }
@@ -3551,7 +3556,7 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
     console.log("\n");
     return obj;
   }
-  let pair = lookup_impls(obj);
+  let pair = lookup_impls(obj, undefined, true);
   if (pair == null) {
     throw new Error(`&inspect-methods cannot resolve impls for: ${toString(obj, true)}`);
   }

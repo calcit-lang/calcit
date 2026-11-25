@@ -50,7 +50,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, instantiate_fn_case_expected_types, resolve_bound_type_slot_chain,
   resolve_checked_call_contract, select_fn_case,
@@ -9673,6 +9673,45 @@ fn preferred_source_call_location(location: Option<NodeLocation>, call_stack: &C
     })
 }
 
+/// Prove a method callback argument when compatibility leaves generic
+/// callbacks uninstantiated or leaves empty-receiver generics (`Never`) unbound.
+fn method_callback_proof_matches(
+  signature_generics: &[Arc<str>],
+  expected_receiver: Option<&Arc<CalcitTypeAnnotation>>,
+  receiver_type: &CalcitTypeAnnotation,
+  expected_arg: &CalcitTypeAnnotation,
+  actual_arg: &CalcitTypeAnnotation,
+  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  scope_types: &ScopeTypes,
+) -> bool {
+  let generic_callback = matches!(actual_arg, CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty());
+  let empty_receiver_callback = receiver_type.contains_never() && expected_arg.resolve_to_nonoptional_fn().is_some();
+  if (!generic_callback && !empty_receiver_callback) || expected_arg.resolve_to_nonoptional_fn().is_none() {
+    return false;
+  }
+  let expected = expected_arg.substitute_type_vars(bindings);
+  let mut expected_inputs = Vec::with_capacity(2);
+  let mut actual_inputs = Vec::with_capacity(2);
+  if let Some(exp_recv) = expected_receiver {
+    expected_inputs.push(exp_recv.clone());
+    actual_inputs.push(Arc::new(receiver_type.clone()));
+  }
+  expected_inputs.push(expected.clone());
+  actual_inputs.push(Arc::new(actual_arg.clone()));
+  let mut proof = scope_types.call_type_proof(signature_generics, &expected_inputs, &actual_inputs);
+  if let Some(exp_recv) = expected_receiver
+    && proof.prove(receiver_type, exp_recv.as_ref()).is_mismatch()
+  {
+    return false;
+  }
+  let result = proof.prove(actual_arg, &expected);
+  if generic_callback {
+    result.is_proven()
+  } else {
+    !result.is_mismatch()
+  }
+}
+
 /// Validate method argument count and types against the receiver contract.
 fn check_struct_method_args(
   head: &Calcit,
@@ -9794,19 +9833,15 @@ fn check_struct_method_args(
       }
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
         && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-        // Instantiate a first-class generic callback using the receiver-bound
-        // contract. Keep the sibling return bindings from ordinary checks.
-        && !(matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty())
-          && expected_type.resolve_to_nonoptional_fn().is_some()
-          && {
-            let expected = expected_type.substitute_type_vars(&bindings);
-            let mut proof = CallTypeProof::new(
-              &signature.generics,
-              std::slice::from_ref(&expected),
-              std::slice::from_ref(&actual_type),
-            );
-            proof.prove(&actual_type, &expected).is_proven()
-          })
+        && !method_callback_proof_matches(
+          &signature.generics,
+          signature.arg_types.first(),
+          type_value.as_ref(),
+          expected_type.as_ref(),
+          actual_type.as_ref(),
+          &bindings,
+          scope_types,
+        )
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
@@ -9864,12 +9899,15 @@ fn check_struct_method_args(
     }
     return;
   };
+  let declared_method_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
+  let declared_method = Some((fn_info.def_ns.as_ref(), &declared_method_schema));
   // Core methods report against the same receiver-bound contract that
   // `method_call_signature` proves, so the lowered direct call agrees.
   if let Some(signature) = type_inference::checked_method_signature(fn_info, args, scope_types) {
-    type_checking::check_method_call_arg_types(
+    type_checking::check_method_call_arg_types_with_declared(
       head,
       &signature,
+      declared_method,
       args,
       scope_types,
       &CallTypeCheckInfo {
@@ -9882,13 +9920,13 @@ fn check_struct_method_args(
     return;
   }
 
-  let declared_method_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
   if let Some(schema_fn) = declared_method_schema.resolve_to_fn()
     && let Some(selected_case) = checked_call_contract::select_fn_case(schema_fn.as_ref(), &fn_info.def_ns, args, scope_types)
   {
-    type_checking::check_method_call_arg_types(
+    type_checking::check_method_call_arg_types_with_declared(
       head,
       &selected_case,
+      declared_method,
       args,
       scope_types,
       &CallTypeCheckInfo {
@@ -9918,9 +9956,10 @@ fn check_struct_method_args(
     || matches!(fn_info.args.as_ref(), CalcitFnArgs::MarkedArgs(xs) if xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
 
   if has_variadic || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    type_checking::check_method_call_arg_types(
+    type_checking::check_method_call_arg_types_with_declared(
       head,
       &effective_user_call_schema(fn_info),
+      declared_method,
       args,
       scope_types,
       &CallTypeCheckInfo {
@@ -9971,7 +10010,24 @@ fn check_struct_method_args(
       let actual_type =
         type_checking::callback_tail_tuple_evidence(arg, &actual_type, expected_type, scope_types).unwrap_or(actual_type);
       // Compare types
-      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings) {
+      let method_generics = if fn_info.generics.is_empty() {
+        declared_method_schema
+          .resolve_to_fn()
+          .map_or_else(Vec::new, |schema| schema.generics.as_ref().clone())
+      } else {
+        fn_info.generics.as_ref().clone()
+      };
+      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+        && !method_callback_proof_matches(
+          &method_generics,
+          fn_info.arg_types.first(),
+          type_value.as_ref(),
+          expected_type.as_ref(),
+          actual_type.as_ref(),
+          &bindings,
+          scope_types,
+        )
+      {
         let expected_str = expected_type.substitute_type_vars(&bindings).describe();
         let actual_str = actual_type.as_ref().describe();
         let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {

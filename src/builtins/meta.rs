@@ -2140,7 +2140,11 @@ fn collect_optional_core_impls(name: &str, call_stack: &CallStackList) -> Result
   }
 }
 
-fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
+fn collect_impls_for_value(
+  value: &Calcit,
+  include_def_instance_impls: bool,
+  call_stack: &CallStackList,
+) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
   match value {
     Calcit::Enum(enum_value) => {
       let mut impls = collect_optional_core_impls("&core-enum-impls", call_stack)?;
@@ -2152,15 +2156,15 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
       impls.extend(struct_value.struct_ref.impls.iter().cloned());
       Ok(impls)
     }
-    // Bare type definitions (not yet instantiated) carry their own attached impls,
-    // so introspection tools like `&methods-of` can answer "what methods will
-    // instances of this type have" without needing a concrete instance first.
-    Calcit::StructDef(struct_def) => {
+    // Introspection tools like `&methods-of` inspect what methods instances of a
+    // bare definition carry, whereas trait dispatch and `assert-traits` check
+    // the definition value itself (`&core-def-impls`).
+    Calcit::StructDef(struct_def) if include_def_instance_impls => {
       let mut impls = collect_optional_core_impls("&core-struct-impls", call_stack)?;
       impls.extend(struct_def.impls.iter().cloned());
       Ok(impls)
     }
-    Calcit::EnumDef(enum_def) => {
+    Calcit::EnumDef(enum_def) if include_def_instance_impls => {
       let mut impls = collect_optional_core_impls("&core-enum-impls", call_stack)?;
       impls.extend(enum_def.impls().iter().cloned());
       Ok(impls)
@@ -2180,7 +2184,9 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
     Calcit::Ref(..) => collect_optional_core_impls("&core-ref-impls", call_stack),
     Calcit::Buffer(..) => collect_optional_core_impls("&core-buffer-impls", call_stack),
     Calcit::BufList(..) => collect_optional_core_impls("&core-buf-list-impls", call_stack),
-    Calcit::UnionDef(..) | Calcit::Trait(..) | Calcit::Impl(..) => collect_optional_core_impls("&core-def-impls", call_stack),
+    Calcit::StructDef(..) | Calcit::EnumDef(..) | Calcit::UnionDef(..) | Calcit::Trait(..) | Calcit::Impl(..) => {
+      collect_optional_core_impls("&core-def-impls", call_stack)
+    }
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),
@@ -2193,12 +2199,15 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
 fn iter_impls_in_precedence_order<'a>(
   value: &'a Calcit,
   impls: &'a [Arc<CalcitImpl>],
+  include_def_instance_impls: bool,
 ) -> Box<dyn Iterator<Item = &'a Arc<CalcitImpl>> + 'a> {
   match value {
     // user values are last-wins, so higher precedence is later entries.
-    // Bare struct/enum definitions attach impls the same way (via `.extend`
-    // in `&struct:impl-traits`/`&enum:impl-traits`), so they share this order.
-    Calcit::Enum(..) | Calcit::Struct(..) | Calcit::StructDef(..) | Calcit::EnumDef(..) => Box::new(impls.iter().rev()),
+    // Bare struct/enum definitions attach instance impls the same way when
+    // introspected, whereas definition values themselves use `&core-def-impls`
+    // in core first-wins order.
+    Calcit::Enum(..) | Calcit::Struct(..) => Box::new(impls.iter().rev()),
+    Calcit::StructDef(..) | Calcit::EnumDef(..) if include_def_instance_impls => Box::new(impls.iter().rev()),
     // builtin core impl lists are first-wins and order-sensitive
     _ => Box::new(impls.iter()),
   }
@@ -2208,7 +2217,7 @@ fn collect_method_names(value: &Calcit, impls: &[Arc<CalcitImpl>]) -> Vec<String
   let mut seen: HashMap<String, ()> = HashMap::new();
   let mut methods: Vec<String> = Vec::new();
 
-  for imp in iter_impls_in_precedence_order(value, impls) {
+  for imp in iter_impls_in_precedence_order(value, impls, true) {
     for field in imp.fields().iter() {
       let name = format!(".{}", field.ref_str());
       if !seen.contains_key(&name) {
@@ -2281,10 +2290,10 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   }
 
   let receiver = &xs[2];
-  let impls = collect_impls_for_value(receiver, call_stack)?;
+  let impls = collect_impls_for_value(receiver, false, call_stack)?;
 
   let mut matching_impls: Vec<&Arc<CalcitImpl>> = vec![];
-  for imp in iter_impls_in_precedence_order(receiver, &impls) {
+  for imp in iter_impls_in_precedence_order(receiver, &impls, false) {
     if imp.implements_trait(&trait_def) {
       matching_impls.push(imp);
     }
@@ -2345,7 +2354,7 @@ pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   let methods = if let Calcit::Trait(trait_def) = value {
     trait_dot_method_names(trait_def)
   } else {
-    let impls = collect_impls_for_value(value, call_stack)?;
+    let impls = collect_impls_for_value(value, true, call_stack)?;
     collect_method_names(value, &impls)
   };
   Ok(Calcit::from(
@@ -2395,9 +2404,9 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
     eprintln!("\nTrait methods declared directly (no impls): {}", names.len());
     names
   } else {
-    let impls = collect_impls_for_value(value, call_stack)?;
+    let impls = collect_impls_for_value(value, true, call_stack)?;
     eprintln!("\nImpl records (high → low precedence): {}", impls.len());
-    for (idx, imp) in iter_impls_in_precedence_order(value, &impls).enumerate() {
+    for (idx, imp) in iter_impls_in_precedence_order(value, &impls, true).enumerate() {
       let mut method_keys = imp.fields().iter().map(|x| format!(".{}", x.ref_str())).collect::<Vec<_>>();
       method_keys.sort();
       let origin_label = imp.trait_name().unwrap_or_else(|| imp.name());
@@ -2429,8 +2438,8 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
     }
   };
 
-  let impls = collect_impls_for_value(value, call_stack)?;
-  let selected_impl = iter_impls_in_precedence_order(value, &impls).find(|imp| imp.implements_trait(&trait_def));
+  let impls = collect_impls_for_value(value, false, call_stack)?;
+  let selected_impl = iter_impls_in_precedence_order(value, &impls, false).find(|imp| imp.implements_trait(&trait_def));
 
   let Some(selected_impl) = selected_impl else {
     let available = impls
@@ -3578,5 +3587,72 @@ mod tests {
     let err = extract_code_into_edn(&[boxed]).expect_err("AnyBox cannot be extracted as code");
     assert_eq!(err.kind, CalcitErrKind::Type);
     assert!(err.msg.contains("any-box"), "unexpected error: {}", err.msg);
+  }
+
+  #[test]
+  fn struct_and_enum_defs_keep_trait_dispatch_separate_from_instance_impls() {
+    let marker = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("CustomMarker"),
+      vec![EdnTag::new("mark")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let marker_impl = Arc::new(CalcitImpl {
+      name: EdnTag::new("MarkerImpl"),
+      origin: Some(marker.clone()),
+      fields: Arc::new(vec![EdnTag::new("mark")]),
+      values: Arc::new(vec![constant_method("marked")]),
+    });
+
+    let mut struct_def = CalcitStructDef::from_fields(EdnTag::new("BoxDef"), vec![]);
+    struct_def.impls = vec![marker_impl.clone()];
+    let struct_def = Arc::new(struct_def);
+    let struct_def_val = Calcit::StructDef(struct_def.clone());
+    let struct_val = Calcit::Struct(CalcitStructValue {
+      struct_ref: struct_def,
+      values: Arc::new(vec![]),
+    });
+
+    let mut enum_proto = CalcitStructDef::from_fields(EdnTag::new("ChoiceDef"), vec![EdnTag::new("a")]);
+    enum_proto.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+    enum_proto.impls = vec![marker_impl];
+    let enum_def = Arc::new(
+      CalcitEnumDef::from_struct(CalcitStructValue {
+        struct_ref: Arc::new(enum_proto),
+        values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
+      })
+      .expect("enum def"),
+    );
+    let enum_def_val = Calcit::EnumDef(enum_def.clone());
+    let enum_val = Calcit::Enum(CalcitEnumValue {
+      tag: Arc::new(Calcit::tag("a")),
+      extra: vec![].into(),
+      sum_type: Some(enum_def),
+    });
+
+    let trait_val = Calcit::Trait(marker);
+    let mark_tag = Calcit::Tag(EdnTag::new("mark"));
+    let stack = CallStackList::default();
+
+    for (label, def_val, inst_val) in [("struct", &struct_def_val, &struct_val), ("enum", &enum_def_val, &enum_val)] {
+      let err = trait_call(&[trait_val.clone(), mark_tag.clone(), def_val.clone()], &stack)
+        .expect_err(&format!("{label} def must not dispatch instance trait impl"));
+      assert!(err.msg.contains("cannot find impl for trait"), "{label}: {err}");
+
+      let assert_err = assert_traits(&[def_val.clone(), trait_val.clone()], &stack)
+        .expect_err(&format!("{label} def must not satisfy instance trait assertion"));
+      assert!(assert_err.msg.contains("does not nominally implement"), "{label}: {assert_err}");
+
+      let methods = methods_of(std::slice::from_ref(def_val), &stack).expect("methods-of introspects def");
+      assert!(
+        format!("{methods}").contains(".mark"),
+        "{label} methods-of should expose instance method .mark: {methods}"
+      );
+
+      assert_eq!(
+        trait_call(&[trait_val.clone(), mark_tag.clone(), inst_val.clone()], &stack).unwrap(),
+        Calcit::new_str("marked")
+      );
+      assert_eq!(assert_traits(&[inst_val.clone(), trait_val.clone()], &stack).unwrap(), *inst_val);
+    }
   }
 }

@@ -8086,6 +8086,10 @@ defn constrained-sort (xs)
   hint-fn $ Fn (List T) (-> (List T)) (:generics T) (:where $ T Compare)
   sort xs
 
+defn take-numbers (ys)
+  hint-fn $ Fn (List Number) (-> Number)
+  count ys
+
 defn main! ()
   hint-fn $ Fn (-> Unit)
   let
@@ -8100,6 +8104,14 @@ defn main! ()
       _gb $ group-by ([]) (fn (x) x)
       _so $ sort ([])
       _sb $ &list:sort-by ([]) (fn (x) x)
+      _sb-method $ .sort-by ([] 3 1 2) (fn (x) (hint-fn $ Fn Number (-> Number)) x)
+      _sb-method-id $ .sort-by ([] 3 1 2) identity
+      _sb-method-tag $ .sort-by ([] (Person :name |b) (Person :name |a)) :name
+      _chained-sort $ let ((xs $ distinct ([]))) (sort xs)
+      _chained-freq $ frequencies (distinct ([]))
+      _chained-nums $ take-numbers (distinct ([]))
+      _chained-method $ .sort (.slice (distinct ([])) 0)
+      _chained-method-sb $ .sort-by (distinct ([])) (fn (x) x)
       _ix1 $ index-of ([]) 1
       _ix2 $ &list:index-of-from ([]) 0 1
       _ix3 $ &list:last-index-of ([]) 1
@@ -8171,6 +8183,10 @@ defn main! ()
         "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:sort-by ([] 1 2) (fn (x) (fn () x)))))\n    &unit",
       ),
       (
+        ".sort-by method key-fn rejects Fn keys",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (.sort-by ([] 1 2) (fn (x) (hint-fn $ Fn Number (-> (Fn Number (-> Number)))) (fn (y) y)))))\n    &unit",
+      ),
+      (
         "hash rejects Ref",
         "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (hash (ref 1))))\n    &unit",
       ),
@@ -8201,5 +8217,11 @@ defn main! ()
         "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
       );
     }
+
+    let (trait_err, _trait_warnings, _entries) = run_app(
+      "ns app.main\ndeftrait CustomMarker\n  .cmark $ Fn Self (-> Number)\ndefstruct MyBox (:x Number) (:impls CustomMarker)\ndefimpl MyBox CustomMarker\n  .cmark $ fn (self) 9\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&trait-call CustomMarker :cmark MyBox)))\n    &unit",
+    );
+    let trait_err = trait_err.expect_err("StructDef must fail static &trait-call for instance-only trait");
+    assert_eq!(trait_err.code(), Some("E_TRAIT_CALL_IMPL_MISSING"), "unexpected: {trait_err:?}");
   });
 }
