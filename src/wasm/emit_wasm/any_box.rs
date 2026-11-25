@@ -78,31 +78,13 @@ pub(super) fn collect_any_type_table(
   AnyTypeTable { keys_to_id }
 }
 
-fn collect_union_scalar_kinds(
-  union_def: &crate::wasm::host::calcit::CalcitUnionDef,
-  visited: &mut std::collections::HashSet<String>,
-  kinds: &mut BTreeSet<&'static str>,
-) {
-  let key = union_def
-    .definition_ref()
-    .map(|r| r.trim_start_matches('\'').to_owned())
-    .unwrap_or_else(|| union_def.name.ref_str().to_owned());
-  if !visited.insert(key) {
-    return;
-  }
-  for member in union_def.members() {
-    let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&member);
-    if let Some(kind) = super::proven_scalar_kind(&expanded) {
-      kinds.insert(kind);
-    } else if let Some(nested) = expanded.resolve_to_union() {
-      collect_union_scalar_kinds(&nested, visited, kinds);
-    }
-  }
-}
-
 /// Rejects boxing `defunion` values whose reachable members include >= 2 unboxed
 /// scalar kinds (`Bool`, `Number`, `Tag`) that collide in WASM's scalar `f64` ABI.
+/// Uses `checked_members()` so nested unions resolve relative to each union's
+/// declaring namespace regardless of the call-site annotation namespace.
 fn reject_colliding_scalar_union_box(type_key: &str) -> Result<(), String> {
+  use crate::wasm::host::calcit::UnionMemberKind;
+
   let Some(union_name) = type_key.strip_prefix("union:") else {
     return Ok(());
   };
@@ -110,9 +92,24 @@ fn reject_colliding_scalar_union_box(type_key: &str) -> Result<(), String> {
   let Some(union_def) = union_ty.resolve_to_union() else {
     return Ok(());
   };
-  let mut visited = std::collections::HashSet::new();
+  let members = union_def
+    .checked_members()
+    .map_err(|err| format!("E_WASM_NIL_TYPE_EVIDENCE: {err}"))?;
   let mut kinds = BTreeSet::new();
-  collect_union_scalar_kinds(&union_def, &mut visited, &mut kinds);
+  for member in members {
+    match member.kind {
+      UnionMemberKind::Bool => {
+        kinds.insert("bool");
+      }
+      UnionMemberKind::Number => {
+        kinds.insert("number");
+      }
+      UnionMemberKind::Tag => {
+        kinds.insert("tag");
+      }
+      _ => {}
+    }
+  }
   if kinds.len() >= 2 {
     let list: Vec<&str> = kinds.into_iter().collect();
     return Err(format!(

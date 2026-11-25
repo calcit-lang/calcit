@@ -79,7 +79,7 @@ pub use type_annotation::{
   value_matches_type_annotation, with_type_annotation_warning_context,
 };
 pub use type_id::{CanonicalTypeIdError, CompiledAnyTypeId, canonical_type_hash, canonical_type_key};
-pub use union_def::CalcitUnionDef;
+pub use union_def::{CalcitUnionDef, UnionMemberKind};
 
 use compare::{
   compare_any_ref_values, compare_calcit_enum_values, compare_calcit_impl_values, compare_calcit_struct_values,

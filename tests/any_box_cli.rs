@@ -635,3 +635,70 @@ fn wasm_any_box_rejects_colliding_scalar_union_with_e_wasm_nil_type_evidence() {
     );
   }
 }
+
+#[cfg(feature = "wasm")]
+#[test]
+fn wasm_any_box_rejects_cross_namespace_nested_colliding_union() {
+  let dir = TestDirectory::create();
+  let snapshot = dir.snapshot();
+  let content = r#"
+{}
+  :about "|Cross-namespace nested colliding union test"
+  :package |any-test
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'any-test.main/main!) (:mode :native) (:reload-fn 'any-test.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'any-test.types $ %{} 'FileEntry
+      :defs $ {}
+        'Inner $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Inner Bool String
+          :examples $ []
+          :schema $ quote UnionDef
+        'Outer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion Outer Inner Number
+          :examples $ []
+          :schema $ quote UnionDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-test.types
+    'any-test.main $ %{} 'FileEntry
+      :defs $ {}
+        'bad-box! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export bad-box! (u) (any:box u)
+          :examples $ []
+          :schema $ quote $ Fn any-test.types/Outer (-> Any)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-test.main (:require (any-test.types :refer (Outer)))
+"#;
+  fs::write(&snapshot, content).expect("write snapshot");
+  let wasm_out = dir.path.join("wasm-out");
+  fs::create_dir(&wasm_out).expect("create wasm out dir");
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("CALCIT_PROOF_AUDIT", "0")
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(&wasm_out)
+    .arg(&snapshot)
+    .arg("wasm")
+    .output()
+    .expect("compile wasm");
+  let text = combined_output(&compile);
+  assert!(
+    !compile.status.success(),
+    "cross-ns nested colliding union should fail WASM compile:\n{text}"
+  );
+  assert!(
+    text.contains("E_WASM_NIL_TYPE_EVIDENCE"),
+    "expected E_WASM_NIL_TYPE_EVIDENCE:\n{text}"
+  );
+}
