@@ -11684,7 +11684,8 @@
                 assert= true $ identical? true true
                 assert= false $ identical? 1 |1
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |compares-concatenated-strings-and-opaque-values-across-targets)
+            %{} 'TestEntry
+              :name |compares-concatenated-strings-and-opaque-values-across-targets
               :code $ quote $ let
                   joined $ &str:concat |a |b
                   dyn-joined $ assert-type (&str:concat |x |y) Dynamic
@@ -15674,6 +15675,24 @@
                   #{} 7 $ Some 7
                   Set $ Option Number
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |list-identity-after-validation)
+              :code $ quote $ let
+                  original $ [] 1 2
+                match
+                  try-decode-map-as original $ List Number
+                  (:ok decoded)
+                    assert= true $ identical? original decoded
+                  (:err message) (raise message)
+                match
+                  try-decode-map-as original $ List $ Option Number
+                  (:ok converted)
+                    do
+                      assert= false $ identical? original converted
+                      assert=
+                        [] (Some 1) (Some 2)
+                        , converted
+                  (:err message) (raise message)
+              :tags $ #{} :list-identity :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source) (&try-parse-cirru Result source)
@@ -16873,7 +16892,7 @@
               :tags $ #{} :unit
         'is-not= $ %{} 'CodeEntry (:doc "|Assert that two values differ.")
           :code $ quote $ defmacro is-not= (left right)
-            quasiquote $ assert |Expected-values-to-differ: $ not $ &= ~left ~right
+            quasiquote $ assert |Expected-values-to-differ: $ not (&= ~left ~right)
           :examples $ []
           :schema $ quote $ Macro (Expr Dynamic) (Expr Dynamic)
             -> $ Expr Unit
