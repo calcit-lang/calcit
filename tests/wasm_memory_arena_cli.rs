@@ -2906,3 +2906,311 @@ fn core_wasm_defref_promotes_and_compacts_any_box_payloads() {
   }
   assert_eq!(check_state.call(&mut store, 4096.0).expect("check-state! after compaction"), 1.0);
 }
+
+#[test]
+fn core_wasm_dyn_trait_promotes_and_compacts_across_defref_turns() {
+  let dir = TestDirectory::create("wasm-dyn-trait-defref");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for Core WASM defref promotion and compaction of (Dyn Trait) fat pointers."
+  :package |dyn-defref
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'dyn-defref.main/main!) (:mode :native) (:reload-fn 'dyn-defref.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'dyn-defref.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Renderable $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait Renderable
+            .render $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'TagBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct TagBox (:label String) (:n Number) (:impls Renderable)
+          :examples $ []
+          :schema $ quote StructDef
+        'TagBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl TagBox Renderable
+            .render $ fn (self)
+              hint-fn $ Fn dyn-defref.main/TagBox (-> String)
+              &str:concat (:label self) $ &str:concat |# (to-string (:n self))
+          :examples $ []
+          :schema $ quote Impl
+        'NumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumBox (:v Number) (:impls Renderable)
+          :examples $ []
+          :schema $ quote StructDef
+        'NumBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl NumBox Renderable
+            .render $ fn (self)
+              hint-fn $ Fn dyn-defref.main/NumBox (-> String)
+              &str:concat |n= (to-string (:v self))
+          :examples $ []
+          :schema $ quote Impl
+        '*dyn-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *dyn-list $ [] $ dyn:box (NumBox :v 0) Renderable
+          :examples $ []
+          :schema $ quote $ Ref (List (Dyn dyn-defref.main/Renderable))
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'store-items $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-items (label n)
+            reset! *dyn-list $ []
+              dyn:box (TagBox :label label :n n) Renderable
+              dyn:box (NumBox :v (&* n 10)) Renderable
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String Number (-> Number)
+        'churn-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-heap (s)
+            reset! *churn s
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'read-items $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-items ()
+            let
+                xs @*dyn-list
+                a (.render (&list:nth xs 0))
+                b (.render (&list:nth xs 1))
+                tag-kind (&str (&list:nth xs 0))
+              &str:concat a $ &str:concat |; $ &str:concat b $ &str:concat |; tag-kind
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns dyn-defref.main
+"#;
+  let wasm_path = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let persistent_base = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let arena_base = get_i32_global(&mut store, &instance, "__heap_ptr");
+
+  let store_items = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "store-items")
+    .expect("store-items export");
+  let churn_heap = instance
+    .get_typed_func::<f64, f64>(&mut store, "churn-heap")
+    .expect("churn-heap export");
+  let read_items = instance
+    .get_typed_func::<(), f64>(&mut store, "read-items")
+    .expect("read-items export");
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let label = "alpha-box";
+  let src = arena_base + 64;
+  memory.write(&mut store, src as usize, label.as_bytes()).expect("write label");
+  let label_ptr = str_new.call(&mut store, (src, label.len() as i32)).expect("__str_new label");
+  assert_eq!(store_items.call(&mut store, (label_ptr, 7.0)).expect("store-items"), 1.0);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after store");
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
+
+  // Churn > 1 MiB across semi-spaces to force compaction of persistent `(Dyn Renderable)` roots.
+  let payload = "X".repeat(300_000);
+  for _ in 0..5 {
+    let heap_top = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+    memory
+      .write(&mut store, heap_top as usize, payload.as_bytes())
+      .expect("write payload");
+    let p_ptr = str_new
+      .call(&mut store, (heap_top, payload.len() as i32))
+      .expect("__str_new payload");
+    assert_eq!(churn_heap.call(&mut store, p_ptr).expect("churn"), 1.0);
+    arena_reset.call(&mut store, ()).expect("__arena_reset after churn");
+  }
+  assert!(
+    get_i32_global(&mut store, &instance, "__persistent_ptr") >= persistent_base + SEMI_SPACE_BYTES
+      || get_i32_global(&mut store, &instance, "__persistent_ptr") > persistent_base
+  );
+
+  let rendered_ptr = read_items.call(&mut store, ()).expect("read-items after compaction");
+  assert_eq!(
+    read_wasm_str(&mut store, &instance, rendered_ptr),
+    "alpha-box#7;n=70;(&dyn Renderable)"
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}
+
+#[test]
+fn core_wasm_dyn_trait_cross_ns_str_and_scalar_aliasing_equality() {
+  let dir = TestDirectory::create("core-wasm-dyn-scalar-alias");
+  let snapshot = r#"
+{}
+  :about "|Test cross-namespace (&str (dyn:box ...)) and scalar-vs-heap aliasing on (Dyn Trait)."
+  :package |dyn-alias
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'probe.main/main!) (:mode :native) (:reload-fn 'probe.main/main!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'probe.traits $ %{} 'FileEntry
+      :defs $ {}
+        'MyPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait MyPlugin
+            .step $ Fn Self (-> Number)
+          :examples $ []
+          :schema $ quote Trait
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns probe.traits
+    'probe.main $ %{} 'FileEntry
+      :defs $ {}
+        'Box1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Box1 (:v Number) (:impls probe.traits/MyPlugin)
+          :examples $ []
+          :schema $ quote StructDef
+        'Box1Impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Box1 probe.traits/MyPlugin
+            .step $ fn (self)
+              hint-fn $ Fn Box1 (-> Number)
+              :v self
+          :examples $ []
+          :schema $ quote Impl
+        '*dyn-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *dyn-pair $ []
+            dyn:box 262152 calcit.core/ToString
+            dyn:box |init calcit.core/ToString
+          :examples $ []
+          :schema $ quote $ Ref (List (Dyn calcit.core/ToString))
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'cross-ns-dyn-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export cross-ns-dyn-str ()
+            &str $ dyn:box (Box1 :v 9) probe.traits/MyPlugin
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'sweep-scalar-aliasing $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export sweep-scalar-aliasing ()
+            let
+                s $ &str:concat |dyn- |alias-test
+                ds $ dyn:box s calcit.core/ToString
+                dn-same $ dyn:box 67368 calcit.core/ToString
+                m $ {} (dn-same :num) (ds :str)
+              assert= true $ = (dyn:box 67368 calcit.core/ToString) dn-same
+              assert= (Some :num) $ .get m (dyn:box 67368 calcit.core/ToString)
+              assert= (Some :str) $ .get m (dyn:box (&str:concat |dyn- |alias-test) calcit.core/ToString)
+              foldl (range 16384 300000 8) 0 $ fn (hits addr)
+                if (= (dyn:box addr calcit.core/ToString) ds)
+                  &+ hits 1
+                  , hits
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'store-scalar-and-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-scalar-and-heap (s)
+            reset! *dyn-pair $ []
+              dyn:box 262152 calcit.core/ToString
+              dyn:box s calcit.core/ToString
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'churn-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-heap (s)
+            reset! *churn s
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'read-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-pair ()
+            let
+                xs @*dyn-pair
+                a $ &list:nth xs 0
+                b $ &list:nth xs 1
+              assert= false $ = a b
+              assert= true $ = a (dyn:box 262152 calcit.core/ToString)
+              &str:concat (.to-string a) $ &str:concat |; (.to-string b)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns probe.main
+          :require
+            probe.traits :refer $ MyPlugin
+"#;
+  let wasm_path = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let arena_base = get_i32_global(&mut store, &instance, "__heap_ptr");
+
+  let cross_ns_dyn_str = instance
+    .get_typed_func::<(), f64>(&mut store, "cross-ns-dyn-str")
+    .expect("cross-ns-dyn-str export");
+  let sweep_fn = instance
+    .get_typed_func::<(), f64>(&mut store, "sweep-scalar-aliasing")
+    .expect("sweep-scalar-aliasing export");
+  let store_fn = instance
+    .get_typed_func::<f64, f64>(&mut store, "store-scalar-and-heap")
+    .expect("store-scalar-and-heap export");
+  let churn_fn = instance
+    .get_typed_func::<f64, f64>(&mut store, "churn-heap")
+    .expect("churn-heap export");
+  let read_pair = instance
+    .get_typed_func::<(), f64>(&mut store, "read-pair")
+    .expect("read-pair export");
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let str_ptr = cross_ns_dyn_str.call(&mut store, ()).expect("cross-ns-dyn-str call");
+  assert_eq!(read_wasm_str(&mut store, &instance, str_ptr), "(&dyn MyPlugin)");
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+
+  assert_eq!(
+    sweep_fn.call(&mut store, ()).expect("sweep-scalar-aliasing"),
+    0.0,
+    "scalar Numbers in [16384..300000) must never equal boxed String in Dyn ToString"
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset after sweep");
+
+  let live_s = "alive-str";
+  let src = arena_base + 64;
+  memory.write(&mut store, src as usize, live_s.as_bytes()).expect("write live_s");
+  let s_ptr = str_new.call(&mut store, (src, live_s.len() as i32)).expect("__str_new live_s");
+  assert_eq!(store_fn.call(&mut store, s_ptr).expect("store-scalar-and-heap"), 1.0);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after store");
+
+  let payload = "Y".repeat(300_000);
+  for _ in 0..5 {
+    let heap_top = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+    memory
+      .write(&mut store, heap_top as usize, payload.as_bytes())
+      .expect("write payload");
+    let p_ptr = str_new
+      .call(&mut store, (heap_top, payload.len() as i32))
+      .expect("__str_new payload");
+    assert_eq!(churn_fn.call(&mut store, p_ptr).expect("churn"), 1.0);
+    arena_reset.call(&mut store, ()).expect("__arena_reset after churn");
+  }
+
+  let pair_ptr = read_pair.call(&mut store, ()).expect("read-pair after compaction");
+  assert_eq!(read_wasm_str(&mut store, &instance, pair_ptr), "262152;alive-str");
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}

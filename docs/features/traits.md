@@ -455,6 +455,65 @@ Expected output:
 ([] 2 3 4)
 ```
 
+## 对象安全存在类型：`(Dyn Trait)` 与 `dyn:box`
+
+当集合、映射表或结构体需要同时存放多种实现了同一 trait 的不同具体值（例如异构插件或 `List (Dyn Show)`）时，可以使用 `(Dyn Trait)` 表达对象安全的 trait object 类型，并用 `(dyn:box expr Trait)` 把具体值装箱成 `(Dyn Trait)`：
+
+```cirru
+let
+    xs $ [] (dyn:box 42 ToString) (dyn:box |ok ToString) (dyn:box true ToString)
+    first-dyn $ .unwrap $ nth xs 0
+  assert= ([] |42 |ok |true) $ map xs (fn (x) (.to-string x))
+  assert= :dyn-trait $ type-of first-dyn
+  assert= "|(&dyn ToString)" $ &str first-dyn
+```
+
+自定义插件 trait 与名义结构体示例：
+
+```cirru.no-check
+deftrait AlertPlugin
+  .alert $ Fn Self Number (-> String)
+
+defstruct EmailAlert (:addr String) (:impls AlertPlugin)
+defimpl EmailAlert AlertPlugin
+  .alert $ fn (self code)
+    hint-fn $ Fn EmailAlert Number (-> String)
+    str (:addr self) |# code
+
+defstruct WebhookAlert (:url String) (:impls AlertPlugin)
+defimpl WebhookAlert AlertPlugin
+  .alert $ fn (self code)
+    hint-fn $ Fn WebhookAlert Number (-> String)
+    str (:url self) |# code
+
+defn dispatch-alerts (plugins code)
+  hint-fn $ Fn (List (Dyn AlertPlugin)) Number (-> (List String))
+  map plugins $ fn (p) (.alert p code)
+
+let
+    items $ []
+      dyn:box (EmailAlert :addr |ops@example.com) AlertPlugin
+      dyn:box (WebhookAlert :url |https://hooks.example.com) AlertPlugin
+  dispatch-alerts items 503
+```
+
+- **装箱**：`dyn:box expr Trait` 要求 `Trait` 通过对象安全检查，且 `expr` 具有实现了 `Trait` 及全部父 trait 的封闭具体类型；不满足时在预处理期报 `E_DYN_BOX_TYPE`。
+- **调用与泛型兼容**：对 `d : (Dyn Trait)` 调用 `(.method d args...)` 会降级为静态解析的 `&trait-call`；当 `Child` 通过 `requires` 继承 `Parent` 时，`(Dyn Child)` 也满足 `:where $ T Parent` 约束（前提是不与裸 `Self` 返回或额外参数规则冲突）。
+- **运行时表示**：在 Native 与 JS 上保留 trait 定义、底层值与解析后的 vtable；在 WASM / WASI 上编译为带闭集 `vtable_id` 的 16 字节 fat pointer，并通过 `BrTable` 直接调用目标实现，不产生 `CallIndirect` 或额外 funcref 表项。
+
+### 对象安全规则（`E_TRAIT_NOT_OBJECT_SAFE`）
+
+在 `(Dyn Trait)` 类型位置或 `dyn:box` 中使用的 trait（含经由 `requires` 传入的所有父 trait）必须同时满足：
+
+1. 方法 schema 合法且 `requires` 无环。
+2. 不是 `:ffi` external-object trait，且不包含 `:field` 成员。
+3. 每个方法都有显式固定 arity 的 `Fn` 签名（不允许 `DynFn`、`:rest` 或 `:cases`）。
+4. 每个方法的第 0 个参数（接收者位置）必须是裸 `Self`。
+5. 除第 0 个参数外，其余参数类型、返回类型及类型守卫中不得出现 `Self`。
+6. 方法自身的 `:generics` 只能量化 `Self`（不能引入额外方法级泛型参数或 `:where`）。
+
+如 `Show`、`Debug`、`ToString`、`Countable`、`Len`、`Serialize` 均满足对象安全；而方法包含额外 `Self` 参数或返回 `Self` 的 `Eq`、`Compare`、`Add`、`Mappable`、`Deserialize` 会报 `E_TRAIT_NOT_OBJECT_SAFE`。
+
 ## 限制
 
 - `deftrait` 当前只支持 `(method type)` 声明，不支持在该条目中附加默认方法体。
@@ -464,4 +523,5 @@ Expected output:
 - `requires` 不能形成环。
 - external-object trait 只能 require external-object trait。
 - 以上声明错误统一报 `E_TRAIT_REQUIRES`。
-- 普通 trait 不能写在类型位置（schema、`hint-fn`、`assert-type`），报 `E_TRAIT_AS_TYPE`，改用 `:where` 约束。
+- 普通 trait 不能直接写在类型位置（schema、`hint-fn`、`assert-type`、`defstruct` 字段），否则报 `E_TRAIT_AS_TYPE`；需要静态单态化约束时改用 `:where`，需要异构运行期分发时改用 `(Dyn Trait)`。
+- `(Dyn Trait)` 的开放类型装箱、裸 `Self` 返回方法及 `:ffi` trait 对象都会在编译期明确拒绝，不退化为 `Dynamic`。

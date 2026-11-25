@@ -123,6 +123,7 @@ const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
   (CalcitSyntax::AnyBox, &[]),
   (CalcitSyntax::AnyDowncast, &[]),
   (CalcitSyntax::AssertTraits, &["control"]),
+  (CalcitSyntax::DynBox, &[]),
   (CalcitSyntax::Match, &[]),
 ];
 

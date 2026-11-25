@@ -491,6 +491,17 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       ctx.emit(f64_const(ptr as f64));
       return Ok(());
     }
+    Some(CalcitTypeAnnotation::DynTrait(trait_def)) => {
+      let text = format!("(&dyn {})", trait_def.name);
+      let ptr = *ctx
+        .string_pool
+        .get(&text)
+        .ok_or_else(|| format!("missing WASM dyn-trait string literal: {text}"))?;
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      ctx.emit(f64_const(ptr as f64));
+      return Ok(());
+    }
     Some(CalcitTypeAnnotation::Bool) => {
       emit_expr_as_repr(ctx, &args[0], NativeValRepr::BoolI32)?;
       ctx.emit(Instruction::I32Eqz);
@@ -554,6 +565,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     .unwrap_or_else(|| panic!("runtime helper __rt_f64_to_str not found"));
 
   let string_type_tag = *ctx.tag_index.get("string").ok_or("string tag missing")? as i32;
+  let dyn_trait_type_tag = *ctx.tag_index.get("dyn-trait").ok_or("dyn-trait tag missing")? as i32;
 
   let v = ctx.alloc_local(); // f64 -- the argument value
   let result = ctx.alloc_local(); // f64 -- the output string ptr (0.0 = not yet set)
@@ -588,6 +600,20 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     ctx.begin_block_if();
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::LocalSet(result));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(raw_base));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::I32Const(dyn_trait_type_tag));
+    ctx.emit(Instruction::I32Eq);
+    ctx.begin_block_if();
+    let to_str_idx = ctx.dyn_traits.borrow_mut().ensure_to_str_trampoline();
+    ctx.emit(Instruction::LocalGet(v_i32));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+    ctx.emit(Instruction::I32Const(super::dyn_trait::DYN_TRAIT_ID_MASK as i32));
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::Call(to_str_idx));
+    ctx.emit(Instruction::LocalSet(result));
+    ctx.emit(Instruction::End);
     ctx.emit(Instruction::End); // inner if
     if let (Some(any_tag), Some(any_ptr)) = (ctx.tag_index.get("any-box").copied(), ctx.string_pool.get("(&any-box)").copied()) {
       ctx.emit(Instruction::LocalGet(raw_base));

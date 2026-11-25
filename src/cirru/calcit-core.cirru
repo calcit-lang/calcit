@@ -384,7 +384,8 @@
                 assert= "|(&any-box)" $ .debug box-num
                 assert= "|(&any-box)" $ str box-num
                 match (any:downcast box-num Number)
-                  (:some v) (assert= 43 (&+ v 1))
+                  (:some v)
+                    assert= 43 $ &+ v 1
                   (:none) (assert= true false)
                 match (any:downcast box-num String)
                   (:some _) (assert= true false)
@@ -402,14 +403,15 @@
                   (:some v) (assert= &unit v)
                   (:none) (assert= true false)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |any-box-distinguishes-int32-number-and-false-zero)
+            %{} 'TestEntry
+              :name |any-box-distinguishes-int32-number-and-false-zero
               :code $ quote $ let
                   b-false $ any:box false
                   b-zero $ any:box 0
                   b-i32 $ any:box $ assert-type 42 Int32
                   b-num $ any:box 42
                   b-s1 $ any:box |hello
-                  b-s2 $ any:box (&str:concat |hel |lo)
+                  b-s2 $ any:box $ &str:concat |hel |lo
                   b-s3 $ any:box |world
                 assert= false $ &= b-false b-zero
                 assert= false $ &= b-i32 b-num
@@ -420,7 +422,8 @@
                   (:some _) (assert= true false)
                   (:none) (assert= true true)
                 match (any:downcast b-i32 Int32)
-                  (:some v) (assert= (assert-type 42 Int32) v)
+                  (:some v)
+                    assert= (assert-type 42 Int32) v
                   (:none) (assert= true false)
                 match (any:downcast b-num Int32)
                   (:some _) (assert= true false)
@@ -438,22 +441,28 @@
                   b-jv $ any:box jv
                   cn $ assert-type |leaf CirruNode
                   b-cn $ any:box cn
-                match (any:downcast b-list (List Number))
-                  (:some xs) (assert= ([] 1 2 3) xs)
+                match
+                  any:downcast b-list $ List Number
+                  (:some xs)
+                    assert= ([] 1 2 3) xs
                   (:none) (assert= true false)
-                match (any:downcast b-list (List String))
+                match
+                  any:downcast b-list $ List String
                   (:some _) (assert= true false)
                   (:none) (assert= true true)
-                match (any:downcast b-opt (Option Number))
+                match
+                  any:downcast b-opt $ Option Number
                   (:some inner)
                     match inner
                       (:some n) (assert= 9 n)
                       (:none) (assert= true false)
                   (:none) (assert= true false)
-                match (any:downcast b-opt (Option String))
+                match
+                  any:downcast b-opt $ Option String
                   (:some _) (assert= true false)
                   (:none) (assert= true true)
-                match (any:downcast b-res (Result String Number))
+                match
+                  any:downcast b-res $ Result String Number
                   (:some inner)
                     match inner
                       (:ok s) (assert= |done s)
@@ -478,13 +487,13 @@
                     {}
                       |count $ any:box 1
                       |label $ any:box |ok
-                      |items $ any:box (assert-type ([] 10 20) (List Number))
+                      |items $ any:box $ assert-type ([] 10 20) (List Number)
                     Map String Any
                   m2 $ assert-type
                     {}
                       |count $ any:box 1
-                      |label $ any:box (&str:concat |o |k)
-                      |items $ any:box (assert-type ([] 10 20) (List Number))
+                      |label $ any:box $ &str:concat |o |k
+                      |items $ any:box $ assert-type ([] 10 20) (List Number)
                     Map String Any
                 assert= m1 m2
                 match (get m1 |count)
@@ -501,10 +510,46 @@
                   (:none) (assert= true false)
                 match (get m1 |items)
                   (:some b)
-                    match (any:downcast b (List Number))
-                      (:some v) (assert= ([] 10 20) v)
+                    match
+                      any:downcast b $ List Number
+                      (:some v)
+                        assert= ([] 10 20) v
                       (:none) (assert= true false)
                   (:none) (assert= true false)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |any-box-roundtrip-dyn-trait)
+              :code $ quote $ let
+                  d-str $ dyn:box 42 ToString
+                  d-cnt $ dyn:box |hello Countable
+                  b-str $ any:box d-str
+                  b-cnt $ any:box d-cnt
+                assert= :any-box $ type-of b-str
+                assert= "|(&any-box)" $ .debug b-str
+                assert= false $ &= b-str b-cnt
+                match
+                  any:downcast b-str $ Dyn ToString
+                  (:some item)
+                    do
+                      assert= |42 $ .to-string item
+                      assert= "|(&dyn ToString)" $ &str item
+                      assert= true $ &= item d-str
+                  (:none) (assert= true false)
+                match
+                  any:downcast b-str $ Dyn Countable
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+                match
+                  any:downcast b-cnt $ Dyn Countable
+                  (:some item)
+                    do
+                      assert= 5 $ .count item
+                      assert= "|(&dyn Countable)" $ &str item
+                      assert= true $ &= item d-cnt
+                  (:none) (assert= true false)
+                match
+                  any:downcast b-cnt $ Dyn ToString
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
               :tags $ #{} :core :unit
         '&core-buf-list-impls $ %{} 'CodeEntry
           :doc "|Built-in implementation list for BufList: Debug."
@@ -5153,6 +5198,33 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+          :tests $ [] $ %{} 'TestEntry (:name |dyn-countable-dispatches-ten-concrete-types)
+            :code $ quote $ let
+                xs $ assert-type
+                  [] (dyn:box |hello Countable)
+                    dyn:box ([] 1 2 3) Countable
+                    dyn:box ([] |a |b) Countable
+                    dyn:box
+                      {} (:a 1) (:b 2)
+                      , Countable
+                    dyn:box
+                      {} $ |k 9
+                      , Countable
+                    dyn:box (#{} :x :y :z) Countable
+                    dyn:box (Option :some 7) Countable
+                    dyn:box (Result :ok |yes) Countable
+                    dyn:box (StreamConsumeError :total-limit) Countable
+                    dyn:box
+                      JsonValue :array $ [] $ JsonValue :null
+                      , Countable
+                  List $ Dyn Countable
+                counts $ map xs $ fn (item) (.count item)
+              assert=
+                [] 5 3 2 2 1 3 2 2 1 2
+                , counts
+              assert= :dyn-trait $ type-of $ &list:nth xs 0
+              assert= "|(&dyn Countable)" $ &str $ &list:nth xs 0
+            :tags $ #{} :core :unit
         'Data $ %{} 'CodeEntry
           :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
           :code $ quote $ defenum Data (:nil) (:bool Bool) (:number Number) (:string String) (:tag Tag) (:symbol Symbol)
@@ -5452,6 +5524,23 @@
                 assert=
                   hash-node $ [] |fn $ [] |x
                   hash $ [] |fn $ [] |x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |dyn-hash-dispatches-heterogeneous-values)
+              :code $ quote $ let
+                  xs $ assert-type
+                    [] (dyn:box 42 Hash) (dyn:box 16384 Hash) (dyn:box |hello Hash) (dyn:box :ready Hash) (dyn:box true Hash) (dyn:box nil Hash) (dyn:box &unit Hash)
+                      dyn:box ([] 1 2) Hash
+                      dyn:box (Option :some 7) Hash
+                      dyn:box (JsonValue :number 9) Hash
+                    List $ Dyn Hash
+                  hashes $ map xs $ fn (item) (.hash item)
+                  expected $ [] (hash 42) (hash 16384) (hash |hello) (hash :ready) (hash true) (hash nil) (hash &unit)
+                    hash $ [] 1 2
+                    hash $ Option :some 7
+                    hash $ JsonValue :number 9
+                assert= expected hashes
+                assert= (hash 16384)
+                  &trait-call Hash :hash $ &list:nth xs 1
               :tags $ #{} :core :unit
         'HttpBody $ %{} 'CodeEntry
           :doc "|Nominal HTTP message body: :empty, :text String, or :bytes Buffer."
@@ -5992,6 +6081,22 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+          :tests $ [] $ %{} 'TestEntry
+            :name |dyn-to-string-handles-scalars-equality-and-where
+            :code $ quote $ let
+                as-text $ fn (x)
+                  hint-fn $ Fn T (-> String) (:generics T)
+                    :where $ T ToString
+                  .to-string x
+                xs $ [] (dyn:box 42 ToString) (dyn:box |ok ToString) (dyn:box true ToString) (dyn:box false ToString) (dyn:box :ready ToString) (dyn:box nil ToString)
+                rendered $ map xs as-text
+              assert= ([] |42 |ok |true |false |ready |) rendered
+              assert= true $ = (dyn:box 42 ToString) (dyn:box 42 ToString)
+              assert= false $ = (dyn:box 1 ToString) (dyn:box true ToString)
+              assert= false $ = (dyn:box 0 ToString) (dyn:box nil ToString)
+              assert= "|(&dyn ToString)" $ &str $ &list:nth xs 0
+              assert= :dyn-trait $ type-of $ &list:nth xs 0
+            :tags $ #{} :core :unit
         '[] $ %{} 'CodeEntry
           :doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements"
           :code $ quote &runtime-implementation

@@ -1,5 +1,6 @@
 pub use crate::calcit::type_refs::{
-  map_schema_references, map_type_references, qualify_namespace_type_refs as resolve_namespace_type_refs_for_body,
+  map_all_type_references, map_schema_references, map_type_references,
+  qualify_namespace_type_refs as resolve_namespace_type_refs_for_body,
 };
 mod broad_type_evidence;
 mod checked_call_contract;
@@ -8,6 +9,9 @@ mod effect_features;
 mod explicit_open;
 mod intrinsic_rules;
 mod js_ffi;
+mod object_safety;
+#[cfg(feature = "wasm")]
+pub(crate) use object_safety::check_trait_object_safe;
 mod post_lowering;
 mod proof_provenance;
 mod recur_tail;
@@ -2204,6 +2208,7 @@ fn ensure_ns_def_preprocessed(
         })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
+      object_safety::reject_non_object_safe_dyn_traits_in_deftype(ns, def, &code, &scope_types, &next_stack)?;
       if ns != calcit::CORE_NS && should_emit_project_source_lint(ns) {
         for advisory in effect_features::check_definition(ns, def, &resolved_code) {
           push_advisory(advisory);
@@ -2258,7 +2263,23 @@ fn check_top_level_value_schema(
     call_stack,
     Some(schema_location.clone()),
   )?;
-  trait_type_names::reject_trait_type_names(&format!("{ns}/{def}"), "schema", &declared, ns, call_stack, Some(schema_location))?;
+  trait_type_names::reject_trait_type_names(
+    &format!("{ns}/{def}"),
+    "schema",
+    &declared,
+    ns,
+    call_stack,
+    Some(schema_location.clone()),
+  )?;
+  object_safety::reject_non_object_safe_dyn_traits(
+    &format!("{ns}/{def}"),
+    "schema",
+    &declared,
+    ns,
+    Some(scope_types),
+    call_stack,
+    Some(schema_location),
+  )?;
   let expected = type_inference::definition_value_schema(ns, def, declared);
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
     return Ok(());
@@ -2603,7 +2624,7 @@ fn resolve_trait_def_from_source_code(code: &Calcit, file_ns: &str) -> Option<Ca
   None
 }
 
-fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
+pub(crate) fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
   thread_local! {
     static ACTIVE_SOURCE_TRAITS: RefCell<Vec<(String, String)>> = const { RefCell::new(vec![]) };
   }
@@ -2814,25 +2835,49 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
 /// precise function parameters fall back to `Dynamic` inside the body.
 fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
   let annotation = scope_types.resolve_generic_aliases(annotation);
-  map_type_references(annotation, &|name, resolved_args| {
-    let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
-    // A qualified declaration is not an alias for a same-named local type.
-    let local_type = scope_types.type_reference(lookup_name);
-    match local_type.map(AsRef::as_ref) {
-      Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
-      Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
-        Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
+  map_all_type_references(
+    annotation,
+    &|name, resolved_args| {
+      let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
+      // A qualified declaration is not an alias for a same-named local type.
+      let local_type = scope_types.type_reference(lookup_name);
+      match local_type.map(AsRef::as_ref) {
+        Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
+        Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
+          Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args))
+        }
+        Some(CalcitTypeAnnotation::EnumDef(enum_def)) => Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args)),
+        Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
+          Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
+        }
+        Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
+          Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
+        }
+        Some(local_type) if resolved_args.is_empty() => match local_type.as_trait_definition() {
+          Some(trait_def) => Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.clone()))),
+          None => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
+        },
+        _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
       }
-      Some(CalcitTypeAnnotation::EnumDef(enum_def)) => Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args)),
-      Some(CalcitTypeAnnotation::Enum(enum_def, _)) | Some(CalcitTypeAnnotation::EnumValue(enum_def)) => {
-        Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), resolved_args))
+    },
+    &|trait_def| trait_def,
+    &|trait_def| {
+      if trait_def.runtime_id.is_none() && trait_def.methods.is_empty() && trait_def.requires.is_empty() {
+        let lookup_name = trait_def.name.ref_str().trim_start_matches('\'').trim_start_matches(':');
+        if trait_def.definition_ref.is_none()
+          && let Some(local_type) = scope_types.type_reference(lookup_name)
+        {
+          if let CalcitTypeAnnotation::Trait(resolved) = local_type.as_ref() {
+            return resolved.clone();
+          }
+          if let Some(resolved) = local_type.as_trait_definition() {
+            return Arc::new(resolved.clone());
+          }
+        }
       }
-      Some(CalcitTypeAnnotation::Trait(trait_def)) if resolved_args.is_empty() => {
-        Arc::new(CalcitTypeAnnotation::Trait(trait_def.clone()))
-      }
-      _ => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)),
-    }
-  })
+      trait_def
+    },
+  )
 }
 
 /// Resolve a parsed type form in the active lexical scope, preferring local
@@ -2869,18 +2914,32 @@ pub(super) fn resolve_type_form_in_scope(
 /// global `TypeRef` resolvers; traits need the same source lookup so JS
 /// external-object lowering does not fall back to dynamic method dispatch.
 fn resolve_program_trait_refs_for_body(annotation: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  map_type_references(annotation, &|name, resolved_args| {
+  let resolve_trait = |name: &str| {
     let normalized = name.trim_start_matches('\'').trim_start_matches(':');
-    let Some((ns, def)) = normalized.rsplit_once('/') else {
-      return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
-    };
-    if !resolved_args.is_empty() {
-      return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
-    }
-    lookup_source_backed_trait_def(ns, def)
-      .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(Arc::new(trait_def.with_definition_ref(ns, def)))))
-      .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)))
-  })
+    let (ns, def) = normalized.rsplit_once('/')?;
+    lookup_source_backed_trait_def(ns, def).map(|trait_def| Arc::new(trait_def.with_definition_ref(ns, def)))
+  };
+  map_all_type_references(
+    annotation,
+    &|name, resolved_args| {
+      if !resolved_args.is_empty() {
+        return Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args));
+      }
+      resolve_trait(name)
+        .map(|trait_def| Arc::new(CalcitTypeAnnotation::Trait(trait_def)))
+        .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), resolved_args)))
+    },
+    &|trait_def| trait_def,
+    &|trait_def| {
+      if trait_def.runtime_id.is_none() && trait_def.methods.is_empty() && trait_def.requires.is_empty() {
+        let target = trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str());
+        if let Some(resolved) = resolve_trait(target) {
+          return resolved;
+        }
+      }
+      trait_def
+    },
+  )
 }
 
 /// A descriptor alias retains its declaring trait's method contract.
@@ -2963,6 +3022,7 @@ pub fn compile_source_def_for_snapshot(
   })?;
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
+  object_safety::reject_non_object_safe_dyn_traits_in_deftype(ns, def, &code, &scope_types, call_stack)?;
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code, call_stack)?;
   mark_audit_proven(ns, def);
 
@@ -5324,6 +5384,10 @@ fn preprocess_list_call(
     let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
     desugar_struct_field_types(&args, &ctx)?
   } else {
+    if matches!(&head_form, Calcit::Proc(CalcitProc::NativeEnumNew)) {
+      let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+      object_safety::reject_non_object_safe_dyn_traits_in_defenum(&args, &ctx)?;
+    }
     args
   };
   // A literal argument list has exact positional evidence and no observable
@@ -6084,6 +6148,10 @@ fn preprocess_list_call(
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_assert_traits(name, name_ns, &args, &mut ctx)
+        }
+        CalcitSyntax::DynBox => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          object_safety::preprocess_dyn_box(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::Match => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -7042,6 +7110,14 @@ fn preprocess_list_call(
                   .with_code("E_TRAIT_METHOD_SIGNATURE"),
                 );
               }
+              object_safety::reject_non_object_safe_dyn_traits_in_deftrait(
+                &format!("{file_ns}/{signature_owner}"),
+                &processed_args,
+                file_ns,
+                scope_types,
+                call_stack,
+                call_location.as_ref(),
+              )?;
               type_inference::check_trait_requires_declaration(&processed_args, scope_types, file_ns, &signature_owner)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
             }
@@ -10462,7 +10538,8 @@ fn validate_explicit_trait_call(
   }
 
   let matching_count = if let Some(traits) = trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
-    traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
+    let reachable = reachable_dispatch_traits(&traits).unwrap_or(traits);
+    reachable.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
   } else {
     get_impls_from_type(receiver_type.as_ref())
       .unwrap_or_default()
@@ -12566,9 +12643,18 @@ pub(crate) fn resolve_static_trait_callable(
       ));
     }
   };
-  let entry = selected
-    .get(method_name)
-    .ok_or_else(|| format!("implementation of {} has no .{method_name} target", trait_def.origin_label()))?;
+  let Some(entry) = selected.get(method_name) else {
+    if let Some(default_fn) = trait_def.get_default(method_name) {
+      return Ok(Calcit::Fn {
+        id: Arc::from(format!("default:{}:{method_name}", trait_def.name.ref_str())),
+        info: default_fn.clone(),
+      });
+    }
+    return Err(format!(
+      "implementation of {} has no .{method_name} target",
+      trait_def.origin_label()
+    ));
+  };
   if let Calcit::Fn { info, .. } = entry
     && info.scope.is_empty()
   {
@@ -13694,7 +13780,7 @@ fn resolve_core_impls(symbol: &str) -> Option<Vec<Arc<CalcitImpl>>> {
 
 fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<CalcitTrait>>> {
   match type_value {
-    CalcitTypeAnnotation::Trait(trait_def) => Some(vec![trait_def.to_owned()]),
+    CalcitTypeAnnotation::Trait(trait_def) | CalcitTypeAnnotation::DynTrait(trait_def) => Some(vec![trait_def.to_owned()]),
     CalcitTypeAnnotation::TraitSet(traits) => Some(traits.as_ref().to_owned()),
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => trait_list_from_type(inner.as_ref()),
     _ => None,
@@ -17299,6 +17385,15 @@ pub fn preprocess_defn(
           ctx.call_stack,
           body_fn_hint_location.clone(),
         )?;
+        object_safety::reject_non_object_safe_dyn_traits(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "hint-fn",
+          &Arc::new(CalcitTypeAnnotation::Fn(signature.clone())),
+          ctx.file_ns,
+          Some(ctx.scope_types),
+          ctx.call_stack,
+          body_fn_hint_location.clone(),
+        )?;
       }
       if let Some(signature) = &body_fn_hint {
         ensure_annotation_slot_representatives(
@@ -17383,6 +17478,15 @@ pub fn preprocess_defn(
           "schema",
           &def_schema,
           ctx.file_ns,
+          ctx.call_stack,
+          Some(definition_location.clone()),
+        )?;
+        object_safety::reject_non_object_safe_dyn_traits(
+          &format!("{}/{}", ctx.file_ns, def_name),
+          "schema",
+          &def_schema,
+          ctx.file_ns,
+          Some(ctx.scope_types),
           ctx.call_stack,
           Some(definition_location.clone()),
         )?;
@@ -19305,6 +19409,17 @@ fn preprocess_assert_type_with_obligation(
     &asserted_type,
     ctx.file_ns,
     ctx.call_stack,
+    assertion_location.clone(),
+  )?;
+  object_safety::reject_non_object_safe_dyn_traits(
+    &assertion_location
+      .as_ref()
+      .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def)),
+    "assert-type",
+    &asserted_type,
+    ctx.file_ns,
+    Some(ctx.scope_types),
+    ctx.call_stack,
     assertion_location,
   )?;
   ensure_annotation_slot_representatives(ctx.file_ns, &asserted_type, ctx.check_warnings, ctx.call_stack)?;
@@ -19505,10 +19620,25 @@ pub fn preprocess_unsafe_coerce(
     ctx.call_stack,
   )?;
 
+  let desugared_type = desugar_compact_type_form(args.get(1).expect("declared unsafe-coerce type"), ctx)?;
+  let coerced_type = resolve_local_type_refs_for_body(
+    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&desugared_type, &ctx.scope_types.generic_names()),
+    ctx.scope_types,
+  );
+  object_safety::reject_non_object_safe_dyn_traits(
+    ctx.file_ns,
+    "unsafe-coerce",
+    &coerced_type,
+    ctx.file_ns,
+    Some(ctx.scope_types),
+    ctx.call_stack,
+    args.get(1).and_then(Calcit::get_location),
+  )?;
+
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     target_form,
-    desugar_compact_type_form(args.get(1).expect("declared unsafe-coerce type"), ctx)?,
+    desugared_type,
   ]))
 }
 
@@ -19530,13 +19660,32 @@ fn desugar_struct_field_types(args: &CalcitList, ctx: &PreprocessContext) -> Res
         _ => false,
       }
       && let Some(inner) = quoted.get(1)
-      && crate::calcit::type_expr::desugar_quoted_form(inner).is_some()
     {
-      let mut items: Vec<Calcit> = entry.iter().take(2).cloned().collect();
-      items.push(Calcit::from(vec![quoted[0].to_owned(), desugar_compact_type_form(inner, ctx)?]));
-      items.extend(entry.iter().skip(3).cloned());
-      ys.push(Calcit::from(items));
-      changed = true;
+      let field_form = if crate::calcit::type_expr::desugar_quoted_form(inner).is_some() {
+        let canonical = desugar_compact_type_form(inner, ctx)?;
+        let mut items: Vec<Calcit> = entry.iter().take(2).cloned().collect();
+        items.push(Calcit::from(vec![quoted[0].to_owned(), canonical.clone()]));
+        items.extend(entry.iter().skip(3).cloned());
+        ys.push(Calcit::from(items));
+        changed = true;
+        canonical
+      } else {
+        ys.push(arg.to_owned());
+        inner.to_owned()
+      };
+      let field_type = resolve_local_type_refs_for_body(
+        CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&field_form, &ctx.scope_types.generic_names()),
+        ctx.scope_types,
+      );
+      object_safety::reject_non_object_safe_dyn_traits(
+        ctx.file_ns,
+        "defstruct field",
+        &field_type,
+        ctx.file_ns,
+        Some(ctx.scope_types),
+        ctx.call_stack,
+        inner.get_location().or_else(|| ctx.call_location.clone()),
+      )?;
     } else {
       ys.push(arg.to_owned());
     }
@@ -20093,6 +20242,19 @@ pub fn preprocess_any_downcast(
     )
   })?;
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
+  let target_location = source_type_arg.get_location().or_else(|| box_form.get_location());
+  let target_owner = target_location
+    .as_ref()
+    .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def));
+  object_safety::reject_non_object_safe_dyn_traits(
+    &target_owner,
+    "any:downcast",
+    &target,
+    ctx.file_ns,
+    Some(ctx.scope_types),
+    ctx.call_stack,
+    target_location,
+  )?;
   let type_key = calcit::canonical_type_key(&target, Some(ctx.file_ns)).map_err(|error| {
     CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
@@ -20276,31 +20438,51 @@ fn find_schema_annotation<T>(
   path: &str,
   predicate: &mut impl FnMut(&Arc<CalcitTypeAnnotation>, &str) -> Option<T>,
 ) -> Option<T> {
+  find_schema_annotation_with(annotation, path, predicate, &|_| false)
+}
+
+pub(super) fn find_schema_annotation_with<T>(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  path: &str,
+  predicate: &mut impl FnMut(&Arc<CalcitTypeAnnotation>, &str) -> Option<T>,
+  skip_descend: &dyn Fn(&Arc<CalcitTypeAnnotation>) -> bool,
+) -> Option<T> {
   if let Some(found) = predicate(annotation, path) {
     return Some(found);
   }
+  if skip_descend(annotation) {
+    return None;
+  }
   match annotation.as_ref() {
     CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) | CalcitTypeAnnotation::Ref(inner) => {
-      find_schema_annotation(inner, &format!("{path}.item"), predicate)
+      find_schema_annotation_with(inner, &format!("{path}.item"), predicate, skip_descend)
     }
-    CalcitTypeAnnotation::Variadic(inner) | CalcitTypeAnnotation::Nullable(inner, _) => find_schema_annotation(inner, path, predicate),
-    CalcitTypeAnnotation::Map(key, value) => find_schema_annotation(key, &format!("{path}.key"), predicate)
-      .or_else(|| find_schema_annotation(value, &format!("{path}.value"), predicate)),
+    CalcitTypeAnnotation::Variadic(inner) | CalcitTypeAnnotation::Nullable(inner, _) => {
+      find_schema_annotation_with(inner, path, predicate, skip_descend)
+    }
+    CalcitTypeAnnotation::Map(key, value) => find_schema_annotation_with(key, &format!("{path}.key"), predicate, skip_descend)
+      .or_else(|| find_schema_annotation_with(value, &format!("{path}.value"), predicate, skip_descend)),
     CalcitTypeAnnotation::Fn(info) => info
       .arg_types
       .iter()
       .enumerate()
-      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.args.{idx}"), predicate))
+      .find_map(|(idx, item)| find_schema_annotation_with(item, &format!("{path}.args.{idx}"), predicate, skip_descend))
       .or_else(|| {
         info
           .rest_type
           .as_ref()
-          .and_then(|item| find_schema_annotation(item, &format!("{path}.rest"), predicate))
+          .and_then(|item| find_schema_annotation_with(item, &format!("{path}.rest"), predicate, skip_descend))
       })
-      .or_else(|| find_schema_annotation(&info.return_type, &format!("{path}.return"), predicate)),
+      .or_else(|| find_schema_annotation_with(&info.return_type, &format!("{path}.return"), predicate, skip_descend))
+      .or_else(|| {
+        info
+          .guard
+          .as_ref()
+          .and_then(|guard| find_schema_annotation_with(guard, &format!("{path}.guard"), predicate, skip_descend))
+      }),
     CalcitTypeAnnotation::Macro(signature) => {
       let mut find_contract = |contract: &MacroSyntaxType, contract_path: String| match contract {
-        MacroSyntaxType::Expr(semantic) => find_schema_annotation(semantic, &contract_path, predicate),
+        MacroSyntaxType::Expr(semantic) => find_schema_annotation_with(semantic, &contract_path, predicate, skip_descend),
         MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
       };
       signature
@@ -20323,23 +20505,23 @@ fn find_schema_annotation<T>(
         })
         .or_else(|| match &signature.expansion {
           MacroExpansionType::Expr(semantic) | MacroExpansionType::Definition(semantic) => {
-            find_schema_annotation(semantic, &format!("{path}.expansion"), predicate)
+            find_schema_annotation_with(semantic, &format!("{path}.expansion"), predicate, skip_descend)
           }
           MacroExpansionType::Dynamic | MacroExpansionType::Declarations => None,
         })
     }
     CalcitTypeAnnotation::Syntax(contract) => match contract.as_ref() {
-      MacroSyntaxType::Expr(semantic) => find_schema_annotation(semantic, &format!("{path}.expr"), predicate),
+      MacroSyntaxType::Expr(semantic) => find_schema_annotation_with(semantic, &format!("{path}.expr"), predicate, skip_descend),
       MacroSyntaxType::Syntax | MacroSyntaxType::SyntaxSymbol | MacroSyntaxType::SyntaxList => None,
     },
     CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args
       .iter()
       .enumerate()
-      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.type-arg.{idx}"), predicate)),
+      .find_map(|(idx, item)| find_schema_annotation_with(item, &format!("{path}.type-arg.{idx}"), predicate, skip_descend)),
     CalcitTypeAnnotation::Tuple(items) => items
       .iter()
       .enumerate()
-      .find_map(|(idx, item)| find_schema_annotation(item, &format!("{path}.item.{idx}"), predicate)),
+      .find_map(|(idx, item)| find_schema_annotation_with(item, &format!("{path}.item.{idx}"), predicate, skip_descend)),
     _ => None,
   }
 }

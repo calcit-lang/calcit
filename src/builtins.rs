@@ -676,6 +676,7 @@ pub fn handle_syntax(
     AnyBox => syntax::any_box(nodes, scope, file_ns, call_stack),
     AnyDowncast => syntax::any_downcast(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
+    DynBox => syntax::dyn_box(nodes, scope, file_ns, call_stack),
     Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }
 }

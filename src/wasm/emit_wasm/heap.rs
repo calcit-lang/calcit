@@ -17,6 +17,27 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   if args.len() != 1 {
     return Err("&hash expects 1 arg".into());
   }
+  let ev = infer_wasm_evidence(ctx, &args[0]);
+  let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
+  if let Some(kind) = proven_scalar_kind(&ty)
+    && matches!(kind, "number" | "bool" | "tag" | "nil" | "unit")
+  {
+    emit_expr_as_repr(ctx, &args[0], NativeValRepr::F64)?;
+    if ctx.has_boxed_json_scalars && !expr_is_guaranteed_unboxed_scalar(ctx, &args[0]) && matches!(kind, "bool" | "nil") {
+      let val_local = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(val_local));
+      match kind {
+        "bool" => emit_unbox_scalar_if_tag(ctx, val_local, "bool", false),
+        "nil" => emit_unbox_scalar_if_tag(ctx, val_local, "nil", true),
+        _ => {}
+      }
+      ctx.emit(Instruction::LocalGet(val_local));
+    }
+    let scalar_hash_idx = *ctx.runtime_fn_index.get("__rt_hash_f64").expect("scalar hash");
+    ctx.emit(Instruction::Call(scalar_hash_idx));
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
   emit_expr(ctx, &args[0])?;
   let hash_idx = *ctx.runtime_fn_index.get("__rt_value_hash").expect("value hash");
   ctx.emit(Instruction::Call(hash_idx));

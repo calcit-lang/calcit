@@ -802,7 +802,7 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Macro(_) | CalcitTypeAnnotation::Syntax(_) => {
         Err(unsupported_type("compile-time macro syntax contracts are not application data"))
       }
-      CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => {
+      CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) | CalcitTypeAnnotation::DynTrait(_) => {
         Err(unsupported_type("trait constraints are not data shapes"))
       }
       CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),

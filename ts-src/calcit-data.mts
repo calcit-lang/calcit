@@ -16,6 +16,7 @@ import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
 import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
+import { CalcitDynTrait } from "./js-dyn-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitAnyBox } from "./js-any-box.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
@@ -424,6 +425,9 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (x instanceof CalcitTrait) {
     return mergeValueHash(defaultHash_trait, traitIdentity(x));
   }
+  if (x instanceof CalcitDynTrait) {
+    return mergeValueHash(mergeValueHash(defaultHash_trait, traitIdentity(x.traitDef)), hashFunction(x.value));
+  }
   if (x instanceof CalcitStructDef) {
     let base = defaultHash_struct;
     base = mergeValueHash(base, hashFunction(x.name));
@@ -627,6 +631,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
   if (x instanceof CalcitTrait) {
     return x.toString(disableJsDataWarning);
+  }
+  if (x instanceof CalcitDynTrait) {
+    return x.toString();
   }
   if (x instanceof CalcitRef) {
     return x.toString();
@@ -1013,6 +1020,9 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitTrait) {
     // The identical-reference fast path above is the entire nominal contract.
     return false;
+  }
+  if (x instanceof CalcitDynTrait) {
+    return y instanceof CalcitDynTrait && x.traitDef === y.traitDef && _$n__$e_(x.value, y.value);
   }
   if (x instanceof Uint8Array) {
     if (!(y instanceof Uint8Array) || x.length !== y.length) {

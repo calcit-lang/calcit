@@ -577,6 +577,7 @@ pub(super) fn build_runtime_fns(
   let enum_tag = require_tag("enum");
   let set_tag = require_tag("set");
   let struct_tag = require_tag("struct");
+  let dyn_trait_tag = require_tag("dyn-trait");
   let nil_tag = require_tag("nil");
   let bool_tag = require_tag("bool");
   let number_tag = require_tag("number");
@@ -644,6 +645,7 @@ pub(super) fn build_runtime_fns(
       set: set_tag,
       struct_tag,
       enum_tag,
+      dyn_trait: dyn_trait_tag,
       nil: nil_tag,
       bool_tag,
       number: number_tag,
@@ -1171,6 +1173,7 @@ pub(super) fn build_runtime_fns(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -1648,6 +1651,7 @@ pub(super) struct ValueRuntimeTags {
   pub(super) map: i32,
   pub(super) set: i32,
   pub(super) struct_tag: i32,
+  pub(super) dyn_trait: i32,
   pub(super) nil: i32,
   pub(super) bool_tag: i32,
   pub(super) number: i32,
@@ -1667,6 +1671,7 @@ pub(super) fn build_rt_value_hash(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -1725,6 +1730,36 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::I32Const((number_tag as u32).wrapping_mul(0x0100_0193) as i32));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(dyn_trait_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  // Hash `trait_word` (`trait_id` + `scalar_kind` + heap flag) rather than `vtable_id`
+  // so two boxes of equal values with differing impl identities share one hash.
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Const(0x9e37_79b9u32 as i32));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(super::dyn_trait::DYN_TRAIT_HEAP_FLAG as i32));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::End);
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -2059,6 +2094,7 @@ fn build_rt_value_equal(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -2468,21 +2504,59 @@ fn build_rt_value_equal(
   b.emit(Instruction::LocalGet(ptr_b));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::LocalSet(elem_b));
-  b.emit(Instruction::LocalGet(elem_a));
-  b.emit(Instruction::LocalGet(elem_b));
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::LocalGet(elem_a));
-  b.emit(Instruction::LocalGet(elem_a));
-  b.emit(Instruction::F64Ne);
-  b.emit(Instruction::LocalGet(elem_b));
-  b.emit(Instruction::LocalGet(elem_b));
-  b.emit(Instruction::F64Ne);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::I32Or);
+  let emit_f64_eq_with_nan = |b: &mut RuntimeFnBuilder| {
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Eq);
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::I32Or);
+  };
+  emit_f64_eq_with_nan(&mut b);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(dyn_trait_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  // Compare `trait_word` (`trait_id` + `scalar_kind` + heap flag) rather than `vtable_id`
+  // so boxes of the same trait and equal payload match even across distinct impl lists,
+  // while erased scalars (`Bool` vs `Number` vs `Nil` vs `Tag`) stay disjoint.
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_b));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(super::dyn_trait::DYN_TRAIT_HEAP_FLAG as i32));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
+  emit_f64_eq_with_nan(&mut b);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // dyn_trait if
   b.emit(Instruction::End); // any_box if
   b.emit(Instruction::End); // number if
   b.emit(Instruction::End); // bool if
@@ -2503,4 +2577,165 @@ fn build_rt_value_equal(
   b.emit(Instruction::End); // fast-path if
 
   b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use wasmtime::{Engine, Instance, Module, Store};
+
+  #[test]
+  fn dyn_trait_equality_and_hash_ignore_vtable_id_while_separating_scalars() {
+    let tags = ValueRuntimeTags {
+      string: 1,
+      buffer: 2,
+      list: 3,
+      enum_tag: 4,
+      map: 5,
+      set: 6,
+      struct_tag: 7,
+      dyn_trait: 8,
+      nil: 9,
+      bool_tag: 10,
+      number: 11,
+      any_box: 12,
+    };
+    let is_heap_ptr_stub = CompiledFn {
+      export_name: None,
+      params: vec![ValType::F64],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::LocalGet(0), f64_const((HEAP_BASE + 8) as f64), Instruction::F64Ge],
+    };
+    let scalar_hash = build_rt_hash_f64();
+    let str_compare = strings::build_rt_str_compare();
+    let stub_linearize = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let stub_struct_load = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32, ValType::I32],
+      results: vec![ValType::F64],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let mut value_equal = build_rt_value_equal(tags, (2, 5, 6, 7, 0, 4), &StructLayouts::default());
+    value_equal.export_name = Some("value_equal".into());
+    let stub_container_eq = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let mut value_hash = build_rt_value_hash(tags, (1, 8, 3, 0, 4), &StructLayouts::default());
+    value_hash.export_name = Some("value_hash".into());
+
+    let bytes = build_wasm_module(
+      &[
+        is_heap_ptr_stub,
+        scalar_hash,
+        str_compare,
+        stub_linearize,
+        stub_struct_load,
+        value_equal,
+        stub_container_eq.clone(),
+        stub_container_eq,
+        value_hash,
+      ],
+      &[],
+      HEAP_BASE,
+      &[],
+      &[],
+      tags.string,
+      ModuleFunctionLayout {
+        runtime_fn_count: 9,
+        number_format_fn_count: 0,
+        table_fn_count: 0,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
+        rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid dyn_trait equality/hash wasm module");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("compile wasm");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory");
+    let eq_fn = instance
+      .get_typed_func::<(f64, f64), i32>(&mut store, "value_equal")
+      .expect("value_equal");
+    let hash_fn = instance.get_typed_func::<f64, i32>(&mut store, "value_hash").expect("value_hash");
+
+    let write_i32 = |store: &mut Store<()>, addr: usize, val: i32| {
+      memory.write(store, addr, &val.to_le_bytes()).expect("write i32");
+    };
+    let write_f64 = |store: &mut Store<()>, addr: usize, val: f64| {
+      memory.write(store, addr, &val.to_le_bytes()).expect("write f64");
+    };
+    let write_str = |store: &mut Store<()>, raw_addr: usize, text: &[u8]| -> usize {
+      write_i32(store, raw_addr, HEAP_MAGIC);
+      write_i32(store, raw_addr + 4, tags.string);
+      let logical = raw_addr + 8;
+      write_f64(store, logical, text.len() as f64);
+      memory.write(store, logical + 8, text).expect("write bytes");
+      logical
+    };
+    let write_dyn = |store: &mut Store<()>, raw_addr: usize, vtable_id: u32, trait_word: u32, data: f64| -> f64 {
+      write_i32(store, raw_addr, HEAP_MAGIC);
+      write_i32(store, raw_addr + 4, tags.dyn_trait);
+      let logical = raw_addr + 8;
+      write_i32(store, logical, vtable_id as i32);
+      write_i32(store, logical + 4, trait_word as i32);
+      write_f64(store, logical + 8, data);
+      logical as f64
+    };
+
+    let base = HEAP_BASE as usize;
+    let str_a = write_str(&mut store, base, b"ok");
+    let str_b = write_str(&mut store, base + 32, b"ok");
+    let heap_trait_word = super::dyn_trait::DYN_TRAIT_HEAP_FLAG | 5;
+    let box_heap_v0 = write_dyn(&mut store, base + 64, 0, heap_trait_word, str_a as f64);
+    let box_heap_v1 = write_dyn(&mut store, base + 96, 1, heap_trait_word, str_b as f64);
+    assert_eq!(
+      eq_fn.call(&mut store, (box_heap_v0, box_heap_v1)).expect("call eq"),
+      1,
+      "heap dyn boxes with equal payloads and distinct vtable IDs must compare equal"
+    );
+    assert_eq!(
+      hash_fn.call(&mut store, box_heap_v0).expect("hash a"),
+      hash_fn.call(&mut store, box_heap_v1).expect("hash b"),
+      "heap dyn boxes that compare equal must share one hash across distinct vtable IDs"
+    );
+
+    let num_trait_word = (1u32 << super::dyn_trait::DYN_TRAIT_SCALAR_KIND_SHIFT) | 5;
+    let bool_trait_word = (2u32 << super::dyn_trait::DYN_TRAIT_SCALAR_KIND_SHIFT) | 5;
+    let box_num_0 = write_dyn(&mut store, base + 128, 0, num_trait_word, 0.0);
+    let box_bool_false = write_dyn(&mut store, base + 160, 1, bool_trait_word, 0.0);
+    assert_eq!(
+      eq_fn.call(&mut store, (box_num_0, box_bool_false)).expect("call scalar eq"),
+      0,
+      "erased Number(0) and Bool(false) dyn boxes must stay distinct"
+    );
+
+    let box_num_42 = write_dyn(&mut store, base + 192, 0, num_trait_word, 42.0);
+    let box_i32_42 = write_dyn(&mut store, base + 224, 2, num_trait_word, 42.0);
+    assert_eq!(
+      eq_fn.call(&mut store, (box_num_42, box_i32_42)).expect("call numeric eq"),
+      1,
+      "refined numeric and Number dyn boxes of the same value must compare equal"
+    );
+    assert_eq!(
+      hash_fn.call(&mut store, box_num_42).expect("hash num"),
+      hash_fn.call(&mut store, box_i32_42).expect("hash i32"),
+      "equal refined numeric and Number dyn boxes must share one hash"
+    );
+  }
 }

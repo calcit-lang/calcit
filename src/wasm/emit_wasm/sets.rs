@@ -128,7 +128,8 @@ pub(super) fn is_proven_non_scalar_heap_type(annotation: &Arc<CalcitTypeAnnotati
     | CalcitTypeAnnotation::StructValue(_)
     | CalcitTypeAnnotation::Enum(_, _)
     | CalcitTypeAnnotation::EnumValue(_)
-    | CalcitTypeAnnotation::Any => true,
+    | CalcitTypeAnnotation::Any
+    | CalcitTypeAnnotation::DynTrait(_) => true,
     CalcitTypeAnnotation::TypeRef(_, _) => expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some(),
     _ => false,
   }
@@ -409,18 +410,22 @@ fn set_comparison_can_erase_kind_inner(
       visited.remove(&key);
       can_erase
     }
-    (T::String, T::String) | (T::Buffer, T::Buffer) | (T::Any, T::Any) => false,
+    (T::String, T::String) | (T::Buffer, T::Buffer) | (T::Any, T::Any) | (T::DynTrait(_), T::DynTrait(_)) => false,
     // Different known heap layouts do not share an address or recurse.
     (
-      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any,
-      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any,
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any | T::DynTrait(_),
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any | T::DynTrait(_),
     ) => false,
     // Number may equal a heap pointer; the other scalar/heap comparisons
     // have the same representation constraints as elsewhere in codegen.
-    (T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any, T::Bool | T::Nil | T::Unit | T::Tag)
-    | (T::Bool | T::Nil | T::Unit | T::Tag, T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any) => {
-      false
-    }
+    (
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any | T::DynTrait(_),
+      T::Bool | T::Nil | T::Unit | T::Tag,
+    )
+    | (
+      T::Bool | T::Nil | T::Unit | T::Tag,
+      T::String | T::Buffer | T::List(_) | T::Tuple(_) | T::Set(_) | T::Map(_, _) | T::Any | T::DynTrait(_),
+    ) => false,
     _ => true,
   }
 }

@@ -110,6 +110,9 @@ pub enum CalcitSyntax {
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
+  /// Box a concrete value into an object-safe `(Dyn Trait)` fat pointer.
+  #[strum(serialize = "dyn:box")]
+  DynBox,
   /// pattern matching on enums with exhaustiveness detection
   #[strum(serialize = "match")]
   Match,
@@ -213,6 +216,11 @@ impl CalcitSyntax {
             param_names: vec!["expr", "trait"],
             param_types: vec![Arc::clone(&value_t), Arc::clone(&tag_t)],
             return_type: Arc::clone(&value_t),
+          }),
+          DynBox => Some(SyntaxTypeSignature {
+            param_names: vec!["expr", "trait"],
+            param_types: vec![Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
           }),
           CoreLet => Some(SyntaxTypeSignature {
             param_names: vec!["binding", "body"],

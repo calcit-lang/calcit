@@ -314,6 +314,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | EnumDef { .. }
     | UnionDef { .. }
     | Trait { .. }
+    | DynTrait { .. }
     | Impl { .. }
     | Syntax(_, _)
     | Method(..)

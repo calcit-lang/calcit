@@ -272,6 +272,7 @@ pub fn data_to_calcit(x: &Calcit, ns: &str, at_def: &str) -> Result<Calcit, Stri
     Method(..) => Ok(x.to_owned()),
     RawCode(..) => Ok(x.to_owned()),
     Trait(_) => Err(format!("data_to_calcit not implemented for trait: {x}")),
+    DynTrait(_) => Err(format!("data_to_calcit not implemented for dyn trait: {x}")),
     UnionDef(_) => Err(format!("data_to_calcit not implemented for union definition: {x}")),
     Impl(_) => Err(format!("data_to_calcit not implemented for impl: {x}")),
     AnyBox(..) => Err(format!("data_to_calcit not implemented for any-box: {x}")),

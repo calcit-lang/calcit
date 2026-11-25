@@ -126,6 +126,15 @@ pub(crate) fn resolve_type_value(target: &Calcit, scope_types: &ScopeTypes) -> O
 }
 
 fn resolve_trait_type_ref(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  if let CalcitTypeAnnotation::DynTrait(trait_def) = value.as_ref()
+    && trait_def.runtime_id.is_none()
+    && trait_def.methods.is_empty()
+    && trait_def.requires.is_empty()
+    && let Some((ns, def)) = trait_def.definition_ref.as_deref().and_then(|path| path.rsplit_once('/'))
+    && let Some(resolved) = lookup_source_backed_trait_def(ns, def)
+  {
+    return Arc::new(CalcitTypeAnnotation::DynTrait(Arc::new(resolved.with_definition_ref(ns, def))));
+  }
   let CalcitTypeAnnotation::TypeRef(name, args) = value.as_ref() else {
     return normalize_variadic_as_list(value);
   };
@@ -2482,6 +2491,35 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
             Arc::from("calcit.core/Option"),
             Arc::new(vec![normalized]),
           ))
+        }),
+
+        Calcit::Syntax(CalcitSyntax::DynBox, _) => xs.get(2).and_then(|trait_form| match trait_form {
+          Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::DynTrait(trait_def.clone()))),
+          Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
+            .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def)))
+            .or_else(
+              || match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+                Some(Calcit::Trait(trait_def)) => Some(trait_def),
+                _ => None,
+              },
+            )
+            .map(|trait_def| Arc::new(CalcitTypeAnnotation::DynTrait(trait_def))),
+          Calcit::Local(local) => scope_types.type_reference(&local.sym).and_then(|ann| match ann.as_ref() {
+            CalcitTypeAnnotation::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::DynTrait(trait_def.clone()))),
+            _ => None,
+          }),
+          Calcit::Symbol { sym, info, .. } => scope_types
+            .type_reference(sym)
+            .and_then(|ann| match ann.as_ref() {
+              CalcitTypeAnnotation::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::DynTrait(trait_def.clone()))),
+              _ => None,
+            })
+            .or_else(|| {
+              let (ns, def) = super::resolve_trait_reference_target(trait_form, &info.at_ns)?;
+              lookup_source_backed_trait_def(&ns, &def)
+                .map(|trait_def| Arc::new(CalcitTypeAnnotation::DynTrait(Arc::new(trait_def.with_definition_ref(&ns, &def)))))
+            }),
+          _ => None,
         }),
 
         // Local variable as head (function call)

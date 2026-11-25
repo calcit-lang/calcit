@@ -219,6 +219,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::EnumDef(..)
     | Calcit::UnionDef(..)
     | Calcit::Trait(..)
+    | Calcit::DynTrait(..)
     | Calcit::Impl(..)
     | Calcit::Proc(..)
     | Calcit::Macro { .. }

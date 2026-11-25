@@ -77,7 +77,7 @@ fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
-fn current_type_annotation_namespace() -> Option<Arc<str>> {
+pub(crate) fn current_type_annotation_namespace() -> Option<Arc<str>> {
   current_type_annotation_warning_context().and_then(|label| label.rsplit_once('/').map(|(namespace, _)| Arc::from(namespace)))
 }
 
@@ -296,7 +296,7 @@ pub(crate) struct TypeAliasDecl {
 
 impl TypeAliasDecl {
   /// The aliased type with `args` substituted for the generics.
-  fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
+  pub(crate) fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(&self.body), &self.generics);
     let parsed = super::type_refs::qualify_namespace_type_refs(parsed, ns);
     if self.generics.is_empty() {
@@ -1748,6 +1748,8 @@ fn bounded_plain_type_relation<'a>(
       | (_, Type::Custom(_))
       | (Type::Trait(_), _)
       | (_, Type::Trait(_))
+      | (Type::DynTrait(_), _)
+      | (_, Type::DynTrait(_))
       | (Type::TraitSet(_), _)
       | (_, Type::TraitSet(_))
       | (Type::TypeSlot(_), _)
@@ -2029,6 +2031,8 @@ pub enum CalcitTypeAnnotation {
   TypeRef(Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
   /// Trait type annotation for trait objects
   Trait(Arc<CalcitTrait>),
+  /// Object-safe fat-pointer trait object `(Dyn Trait)`
+  DynTrait(Arc<CalcitTrait>),
   /// Multiple trait constraints recorded in order
   TraitSet(Arc<Vec<Arc<CalcitTrait>>>),
   /// Legacy nil sentinel. New APIs should prefer Option/Result or Unit.
@@ -2486,6 +2490,7 @@ impl CalcitTypeAnnotation {
       | Self::StructDef(_)
       | Self::EnumDef(_)
       | Self::Trait(_)
+      | Self::DynTrait(_)
       | Self::TraitSet(_)
       | Self::Custom(_) => Ok(()),
       Self::Bool
@@ -2611,6 +2616,7 @@ impl CalcitTypeAnnotation {
       // Enum/Struct value model. `Tuple` is the fixed-length positional type.
       "tuple" | "enum" | "Enum" => Some("Enum"),
       "Tuple" => Some("Tuple"),
+      "Dyn" => Some("Dyn"),
       "ref" | "Ref" => Some("Ref"),
       "buffer" | "Buffer" => Some("Buffer"),
       "buf-list" | "BufList" => Some("BufList"),
@@ -2694,7 +2700,7 @@ impl CalcitTypeAnnotation {
       "Trait" => Some(Self::Custom(Arc::new(Calcit::tag("trait")))),
       "Impl" => Some(Self::Custom(Arc::new(Calcit::tag("impl")))),
       // These forms require a payload and are handled by the type-expression parser.
-      "JsNullish" | "Variadic" | "Tuple" => None,
+      "JsNullish" | "Variadic" | "Tuple" | "Dyn" => None,
       _ => None,
     }
   }
@@ -4579,6 +4585,9 @@ impl CalcitTypeAnnotation {
           return base;
         }
         match name {
+          "Dyn" => {
+            return Self::parse_dyn_type_expr(enum_value.extra.first(), &args, generics, strict_named_refs);
+          }
           "Tuple" => {
             if args.is_empty() {
               eprintln!("[Warn] Tuple expects at least 1 element type, e.g. `Tuple Number String`");
@@ -4798,6 +4807,9 @@ impl CalcitTypeAnnotation {
               return base;
             }
             match name {
+              "Dyn" => {
+                return Self::parse_dyn_type_expr(xs.get(2), &args, generics, strict_named_refs);
+              }
               "Tuple" => {
                 if args.is_empty() {
                   eprintln!("[Warn] Tuple expects at least 1 element type, e.g. `Tuple Number String`");
@@ -4897,6 +4909,43 @@ impl CalcitTypeAnnotation {
     Arc::new(CalcitTypeAnnotation::from_calcit(form))
   }
 
+  fn parse_dyn_type_expr(
+    raw_target: Option<&Calcit>,
+    args: &[Arc<CalcitTypeAnnotation>],
+    generics: &[Arc<str>],
+    strict_named_refs: bool,
+  ) -> Arc<CalcitTypeAnnotation> {
+    if args.len() != 1 {
+      eprintln!("[Warn] Dyn expects 1 trait argument, got {}", args.len());
+      return Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Dyn"), Arc::new(args.to_vec())));
+    }
+    let parsed_target = &args[0];
+    if let CalcitTypeAnnotation::Trait(trait_def) = parsed_target.as_ref() {
+      let resolved = raw_target
+        .map(|form| Self::trait_bound_with_source_ref(form, trait_def))
+        .unwrap_or_else(|| trait_def.clone());
+      return Arc::new(CalcitTypeAnnotation::DynTrait(resolved));
+    }
+    if let Some((trait_def, _)) = parsed_target.resolve_to_source_trait_with_ref() {
+      return Arc::new(CalcitTypeAnnotation::DynTrait(trait_def));
+    }
+    if let CalcitTypeAnnotation::TypeRef(name, ref_args) = parsed_target.as_ref()
+      && ref_args.is_empty()
+    {
+      return Arc::new(CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference(name))));
+    }
+    if !strict_named_refs
+      && let CalcitTypeAnnotation::TypeVar(var) = parsed_target.as_ref()
+      && !Self::generics_contains(generics, var)
+      && Self::builtin_type_from_symbol_name(var).is_none()
+      && Self::open_family_type(var).is_none()
+    {
+      let ref_name = raw_target.and_then(Self::extract_type_ref_name).unwrap_or_else(|| var.clone());
+      return Arc::new(CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference(&ref_name))));
+    }
+    Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Dyn"), Arc::new(args.to_vec())))
+  }
+
   /// Render a concise representation used in warnings or logs
   pub fn to_brief_string(&self) -> String {
     let mut remaining = 128;
@@ -4942,6 +4991,7 @@ impl CalcitTypeAnnotation {
         }
       }
       Self::Trait(trait_def) => format!("trait {}", trait_def.name),
+      Self::DynTrait(trait_def) => format!("dyn {}", trait_def.name),
       Self::TraitSet(traits) => {
         let rendered = traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" ");
         format!("traits {rendered}")
@@ -6110,7 +6160,7 @@ impl CalcitTypeAnnotation {
     members.iter().all(|member| member.annotation.satisfies_trait_bound(expected_trait))
   }
 
-  fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+  pub(crate) fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
     if matches!(self, Self::TypeRef(_, _) | Self::TypeSlot(_))
       && self.resolve_nominal_instance_type().is_none()
       && self.resolve_to_union().is_none()
@@ -6143,7 +6193,7 @@ impl CalcitTypeAnnotation {
       return self.union_satisfies_trait_bound(&union_def, expected_trait);
     }
     match self {
-      Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
+      Self::Trait(actual_trait) | Self::DynTrait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
         return true;
       }
       Self::TraitSet(actual_traits)
@@ -6545,6 +6595,7 @@ impl CalcitTypeAnnotation {
       }
       (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::trait_upcasts_to_type_ref(trait_def, name),
       (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b) || Self::trait_annotation_proves(a, b),
+      (Self::DynTrait(a), Self::DynTrait(b)) => Self::trait_references_match(a, b),
       (Self::TraitSet(actual), Self::Trait(expected)) => {
         actual.iter().any(|trait_def| Self::trait_references_match(trait_def, expected))
       }
@@ -7201,6 +7252,7 @@ impl CalcitTypeAnnotation {
       Calcit::AnyRef(reference) if is_native_ffi_resource_ref(reference) => Self::FfiResource,
       Calcit::Method(_, crate::calcit::MethodKind::Invoke(_)) => Self::Method,
       Calcit::Trait(trait_def) => Self::Trait(trait_def.to_owned()),
+      Calcit::DynTrait(dyn_trait) => Self::DynTrait(dyn_trait.trait_def.to_owned()),
       other => Self::Custom(Arc::new(other.to_owned())),
     }
   }
@@ -7428,6 +7480,11 @@ impl CalcitTypeAnnotation {
       Self::StructDef(struct_def) => Calcit::StructDef(struct_def.clone()),
       Self::EnumDef(enum_def) => Calcit::EnumDef(enum_def.clone()),
       Self::Trait(trait_def) => Calcit::Trait(trait_def.clone()),
+      Self::DynTrait(trait_def) => Calcit::Enum(CalcitEnumValue {
+        tag: Arc::new(Calcit::Tag(EdnTag::from("Dyn"))),
+        extra: vec![Self::quote_symbol(trait_def.definition_ref.as_ref().unwrap_or(&trait_def.name.0))].into(),
+        sum_type: None,
+      }),
       Self::TraitSet(_) => Calcit::Nil,
       Self::Dynamic => Calcit::Tag(EdnTag::from("dynamic")),
       _ => Calcit::Nil,
@@ -7617,6 +7674,12 @@ impl CalcitTypeAnnotation {
       )),
       Self::EnumValue(enum_def) => Edn::Symbol(Arc::from(enum_def.name().ref_str())),
       Self::Trait(trait_def) => Edn::Symbol(Arc::from(trait_def.name.ref_str())),
+      Self::DynTrait(trait_def) => Edn::enum_value(
+        "Dyn",
+        vec![Edn::Symbol(Arc::from(
+          trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str()),
+        ))],
+      ),
       Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
       // Anything else falls back to dynamic
       _ => Edn::Symbol(Arc::from("Dynamic")),
@@ -7763,6 +7826,7 @@ impl CalcitTypeAnnotation {
       }
       Self::StructValue(struct_def) => format!("struct {}", struct_def.name),
       Self::EnumValue(enum_def) => format!("enum {}", enum_def.name()),
+      Self::DynTrait(trait_def) => format!("dyn {}", trait_def.name),
       Self::Dynamic => "dynamic".to_string(),
       Self::TypeSlot(name) => format!("type-slot({name})"),
       _ => "unknown".to_string(),
@@ -7802,6 +7866,7 @@ impl CalcitTypeAnnotation {
       Self::Enum(_, _) => 26,
       Self::Trait(_) => 27,
       Self::TraitSet(_) => 28,
+      Self::DynTrait(_) => 43,
       Self::Nil => 29,
       Self::Unit => 30,
       Self::JsObject => 31,
@@ -12539,6 +12604,18 @@ mod tests {
     assert_eq!(cov_proof.result(&t_var), Some(NEVER_TYPE.clone()));
     assert_eq!(cov_proof.result(&u_var), Some(NEVER_TYPE.clone()));
   }
+
+  #[test]
+  fn dyn_trait_and_any_have_distinct_ordering() {
+    let dyn_show = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![])));
+    assert_ne!(CalcitTypeAnnotation::Any, dyn_show);
+    assert_ne!(CalcitTypeAnnotation::Any.cmp(&dyn_show), std::cmp::Ordering::Equal);
+    assert_ne!(dyn_show.cmp(&CalcitTypeAnnotation::Any), std::cmp::Ordering::Equal);
+    assert_eq!(
+      CalcitTypeAnnotation::Any.cmp(&dyn_show),
+      dyn_show.cmp(&CalcitTypeAnnotation::Any).reverse()
+    );
+  }
 }
 
 impl fmt::Display for CalcitTypeAnnotation {
@@ -12664,6 +12741,11 @@ impl Hash for CalcitTypeAnnotation {
         "trait".hash(state);
         trait_def.name.hash(state);
       }
+      Self::DynTrait(trait_def) => {
+        "dyn-trait".hash(state);
+        trait_def.name.hash(state);
+        trait_def.definition_ref.hash(state);
+      }
       Self::TraitSet(traits) => {
         "traits".hash(state);
         for t in traits.iter() {
@@ -12735,6 +12817,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::StructDef(a), Self::StructDef(b)) => super::compare::compare_calcit_struct_values(a, b),
       (Self::EnumDef(a), Self::EnumDef(b)) => super::compare::compare_calcit_enum_values(a, b),
       (Self::Trait(a), Self::Trait(b)) => super::compare::compare_calcit_trait_values(a, b),
+      (Self::DynTrait(a), Self::DynTrait(b)) => super::compare::compare_calcit_trait_values(a, b),
       (Self::TraitSet(a), Self::TraitSet(b)) => super::compare::compare_trait_sequences(a, b),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
@@ -13633,6 +13716,11 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
         .iter()
         .any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
       Calcit::Enum(t) => t.impls().iter().any(|imp| imp.matches_trait_reference(expected_trait.as_ref())),
+      Calcit::DynTrait(dt) => CalcitTypeAnnotation::trait_annotation_proves(&dt.trait_def, expected_trait.as_ref()),
+      _ => false,
+    },
+    CalcitTypeAnnotation::DynTrait(expected_trait) => match value {
+      Calcit::DynTrait(dt) => CalcitTypeAnnotation::trait_references_match(&dt.trait_def, expected_trait.as_ref()),
       _ => false,
     },
     CalcitTypeAnnotation::TraitSet(traits) => match value {
@@ -13642,6 +13730,9 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
       Calcit::Enum(t) => traits
         .iter()
         .all(|trait_def| t.impls().iter().any(|imp| imp.matches_trait_reference(trait_def.as_ref()))),
+      Calcit::DynTrait(dt) => traits
+        .iter()
+        .all(|trait_def| CalcitTypeAnnotation::trait_annotation_proves(&dt.trait_def, trait_def.as_ref())),
       _ => false,
     },
     CalcitTypeAnnotation::Custom(custom) => match custom.as_ref() {
@@ -13906,6 +13997,7 @@ pub fn brief_type_of_value(value: &Calcit) -> &'static str {
     Calcit::Syntax(..) => "syntax",
     Calcit::Method(..) => "method",
     Calcit::Trait(_) => "trait",
+    Calcit::DynTrait(_) => "dyn-trait",
     Calcit::Impl(_) => "impl",
     Calcit::AnyBox(_) => "any-box",
     Calcit::AnyRef(reference) => {

@@ -8,7 +8,7 @@ pub fn map_type_references<F>(annotation: Arc<CalcitTypeAnnotation>, resolve_typ
 where
   F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
 {
-  map_type_and_trait_references(annotation, resolve_type_ref, &|trait_def| trait_def, false)
+  map_type_and_trait_references(annotation, resolve_type_ref, &|trait_def| trait_def, &|trait_def| trait_def, false)
 }
 
 /// Transform symbolic type references and resolved trait bounds without falling back to source text matching.
@@ -21,7 +21,22 @@ where
   F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
   G: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
 {
-  map_type_and_trait_references(annotation, resolve_type_ref, resolve_trait_bound, false)
+  map_type_and_trait_references(annotation, resolve_type_ref, resolve_trait_bound, &|trait_def| trait_def, false)
+}
+
+/// Transform symbolic type references, resolved trait bounds, and `(Dyn Trait)` targets.
+pub fn map_all_type_references<F, G, H>(
+  annotation: Arc<CalcitTypeAnnotation>,
+  resolve_type_ref: &F,
+  resolve_trait_bound: &G,
+  resolve_dyn_trait: &H,
+) -> Arc<CalcitTypeAnnotation>
+where
+  F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
+  G: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
+  H: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
+{
+  map_type_and_trait_references(annotation, resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, false)
 }
 
 /// Drop every `(:open …)` reason so two schemas can be compared as types alone.
@@ -30,19 +45,22 @@ pub fn without_open_reasons(annotation: Arc<CalcitTypeAnnotation>) -> Arc<Calcit
     annotation,
     &|name, args| Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), args)),
     &|trait_def| trait_def,
+    &|trait_def| trait_def,
     true,
   )
 }
 
-fn map_type_and_trait_references<F, G>(
+fn map_type_and_trait_references<F, G, H>(
   annotation: Arc<CalcitTypeAnnotation>,
   resolve_type_ref: &F,
   resolve_trait_bound: &G,
+  resolve_dyn_trait: &H,
   strip_open: bool,
 ) -> Arc<CalcitTypeAnnotation>
 where
   F: Fn(&Arc<str>, Arc<Vec<Arc<CalcitTypeAnnotation>>>) -> Arc<CalcitTypeAnnotation>,
   G: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
+  H: Fn(Arc<CalcitTrait>) -> Arc<CalcitTrait>,
 {
   let map_bounds = |bounds: &Arc<Vec<crate::calcit::CalcitGenericBound>>| {
     Arc::new(
@@ -60,7 +78,7 @@ where
       let resolved_args = Arc::new(
         args
           .iter()
-          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open))
           .collect::<Vec<_>>(),
       );
       resolve_type_ref(name, resolved_args)
@@ -69,38 +87,42 @@ where
       inner.clone(),
       resolve_type_ref,
       resolve_trait_bound,
+      resolve_dyn_trait,
       strip_open,
     ))),
     CalcitTypeAnnotation::Tuple(slots) => Arc::new(CalcitTypeAnnotation::Tuple(Arc::new(
       slots
         .iter()
-        .map(|slot| map_type_and_trait_references(slot.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+        .map(|slot| map_type_and_trait_references(slot.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open))
         .collect(),
     ))),
     CalcitTypeAnnotation::Map(key, value) => Arc::new(CalcitTypeAnnotation::Map(
-      map_type_and_trait_references(key.clone(), resolve_type_ref, resolve_trait_bound, strip_open),
-      map_type_and_trait_references(value.clone(), resolve_type_ref, resolve_trait_bound, strip_open),
+      map_type_and_trait_references(key.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open),
+      map_type_and_trait_references(value.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open),
     )),
     CalcitTypeAnnotation::Set(inner) => Arc::new(CalcitTypeAnnotation::Set(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
       resolve_trait_bound,
+      resolve_dyn_trait,
       strip_open,
     ))),
     CalcitTypeAnnotation::Ref(inner) => Arc::new(CalcitTypeAnnotation::Ref(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
       resolve_trait_bound,
+      resolve_dyn_trait,
       strip_open,
     ))),
     CalcitTypeAnnotation::Nullable(inner, origin) => Arc::new(CalcitTypeAnnotation::Nullable(
-      map_type_and_trait_references(inner.clone(), resolve_type_ref, resolve_trait_bound, strip_open),
+      map_type_and_trait_references(inner.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open),
       *origin,
     )),
     CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_and_trait_references(
       inner.clone(),
       resolve_type_ref,
       resolve_trait_bound,
+      resolve_dyn_trait,
       strip_open,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
@@ -108,10 +130,9 @@ where
       guard: if strip_open {
         None
       } else {
-        signature
-          .guard
-          .as_ref()
-          .map(|target| map_type_and_trait_references(target.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+        signature.guard.as_ref().map(|target| {
+          map_type_and_trait_references(target.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open)
+        })
       },
       runtime_arity: signature.runtime_arity,
       generics: signature.generics.clone(),
@@ -119,14 +140,20 @@ where
       arg_types: signature
         .arg_types
         .iter()
-        .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+        .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open))
         .collect(),
-      return_type: map_type_and_trait_references(signature.return_type.clone(), resolve_type_ref, resolve_trait_bound, strip_open),
+      return_type: map_type_and_trait_references(
+        signature.return_type.clone(),
+        resolve_type_ref,
+        resolve_trait_bound,
+        resolve_dyn_trait,
+        strip_open,
+      ),
       fn_kind: signature.fn_kind,
       rest_type: signature
         .rest_type
         .as_ref()
-        .map(|rest| map_type_and_trait_references(rest.clone(), resolve_type_ref, resolve_trait_bound, strip_open)),
+        .map(|rest| map_type_and_trait_references(rest.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open)),
       features: signature.features.clone(),
       cases: if signature.cases.is_empty() {
         signature.cases.clone()
@@ -140,6 +167,7 @@ where
                 Arc::new(CalcitTypeAnnotation::Fn(case.clone())),
                 resolve_type_ref,
                 resolve_trait_bound,
+                resolve_dyn_trait,
                 strip_open,
               )
               .as_ref()
@@ -158,6 +186,7 @@ where
           semantic.clone(),
           resolve_type_ref,
           resolve_trait_bound,
+          resolve_dyn_trait,
           strip_open,
         )),
         other => other.clone(),
@@ -167,12 +196,14 @@ where
           semantic.clone(),
           resolve_type_ref,
           resolve_trait_bound,
+          resolve_dyn_trait,
           strip_open,
         )),
         MacroExpansionType::Definition(semantic) => MacroExpansionType::Definition(map_type_and_trait_references(
           semantic.clone(),
           resolve_type_ref,
           resolve_trait_bound,
+          resolve_dyn_trait,
           strip_open,
         )),
         other => other.clone(),
@@ -193,6 +224,7 @@ where
         semantic.clone(),
         resolve_type_ref,
         resolve_trait_bound,
+        resolve_dyn_trait,
         strip_open,
       )),
       other => other.clone(),
@@ -202,7 +234,7 @@ where
       Arc::new(
         args
           .iter()
-          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open))
           .collect(),
       ),
     )),
@@ -211,11 +243,12 @@ where
       Arc::new(
         args
           .iter()
-          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, strip_open))
+          .map(|arg| map_type_and_trait_references(arg.clone(), resolve_type_ref, resolve_trait_bound, resolve_dyn_trait, strip_open))
           .collect(),
       ),
     )),
     CalcitTypeAnnotation::Trait(trait_def) => Arc::new(CalcitTypeAnnotation::Trait(resolve_trait_bound(trait_def.clone()))),
+    CalcitTypeAnnotation::DynTrait(trait_def) => Arc::new(CalcitTypeAnnotation::DynTrait(resolve_dyn_trait(trait_def.clone()))),
     CalcitTypeAnnotation::TraitSet(traits) => Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(
       traits.iter().cloned().map(resolve_trait_bound).collect(),
     ))),
@@ -229,11 +262,24 @@ where
 /// retaining only `Router` is ambiguous and prevents required-field lowering.
 /// Source migrations also use this resolver before treating a short nominal name as core.
 pub fn qualify_namespace_type_refs(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
-  map_type_references(annotation, &|name, resolved_args| {
-    let qualified_name = match program::resolve_type_name_in_ns(declaring_ns, name) {
-      Some((ns, def)) => Arc::from(format!("{ns}/{def}")),
-      None => name.clone(),
-    };
-    Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
-  })
+  map_all_type_references(
+    annotation,
+    &|name, resolved_args| {
+      let qualified_name = match program::resolve_type_name_in_ns(declaring_ns, name) {
+        Some((ns, def)) => Arc::from(format!("{ns}/{def}")),
+        None => name.clone(),
+      };
+      Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
+    },
+    &|trait_def| trait_def,
+    &|trait_def| {
+      if trait_def.runtime_id.is_none() && trait_def.methods.is_empty() && trait_def.requires.is_empty() {
+        let raw_name = trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str());
+        if let Some((ns, def)) = program::resolve_type_name_in_ns(declaring_ns, raw_name) {
+          return Arc::new(trait_def.as_ref().clone().with_definition_ref(&ns, &def));
+        }
+      }
+      trait_def
+    },
+  )
 }

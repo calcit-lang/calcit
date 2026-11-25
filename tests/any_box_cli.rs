@@ -779,6 +779,276 @@ fn any_downcast_resolves_lexical_local_structs_and_shadowing() {
       ])
       .output()
       .expect("run node");
+    assert!(node_out.status.success(), "node execution failed:\n{}", combined_output(&node_out));
+  }
+}
+
+#[test]
+fn any_box_dyn_trait_cross_ns_and_hash_work_on_native_and_js_and_reject_unsafe_targets() {
+  let dir = TestDirectory::create();
+  let snapshot = dir.snapshot();
+  let valid = r#"
+{}
+  :about "|Cross-ns (Dyn Trait) + AnyBox + Dyn Hash test"
+  :package |any-dyn
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'any-dyn.main/main!) (:mode :native) (:reload-fn 'any-dyn.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'any-dyn.traits $ %{} 'FileEntry
+      :defs $ {}
+        'AlertPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AlertPlugin
+            .emit $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'OtherPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait OtherPlugin
+            .emit $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-dyn.traits
+    'any-dyn.main $ %{} 'FileEntry
+      :defs $ {}
+        'BoxAlert $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct BoxAlert (:label String) (:impls any-dyn.traits/AlertPlugin)
+          :examples $ []
+          :schema $ quote StructDef
+        'BoxAlertPluginImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl BoxAlert any-dyn.traits/AlertPlugin
+            .emit $ fn (self)
+              hint-fn $ Fn any-dyn.main/BoxAlert (-> String)
+              &str:concat |box: (:label self)
+          :examples $ []
+          :schema $ quote Impl
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                d1 $ dyn:box (BoxAlert :label |ok) AlertPlugin
+                d2 $ dyn:box (BoxAlert :label |ok) AlertPlugin
+                b1 $ any:box d1
+                b2 $ any:box d2
+                hit $ match (any:downcast b1 (Dyn AlertPlugin))
+                  (:some got)
+                    and (&= |box:ok (.emit got)) (&= "|(&dyn AlertPlugin)" (&str got))
+                  (:none) false
+                miss $ match (any:downcast b1 (Dyn OtherPlugin))
+                  (:some _) false
+                  (:none) true
+                hashers $ assert-type
+                  []
+                    dyn:box (BoxAlert :label |abcd) Hash
+                    dyn:box 16384 Hash
+                    dyn:box |xyz Hash
+                  List (Dyn Hash)
+                h0 $ .hash (&list:nth hashers 0)
+                h1 $ .hash (&list:nth hashers 1)
+                h2 $ .hash (&list:nth hashers 2)
+                hashes-ok $ and (&= (hash (BoxAlert :label |abcd)) h0) (&= (hash 16384) h1) (&= (hash |xyz) h2)
+              if (and (&= b1 b2) hit miss hashes-ok) 0 (raise |any-dyn-cli-check-failed)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-dyn.main (:require (any-dyn.traits :refer (AlertPlugin OtherPlugin)))
+"#;
+  fs::write(&snapshot, valid).expect("write valid dyn-any snapshot");
+
+  let check = run_calcit(&snapshot, &["--check-only"]);
+  assert!(check.status.success(), "check-only failed:\n{}", combined_output(&check));
+  let native = run_calcit(&snapshot, &[]);
+  assert!(native.status.success(), "native failed:\n{}", combined_output(&native));
+
+  let js_emit_dir = dir.path.join("js-out");
+  let js = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("CALCIT_PROOF_AUDIT", "0")
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(&js_emit_dir)
+    .arg(&snapshot)
+    .arg("js")
+    .output()
+    .expect("emit js");
+  assert!(js.status.success(), "js emit failed:\n{}", combined_output(&js));
+  #[cfg(unix)]
+  {
+    let manifest_node_modules = Path::new(env!("CARGO_MANIFEST_DIR")).join("node_modules");
+    std::os::unix::fs::symlink(&manifest_node_modules, dir.path.join("node_modules")).expect("symlink node_modules");
+    let node_out = Command::new("node")
+      .current_dir(&dir.path)
+      .args([
+        "--input-type=module",
+        "-e",
+        "import * as app from './js-out/any-dyn.main.mjs'; if (app.main_$x_() !== 0) process.exit(1);",
+      ])
+      .output()
+      .expect("run node");
     assert!(node_out.status.success(), "node failed:\n{}", combined_output(&node_out));
+  }
+
+  for (label, bad_target) in [
+    ("any:downcast Dyn Eq", "(Dyn Eq)"),
+    ("any:downcast Dyn Compare", "(Dyn Compare)"),
+    ("any:downcast Dyn Number", "(Dyn Number)"),
+  ] {
+    let bad_snap = valid.replace("(Dyn OtherPlugin)", bad_target);
+    fs::write(&snapshot, bad_snap).expect("write bad snapshot");
+    let res = run_calcit(&snapshot, &["--check-only"]);
+    let text = combined_output(&res);
+    assert!(!res.status.success(), "{label} should fail:\n{text}");
+    assert!(
+      text.contains("E_TRAIT_NOT_OBJECT_SAFE"),
+      "{label} expected E_TRAIT_NOT_OBJECT_SAFE:\n{text}"
+    );
+  }
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn wasm_any_box_dyn_trait_cross_ns_and_hash_round_trip() {
+  use std::collections::HashSet;
+  use wasmtime::{Engine, ExternType, Linker, Module, Store};
+
+  let dir = TestDirectory::create();
+  let snapshot = dir.snapshot();
+  let content = r#"
+{}
+  :about "|WASM cross-ns (Dyn Trait) AnyBox + Dyn Hash test"
+  :package |any-dyn-wasm
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'any-dyn-wasm.main/main!) (:mode :native) (:reload-fn 'any-dyn-wasm.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'any-dyn-wasm.traits $ %{} 'FileEntry
+      :defs $ {}
+        'AlertPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AlertPlugin
+            .emit $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'OtherPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait OtherPlugin
+            .emit $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-dyn-wasm.traits
+    'any-dyn-wasm.main $ %{} 'FileEntry
+      :defs $ {}
+        'BoxAlert $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct BoxAlert (:label String) (:impls any-dyn-wasm.traits/AlertPlugin)
+          :examples $ []
+          :schema $ quote StructDef
+        'BoxAlertPluginImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl BoxAlert any-dyn-wasm.traits/AlertPlugin
+            .emit $ fn (self)
+              hint-fn $ Fn any-dyn-wasm.main/BoxAlert (-> String)
+              &str:concat |box: (:label self)
+          :examples $ []
+          :schema $ quote Impl
+        'check-any-dyn! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-any-dyn! ()
+            let
+                d1 $ dyn:box (BoxAlert :label |ok) AlertPlugin
+                d2 $ dyn:box (BoxAlert :label |ok) AlertPlugin
+                b1 $ any:box d1
+                b2 $ any:box d2
+                hit $ match (any:downcast b1 (Dyn AlertPlugin))
+                  (:some got)
+                    and (&= |box:ok (.emit got)) (&= "|(&dyn AlertPlugin)" (&str got))
+                  (:none) false
+                miss $ match (any:downcast b1 (Dyn OtherPlugin))
+                  (:some _) false
+                  (:none) true
+              if (and (&= b1 b2) hit miss) 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-dyn-hash! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-dyn-hash! ()
+            let
+                hashers $ assert-type
+                  []
+                    dyn:box (BoxAlert :label |abcd) Hash
+                    dyn:box 16384 Hash
+                    dyn:box |xyz Hash
+                  List (Dyn Hash)
+                h0 $ .hash (&list:nth hashers 0)
+                h1 $ .hash (&list:nth hashers 1)
+                h2 $ .hash (&list:nth hashers 2)
+              if (and (&= (hash (BoxAlert :label |abcd)) h0) (&= (hash 16384) h1) (&= (hash |xyz) h2)) 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-dyn-wasm.main (:require (any-dyn-wasm.traits :refer (AlertPlugin OtherPlugin)))
+"#;
+  fs::write(&snapshot, content).expect("write wasm dyn-any snapshot");
+
+  let wasm_out = dir.path.join("wasm-out");
+  fs::create_dir(&wasm_out).expect("create wasm out dir");
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("CALCIT_PROOF_AUDIT", "0")
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(&wasm_out)
+    .arg(&snapshot)
+    .arg("wasm")
+    .output()
+    .expect("compile wasm");
+  assert!(compile.status.success(), "wasm compile failed:\n{}", combined_output(&compile));
+
+  let engine = Engine::default();
+  let module = Module::from_file(&engine, wasm_out.join("program.wasm")).expect("load wasm");
+  let mut linker = Linker::new(&engine);
+  let mut registered = HashSet::new();
+  for import in module.imports() {
+    let key = (import.module().to_owned(), import.name().to_owned());
+    if !registered.insert(key) {
+      continue;
+    }
+    if let ExternType::Func(func_ty) = import.ty() {
+      let result_tys: Vec<_> = func_ty.results().collect();
+      linker
+        .func_new(import.module(), import.name(), func_ty, move |_caller, _params, results| {
+          for (idx, ty) in result_tys.iter().enumerate() {
+            results[idx] = match ty {
+              wasmtime::ValType::I32 => wasmtime::Val::I32(0),
+              wasmtime::ValType::I64 => wasmtime::Val::I64(0),
+              wasmtime::ValType::F32 => wasmtime::Val::F32(0),
+              wasmtime::ValType::F64 => wasmtime::Val::F64(0),
+              _ => wasmtime::Val::I32(0),
+            };
+          }
+          Ok(())
+        })
+        .expect("stub import");
+    }
+  }
+  let mut store = Store::new(&engine, ());
+  let instance = linker.instantiate(&mut store, &module).expect("instantiate wasm");
+  for name in ["check-any-dyn!", "check-dyn-hash!"] {
+    let func = instance
+      .get_typed_func::<(), f64>(&mut store, name)
+      .unwrap_or_else(|e| panic!("missing export `{name}`: {e}"));
+    assert_eq!(
+      func.call(&mut store, ()).unwrap_or_else(|e| panic!("call `{name}`: {e}")),
+      1.0,
+      "{name}"
+    );
   }
 }

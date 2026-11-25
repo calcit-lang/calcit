@@ -290,7 +290,7 @@ fn desugar_leaf(name: &str) -> Result<Cirru, String> {
 fn builtin_constructor_arity(head: &str) -> Option<usize> {
   match head {
     "Any" => Some(0),
-    "List" | "Set" | "Ref" | "Option" | "JsNullish" | "Optional" => Some(1),
+    "List" | "Set" | "Ref" | "Option" | "JsNullish" | "Optional" | "Dyn" => Some(1),
     "Map" | "Result" => Some(2),
     _ => None,
   }
@@ -1179,5 +1179,22 @@ mod tests {
     for reason in &skipped {
       assert!(reason.contains("no compact spelling"), "unexpected skip {reason}");
     }
+  }
+
+  #[test]
+  fn dyn_trait_type_forms_round_trip() {
+    assert_eq!(desugar_text("Dyn Show").unwrap(), "(:: 'Dyn 'Show)");
+    assert_eq!(desugar_text("List (Dyn Show)").unwrap(), "(:: 'List (:: 'Dyn 'Show))");
+    assert_eq!(
+      desugar_text("Map Tag (Dyn app.plugin/AlertPlugin)").unwrap(),
+      "(:: 'Map 'Tag (:: 'Dyn 'app.plugin/AlertPlugin))"
+    );
+    let parsed =
+      crate::snapshot::parse_schema_annotation_for_write(&parse_one("List (Dyn Show)")).expect("should parse compact Dyn schema");
+    let edn = parsed.to_type_edn();
+    assert_eq!(edn.to_string(), "(:: 'List (:: 'Dyn 'Show))");
+    let compact = print_type_compact(&edn).expect("should emit compact Dyn form");
+    let reparsed = crate::snapshot::parse_schema_annotation_for_write(&compact).expect("should reparse compact form");
+    assert_eq!(reparsed.to_type_edn(), edn);
   }
 }

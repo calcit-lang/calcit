@@ -352,7 +352,7 @@ fn collect_schema_declared_targets(
         collect_schema_declared_targets(current_ns, arg, declared_targets, out);
       }
     }
-    CalcitTypeAnnotation::Trait(trait_def) => {
+    CalcitTypeAnnotation::Trait(trait_def) | CalcitTypeAnnotation::DynTrait(trait_def) => {
       if let Some(def_ref) = trait_def.definition_ref.as_deref()
         && let Some(&target) = declared_targets.get(def_ref)
       {

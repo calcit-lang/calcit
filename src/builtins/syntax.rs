@@ -1123,6 +1123,45 @@ pub fn assert_traits(
   Ok(value)
 }
 
+pub fn dyn_box(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "dyn:box expected 2 arguments (expr, trait), but received:",
+      &expr.to_vec(),
+    );
+  }
+
+  let value = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  if matches!(value, Calcit::DynTrait(_)) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      "dyn:box cannot re-box an existing `(Dyn ...)` trait object",
+      "E_DYN_BOX_TYPE",
+      call_stack,
+      expr.first().and_then(Calcit::get_location),
+    ));
+  }
+
+  let trait_value = runner::evaluate_expr(&expr[1], scope, file_ns, call_stack)?;
+  let Calcit::Trait(trait_def) = trait_value else {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("dyn:box expected a trait definition as second argument, but received: {trait_value}"),
+      "E_DYN_BOX_TYPE",
+      call_stack,
+      expr.get(1).and_then(Calcit::get_location),
+    ));
+  };
+
+  let vtable = builtins::meta::build_dyn_trait_vtable(&value, &trait_def, call_stack)?;
+  Ok(Calcit::DynTrait(Arc::new(crate::calcit::CalcitDynTrait {
+    trait_def,
+    value,
+    vtable: Arc::new(vtable),
+  })))
+}
+
 // code replaced from `~` and `~@` returns different results
 #[derive(Clone, PartialEq, Debug)]
 enum SpanResult {
