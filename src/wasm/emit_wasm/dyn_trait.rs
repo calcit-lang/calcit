@@ -2,7 +2,7 @@
 //!
 //! Fat pointer payload layout (`"dyn-trait"`, 16 bytes after 8-byte `[magic][tag]` header):
 //! - offset `0` (`i32`): `vtable_id` — dense index `0..K-1` within `trait_id`'s closed impl set
-//! - offset `4` (`i32`): `trait_id` — dense index `0..T-1` of the boxed `CalcitTrait`
+//! - offset `4` (`i32`): `trait_word` — `trait_id` (`0..26`) | scalar kind (`27..30`) | `DYN_TRAIT_HEAP_FLAG` (`31`)
 //! - offset `8` (`f64`): `data` — boxed Calcit value in canonical f64 slot representation
 //!
 //! Every reachable `(boxed_trait, target_trait, method, arity)` dispatch compiles to ONE shared
@@ -15,12 +15,37 @@ use crate::wasm::host::calcit::{CalcitSymbolInfo, CalcitTrait};
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{check_trait_object_safe, lookup_source_backed_trait_def};
 
-/// Heap tag name registered in `BUILTIN_TYPE_TAGS` for boxed `(Dyn Trait)` fat pointers.
+/// Heap-payload flag stored at bit 31 of word `@ 4` of a `"dyn-trait"` fat pointer.
 pub(super) const DYN_TRAIT_HEAP_FLAG: u32 = 0x8000_0000;
-/// Bitmask extracting the `trait_id` from word `@ 4` of a `"dyn-trait"` fat pointer.
-pub(super) const DYN_TRAIT_ID_MASK: u32 = 0x7fff_ffff;
+/// Bit shift of the non-heap scalar runtime kind nibble (bits `27..30`) in word `@ 4`.
+pub(super) const DYN_TRAIT_SCALAR_KIND_SHIFT: u32 = 27;
+/// Bitmask extracting the `trait_id` (bits `0..26`) from word `@ 4` of a `"dyn-trait"` fat pointer.
+pub(super) const DYN_TRAIT_ID_MASK: u32 = 0x07ff_ffff;
 /// Heap tag name registered in `BUILTIN_TYPE_TAGS` for boxed `(Dyn Trait)` fat pointers.
 pub(super) const DYN_TRAIT_HEAP_TAG: &str = "dyn-trait";
+
+/// Runtime kind tag stored in bits `27..30` of `trait_word` when `DYN_TRAIT_HEAP_FLAG` is clear,
+/// keeping erased scalar types distinct under `(= ...)` while treating `Number` and `Numeric(_)` identically.
+fn dyn_payload_scalar_kind(ty: &Arc<CalcitTypeAnnotation>) -> u32 {
+  let expanded = expand_wasm_value_type(ty);
+  if dyn_payload_is_heap(&expanded) {
+    return 0;
+  }
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Nullable(inner, _) => dyn_payload_scalar_kind(inner),
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => 1,
+    CalcitTypeAnnotation::Bool => 2,
+    CalcitTypeAnnotation::Tag => 3,
+    CalcitTypeAnnotation::Nil => 4,
+    CalcitTypeAnnotation::Unit => 5,
+    CalcitTypeAnnotation::Never => 6,
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => 7,
+    CalcitTypeAnnotation::Symbol => 8,
+    CalcitTypeAnnotation::StructDef(_) => 9,
+    CalcitTypeAnnotation::EnumDef(_) => 10,
+    _ => 0,
+  }
+}
 
 fn dyn_payload_is_heap(ty: &Arc<CalcitTypeAnnotation>) -> bool {
   let expanded = expand_wasm_value_type(ty);
@@ -344,13 +369,22 @@ pub(super) fn emit_dyn_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::LocalSet(data_local));
 
   let is_heap = dyn_payload_is_heap(&concrete_ty);
+  let scalar_kind = dyn_payload_scalar_kind(&concrete_ty);
   let (trait_id, vtable_id) = {
     let mut reg = ctx.dyn_traits.borrow_mut();
     let trait_id = reg.intern_trait(&trait_def);
     let vtable_id = reg.intern_vtable(trait_id, type_key, concrete_ty, file_ns);
     (trait_id, vtable_id)
   };
-  let trait_word = (trait_id & DYN_TRAIT_ID_MASK) | if is_heap { DYN_TRAIT_HEAP_FLAG } else { 0 };
+  if trait_id > DYN_TRAIT_ID_MASK {
+    return Err("E_WASM_TRAIT_TYPE_EVIDENCE: reachable trait count exceeds dyn-trait header limit".to_owned());
+  }
+  let trait_word = (trait_id & DYN_TRAIT_ID_MASK)
+    | if is_heap {
+      DYN_TRAIT_HEAP_FLAG
+    } else {
+      scalar_kind << DYN_TRAIT_SCALAR_KIND_SHIFT
+    };
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 16, ptr_local, DYN_TRAIT_HEAP_TAG);
