@@ -120,6 +120,8 @@ const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
   (CalcitSyntax::DefWasmImport, &[]),
   (CalcitSyntax::JsCast, &[]),
   (CalcitSyntax::ParseCirruEdnAs, &[]),
+  (CalcitSyntax::AnyBox, &[]),
+  (CalcitSyntax::AnyDowncast, &[]),
   (CalcitSyntax::AssertTraits, &["control"]),
   (CalcitSyntax::Match, &[]),
 ];

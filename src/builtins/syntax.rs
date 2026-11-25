@@ -997,6 +997,108 @@ pub fn encode_map_as(
   })
 }
 
+pub fn any_box(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  let (value_expr, handle_opt) = match (expr.first(), expr.get(1), expr.get(2)) {
+    (Some(value_expr), Some(handle), None) => (value_expr, Some(handle)),
+    (Some(value_expr), None, None) => (value_expr, None),
+    _ => {
+      return CalcitErr::err_nodes(
+        CalcitErrKind::Arity,
+        "any:box expected 1 value argument, but received:",
+        &expr.to_vec(),
+      );
+    }
+  };
+  let value = runner::evaluate_expr(value_expr, scope, file_ns, call_stack)?;
+  let type_id = match handle_opt.and_then(crate::calcit::CompiledAnyTypeId::from_calcit_handle) {
+    Some(id) => id,
+    None => {
+      let inferred = crate::calcit::type_annotation::infer_runtime_value_type(&value);
+      let key = crate::calcit::canonical_type_key(inferred.as_ref(), Some(file_ns)).map_err(|err| {
+        CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "any:box cannot box open runtime value `{}`: {}",
+            inferred.to_brief_string(),
+            err.message
+          ),
+          err.code,
+          call_stack,
+          value_expr.get_location(),
+        )
+      })?;
+      Arc::new(crate::calcit::CompiledAnyTypeId::new(key))
+    }
+  };
+  Ok(Calcit::AnyBox(Arc::new(crate::calcit::CalcitAnyBox {
+    type_key: type_id.type_key.clone(),
+    type_hash: type_id.type_hash,
+    value,
+  })))
+}
+
+pub fn any_downcast(
+  expr: &CalcitListView<'_>,
+  scope: &CalcitScope,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  if expr.len() != 2 && expr.len() != 3 {
+    return CalcitErr::err_nodes(
+      CalcitErrKind::Arity,
+      "any:downcast expected an `Any` value and a target type expression, but received:",
+      &expr.to_vec(),
+    );
+  }
+  let input = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  let Calcit::AnyBox(boxed) = input else {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "any:downcast expected an `Any` value, but received `{}`",
+        crate::calcit::brief_type_of_value(&input)
+      ),
+      "E_ANY_DOWNCAST_RECEIVER",
+      call_stack,
+      expr[0].get_location(),
+    ));
+  };
+  let target_id = match expr.get(2).and_then(crate::calcit::CompiledAnyTypeId::from_calcit_handle) {
+    Some(id) => id,
+    None => {
+      let raw_form = &expr[1];
+      let desugared = crate::calcit::type_expr::desugar_quoted_form(raw_form)
+        .or_else(|| crate::calcit::type_expr::desugar_bare_form(raw_form))
+        .transpose()
+        .map_err(|msg| {
+          CalcitErr::use_msg_stack_location_with_code(
+            CalcitErrKind::Type,
+            format!("invalid compact type expression: {msg}"),
+            "E_TYPE_EXPR_SYNTAX",
+            call_stack,
+            raw_form.get_location(),
+          )
+        })?;
+      let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(raw_form), &[]);
+      let key = crate::calcit::canonical_type_key(target.as_ref(), Some(file_ns)).map_err(|err| {
+        CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!("any:downcast target `{}`: {}", target.to_brief_string(), err.message),
+          err.code,
+          call_stack,
+          raw_form.get_location(),
+        )
+      })?;
+      Arc::new(crate::calcit::CompiledAnyTypeId::new(key))
+    }
+  };
+  if boxed.type_hash == target_id.type_hash && boxed.type_key == target_id.type_key {
+    builtins::core_enum_value::value("Option", "some", vec![boxed.value.clone()])
+  } else {
+    builtins::core_enum_value::value("Option", "none", vec![])
+  }
+}
+
 pub fn assert_traits(
   expr: &CalcitListView<'_>,
   scope: &CalcitScope,

@@ -2835,6 +2835,35 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
   })
 }
 
+/// Resolve a parsed type form in the active lexical scope, preferring local
+/// `StructDef` / `EnumDef` bindings over same-named global definitions.
+pub(super) fn resolve_type_form_in_scope(
+  raw_form: &Calcit,
+  parsed_form: &Calcit,
+  lexical_generics: &[Arc<str>],
+  scope_types: &ScopeTypes,
+) -> Arc<CalcitTypeAnnotation> {
+  let local_nominal_type = match raw_form {
+    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
+      scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
+        CalcitTypeAnnotation::StructDef(struct_def)
+        | CalcitTypeAnnotation::Struct(struct_def, _)
+        | CalcitTypeAnnotation::StructValue(struct_def) => {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
+        }
+        CalcitTypeAnnotation::EnumDef(enum_def)
+        | CalcitTypeAnnotation::Enum(enum_def, _)
+        | CalcitTypeAnnotation::EnumValue(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
+        _ => None,
+      })
+    }
+    _ => None,
+  };
+  let parsed =
+    local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(parsed_form, lexical_generics));
+  resolve_local_type_refs_for_body(parsed, scope_types)
+}
+
 /// Resolve a qualified source-backed trait reference when an expression-level
 /// type assertion carries it outside a function schema. Structs and enums have
 /// global `TypeRef` resolvers; traits need the same source lookup so JS
@@ -6043,6 +6072,14 @@ fn preprocess_list_call(
         CalcitSyntax::EncodeMapAs => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_encode_map_as(name, name_ns, &args, &mut ctx)
+        }
+        CalcitSyntax::AnyBox => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_any_box(name, name_ns, &args, &mut ctx)
+        }
+        CalcitSyntax::AnyDowncast => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_any_downcast(name, name_ns, &args, &mut ctx)
         }
         CalcitSyntax::AssertTraits => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -13930,6 +13967,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Number => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
+    CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     // A schema alias such as `Coord` for `List Number` dispatches through the
     // core impls of the schema it names (#2590).
@@ -16415,6 +16453,12 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
     // Decoder handles are derived core metadata, not source arguments.
     // Rebuild the decoder from its retained type expression on the retry.
     items.pop_if(|last| crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(last).is_some());
+  }
+  if (items.len() == 3 && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AnyBox, _))))
+    || (items.len() == 4 && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AnyDowncast, _))))
+  {
+    // Canonical Any TypeId handles are derived core metadata; strip before recheck.
+    items.pop_if(|last| calcit::CompiledAnyTypeId::from_calcit_handle(last).is_some());
   }
   if matches!(
     items.first(),
@@ -19111,25 +19155,9 @@ fn preprocess_assert_type_with_obligation(
     _ => qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types),
   };
 
-  let local_nominal_type = match type_form {
-    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
-      ctx.scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
-        CalcitTypeAnnotation::StructDef(struct_def) => {
-          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
-        }
-        CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
-        _ => None,
-      })
-    }
-    _ => None,
-  };
-
   let asserted_target = target_form;
-  let asserted_type = local_nominal_type.unwrap_or_else(|| {
-    let lexical_generics = ctx.scope_types.generic_names();
-    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
-  });
-  let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
+  let lexical_generics = ctx.scope_types.generic_names();
+  let asserted_type = resolve_type_form_in_scope(type_form, &asserted_type_form, &lexical_generics, ctx.scope_types);
   let assertion_location = args
     .get(1)
     .and_then(|form| form.get_location())
@@ -19781,6 +19809,180 @@ pub fn preprocess_encode_map_as(
     value_form,
     type_form.to_owned(),
     encoder.into_calcit_handle(),
+  ]))
+}
+
+fn is_proven_any_box_type(ty: &CalcitTypeAnnotation) -> bool {
+  let mut current = std::borrow::Cow::Borrowed(ty);
+  for _ in 0..32 {
+    match current.as_ref() {
+      CalcitTypeAnnotation::Any => return true,
+      CalcitTypeAnnotation::TypeSlot(slot) => {
+        let Some(bound) = calcit::resolve_type_slot(slot) else {
+          return false;
+        };
+        current = std::borrow::Cow::Owned(bound.as_ref().clone());
+      }
+      CalcitTypeAnnotation::TypeRef(..) => {
+        let Some(aliased) = current.expand_single_type_alias() else {
+          return false;
+        };
+        current = std::borrow::Cow::Owned(aliased.as_ref().clone());
+      }
+      _ => return false,
+    }
+  }
+  false
+}
+
+/// Preprocess `(any:box expr)` -> `(any:box expr <CompiledAnyTypeId>)`.
+/// Rejects open or non-monomorphic inferred types with `E_ANY_OPEN_TYPE`.
+pub fn preprocess_any_box(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  let value_arg = if args.len() == 2
+    && let (Some(first), Some(last)) = (args.first(), args.get(1))
+    && calcit::CompiledAnyTypeId::from_calcit_handle(last).is_some()
+  {
+    first
+  } else if args.len() == 1 {
+    args.first().expect("validated any:box value")
+  } else {
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected 1 value argument, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location).or_else(|| ctx.call_location.clone()),
+      )
+      .with_code("E_ANY_BOX_ARITY"),
+    );
+  };
+
+  let value_form = preprocess_expr(
+    value_arg,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let actual_type = resolve_type_value(&value_form, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  ensure_annotation_slot_representatives(ctx.file_ns, &actual_type, ctx.check_warnings, ctx.call_stack)?;
+  let type_key = calcit::canonical_type_key(&actual_type, Some(ctx.file_ns)).map_err(|error| {
+    CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "{head} cannot box open or non-monomorphic type `{}`: {}",
+        actual_type.to_brief_string(),
+        error.message
+      ),
+      error.code,
+      ctx.call_stack,
+      value_form.get_location().or_else(|| value_arg.get_location()),
+    )
+  })?;
+  let handle = calcit::CompiledAnyTypeId::new(type_key).into_calcit_handle();
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    value_form,
+    handle,
+  ]))
+}
+
+/// Preprocess `(any:downcast box TargetType)` -> `(any:downcast box TargetType <CompiledAnyTypeId>)`.
+/// Requires `box : Any` and a closed monomorphic `TargetType`.
+pub fn preprocess_any_downcast(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  let (raw_box_arg, source_type_arg, is_lowered) = if args.len() == 3
+    && let (Some(b), Some(t), Some(last)) = (args.first(), args.get(1), args.get(2))
+    && calcit::CompiledAnyTypeId::from_calcit_handle(last).is_some()
+  {
+    (b, t, true)
+  } else if args.len() == 2 {
+    (
+      args.first().expect("validated any:downcast box"),
+      args.get(1).expect("validated any:downcast target type"),
+      false,
+    )
+  } else {
+    return Err(
+      CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Arity,
+        format!("{head} expected an `Any` value and a target type expression, got {}", args.len()),
+        ctx.call_stack,
+        args.first().and_then(Calcit::get_location).or_else(|| ctx.call_location.clone()),
+      )
+      .with_code("E_ANY_DOWNCAST_ARITY"),
+    );
+  };
+
+  let box_form = preprocess_expr(
+    raw_box_arg,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  let box_type = resolve_type_value(&box_form, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  if !is_proven_any_box_type(&box_type) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "{head} expected an `Any` value as its first argument, got `{}`",
+        box_type.to_brief_string()
+      ),
+      "E_ANY_DOWNCAST_RECEIVER",
+      ctx.call_stack,
+      box_form.get_location().or_else(|| raw_box_arg.get_location()),
+    ));
+  }
+
+  let type_form = if is_lowered {
+    qualify_assert_type_form(source_type_arg, ctx.file_ns, ctx.scope_types)
+  } else {
+    let desugared = desugar_decoder_type_form(head.as_ref(), args, ctx)?;
+    qualify_assert_type_form(&desugared, ctx.file_ns, ctx.scope_types)
+  };
+  let target = resolve_type_form_in_scope(&type_form, &type_form, &[], ctx.scope_types);
+  target.validate_applied_type_args().map_err(|error| {
+    let code = if error.starts_with("type alias ") {
+      unknown_type_names::TYPE_ALIAS_ARITY_ERROR
+    } else {
+      "E_TYPE_EXPR_SYNTAX"
+    };
+    CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("{head} target `{}`: {error}", target.to_brief_string()),
+      code,
+      ctx.call_stack,
+      source_type_arg.get_location().or_else(|| box_form.get_location()),
+    )
+  })?;
+  ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
+  let type_key = calcit::canonical_type_key(&target, Some(ctx.file_ns)).map_err(|error| {
+    CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("{head} target `{}`: {}", target.to_brief_string(), error.message),
+      error.code,
+      ctx.call_stack,
+      source_type_arg.get_location().or_else(|| box_form.get_location()),
+    )
+  })?;
+  let handle = calcit::CompiledAnyTypeId::new(type_key).into_calcit_handle();
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    box_form,
+    type_form,
+    handle,
   ]))
 }
 

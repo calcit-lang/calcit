@@ -317,6 +317,7 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
     | Impl { .. }
     | Syntax(_, _)
     | Method(..)
+    | AnyBox(..)
     | AnyRef(..) => Ok(expr.to_owned()),
 
     Thunk(thunk) => Ok(thunk.evaluated(scope, call_stack)?),

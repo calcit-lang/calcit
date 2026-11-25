@@ -87,7 +87,8 @@ impl StructFieldKind {
       | CalcitTypeAnnotation::StructValue(_)
       | CalcitTypeAnnotation::Enum(_, _)
       | CalcitTypeAnnotation::EnumValue(_)
-      | CalcitTypeAnnotation::AnonymousEnum => Self::HeapPtrI32,
+      | CalcitTypeAnnotation::AnonymousEnum
+      | CalcitTypeAnnotation::Any => Self::HeapPtrI32,
       CalcitTypeAnnotation::TypeRef(_, _) if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() => {
         Self::HeapPtrI32
       }

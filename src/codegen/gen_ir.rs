@@ -282,6 +282,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       }
       Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("map")), (Edn::tag("pairs"), pairs.into())])
     }
+    Calcit::AnyBox(_) => Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("any-box"))]),
     Calcit::AnyRef(_) => {
       // AnyRef is an opaque runtime handle; it cannot be embedded in IR code.
       Edn::map_from_iter([(Edn::tag("kind"), Edn::tag("any-ref"))])

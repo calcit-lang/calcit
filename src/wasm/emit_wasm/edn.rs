@@ -2334,6 +2334,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
 
     let mut json_12 = WasmGenCtx::new(1, env.clone());

@@ -647,6 +647,7 @@ pub(super) fn build_runtime_fns(
       nil: nil_tag,
       bool_tag,
       number: number_tag,
+      any_box: *tag_index.get("any-box").expect("any-box tag must exist") as i32,
     };
     let fwd_grow_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_fwd_grow"), fwd_grow_idx);
@@ -1173,6 +1174,7 @@ pub(super) fn build_runtime_fns(
     nil: nil_tag,
     bool_tag,
     number: number_tag,
+    any_box: *tag_index.get("any-box").expect("any-box tag must exist") as i32,
   };
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
@@ -1649,6 +1651,7 @@ pub(super) struct ValueRuntimeTags {
   pub(super) nil: i32,
   pub(super) bool_tag: i32,
   pub(super) number: i32,
+  pub(super) any_box: i32,
 }
 
 pub(super) fn build_rt_value_hash(
@@ -1667,6 +1670,7 @@ pub(super) fn build_rt_value_hash(
     nil: nil_tag,
     bool_tag,
     number: number_tag,
+    any_box: any_box_tag,
   } = tags;
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
@@ -1724,9 +1728,18 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  for (index, kind) in [string_tag, buffer_tag, list_tag, enum_tag, struct_tag, set_tag, map_tag]
-    .into_iter()
-    .enumerate()
+  for (index, kind) in [
+    string_tag,
+    buffer_tag,
+    list_tag,
+    enum_tag,
+    struct_tag,
+    set_tag,
+    map_tag,
+    any_box_tag,
+  ]
+  .into_iter()
+  .enumerate()
   {
     b.emit(Instruction::LocalGet(tag));
     b.emit(Instruction::I32Const(kind));
@@ -1789,6 +1802,38 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::LocalSet(hash));
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+
+  // AnyBox: `[type_id:u32 @ 0][flags:u32 @ 4][payload:f64 @ 8]`
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(any_box_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const((any_box_tag as u32).wrapping_mul(0x0100_0193) as i32));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
 
@@ -2017,6 +2062,7 @@ fn build_rt_value_equal(
     nil: nil_tag,
     bool_tag,
     number: number_tag,
+    any_box: any_box_tag,
   } = tags;
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
@@ -2392,7 +2438,52 @@ fn build_rt_value_equal(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::F64Eq);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(any_box_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  // Compare canonical TypeId first (`Int32` vs `Number`, `false` vs `0`)
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_b));
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // any_box if
   b.emit(Instruction::End); // number if
   b.emit(Instruction::End); // bool if
   b.emit(Instruction::End); // nil if

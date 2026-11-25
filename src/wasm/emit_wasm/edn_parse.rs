@@ -4035,6 +4035,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let graph = DataShapeGraph::from_nodes(0, vec![DataShapeNode::Nil]).expect("nil shape");
     let path = literal_local(&mut WasmGenCtx::new(0, env.clone()), "").ok();

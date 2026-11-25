@@ -670,9 +670,41 @@ let
 
 与返回 `Result Dynamic String` 的 `try-parse-cirru-edn` / `.parse-cirru-edn` 不同，`EdnValue` 将 `:tag` 与 `:symbol` 的名称保存为 `String`，并支持递归 `Set EdnValue` 与 `Map EdnValue EdnValue`，因此在 WASM/WASI 上也能解析编译期未知的任意 tag/symbol 与嵌套集合。
 
+## 封闭存在容器 `Any`（`any:box` / `any:downcast`）
+
+`Any` 是零元内建封闭类型，用于在严格静态检查与跨后端运行时中传递编译期封闭的单态值（例如 `Map String Any` 状态表或异构组件载荷）。与开放的 `Dynamic` 不同，具体类型不会隐式放宽为 `Any`，`Any` 与 `Dynamic` 之间也不互通；值只能通过 `any:box` 装箱进入 `Any`，并通过 `any:downcast` 按规范 `TypeId` 解箱为 `Option T`。
+
+```cirru
+let
+    boxed $ any:box 42
+    heterogeneous $ assert-type
+      {}
+        |count $ any:box 1
+        |label $ any:box |ok
+      Map String Any
+  assert= :any-box $ type-of boxed
+  assert= "|(&any-box)" $ .debug boxed
+  assert= false $ &= (any:box false) (any:box 0)
+  match (any:downcast boxed Number)
+    (:some v) (assert= 43 (&+ v 1))
+    (:none) (assert= true false)
+  match (any:downcast boxed String)
+    (:some _) (assert= true false)
+    (:none) (assert= true true)
+  match (get heterogeneous |label)
+    (:some item)
+      match (any:downcast item String)
+        (:some text) (assert= |ok text)
+        (:none) (assert= true false)
+    (:none) (assert= true false)
+```
+
+`any:box` 在编译期推导值类型并展开 `deftype` 别名，递归拒绝 `Dynamic`、未绑定 `TypeVar`、`DynFn`、`AnyFn`/`AnyStruct`/`AnyEnum`、匿名 `Enum`、未解析的 `TypeSlot`、非外部裸 `Trait` 与包含 `Never`（如裸 `[]`、`None`）的开放或非单态类型（报 `E_ANY_OPEN_TYPE`）。`any:downcast` 要求首个实参已证明为 `Any`（非 `Any` 或 `Dynamic` 报 `E_ANY_DOWNCAST_RECEIVER`），按精确 `TypeId` 比对（例如 `Int32` 与 `Number` 互不匹配，`defunion` 仅匹配其自身联合类型）。`Any` 只静态实现 `Debug`（统一输出 `(&any-box)`），不静态实现 `Eq` / `Hash` / `Compare`，而运行时的 `=` 与 `&hash` 在 Native、JS 和 WASM 上均按 `(type_id, value)` 比较与哈希。
+
 ### 限制
 
 - `json:parse` 在 WASM/WASI 上沿用现有 JSON 解析上限（输入 64 KiB、单数组 4096 项、单对象 2048 项、嵌套深度 32），超限时返回 `Result :err`。
 - `json:stringify` / `.to-json` 对 `JsonValue :number` 中的非有限浮点数沿用 `json-stringify` 的报错语义。
 - `edn:parse` 仅解码上述 9 种核心 Cirru EDN 值（不支持 `%{} `、`%::`、`::`、`quote`、`atom` 等扩展宿主构造）；在 WASM/WASI 上限制输入大小 64 KiB 与嵌套深度 32，超限时返回 `Result :err`。
 - `edn:format` / `.to-edn` 对 `EdnValue :number` 中的非有限浮点数沿用 `json-stringify` 的报错语义。
+- `any:box`、`any:downcast` 仅接受封闭单态类型，`Any` 不支持零元以外的类型实参（如 `Any Number`），且不可直接通过 `json-stringify`、`to-cirru-edn` 或 `encode-map-as` 序列化。

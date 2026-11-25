@@ -17,6 +17,7 @@ import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
 import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
+import { CalcitAnyBox } from "./js-any-box.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
 
@@ -258,6 +259,7 @@ let defaultHash_struct = valueHash("struct:");
 let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
 let defaultHash_union_def = valueHash("union-def:");
+let defaultHash_any_box = valueHash("any-box:");
 
 let defaultHash_unknown = valueHash("unknown:");
 let defaultHash_buffer = valueHash("buffer:");
@@ -458,6 +460,10 @@ export let hashFunction = (x: CalcitValue): Hash => {
     base = hashCirru(base, x.value);
     return base;
   }
+  if (x instanceof CalcitAnyBox) {
+    let base = mergeValueHash(defaultHash_any_box, hashFunction(x.typeKey));
+    return mergeValueHash(base, hashFunction(x.value));
+  }
   if (x instanceof Uint8Array) {
     // Buffers are values: equal bytes must hash equally, matching native Buffer equality.
     let base = mergeValueHash(defaultHash_buffer, x.length);
@@ -630,6 +636,9 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   if (x instanceof CalcitCirruQuote) {
     return x.toString();
   }
+  if (x instanceof CalcitAnyBox) {
+    return x.toString();
+  }
 
   if (!disableJsDataWarning) {
     console.warn("Non Calcit data in stringify", x);
@@ -743,6 +752,9 @@ let to_js_data_inner = (x: CalcitValue, addColon: boolean): any => {
   if (x instanceof CalcitRecur) {
     throw new Error("Cannot convert recur to plain data");
   }
+  if (x instanceof CalcitAnyBox) {
+    throw new Error("Cannot convert Any box to plain JS data");
+  }
 
   return x;
 };
@@ -809,6 +821,12 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitCirruQuote) {
     if (y instanceof CalcitCirruQuote) {
       return cirru_deep_equal(x.value, y.value);
+    }
+    return false;
+  }
+  if (x instanceof CalcitAnyBox) {
+    if (y instanceof CalcitAnyBox) {
+      return x.typeKey === y.typeKey && _$n__$e_(x.value, y.value);
     }
     return false;
   }

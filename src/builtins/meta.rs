@@ -131,6 +131,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Registered(..) => Ok(Calcit::tag("registered")),
     Trait(..) => Ok(Calcit::tag("trait")),
     Impl(..) => Ok(Calcit::tag("impl")),
+    AnyBox(..) => Ok(Calcit::tag("any-box")),
     AnyRef(..) => Ok(Calcit::tag("any-ref")),
   }
 }
@@ -1790,6 +1791,10 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let impls_value = runner::evaluate_symbol_from_program("&core-cirru-quote-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
+    AnyBox(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-any-box-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
     x => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("invoke-method cannot resolve impls for value: {x}"),
@@ -2146,6 +2151,7 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
       collect_optional_core_impls("&core-text-scalar-impls", call_stack)
     }
     Calcit::CirruQuote(..) => collect_optional_core_impls("&core-cirru-quote-impls", call_stack),
+    Calcit::AnyBox(..) => collect_optional_core_impls("&core-any-box-impls", call_stack),
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),
@@ -2618,6 +2624,7 @@ fn find_value_outside_code(code: &Calcit) -> Option<&'static str> {
     Calcit::BufList(_) => Some("buf-list"),
     Calcit::Recur(_) => Some("recur"),
     Calcit::Trait(_) => Some("trait"),
+    Calcit::AnyBox(_) => Some("any-box"),
     Calcit::Thunk(thunk) => find_value_outside_code(thunk.get_code()),
     Calcit::List(xs) => xs.iter().find_map(find_value_outside_code),
     Calcit::Set(xs) => xs.iter().find_map(find_value_outside_code),
@@ -3530,5 +3537,17 @@ mod tests {
     let type_err = try_parse_edn_value(&[Calcit::Nil, Calcit::Nil, Calcit::new_str("do 1")]).expect_err("non-enum args should fail");
     assert_eq!(type_err.kind, CalcitErrKind::Type);
     assert!(type_err.msg.contains("expected Result enum, EdnValue enum, and a string"));
+  }
+
+  #[test]
+  fn extract_code_into_edn_rejects_any_box() {
+    let boxed = Calcit::AnyBox(Arc::new(crate::calcit::CalcitAnyBox {
+      type_key: Arc::from("number"),
+      type_hash: crate::calcit::canonical_type_hash("number"),
+      value: Calcit::Number(42.0),
+    }));
+    let err = extract_code_into_edn(&[boxed]).expect_err("AnyBox cannot be extracted as code");
+    assert_eq!(err.kind, CalcitErrKind::Type);
+    assert!(err.msg.contains("any-box"), "unexpected error: {}", err.msg);
   }
 }

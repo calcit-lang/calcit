@@ -365,6 +365,147 @@
                   assert= 1 $ &compare text 7
                   assert= -1 $ &compare 1.5 text
               :tags $ #{} :core :unit
+        '&core-any-box-impls $ %{} 'CodeEntry
+          :doc "|Built-in implementation list for closed Any boxes: Debug only."
+          :code $ quote $ def &core-any-box-impls
+            [] $ &impl::new Debug internal/&core-debug-impl
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |any-box-roundtrip-scalars-and-debug)
+              :code $ quote $ let
+                  box-num $ any:box 42
+                  box-tag $ any:box :ok
+                  box-bool $ any:box true
+                  box-nil $ any:box nil
+                  box-unit $ any:box &unit
+                assert= :any-box $ type-of box-num
+                assert= "|(&any-box)" $ .debug box-num
+                assert= "|(&any-box)" $ str box-num
+                match (any:downcast box-num Number)
+                  (:some v) (assert= 43 (&+ v 1))
+                  (:none) (assert= true false)
+                match (any:downcast box-num String)
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+                match (any:downcast box-tag Tag)
+                  (:some v) (assert= :ok v)
+                  (:none) (assert= true false)
+                match (any:downcast box-bool Bool)
+                  (:some v) (assert= true v)
+                  (:none) (assert= true false)
+                match (any:downcast box-nil Nil)
+                  (:some v) (assert= nil v)
+                  (:none) (assert= true false)
+                match (any:downcast box-unit Unit)
+                  (:some v) (assert= &unit v)
+                  (:none) (assert= true false)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |any-box-distinguishes-int32-number-and-false-zero)
+              :code $ quote $ let
+                  b-false $ any:box false
+                  b-zero $ any:box 0
+                  b-i32 $ any:box $ assert-type 42 Int32
+                  b-num $ any:box 42
+                  b-s1 $ any:box |hello
+                  b-s2 $ any:box (&str:concat |hel |lo)
+                  b-s3 $ any:box |world
+                assert= false $ &= b-false b-zero
+                assert= false $ &= b-i32 b-num
+                assert= true $ &= b-s1 b-s2
+                assert= false $ &= b-s1 b-s3
+                assert= (&hash b-s1) (&hash b-s2)
+                match (any:downcast b-i32 Number)
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+                match (any:downcast b-i32 Int32)
+                  (:some v) (assert= (assert-type 42 Int32) v)
+                  (:none) (assert= true false)
+                match (any:downcast b-num Int32)
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |any-box-containers-option-result-and-union)
+              :code $ quote $ let
+                  nums $ assert-type ([] 1 2 3) (List Number)
+                  b-list $ any:box nums
+                  opt $ assert-type (Option :some 9) (Option Number)
+                  b-opt $ any:box opt
+                  res $ assert-type (Result :ok |done) (Result String Number)
+                  b-res $ any:box res
+                  jv $ JsonValue :number 7
+                  b-jv $ any:box jv
+                  cn $ assert-type |leaf CirruNode
+                  b-cn $ any:box cn
+                match (any:downcast b-list (List Number))
+                  (:some xs) (assert= ([] 1 2 3) xs)
+                  (:none) (assert= true false)
+                match (any:downcast b-list (List String))
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+                match (any:downcast b-opt (Option Number))
+                  (:some inner)
+                    match inner
+                      (:some n) (assert= 9 n)
+                      (:none) (assert= true false)
+                  (:none) (assert= true false)
+                match (any:downcast b-opt (Option String))
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+                match (any:downcast b-res (Result String Number))
+                  (:some inner)
+                    match inner
+                      (:ok s) (assert= |done s)
+                      (:err _) (assert= true false)
+                  (:none) (assert= true false)
+                match (any:downcast b-jv JsonValue)
+                  (:some parsed) (assert= jv parsed)
+                  (:none) (assert= true false)
+                match (any:downcast b-cn CirruNode)
+                  (:some node)
+                    match node
+                      (String s) (assert= |leaf s)
+                      (List _) (assert= true false)
+                  (:none) (assert= true false)
+                match (any:downcast b-cn String)
+                  (:some _) (assert= true false)
+                  (:none) (assert= true true)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |any-box-heterogeneous-map-string-any)
+              :code $ quote $ let
+                  m1 $ assert-type
+                    {}
+                      |count $ any:box 1
+                      |label $ any:box |ok
+                      |items $ any:box (assert-type ([] 10 20) (List Number))
+                    Map String Any
+                  m2 $ assert-type
+                    {}
+                      |count $ any:box 1
+                      |label $ any:box (&str:concat |o |k)
+                      |items $ any:box (assert-type ([] 10 20) (List Number))
+                    Map String Any
+                assert= m1 m2
+                match (get m1 |count)
+                  (:some b)
+                    match (any:downcast b Number)
+                      (:some v) (assert= 1 v)
+                      (:none) (assert= true false)
+                  (:none) (assert= true false)
+                match (get m1 |label)
+                  (:some b)
+                    match (any:downcast b String)
+                      (:some v) (assert= |ok v)
+                      (:none) (assert= true false)
+                  (:none) (assert= true false)
+                match (get m1 |items)
+                  (:some b)
+                    match (any:downcast b (List Number))
+                      (:some v) (assert= ([] 10 20) v)
+                      (:none) (assert= true false)
+                  (:none) (assert= true false)
+              :tags $ #{} :core :unit
         '&core-cirru-quote-impls $ %{} 'CodeEntry
           :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq."
           :code $ quote $ def &core-cirru-quote-impls
@@ -1987,6 +2128,7 @@
             identity &core-struct-impls
             identity &core-scalar-impls
             identity &core-cirru-quote-impls
+            identity &core-any-box-impls
             identity &core-text-scalar-impls
             identity &core-ref-impls
             identity Add
@@ -2000,7 +2142,7 @@
             identity ToString
             if
               &= (&get-calcit-backend) :js
-              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls :anyBox &core-any-box-impls
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

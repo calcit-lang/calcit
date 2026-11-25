@@ -289,6 +289,7 @@ fn desugar_leaf(name: &str) -> Result<Cirru, String> {
 /// missing arguments would otherwise be dropped or defaulted silently.
 fn builtin_constructor_arity(head: &str) -> Option<usize> {
   match head {
+    "Any" => Some(0),
     "List" | "Set" | "Ref" | "Option" | "JsNullish" | "Optional" => Some(1),
     "Map" | "Result" => Some(2),
     _ => None,

@@ -1578,6 +1578,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        any_type_table: Default::default(),
       },
     );
     for (name, arity) in [("unary", 1), ("binary", 2), ("ternary", 3)] {
@@ -1685,6 +1686,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        any_type_table: Default::default(),
       },
     );
     ctx.locals.insert("item".into(), 0);

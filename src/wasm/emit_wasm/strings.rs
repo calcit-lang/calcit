@@ -484,6 +484,13 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       emit_expr(ctx, &args[0])?;
       return Ok(());
     }
+    Some(CalcitTypeAnnotation::Any) => {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      let ptr = *ctx.string_pool.get("(&any-box)").ok_or("missing WASM (&any-box) string literal")?;
+      ctx.emit(f64_const(ptr as f64));
+      return Ok(());
+    }
     Some(CalcitTypeAnnotation::Bool) => {
       emit_expr_as_repr(ctx, &args[0], NativeValRepr::BoolI32)?;
       ctx.emit(Instruction::I32Eqz);
@@ -582,6 +589,16 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     ctx.emit(Instruction::LocalGet(v));
     ctx.emit(Instruction::LocalSet(result));
     ctx.emit(Instruction::End); // inner if
+    if let (Some(any_tag), Some(any_ptr)) = (ctx.tag_index.get("any-box").copied(), ctx.string_pool.get("(&any-box)").copied()) {
+      ctx.emit(Instruction::LocalGet(raw_base));
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::I32Const(any_tag as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.begin_block_if();
+      ctx.emit(f64_const(any_ptr as f64));
+      ctx.emit(Instruction::LocalSet(result));
+      ctx.emit(Instruction::End);
+    }
   }
   ctx.emit(Instruction::End); // outer if
 

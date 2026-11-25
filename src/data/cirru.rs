@@ -202,6 +202,8 @@ fn code_to_calcit_in(
       "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, Arc::clone(ns))),
       "try-decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, Arc::clone(ns))),
       "encode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::EncodeMapAs, Arc::clone(ns))),
+      "any:box" => Ok(Calcit::Syntax(CalcitSyntax::AnyBox, Arc::clone(ns))),
+      "any:downcast" => Ok(Calcit::Syntax(CalcitSyntax::AnyDowncast, Arc::clone(ns))),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, Arc::clone(ns))),
       "" => Err(String::from("Empty string is invalid")),
       // anonymous enum constructor syntax

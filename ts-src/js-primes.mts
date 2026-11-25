@@ -11,6 +11,7 @@ import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
+import { CalcitAnyBox } from "./js-any-box.mjs";
 
 export type CalcitValue =
   | string
@@ -34,6 +35,7 @@ export type CalcitValue =
   | CalcitEnumDef
   | CalcitUnionDef
   | CalcitCirruQuote
+  | CalcitAnyBox
   | Uint8Array
   | undefined
   | null;
@@ -58,6 +60,7 @@ enum PseudoTypeIndex {
   string,
   ref,
   enum_value,
+  buffer,
   recur,
   list,
   set,
@@ -70,6 +73,7 @@ enum PseudoTypeIndex {
   impl,
   fn,
   cirru_quote,
+  any_box,
 }
 
 let typeAsInt = (x: CalcitValue): number => {
@@ -84,6 +88,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (t === "string") return PseudoTypeIndex.string;
   if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
   if (x instanceof CalcitEnumValue) return PseudoTypeIndex.enum_value;
+  if (x instanceof Uint8Array) return PseudoTypeIndex.buffer;
   if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
   if (x instanceof CalcitList || x instanceof CalcitSliceList) return PseudoTypeIndex.list;
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
@@ -95,6 +100,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitUnionDef) return PseudoTypeIndex.union_def;
   if (x instanceof CalcitTrait) return PseudoTypeIndex.trait;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
+  if (x instanceof CalcitAnyBox) return PseudoTypeIndex.any_box;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
   throw new Error("unknown type to compare");
@@ -226,6 +232,11 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
       }
       case PseudoTypeIndex.cirru_quote:
         return rawCompare(a, b); // TODO not stable
+      case PseudoTypeIndex.any_box: {
+        const left = a as CalcitAnyBox;
+        const right = b as CalcitAnyBox;
+        return compareUnicodeStrings(left.typeKey, right.typeKey) || _$n_compare(left.value, right.value);
+      }
       case PseudoTypeIndex.list:
         return compareSequences(listToArray(a as CalcitList), listToArray(b as CalcitList));
       case PseudoTypeIndex.enum_value: {
@@ -234,6 +245,15 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         const tagOrder = _$n_compare(left.tag, right.tag);
         if (tagOrder !== 0) return tagOrder;
         return compareSequences(left.extra, right.extra);
+      }
+      case PseudoTypeIndex.buffer: {
+        const left = a as Uint8Array;
+        const right = b as Uint8Array;
+        const n = Math.min(left.length, right.length);
+        for (let i = 0; i < n; i++) {
+          if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+        }
+        return rawCompare(left.length, right.length);
       }
       case PseudoTypeIndex.union_def: {
         // Native order: name, then member type forms.

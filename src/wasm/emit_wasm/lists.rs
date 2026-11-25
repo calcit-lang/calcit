@@ -2038,6 +2038,7 @@ mod sort_tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        any_type_table: Default::default(),
       },
     )
   }

@@ -32,8 +32,10 @@ import { CalcitStructDef } from "./js-struct-def.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitUnionDef } from "./js-union-def.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
+import { CalcitAnyBox } from "./js-any-box.mjs";
 
 export * from "./calcit-data.mjs";
+export * from "./js-any-box.mjs";
 export * from "./js-struct-value.mjs";
 export * from "./js-impl.mjs";
 export * from "./js-struct-def.mjs";
@@ -116,6 +118,9 @@ export let type_of = (x: any): CalcitTag => {
   }
   if (x instanceof CalcitCirruQuote) {
     return newTag("cirru-quote");
+  }
+  if (x instanceof CalcitAnyBox) {
+    return newTag("any-box");
   }
   if (x instanceof Uint8Array) {
     return newTag("buffer");
@@ -3016,6 +3021,9 @@ const calcit_to_json = (value: CalcitValue): any => {
     }
     return result;
   }
+  if (value instanceof CalcitAnyBox) {
+    throw new Error("json-stringify cannot encode closed Any box");
+  }
   throw new Error(`json-stringify cannot encode value: ${toString(value, true)}`);
 };
 
@@ -3249,6 +3257,7 @@ let calcit_builtin_impls = {
   cirruQuote: null as CalcitImplEntry,
   textScalar: null as CalcitImplEntry,
   ref: null as CalcitImplEntry,
+  anyBox: null as CalcitImplEntry,
 };
 
 const calcit_builtin_impls_by_trait = new WeakMap<CalcitTrait, Partial<typeof calcit_builtin_impls>>();
@@ -3366,6 +3375,9 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[
   } else if (obj instanceof CalcitCirruQuote) {
     tag = "&core-cirru-quote-impls";
     impls = normalize_builtin_impls(scoped?.cirruQuote ?? calcit_builtin_impls.cirruQuote);
+  } else if (obj instanceof CalcitAnyBox) {
+    tag = "&core-any-box-impls";
+    impls = normalize_builtin_impls(scoped?.anyBox ?? calcit_builtin_impls.anyBox);
   } else if (obj === undefined) {
     tag = "&core-scalar-impls";
     impls = normalize_builtin_impls(scoped?.scalar ?? calcit_builtin_impls.scalar);

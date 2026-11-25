@@ -138,6 +138,7 @@ $procs.register_calcit_builtin_impls({{
   cirruQuote: _$n_core_cirru_quote_impls,
   textScalar: _$n_core_text_scalar_impls,
   ref: _$n_core_ref_impls,
+  anyBox: _$n_core_any_box_impls,
 }});
 
 let runtimeVersion = $procs.calcit_version;

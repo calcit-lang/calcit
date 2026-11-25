@@ -2783,3 +2783,126 @@ fn core_wasm_commit_trap_then_str_new_preserves_host_arg_across_export() {
   assert_eq!(scalar_ok.call(&mut store, ()).expect("scalar-ok"), 1.0);
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 }
+
+#[test]
+fn core_wasm_defref_promotes_and_compacts_any_box_payloads() {
+  let dir = TestDirectory::create("wasm-any-box-defref-compact");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying defref promotion and compaction of Map String Any with scalar non-aliasing."
+  :package |any-defref
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'any-defref.main/main!) (:mode :native) (:reload-fn 'any-defref.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'any-defref.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*state $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *state $ assert-type ({}) (Map String Any)
+          :examples $ []
+          :schema $ quote $ Ref (Map String Any)
+        '*noise $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *noise |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'set-state! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-state! (size)
+            let
+                next $ assert-type
+                  {}
+                    |num $ any:box 262152
+                    |i32 $ any:box (assert-type 7 Int32)
+                    |flag $ any:box false
+                    |str $ any:box (&str:pad-right |ANY- size |X)
+                    |items $ any:box (assert-type ([] 10 20) (List Number))
+                  Map String Any
+              reset! *state next
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'churn-noise! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-noise! (size)
+            reset! *noise $ &str:pad-right |NOISE- size |N
+            &str:count @*noise
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'check-state! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-state! (expected-len)
+            let
+                m @*state
+                num-ok $ match (get m |num)
+                  (:some b)
+                    match (any:downcast b Number)
+                      (:some v) (&= v 262152)
+                      (:none) false
+                  (:none) false
+                i32-miss-num $ match (get m |i32)
+                  (:some b)
+                    match (any:downcast b Number)
+                      (:some _) false
+                      (:none) true
+                  (:none) false
+                i32-hit $ match (get m |i32)
+                  (:some b)
+                    match (any:downcast b Int32)
+                      (:some v) (&= v (assert-type 7 Int32))
+                      (:none) false
+                  (:none) false
+                flag-ne-zero $ match (get m |flag)
+                  (:some b) (not (&= b (any:box 0)))
+                  (:none) false
+                str-ok $ match (get m |str)
+                  (:some b)
+                    match (any:downcast b String)
+                      (:some s) (&= (&str:count s) expected-len)
+                      (:none) false
+                  (:none) false
+                items-ok $ match (get m |items)
+                  (:some b)
+                    match (any:downcast b (List Number))
+                      (:some xs) (&= (&+ (.unwrap-or (nth xs 0) 0) (.unwrap-or (nth xs 1) 0)) 30)
+                      (:none) false
+                  (:none) false
+              if (and num-ok i32-miss-num i32-hit flag-ne-zero str-ok items-ok) 1 0
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns any-defref.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let set_state = instance
+    .get_typed_func::<f64, f64>(&mut store, "set-state!")
+    .expect("set-state! export");
+  let churn_noise = instance
+    .get_typed_func::<f64, f64>(&mut store, "churn-noise!")
+    .expect("churn-noise! export");
+  let check_state = instance
+    .get_typed_func::<f64, f64>(&mut store, "check-state!")
+    .expect("check-state! export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  assert_eq!(set_state.call(&mut store, 4096.0).expect("set-state! initial"), 1.0);
+  arena_reset.call(&mut store, ()).expect("arena reset 1");
+  assert_eq!(check_state.call(&mut store, 4096.0).expect("check-state! after promote"), 1.0);
+
+  // Trigger multiple persistent semi-space compactions while *state stays live
+  for _ in 0..4 {
+    assert_eq!(churn_noise.call(&mut store, 400_000.0).expect("churn-noise!"), 400_000.0);
+    arena_reset.call(&mut store, ()).expect("arena reset during compaction");
+  }
+  assert_eq!(check_state.call(&mut store, 4096.0).expect("check-state! after compaction"), 1.0);
+}

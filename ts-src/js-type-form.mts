@@ -8,6 +8,7 @@ import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
 import { CalcitBufList } from "./js-buf-list.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
+import { CalcitAnyBox } from "./js-any-box.mjs";
 
 /// Shallow runtime check of a value against a struct field type form, matching
 /// the native `value_matches_type_annotation`: container kinds are checked,
@@ -63,8 +64,8 @@ for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbo
   typeNameAliases.set(name, name);
   typeNameAliases.set(name.toLowerCase(), name);
 }
-for (const name of ["BufList", "CirruQuote", "JsObject", "FfiResource", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
-for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
+for (const name of ["BufList", "CirruQuote", "JsObject", "FfiResource", "StructDef", "EnumDef", "Any"]) typeNameAliases.set(name, name);
+for (const [alias, name] of [["any", "Dynamic"], ["any-box", "Any"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
   ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"], ["ffi-resource", "FfiResource"],
   ["struct-def", "StructDef"], ["enum-def", "EnumDef"], ["buf-list", "BufList"],
   // Intentionally open family spellings (#2594) are the bare family types.
@@ -272,6 +273,9 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence
     case "CirruQuote":
     case "cirru-quote":
       return value instanceof CalcitCirruQuote;
+    case "Any":
+    case "any-box":
+      return value instanceof CalcitAnyBox;
     case "FfiResource":
     case "ffi-resource":
       return false;

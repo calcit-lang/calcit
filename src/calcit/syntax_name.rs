@@ -101,6 +101,12 @@ pub enum CalcitSyntax {
   /// Encode a typed value into the open shape `decode-map-as` reads back.
   #[strum(serialize = "encode-map-as")]
   EncodeMapAs,
+  /// Box a closed, monomorphic value into the closed `Any` existential container.
+  #[strum(serialize = "any:box")]
+  AnyBox,
+  /// Downcast a closed `Any` box into `Option<TargetType>` by canonical `TypeId`.
+  #[strum(serialize = "any:downcast")]
+  AnyDowncast,
   /// placeholder for trait requirement assertions
   #[strum(serialize = "assert-traits")]
   AssertTraits,
@@ -125,6 +131,7 @@ impl CalcitSyntax {
       let string_t = Arc::new(CalcitTypeAnnotation::String);
       let nil_t = Arc::new(CalcitTypeAnnotation::Nil);
       let cirru_quote_t = Arc::new(CalcitTypeAnnotation::CirruQuote);
+      let any_t = Arc::new(CalcitTypeAnnotation::Any);
       let list_dyn = Arc::new(CalcitTypeAnnotation::List(Arc::clone(&dyn_t)));
       let value_t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
       let ref_value_t = Arc::new(CalcitTypeAnnotation::Ref(Arc::clone(&value_t)));
@@ -190,6 +197,16 @@ impl CalcitSyntax {
           ParseCirruEdnAs | TryParseCirruEdnAs => Some(SyntaxTypeSignature {
             param_names: vec!["text", "type"],
             param_types: vec![Arc::clone(&string_t), Arc::clone(&dyn_t)],
+            return_type: Arc::clone(&dyn_t),
+          }),
+          AnyBox => Some(SyntaxTypeSignature {
+            param_names: vec!["value"],
+            param_types: vec![Arc::clone(&value_t)],
+            return_type: Arc::clone(&any_t),
+          }),
+          AnyDowncast => Some(SyntaxTypeSignature {
+            param_names: vec!["box", "type"],
+            param_types: vec![Arc::clone(&any_t), Arc::clone(&dyn_t)],
             return_type: Arc::clone(&dyn_t),
           }),
           AssertTraits => Some(SyntaxTypeSignature {

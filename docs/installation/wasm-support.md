@@ -117,7 +117,7 @@ write-file
 | `E_WASM_BOUNDARY` | 未知的 `--boundary`，只接受 `native` 或 `component` | 修正命令参数 |
 | `E_WASM_CAPABILITY` | 目标不提供所需宿主能力，或 `wasi` 目标出现未登记的自定义 import | 改用目标提供的能力，或换用 native / JS |
 | `E_WASM_BOUNDARY_DYNAMIC` | `defwasm-export` 或 `defwasm-import` 在参数、rest 或返回类型中声明了 `Dynamic` | 改为具体的 WASM ABI 可表达类型（例如 `Number`、`String`、`Bool`、`Option`、`Result` 或名义 `Struct`/`Enum`） |
-| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型或可空拼接上无法区分 nil、false、Unit、Tag 与 Number 的标量表示（含 `nil?`、`=` / `&=` / `not=` 及 `encode-map-as`）；数值排序操作数缺少 Number 证据 | 缺失值与判等边界使用具体闭合类型或 `Option`（可空返回值优先用 `nil->option`）；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
+| `E_WASM_NIL_TYPE_EVIDENCE` | 开放类型或可空拼接上无法区分 nil、false、Unit、Tag 与 Number 的标量表示（含 `nil?`、`=` / `&=` / `not=`、`encode-map-as` 以及对含多个未装箱标量成员的 `defunion` 执行 `any:box`）；数值排序操作数缺少 Number 证据 | 缺失值与判等边界使用具体闭合类型或 `Option`（可空返回值优先用 `nil->option`）；`defunion` 先用 `match` 收窄到具体标量成员再 `any:box`；数值比较先解构／检查输入并证明为 Number，Option 本身不证明 Number |
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |
@@ -137,6 +137,7 @@ write-file
 | `E_WASM_EDN_DEPTH` | 数据形状嵌套过深 | 拆分数据结构 |
 | `E_WASM_EDN_SYNTAX`、`E_WASM_EDN_TAG`、`E_WASM_EDN_ENUM`、`E_WASM_EDN_RANGE` | 运行时解析失败：语法错误、未知 tag、Enum 不匹配、数值越界；返回 `Result :err` | 按 Result 分支处理 |
 | `E_WASM_EDN_INPUT_LIMIT`、`E_WASM_EDN_TOKEN_LIMIT`、`E_WASM_EDN_MAP_LIMIT` | 运行时输入超过 64 KiB、List 4096 项或 Map 2048 项；返回 `Result :err` | 拆分输入 |
+| `E_WASM_ANY_TYPE_ID` | `any:box` / `any:downcast` 未在整程序 WASM `AnyTypeTable` 中登记规范 `TypeId` 句柄，或参数结构缺少编译期 `CompiledAnyTypeId` | 确保通过正常预处理路径生成 `any:box` / `any:downcast`，并使用可单态化的闭合目标类型 |
 | `E_WASI_WORLD` | 未知的 `--world`，或 `--world http` 与 `--boundary native` 组合 | `--world` 仅支持 `command` 或 `http`，且 `http` 必须使用 `--boundary component` |
 | `E_WASI_HTTP_ENTRY` | HTTP 入口不是单参数函数，或缺少精确 `Fn HttpRequest (-> (Result HttpResponse String))` schema | 为 `:init-fn` 声明匹配的入参与返回值类型 |
 | `E_WASI_HTTP_EXPORT` | 在 `--world http` 下额外声明通用 `defwasm-export` | HTTP proxy world 只导出 `wasi:http/incoming-handler@0.2.12`，移除多余 `defwasm-export` |

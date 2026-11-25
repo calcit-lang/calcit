@@ -1722,6 +1722,7 @@ pub const PRIMITIVE_SCHEMA_TAGS: &[&str] = &[
   "tuple",
   "ref",
   "buffer",
+  "any-box",
   "dynamic",
   "unit",
   "record",

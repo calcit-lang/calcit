@@ -127,6 +127,18 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
         Ok(Calcit::from(assertion))
       }
     }
+    Calcit::Syntax(CalcitSyntax::AnyDowncast, _) => {
+      let Some(value) = items.get(1) else { return Ok(expr.clone()) };
+      let prepared = prepare_expression(
+        value,
+        PreprocessContext::new(ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+        constraints,
+      )?;
+      let mut call = items.to_vec();
+      call[0] = head;
+      call[1] = prepared;
+      Ok(Calcit::from(call))
+    }
     // Bare type arguments (`decode-map-as raw $ List Number`, #2583) are type
     // positions, not expressions: prepare only the value, then let the
     // syntax's own preprocessing read the type form.

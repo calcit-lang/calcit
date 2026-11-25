@@ -229,6 +229,7 @@ fn calcit_to_json(value: &Calcit) -> Result<Value, CalcitErr> {
     | Calcit::Import(..)
     | Calcit::Registered(..)
     | Calcit::Local(..)
+    | Calcit::AnyBox(..)
     | Calcit::AnyRef(..)
     | Calcit::BufList(..) => {
       let msg = format!(

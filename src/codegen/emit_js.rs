@@ -724,6 +724,12 @@ fn to_js_code(
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("new {proc_prefix}CalcitCirruQuote({})", cirru_to_js(code)?))
       }
+      Calcit::AnyBox(boxed) => {
+        let proc_prefix = get_proc_prefix(ns);
+        let key_js = serde_json::to_string(boxed.type_key.as_ref()).map_err(|e| e.to_string())?;
+        let val_js = to_js_code(&boxed.value, ns, local_defs, file_imports, tags, None)?;
+        Ok(format!("new {proc_prefix}CalcitAnyBox({key_js}, {val_js})"))
+      }
       Calcit::RawCode(calcit::RawCodeType::Js, code) => Ok(qualify_js_host_global_in_scope(ns, code, local_defs)),
       a => Err(format!(
         "cannot emit JS for compiler-only value `{a}`; preprocessing should lower data definitions to runtime references"
@@ -1035,6 +1041,33 @@ fn gen_call_code(
         CalcitSyntax::AssertTraits => match body.first() {
           Some(value) => to_js_code(value, ns, local_defs, file_imports, tags, return_label),
           None => Err(String::from("assert-traits expected a value")),
+        },
+        CalcitSyntax::AnyBox => {
+          let Some(value) = body.first() else {
+            return Err(String::from("any:box expected a value argument"));
+          };
+          let Some(type_id) = body.get(1).and_then(calcit::CompiledAnyTypeId::from_calcit_handle) else {
+            return Err(format!("any:box requires preprocessed TypeId metadata, got: {body}"));
+          };
+          let key_js = serde_json::to_string(type_id.type_key.as_ref()).map_err(|e| e.to_string())?;
+          let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
+          let call_code = format!("new {}CalcitAnyBox({key_js}, {value_code})", get_proc_prefix(ns));
+          Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
+        }
+        CalcitSyntax::AnyDowncast => match (body.first(), body.get(1)) {
+          (Some(box_expr), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
+            let type_key = if let Some(type_id) = body.get(2).and_then(calcit::CompiledAnyTypeId::from_calcit_handle) {
+              type_id.type_key.to_string()
+            } else {
+              let target = calcit::CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+              calcit::canonical_type_key(target.as_ref(), Some(ns)).map_err(|err| err.to_string())?
+            };
+            let key_js = serde_json::to_string(&type_key).map_err(|e| e.to_string())?;
+            let box_code = to_js_code(box_expr, ns, local_defs, file_imports, tags, None)?;
+            let call_code = format!("{}any_downcast({box_code}, {key_js})", get_proc_prefix(ns));
+            Ok(wrap_call_with_prelude(String::new(), call_code, return_label, detect_await(&body)))
+          }
+          _ => Err(format!("any:downcast expected a value and a type expression, got: {body}")),
         },
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
