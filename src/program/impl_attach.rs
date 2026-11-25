@@ -547,11 +547,25 @@ fn bind_fn_param_nominals(
   }
 }
 
+#[derive(Default)]
+struct CallTargetCache {
+  in_progress: HashSet<DefKey>,
+  completed: HashMap<DefKey, Vec<DefKey>>,
+}
+
+fn push_unique_keys(out: &mut Vec<DefKey>, keys: impl IntoIterator<Item = DefKey>) {
+  for key in keys {
+    if !out.contains(&key) {
+      out.push(key);
+    }
+  }
+}
+
 fn resolve_call_return_nominal_targets(
   scan: NonCoherentScanCtx<'_>,
   head: &Calcit,
   local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
-  visited_calls: &mut HashSet<DefKey>,
+  cache: &mut CallTargetCache,
 ) -> Vec<DefKey> {
   if let Calcit::Symbol { sym, .. } = head
     && let Some(targets) = local_bindings.get(sym.as_ref())
@@ -586,7 +600,10 @@ fn resolve_call_return_nominal_targets(
   let Some(callee_key) = callee_key else {
     return Vec::new();
   };
-  if !visited_calls.insert(callee_key.clone()) {
+  if let Some(cached) = cache.completed.get(&callee_key) {
+    return cached.clone();
+  }
+  if !cache.in_progress.insert(callee_key.clone()) {
     return Vec::new();
   }
   let result = (|| {
@@ -624,41 +641,26 @@ fn resolve_call_return_nominal_targets(
       if let Some(tail) = body.last() {
         let mut callee_bindings = HashMap::new();
         bind_fn_param_nominals(callee_scan, params, Some(entry.schema.as_ref()), &body, &mut callee_bindings);
-        return Some(expr_nominal_targets_inner(callee_scan, tail, &callee_bindings, visited_calls));
+        return Some(expr_nominal_targets_inner(callee_scan, tail, &callee_bindings, cache));
       }
     }
     None
   })();
-  visited_calls.remove(&callee_key);
-  result.unwrap_or_default()
-}
-
-fn expr_nominal_targets(
-  program: &ProgramCodeData,
-  ns: &str,
-  file: &ProgramFileData,
-  expr: &Calcit,
-  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
-  written: &HashMap<DefKey, (Calcit, Calcit)>,
-) -> Vec<DefKey> {
-  expr_nominal_targets_inner(
-    NonCoherentScanCtx {
-      program,
-      ns,
-      file,
-      written,
-    },
-    expr,
-    local_bindings,
-    &mut HashSet::new(),
-  )
+  cache.in_progress.remove(&callee_key);
+  let resolved = result.unwrap_or_default();
+  if cache.in_progress.is_empty() {
+    cache.completed.insert(callee_key, resolved.clone());
+  } else {
+    cache.completed.entry(callee_key).or_insert_with(|| resolved.clone());
+  }
+  resolved
 }
 
 fn expr_nominal_targets_inner(
   scan: NonCoherentScanCtx<'_>,
   expr: &Calcit,
   local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
-  visited_calls: &mut HashSet<DefKey>,
+  cache: &mut CallTargetCache,
 ) -> Vec<DefKey> {
   let program = scan.program;
   let ns = scan.ns;
@@ -730,13 +732,13 @@ fn expr_nominal_targets_inner(
       if is_impl_attach_head(program, ns, file, head) {
         return items
           .get(1)
-          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, visited_calls))
+          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, cache))
           .unwrap_or_default();
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) || is_core_symbol_or_import(program, ns, file, head, "if") {
         let mut out = Vec::new();
         for branch in [items.get(2), items.get(3)].into_iter().flatten() {
-          out.extend(expr_nominal_targets_inner(scan, branch, local_bindings, visited_calls));
+          push_unique_keys(&mut out, expr_nominal_targets_inner(scan, branch, local_bindings, cache));
         }
         return out;
       }
@@ -744,7 +746,7 @@ fn expr_nominal_targets_inner(
         return items
           .iter()
           .last()
-          .map(|tail| expr_nominal_targets_inner(scan, tail, local_bindings, visited_calls))
+          .map(|tail| expr_nominal_targets_inner(scan, tail, local_bindings, cache))
           .unwrap_or_default();
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
@@ -761,7 +763,7 @@ fn expr_nominal_targets_inner(
                 _ => None,
               }
             {
-              let targets = expr_nominal_targets_inner(scan, rhs, &scoped, visited_calls);
+              let targets = expr_nominal_targets_inner(scan, rhs, &scoped, cache);
               scoped.insert(name, targets);
             }
           };
@@ -778,7 +780,7 @@ fn expr_nominal_targets_inner(
         return items
           .iter()
           .last()
-          .map(|tail| expr_nominal_targets_inner(scan, tail, &scoped, visited_calls))
+          .map(|tail| expr_nominal_targets_inner(scan, tail, &scoped, cache))
           .unwrap_or_default();
       }
       if matches!(
@@ -804,22 +806,146 @@ fn expr_nominal_targets_inner(
       {
         return items
           .get(1)
-          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, visited_calls))
+          .map(|base| expr_nominal_targets_inner(scan, base, local_bindings, cache))
           .unwrap_or_default();
       }
       // Constructor call `(Point :x 1)` / `(Option :some 1)` or factory call `(make-p)`.
-      resolve_call_return_nominal_targets(scan, head, local_bindings, visited_calls)
+      resolve_call_return_nominal_targets(scan, head, local_bindings, cache)
     }
     _ => Vec::new(),
   }
 }
 
-fn walk_expr_for_non_coherent(
+fn expr_param_sources(
   scan: NonCoherentScanCtx<'_>,
   expr: &Calcit,
-  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
-  fn_schema: Option<&CalcitTypeAnnotation>,
-  out: &mut HashSet<String>,
+  var_to_params: &HashMap<Arc<str>, HashSet<usize>>,
+) -> HashSet<usize> {
+  match expr {
+    Calcit::Symbol { sym, .. } => var_to_params.get(sym.as_ref()).cloned().unwrap_or_default(),
+    Calcit::Local(local) => var_to_params.get(&local.sym).cloned().unwrap_or_default(),
+    Calcit::List(items) => {
+      let Some(head) = items.first() else {
+        return HashSet::new();
+      };
+      if is_impl_attach_head(scan.program, scan.ns, scan.file, head) {
+        return items
+          .get(1)
+          .map(|base| expr_param_sources(scan, base, var_to_params))
+          .unwrap_or_default();
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "if") {
+        let mut out = HashSet::new();
+        for branch in [items.get(2), items.get(3)].into_iter().flatten() {
+          out.extend(expr_param_sources(scan, branch, var_to_params));
+        }
+        return out;
+      }
+      if is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "do") {
+        return items
+          .iter()
+          .last()
+          .map(|tail| expr_param_sources(scan, tail, var_to_params))
+          .unwrap_or_default();
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "let")
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&let")
+      {
+        let mut scoped = var_to_params.clone();
+        if let Some(Calcit::List(bindings)) = items.get(1) {
+          let mut apply_pair = |pair: &CalcitList| {
+            if let (Some(lhs), Some(rhs)) = (pair.first(), pair.get(1))
+              && let Some(name) = match lhs {
+                Calcit::Symbol { sym, .. } => Some(sym.clone()),
+                Calcit::Local(local) => Some(local.sym.clone()),
+                _ => None,
+              }
+            {
+              let sources = expr_param_sources(scan, rhs, &scoped);
+              scoped.insert(name, sources);
+            }
+          };
+          if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
+            apply_pair(bindings);
+          } else {
+            for entry in bindings.iter() {
+              if let Calcit::List(pair) = entry {
+                apply_pair(pair);
+              }
+            }
+          }
+        }
+        return items
+          .iter()
+          .last()
+          .map(|tail| expr_param_sources(scan, tail, &scoped))
+          .unwrap_or_default();
+      }
+      if matches!(
+        head,
+        Calcit::Proc(
+          CalcitProc::NativeStructAssoc
+            | CalcitProc::NativeStructAssocAt
+            | CalcitProc::NativeStructWith
+            | CalcitProc::NativeStructWithAt
+        )
+      ) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&struct:assoc")
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&struct:with")
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "update")
+      {
+        return items
+          .get(1)
+          .map(|base| expr_param_sources(scan, base, var_to_params))
+          .unwrap_or_default();
+      }
+      HashSet::new()
+    }
+    _ => HashSet::new(),
+  }
+}
+
+fn fn_form_param_sinks(
+  scan: NonCoherentScanCtx<'_>,
+  params: &CalcitList,
+  body: &[Calcit],
+  fn_sinks: &HashMap<DefKey, HashSet<usize>>,
+) -> HashSet<usize> {
+  let mut var_to_params = HashMap::new();
+  for (idx, param) in fn_param_names_from_list(params).into_iter().enumerate() {
+    var_to_params.insert(param, HashSet::from([idx]));
+  }
+  let local_fn_sinks = HashMap::new();
+  let mut sinks = HashSet::new();
+  for item in body {
+    collect_expr_param_sinks(scan, item, &var_to_params, fn_sinks, &local_fn_sinks, &mut sinks);
+  }
+  sinks
+}
+
+fn call_sunk_param_indices<'a>(
+  scan: NonCoherentScanCtx<'_>,
+  head: &Calcit,
+  fn_sinks: &'a HashMap<DefKey, HashSet<usize>>,
+  local_fn_sinks: &'a HashMap<Arc<str>, HashSet<usize>>,
+) -> Option<&'a HashSet<usize>> {
+  match head {
+    Calcit::Symbol { sym, .. } => local_fn_sinks
+      .get(sym.as_ref())
+      .or_else(|| resolve_in(scan.program, scan.ns, scan.file, sym.as_ref()).and_then(|key| fn_sinks.get(&key))),
+    Calcit::Local(local) => local_fn_sinks.get(&local.sym),
+    Calcit::Import(import) => fn_sinks.get(&(import.ns.clone(), import.def.clone())),
+    _ => None,
+  }
+}
+
+fn collect_expr_param_sinks(
+  scan: NonCoherentScanCtx<'_>,
+  expr: &Calcit,
+  var_to_params: &HashMap<Arc<str>, HashSet<usize>>,
+  fn_sinks: &HashMap<DefKey, HashSet<usize>>,
+  local_fn_sinks: &HashMap<Arc<str>, HashSet<usize>>,
+  out: &mut HashSet<usize>,
 ) {
   let Calcit::List(items) = expr else { return };
   let Some(head) = items.first() else { return };
@@ -830,8 +956,178 @@ fn walk_expr_for_non_coherent(
   if is_impl_attach_head(scan.program, scan.ns, scan.file, head)
     && let Some(base) = items.get(1)
   {
-    for (target_ns, target_def) in expr_nominal_targets(scan.program, scan.ns, scan.file, base, local_bindings, scan.written) {
-      out.insert(format!("{target_ns}/{target_def}"));
+    out.extend(expr_param_sources(scan, base, var_to_params));
+  }
+  if let Some(sunk_indices) = call_sunk_param_indices(scan, head, fn_sinks, local_fn_sinks) {
+    for &idx in sunk_indices {
+      if let Some(arg) = items.get(1 + idx) {
+        out.extend(expr_param_sources(scan, arg, var_to_params));
+      }
+    }
+  }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "let")
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&let")
+  {
+    let mut scoped_vars = var_to_params.clone();
+    let mut scoped_fns = local_fn_sinks.clone();
+    if let Some(Calcit::List(bindings)) = items.get(1) {
+      let visit_pair = |pair: &CalcitList,
+                        scoped_vars: &mut HashMap<Arc<str>, HashSet<usize>>,
+                        scoped_fns: &mut HashMap<Arc<str>, HashSet<usize>>,
+                        out: &mut HashSet<usize>| {
+        if let Some(rhs) = pair.get(1) {
+          collect_expr_param_sinks(scan, rhs, scoped_vars, fn_sinks, scoped_fns, out);
+          if let Some(name) = match pair.first() {
+            Some(Calcit::Symbol { sym, .. }) => Some(sym.clone()),
+            Some(Calcit::Local(local)) => Some(local.sym.clone()),
+            _ => None,
+          } {
+            scoped_vars.insert(name.clone(), expr_param_sources(scan, rhs, scoped_vars));
+            if let Calcit::List(rhs_items) = rhs
+              && let Some(rhs_head) = rhs_items.first()
+              && is_core_symbol_or_import(scan.program, scan.ns, scan.file, rhs_head, "fn")
+              && let Some(Calcit::List(fn_params)) = rhs_items.get(1)
+            {
+              let fn_body: Vec<Calcit> = rhs_items.iter().skip(2).cloned().collect();
+              let nested = fn_form_param_sinks(scan, fn_params, &fn_body, fn_sinks);
+              scoped_fns.insert(name, nested);
+            } else {
+              scoped_fns.remove(&name);
+            }
+          }
+        }
+      };
+      if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
+        visit_pair(bindings, &mut scoped_vars, &mut scoped_fns, out);
+      } else {
+        for entry in bindings.iter() {
+          if let Calcit::List(pair) = entry {
+            visit_pair(pair, &mut scoped_vars, &mut scoped_fns, out);
+          } else {
+            collect_expr_param_sinks(scan, entry, &scoped_vars, fn_sinks, &scoped_fns, out);
+          }
+        }
+      }
+    }
+    for item in items.iter().skip(2) {
+      collect_expr_param_sinks(scan, item, &scoped_vars, fn_sinks, &scoped_fns, out);
+    }
+    return;
+  }
+  let is_defn_like = matches!(
+    head,
+    Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)
+  ) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "defn");
+  let nested_fn = if is_defn_like {
+    match items.get(2) {
+      Some(Calcit::List(params)) => Some((params, 3usize)),
+      _ => None,
+    }
+  } else if is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "fn") {
+    match items.get(1) {
+      Some(Calcit::List(params)) => Some((params, 2usize)),
+      _ => None,
+    }
+  } else {
+    None
+  };
+  if let Some((params, skip)) = nested_fn {
+    let mut scoped_vars = var_to_params.clone();
+    let mut scoped_fns = local_fn_sinks.clone();
+    for name in fn_param_names_from_list(params) {
+      scoped_vars.insert(name.clone(), HashSet::new());
+      scoped_fns.remove(&name);
+    }
+    for item in items.iter().skip(skip) {
+      collect_expr_param_sinks(scan, item, &scoped_vars, fn_sinks, &scoped_fns, out);
+    }
+    return;
+  }
+  for item in items.iter() {
+    collect_expr_param_sinks(scan, item, var_to_params, fn_sinks, local_fn_sinks, out);
+  }
+}
+
+fn collect_impl_attach_param_sinks(
+  program: &ProgramCodeData,
+  written: &HashMap<DefKey, (Calcit, Calcit)>,
+) -> HashMap<DefKey, HashSet<usize>> {
+  let mut fn_sinks: HashMap<DefKey, HashSet<usize>> = HashMap::new();
+  loop {
+    let mut changed = false;
+    for (ns, file) in program {
+      let scan = NonCoherentScanCtx {
+        program,
+        ns,
+        file,
+        written,
+      };
+      for (def_name, entry) in &file.defs {
+        let key: DefKey = (ns.to_owned(), def_name.to_owned());
+        let code = effective_written_code(&key, &entry.code, written);
+        let Calcit::List(items) = code else { continue };
+        let Some(head) = items.first() else { continue };
+        if (matches!(
+          head,
+          Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)
+        ) || is_core_symbol_or_import(program, ns, file, head, "defn"))
+          && let Some(Calcit::List(params)) = items.get(2)
+        {
+          let body: Vec<Calcit> = items.iter().skip(3).cloned().collect();
+          let computed = fn_form_param_sinks(scan, params, &body, &fn_sinks);
+          if !computed.is_empty() {
+            let entry_sinks = fn_sinks.entry(key).or_default();
+            for idx in computed {
+              if entry_sinks.insert(idx) {
+                changed = true;
+              }
+            }
+          }
+        }
+      }
+    }
+    if !changed {
+      break;
+    }
+  }
+  fn_sinks
+}
+
+struct NonCoherentWalkState<'a> {
+  fn_sinks: &'a HashMap<DefKey, HashSet<usize>>,
+  call_cache: &'a mut CallTargetCache,
+  out: &'a mut HashSet<String>,
+}
+
+fn walk_expr_for_non_coherent(
+  scan: NonCoherentScanCtx<'_>,
+  expr: &Calcit,
+  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
+  local_fn_sinks: &HashMap<Arc<str>, HashSet<usize>>,
+  fn_schema: Option<&CalcitTypeAnnotation>,
+  state: &mut NonCoherentWalkState<'_>,
+) {
+  let Calcit::List(items) = expr else { return };
+  let Some(head) = items.first() else { return };
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "quote")
+  {
+    return;
+  }
+  if is_impl_attach_head(scan.program, scan.ns, scan.file, head)
+    && let Some(base) = items.get(1)
+  {
+    for (target_ns, target_def) in expr_nominal_targets_inner(scan, base, local_bindings, state.call_cache) {
+      state.out.insert(format!("{target_ns}/{target_def}"));
+    }
+  }
+  if let Some(sunk_indices) = call_sunk_param_indices(scan, head, state.fn_sinks, local_fn_sinks) {
+    for &idx in sunk_indices {
+      if let Some(arg) = items.get(1 + idx) {
+        for (target_ns, target_def) in expr_nominal_targets_inner(scan, arg, local_bindings, state.call_cache) {
+          state.out.insert(format!("{target_ns}/{target_def}"));
+        }
+      }
     }
   }
   if (matches!(
@@ -841,10 +1137,14 @@ fn walk_expr_for_non_coherent(
     && let Some(Calcit::List(params)) = items.get(2)
   {
     let mut scoped = local_bindings.clone();
+    let mut scoped_fns = local_fn_sinks.clone();
+    for name in fn_param_names_from_list(params) {
+      scoped_fns.remove(&name);
+    }
     let body: Vec<Calcit> = items.iter().skip(3).cloned().collect();
     bind_fn_param_nominals(scan, params, fn_schema, &body, &mut scoped);
     for item in &body {
-      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+      walk_expr_for_non_coherent(scan, item, &scoped, &scoped_fns, None, state);
     }
     return;
   }
@@ -853,53 +1153,69 @@ fn walk_expr_for_non_coherent(
     || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&let")
   {
     let mut scoped = local_bindings.clone();
+    let mut scoped_fns = local_fn_sinks.clone();
     if let Some(Calcit::List(bindings)) = items.get(1) {
-      let visit_pair = |pair: &CalcitList, scoped: &mut HashMap<Arc<str>, Vec<DefKey>>, out: &mut HashSet<String>| {
+      let visit_pair = |pair: &CalcitList,
+                        scoped: &mut HashMap<Arc<str>, Vec<DefKey>>,
+                        scoped_fns: &mut HashMap<Arc<str>, HashSet<usize>>,
+                        state: &mut NonCoherentWalkState<'_>| {
         if let Some(rhs) = pair.get(1) {
-          walk_expr_for_non_coherent(scan, rhs, scoped, None, out);
+          walk_expr_for_non_coherent(scan, rhs, scoped, scoped_fns, None, state);
           if let Some(name) = match pair.first() {
             Some(Calcit::Symbol { sym, .. }) => Some(sym.clone()),
             Some(Calcit::Local(local)) => Some(local.sym.clone()),
             _ => None,
           } {
-            let targets = expr_nominal_targets(scan.program, scan.ns, scan.file, rhs, scoped, scan.written);
-            scoped.insert(name, targets);
+            let targets = expr_nominal_targets_inner(scan, rhs, scoped, state.call_cache);
+            scoped.insert(name.clone(), targets);
+            if let Calcit::List(rhs_items) = rhs
+              && let Some(rhs_head) = rhs_items.first()
+              && is_core_symbol_or_import(scan.program, scan.ns, scan.file, rhs_head, "fn")
+              && let Some(Calcit::List(fn_params)) = rhs_items.get(1)
+            {
+              let fn_body: Vec<Calcit> = rhs_items.iter().skip(2).cloned().collect();
+              let nested = fn_form_param_sinks(scan, fn_params, &fn_body, state.fn_sinks);
+              scoped_fns.insert(name, nested);
+            } else {
+              scoped_fns.remove(&name);
+            }
           }
         }
       };
       if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
-        visit_pair(bindings, &mut scoped, out);
+        visit_pair(bindings, &mut scoped, &mut scoped_fns, state);
       } else {
         for entry in bindings.iter() {
           if let Calcit::List(pair) = entry {
-            visit_pair(pair, &mut scoped, out);
+            visit_pair(pair, &mut scoped, &mut scoped_fns, state);
           } else {
-            walk_expr_for_non_coherent(scan, entry, &scoped, None, out);
+            walk_expr_for_non_coherent(scan, entry, &scoped, &scoped_fns, None, state);
           }
         }
       }
     }
     for item in items.iter().skip(2) {
-      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+      walk_expr_for_non_coherent(scan, item, &scoped, &scoped_fns, None, state);
     }
     return;
-  }
-  if matches!(head, Calcit::Fn { .. }) {
-    // Nested fn expression? Usually `(fn (args) body...)` is `Syntax::Defn` or `Symbol("fn")`.
   }
   if is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "fn")
     && let Some(Calcit::List(params)) = items.get(1)
   {
     let mut scoped = local_bindings.clone();
+    let mut scoped_fns = local_fn_sinks.clone();
+    for name in fn_param_names_from_list(params) {
+      scoped_fns.remove(&name);
+    }
     let body: Vec<Calcit> = items.iter().skip(2).cloned().collect();
     bind_fn_param_nominals(scan, params, None, &body, &mut scoped);
     for item in &body {
-      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+      walk_expr_for_non_coherent(scan, item, &scoped, &scoped_fns, None, state);
     }
     return;
   }
   for item in items.iter() {
-    walk_expr_for_non_coherent(scan, item, local_bindings, None, out);
+    walk_expr_for_non_coherent(scan, item, local_bindings, local_fn_sinks, None, state);
   }
 }
 
@@ -908,7 +1224,14 @@ fn collect_non_coherent_nominal_defs_inner(
   written: &HashMap<DefKey, (Calcit, Calcit)>,
   rewrites: &HashMap<DefKey, (Calcit, Calcit)>,
 ) -> HashSet<String> {
+  let fn_sinks = collect_impl_attach_param_sinks(program, written);
+  let mut call_cache = CallTargetCache::default();
   let mut out = HashSet::new();
+  let mut state = NonCoherentWalkState {
+    fn_sinks: &fn_sinks,
+    call_cache: &mut call_cache,
+    out: &mut out,
+  };
   for (ns, file) in program {
     for (def_name, entry) in &file.defs {
       let key: DefKey = (ns.to_owned(), def_name.to_owned());
@@ -921,7 +1244,7 @@ fn collect_non_coherent_nominal_defs_inner(
         && code_is_top_level_impl_traits(&entry.code)
         && code_defines_nominal_type(&entry.code)
       {
-        out.insert(format!("{ns}/{def_name}"));
+        state.out.insert(format!("{ns}/{def_name}"));
       }
       let root = if generated_match {
         rewrites
@@ -953,8 +1276,9 @@ fn collect_non_coherent_nominal_defs_inner(
         },
         root,
         &HashMap::new(),
+        &HashMap::new(),
         Some(entry.schema.as_ref()),
-        &mut out,
+        &mut state,
       );
     }
   }

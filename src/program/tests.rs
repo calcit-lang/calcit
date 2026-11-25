@@ -2665,4 +2665,60 @@ fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coh
   );
   let err = impl_attach::attach_source_impls(&mut shadowed).expect_err("top-level P stays coherent and rejects duplicate defimpl");
   assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
+
+  // Deep branching factory DAG (26 layers of `(if flag (prev) (prev))`) must finish linearly without exponential blowup.
+  let mut dag_defs: Vec<(String, String)> = vec![
+    ("P-Labeled".to_owned(), "defimpl P t/Labeled (.label f)".to_owned()),
+    ("P-Labeled-2".to_owned(), "defimpl P t/Labeled (.label g)".to_owned()),
+    ("f0".to_owned(), "defn f0 () (%{} P :name |a)".to_owned()),
+  ];
+  let mut prev = String::from("f0");
+  for layer in 1..=26 {
+    let name = format!("f{layer}");
+    dag_defs.push((name.clone(), format!("defn {name} (flag) (if flag ({prev}) ({prev}))")));
+    prev = name;
+  }
+  dag_defs.push(("UseDag".to_owned(), format!("def v $ impl-traits ({prev} true) P-Labeled")));
+  let dag_refs: Vec<(&str, &str)> = dag_defs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+  let mut dag_program = impl_attach_program("defstruct P (:name String)", &dag_refs, &[]);
+  assert!(
+    impl_attach::collect_non_coherent_nominal_defs(&dag_program).contains("app.m/P"),
+    "26-layer branching factory DAG must mark P non-coherent quickly"
+  );
+  impl_attach::attach_source_impls(&mut dag_program).expect("DAG-attached non-coherent def preserves detached defimpls");
+
+  // Unannotated legacy attachment helper `(defn decorate (x) (impl-traits x P-Labeled))` propagates caller argument types.
+  let mut unannotated_helper = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("decorate", "defn decorate (x) (impl-traits x P-Labeled)"),
+      ("wrap", "defn wrap (y) (decorate y)"),
+      ("UseWrap", "def v $ wrap (%{} P :name |a)"),
+    ],
+    &[],
+  );
+  assert!(
+    impl_attach::collect_non_coherent_nominal_defs(&unannotated_helper).contains("app.m/P"),
+    "unannotated attachment helper must propagate caller nominal argument into non_coherent set"
+  );
+  impl_attach::attach_source_impls(&mut unannotated_helper).expect("unannotated helper keeps detached defimpls on passed nominal type");
+
+  // Unannotated attachment helper with NO nominal callers must NOT mark unrelated top-level P non-coherent.
+  let mut unused_helper = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("decorate", "defn decorate (x) (impl-traits x P-Labeled)"),
+    ],
+    &[],
+  );
+  assert!(
+    !impl_attach::collect_non_coherent_nominal_defs(&unused_helper).contains("app.m/P"),
+    "uncalled unannotated helper must not mark unrelated P non-coherent"
+  );
+  let err = impl_attach::attach_source_impls(&mut unused_helper).expect_err("unrelated P must still reject duplicate defimpl");
+  assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 }
