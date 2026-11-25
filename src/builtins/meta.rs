@@ -2005,11 +2005,11 @@ pub(crate) fn build_dyn_trait_vtable(
   call_stack: &CallStackList,
 ) -> Result<std::collections::HashMap<EdnTag, Calcit>, CalcitErr> {
   let reachable = trait_def.normalized_reachable_traits().map_err(trait_requires_error)?;
-  let impls = collect_impls_for_value(value, call_stack).map_err(|err| err.with_code("E_DYN_BOX_TYPE"))?;
+  let impls = collect_impls_for_value(value, false, call_stack).map_err(|err| err.with_code("E_DYN_BOX_TYPE"))?;
   let mut vtable = std::collections::HashMap::new();
   for required in reachable {
     let mut matching_impls: Vec<&Arc<CalcitImpl>> = vec![];
-    for imp in iter_impls_in_precedence_order(value, &impls) {
+    for imp in iter_impls_in_precedence_order(value, &impls, false) {
       if imp.implements_trait(required.as_ref()) {
         matching_impls.push(imp);
       }

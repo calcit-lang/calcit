@@ -17,6 +17,15 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   if args.len() != 1 {
     return Err("&hash expects 1 arg".into());
   }
+  let ev = infer_wasm_evidence(ctx, &args[0]);
+  let ty = expand_wasm_value_type(ev.scalar_origin.as_ref().unwrap_or(&ev.annotation));
+  if matches!(proven_scalar_kind(&ty), Some("number" | "bool" | "tag" | "nil" | "unit")) {
+    emit_expr_as_repr(ctx, &args[0], NativeValRepr::F64)?;
+    let scalar_hash_idx = *ctx.runtime_fn_index.get("__rt_hash_f64").expect("scalar hash");
+    ctx.emit(Instruction::Call(scalar_hash_idx));
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
   emit_expr(ctx, &args[0])?;
   let hash_idx = *ctx.runtime_fn_index.get("__rt_value_hash").expect("value hash");
   ctx.emit(Instruction::Call(hash_idx));

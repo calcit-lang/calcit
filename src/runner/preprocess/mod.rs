@@ -20233,6 +20233,19 @@ pub fn preprocess_any_downcast(
     )
   })?;
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
+  let target_location = source_type_arg.get_location().or_else(|| box_form.get_location());
+  let target_owner = target_location
+    .as_ref()
+    .map_or_else(|| ctx.file_ns.to_owned(), |location| format!("{}/{}", location.ns, location.def));
+  object_safety::reject_non_object_safe_dyn_traits(
+    &target_owner,
+    "any:downcast",
+    &target,
+    ctx.file_ns,
+    Some(ctx.scope_types),
+    ctx.call_stack,
+    target_location,
+  )?;
   let type_key = calcit::canonical_type_key(&target, Some(ctx.file_ns)).map_err(|error| {
     CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,

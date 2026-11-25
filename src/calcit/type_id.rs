@@ -357,6 +357,32 @@ fn canonical_type_key_inner(
         )))
       }
     }
+    CalcitTypeAnnotation::DynTrait(trait_def) => {
+      let raw_name = trait_def.name.ref_str();
+      if let Some(reference) = trait_def.definition_ref.as_deref() {
+        Ok(format!("dyn:{}", reference.trim_start_matches('\'')))
+      } else if let Some((_, (ns, def))) =
+        CalcitTypeAnnotation::TypeRef(Arc::from(raw_name), Arc::new(vec![])).resolve_to_source_trait_with_ref()
+      {
+        Ok(format!("dyn:{ns}/{def}"))
+      } else if raw_name.contains('/') {
+        Ok(format!("dyn:{}", raw_name.trim_start_matches('\'')))
+      } else if let Some((ns, def)) = crate::calcit::type_annotation::current_type_annotation_namespace().and_then(|cur_ns| {
+        crate::program::resolve_type_name_in_ns(&cur_ns, raw_name.trim_start_matches('\'')).filter(|(target_ns, target_def)| {
+          CalcitTypeAnnotation::TypeRef(Arc::from(format!("{target_ns}/{target_def}")), Arc::new(vec![]))
+            .resolve_to_source_trait_with_ref()
+            .is_some()
+        })
+      }) {
+        Ok(format!("dyn:{ns}/{def}"))
+      } else if trait_def.runtime_id.is_some() || !trait_def.methods.is_empty() {
+        Ok(format!("dyn:{}", raw_name.trim_start_matches('\'')))
+      } else {
+        Err(CanonicalTypeIdError::open_type(format!(
+          "unresolved `(Dyn {raw_name})` trait cannot yield a canonical `Any` TypeId"
+        )))
+      }
+    }
     CalcitTypeAnnotation::TraitSet(_) => Err(CanonicalTypeIdError::open_type(format!(
       "trait bound set `{}` is an open existential boundary and cannot be used with `Any`",
       ty.to_brief_string()
@@ -589,5 +615,30 @@ mod tests {
     assert_eq!(k_variadic, "fn<(number,...string)->number:arity[1..*]>");
     assert_ne!(k_fixed_explicit, k_optional);
     assert_ne!(k_fixed_explicit, k_variadic);
+  }
+
+  #[test]
+  fn dyn_trait_type_keys_preserve_trait_origin_and_reject_unresolved_refs() {
+    let show_ref = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference("calcit.core/Show")));
+    assert_eq!(canonical_type_key(&show_ref, None).unwrap(), "dyn:calcit.core/Show");
+
+    let emit_sig = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self")))],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let custom_trait = Arc::new(
+      CalcitTrait::new(EdnTag::new("AlertPlugin"), vec![EdnTag::new("emit")], vec![emit_sig])
+        .with_definition_ref("app.traits", "AlertPlugin"),
+    );
+    let custom_dyn = CalcitTypeAnnotation::DynTrait(custom_trait);
+    assert_eq!(canonical_type_key(&custom_dyn, None).unwrap(), "dyn:app.traits/AlertPlugin");
+    assert_eq!(
+      canonical_type_key(&CalcitTypeAnnotation::List(Arc::new(custom_dyn)), None).unwrap(),
+      "list<dyn:app.traits/AlertPlugin>"
+    );
+
+    let unresolved_dyn = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference("MissingTrait")));
+    let err = canonical_type_key(&unresolved_dyn, None).expect_err("unresolved Dyn trait must reject with E_ANY_OPEN_TYPE");
+    assert_eq!(err.code, "E_ANY_OPEN_TYPE");
   }
 }

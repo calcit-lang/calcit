@@ -11,7 +11,7 @@
 //! Zero `CallIndirect`, zero extra funcref table slots.
 
 use super::*;
-use crate::wasm::host::calcit::{CalcitNumericRefinement, CalcitSymbolInfo, CalcitTrait};
+use crate::wasm::host::calcit::{CalcitSymbolInfo, CalcitTrait};
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{check_trait_object_safe, lookup_source_backed_trait_def};
 
@@ -22,13 +22,25 @@ pub(super) const DYN_TRAIT_ID_MASK: u32 = 0x7fff_ffff;
 /// Heap tag name registered in `BUILTIN_TYPE_TAGS` for boxed `(Dyn Trait)` fat pointers.
 pub(super) const DYN_TRAIT_HEAP_TAG: &str = "dyn-trait";
 
-fn dyn_payload_is_heap(type_key: &str) -> bool {
-  if let Some(inner) = type_key.strip_prefix("nullable<").and_then(|s| s.strip_suffix('>')) {
-    return dyn_payload_is_heap(inner);
+fn dyn_payload_is_heap(ty: &Arc<CalcitTypeAnnotation>) -> bool {
+  let expanded = expand_wasm_value_type(ty);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::Nullable(inner, _) => dyn_payload_is_heap(inner),
+    CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::Bool
+    | CalcitTypeAnnotation::Tag
+    | CalcitTypeAnnotation::Nil
+    | CalcitTypeAnnotation::Unit
+    | CalcitTypeAnnotation::Never
+    | CalcitTypeAnnotation::Fn(_)
+    | CalcitTypeAnnotation::DynFn
+    | CalcitTypeAnnotation::Symbol
+    | CalcitTypeAnnotation::StructDef(_)
+    | CalcitTypeAnnotation::EnumDef(_) => false,
+    CalcitTypeAnnotation::TypeRef(_, _) => expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some(),
+    _ => true,
   }
-  !(matches!(type_key, "number" | "bool" | "tag" | "nil" | "unit" | "never")
-    || type_key.starts_with("numeric:")
-    || type_key.starts_with("fn:"))
 }
 
 /// Concrete vtable entry captured at `(dyn:box expr Trait)` sites for a boxed trait.
@@ -155,64 +167,23 @@ fn trait_registry_key(trait_def: &CalcitTrait) -> String {
   }
 }
 
-/// Derives a canonical concrete type key for `(Dyn Trait)` vtable deduplication.
-///
-/// Isolated in one helper so `#2940` (`src/calcit/type_id.rs`) can replace the
-/// key derivation cleanly upon rebase.
+/// Derives a canonical concrete type key for `(Dyn Trait)` vtable deduplication,
+/// delegating closed monomorphic types directly to `src/calcit/type_id.rs` (`canonical_type_key`)
+/// while retaining fallback support for empty-collection `Never` shapes and definition metadata values.
 pub(super) fn dyn_concrete_type_key(ty: &Arc<CalcitTypeAnnotation>) -> Result<String, String> {
   let expanded = expand_wasm_value_type(ty);
+  if let Ok(key) = crate::wasm::host::calcit::canonical_type_key(&expanded, None) {
+    return Ok(key);
+  }
   match expanded.as_ref() {
-    CalcitTypeAnnotation::Number => Ok(String::from("number")),
-    CalcitTypeAnnotation::Numeric(refinement) => Ok(format!(
-      "numeric:{}",
-      match refinement {
-        CalcitNumericRefinement::Int8 => "i8",
-        CalcitNumericRefinement::Int16 => "i16",
-        CalcitNumericRefinement::Int32 => "i32",
-        CalcitNumericRefinement::UInt8 => "u8",
-        CalcitNumericRefinement::UInt16 => "u16",
-        CalcitNumericRefinement::UInt32 => "u32",
-        CalcitNumericRefinement::Int64 => "i64",
-        CalcitNumericRefinement::UInt64 => "u64",
-        CalcitNumericRefinement::Float32 => "f32",
-        CalcitNumericRefinement::Float64 => "f64",
-      }
-    )),
-    CalcitTypeAnnotation::Bool => Ok(String::from("bool")),
-    CalcitTypeAnnotation::Tag => Ok(String::from("tag")),
-    CalcitTypeAnnotation::Nil => Ok(String::from("nil")),
-    CalcitTypeAnnotation::Unit => Ok(String::from("unit")),
-    CalcitTypeAnnotation::String => Ok(String::from("string")),
-    CalcitTypeAnnotation::Symbol => Ok(String::from("symbol")),
-    CalcitTypeAnnotation::Buffer => Ok(String::from("buffer")),
-    CalcitTypeAnnotation::BufList => Ok(String::from("buf-list")),
     CalcitTypeAnnotation::Never => Ok(String::from("never")),
-    CalcitTypeAnnotation::AnonymousEnum => Ok(String::from("enum-anon")),
-    CalcitTypeAnnotation::StructValue(def) => {
+    CalcitTypeAnnotation::StructDef(def) => {
       let base = def.definition_ref.as_deref().unwrap_or_else(|| def.name.ref_str());
-      Ok(format!("struct:{base}"))
+      Ok(format!("struct-def:{base}"))
     }
-    CalcitTypeAnnotation::Struct(def, args) => {
-      let base = def.definition_ref.as_deref().unwrap_or_else(|| def.name.ref_str());
-      if args.is_empty() {
-        Ok(format!("struct:{base}"))
-      } else {
-        let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
-        Ok(format!("struct:{base}<{}>", arg_keys.join(",")))
-      }
-    }
-    CalcitTypeAnnotation::EnumValue(def) => {
+    CalcitTypeAnnotation::EnumDef(def) => {
       let base = def.definition_ref().map_or_else(|| def.name().ref_str(), |v| v.as_ref());
-      Ok(format!("enum:{base}"))
-    }
-    CalcitTypeAnnotation::Enum(def, args) => {
-      let base = def.definition_ref().map_or_else(|| def.name().ref_str(), |v| v.as_ref());
-      if args.is_empty() {
-        Ok(format!("enum:{base}"))
-      } else {
-        let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
-        Ok(format!("enum:{base}<{}>", arg_keys.join(",")))
-      }
+      Ok(format!("enum-def:{base}"))
     }
     CalcitTypeAnnotation::List(inner) => Ok(format!("list<{}>", dyn_concrete_type_key(inner)?)),
     CalcitTypeAnnotation::Set(inner) => Ok(format!("set<{}>", dyn_concrete_type_key(inner)?)),
@@ -222,29 +193,29 @@ pub(super) fn dyn_concrete_type_key(ty: &Arc<CalcitTypeAnnotation>) -> Result<St
       let slot_keys = slots.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
       Ok(format!("tuple<{}>", slot_keys.join(",")))
     }
-    CalcitTypeAnnotation::DynTrait(tr) => {
-      let base = tr.definition_ref.as_deref().unwrap_or_else(|| tr.name.ref_str());
-      Ok(format!("dyn:{base}"))
-    }
     CalcitTypeAnnotation::Nullable(inner, _) => Ok(format!("nullable<{}>", dyn_concrete_type_key(inner)?)),
+    CalcitTypeAnnotation::Struct(def, args) => {
+      let base = def.definition_ref.as_deref().unwrap_or_else(|| def.name.ref_str());
+      let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
+      Ok(format!("struct:{base}[{}]", arg_keys.join(",")))
+    }
+    CalcitTypeAnnotation::Enum(def, args) => {
+      let base = def.definition_ref().map_or_else(|| def.name().ref_str(), |v| v.as_ref());
+      let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
+      Ok(format!("enum:{base}[{}]", arg_keys.join(",")))
+    }
     CalcitTypeAnnotation::Fn(_) => Ok(format!("fn:{}", expanded.to_brief_string())),
     CalcitTypeAnnotation::Custom(val) => Ok(format!("custom:{val}")),
     CalcitTypeAnnotation::TypeRef(name, args) => {
       if let Some(def) = expanded.resolve_to_struct() {
         let base = def.definition_ref.as_deref().unwrap_or_else(|| def.name.ref_str());
-        if args.is_empty() {
-          return Ok(format!("struct:{base}"));
-        }
         let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
-        return Ok(format!("struct:{base}<{}>", arg_keys.join(",")));
+        return Ok(format!("struct:{base}[{}]", arg_keys.join(",")));
       }
       if let Some(def) = expanded.resolve_to_enum() {
         let base = def.definition_ref().map_or_else(|| def.name().ref_str(), |v| v.as_ref());
-        if args.is_empty() {
-          return Ok(format!("enum:{base}"));
-        }
         let arg_keys = args.iter().map(dyn_concrete_type_key).collect::<Result<Vec<_>, _>>()?;
-        return Ok(format!("enum:{base}<{}>", arg_keys.join(",")));
+        return Ok(format!("enum:{base}[{}]", arg_keys.join(",")));
       }
       Err(format!("E_DYN_BOX_TYPE: unresolved type `{name}` cannot be boxed into `(Dyn ...)`"))
     }
@@ -334,7 +305,7 @@ pub(super) fn emit_dyn_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   emit_box_repr_to_f64(ctx, src_repr);
   ctx.emit(Instruction::LocalSet(data_local));
 
-  let is_heap = dyn_payload_is_heap(&type_key);
+  let is_heap = dyn_payload_is_heap(&concrete_ty);
   let (trait_id, vtable_id) = {
     let mut reg = ctx.dyn_traits.borrow_mut();
     let trait_id = reg.intern_trait(&trait_def);
@@ -493,11 +464,9 @@ fn compile_dispatch_trampoline(
         self_sym.to_owned(),
         WasmTypeEvidence {
           annotation: vtable.concrete_type.clone(),
-          codec_hint: None,
-          set_member_types: None,
-          list_element_types: None,
           scalar_origin,
           exact_impls: true,
+          ..WasmTypeEvidence::contract(vtable.concrete_type.clone())
         },
       );
 

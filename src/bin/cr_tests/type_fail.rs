@@ -8646,6 +8646,10 @@ defstruct BadWorker (:n Number) (:impls TaskPlugin)
 defimpl BadWorker TaskPlugin $ .step $ fn (self)
   hint-fn $ Fn BadWorker (-> Number)
   do (wait-ms 1) (:n self)
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
       w $ dyn:box (BadWorker :n 7) TaskPlugin
       _n $ w .step
     , &unit

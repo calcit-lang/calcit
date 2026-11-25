@@ -77,7 +77,7 @@ fn current_type_annotation_warning_context() -> Option<Arc<str>> {
   TYPE_ANNOTATION_WARNING_CONTEXT.with(|stack| stack.borrow().last().cloned())
 }
 
-fn current_type_annotation_namespace() -> Option<Arc<str>> {
+pub(crate) fn current_type_annotation_namespace() -> Option<Arc<str>> {
   current_type_annotation_warning_context().and_then(|label| label.rsplit_once('/').map(|(namespace, _)| Arc::from(namespace)))
 }
 
