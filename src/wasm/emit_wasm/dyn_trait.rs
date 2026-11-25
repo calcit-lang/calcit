@@ -13,10 +13,23 @@
 use super::*;
 use crate::wasm::host::calcit::{CalcitNumericRefinement, CalcitSymbolInfo, CalcitTrait};
 use crate::wasm::host::program;
-use crate::wasm::host::runner::preprocess::check_trait_object_safe;
+use crate::wasm::host::runner::preprocess::{check_trait_object_safe, lookup_source_backed_trait_def};
 
 /// Heap tag name registered in `BUILTIN_TYPE_TAGS` for boxed `(Dyn Trait)` fat pointers.
+pub(super) const DYN_TRAIT_HEAP_FLAG: u32 = 0x8000_0000;
+/// Bitmask extracting the `trait_id` from word `@ 4` of a `"dyn-trait"` fat pointer.
+pub(super) const DYN_TRAIT_ID_MASK: u32 = 0x7fff_ffff;
+/// Heap tag name registered in `BUILTIN_TYPE_TAGS` for boxed `(Dyn Trait)` fat pointers.
 pub(super) const DYN_TRAIT_HEAP_TAG: &str = "dyn-trait";
+
+fn dyn_payload_is_heap(type_key: &str) -> bool {
+  if let Some(inner) = type_key.strip_prefix("nullable<").and_then(|s| s.strip_suffix('>')) {
+    return dyn_payload_is_heap(inner);
+  }
+  !(matches!(type_key, "number" | "bool" | "tag" | "nil" | "unit" | "never")
+    || type_key.starts_with("numeric:")
+    || type_key.starts_with("fn:"))
+}
 
 /// Concrete vtable entry captured at `(dyn:box expr Trait)` sites for a boxed trait.
 #[derive(Clone, Debug)]
@@ -253,10 +266,14 @@ pub(super) fn resolve_wasm_trait_def(expr: &Calcit, file_ns: &str) -> Result<Arc
           Ok(Arc::new((*trait_def).clone().with_definition_ref(&import.ns, &import.def)))
         }
       }
-      _ => Err(format!(
-        "E_DYN_BOX_TYPE: expected a trait definition at `{}/{}`, got import",
-        import.ns, import.def
-      )),
+      _ => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| Arc::new(trait_def.with_definition_ref(&import.ns, &import.def)))
+        .ok_or_else(|| {
+          format!(
+            "E_DYN_BOX_TYPE: expected a trait definition at `{}/{}`, got import",
+            import.ns, import.def
+          )
+        }),
     },
     Calcit::Symbol { sym, info, .. } => {
       let target_ns = if info.at_ns.is_empty() { file_ns } else { info.at_ns.as_ref() };
@@ -268,7 +285,9 @@ pub(super) fn resolve_wasm_trait_def(expr: &Calcit, file_ns: &str) -> Result<Arc
             Ok(Arc::new((*trait_def).clone().with_definition_ref(target_ns, sym.as_ref())))
           }
         }
-        _ => Err(format!("E_DYN_BOX_TYPE: expected a trait definition, got `{sym}`")),
+        _ => lookup_source_backed_trait_def(target_ns, sym.as_ref())
+          .map(|trait_def| Arc::new(trait_def.with_definition_ref(target_ns, sym.as_ref())))
+          .ok_or_else(|| format!("E_DYN_BOX_TYPE: expected a trait definition, got `{sym}`")),
       }
     }
     Calcit::List(items) if items.len() == 2 && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) => {
@@ -315,12 +334,14 @@ pub(super) fn emit_dyn_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   emit_box_repr_to_f64(ctx, src_repr);
   ctx.emit(Instruction::LocalSet(data_local));
 
+  let is_heap = dyn_payload_is_heap(&type_key);
   let (trait_id, vtable_id) = {
     let mut reg = ctx.dyn_traits.borrow_mut();
     let trait_id = reg.intern_trait(&trait_def);
     let vtable_id = reg.intern_vtable(trait_id, type_key, concrete_ty, file_ns);
     (trait_id, vtable_id)
   };
+  let trait_word = (trait_id & DYN_TRAIT_ID_MASK) | if is_heap { DYN_TRAIT_HEAP_FLAG } else { 0 };
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 16, ptr_local, DYN_TRAIT_HEAP_TAG);
@@ -330,7 +351,7 @@ pub(super) fn emit_dyn_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::I32Const(trait_id as i32));
+  ctx.emit(Instruction::I32Const(trait_word as i32));
   ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
 
   ctx.emit(Instruction::LocalGet(ptr_local));
@@ -552,6 +573,8 @@ fn compile_to_str_trampoline(env: &WasmCompileEnv) -> Result<(CompiledFn, usize)
     }
     let targets: Vec<u32> = (0..trait_count as u32).collect();
     instructions.push(Instruction::LocalGet(0));
+    instructions.push(Instruction::I32Const(DYN_TRAIT_ID_MASK as i32));
+    instructions.push(Instruction::I32And);
     instructions.push(Instruction::BrTable(targets.into(), trait_count as u32));
     for (arm_idx, trait_def) in traits.iter().enumerate() {
       instructions.push(Instruction::End);

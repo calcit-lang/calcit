@@ -263,7 +263,18 @@ fn find_dyn_object_safety_error(
   file_ns: &str,
   scope_types: Option<&ScopeTypes>,
 ) -> Option<String> {
-  super::find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
+  let mut visited_aliases = std::collections::HashSet::new();
+  find_dyn_object_safety_error_inner(annotation, path, file_ns, scope_types, &mut visited_aliases)
+}
+
+fn find_dyn_object_safety_error_inner(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  path: &str,
+  file_ns: &str,
+  scope_types: Option<&ScopeTypes>,
+  visited_aliases: &mut std::collections::HashSet<String>,
+) -> Option<String> {
+  if let Some(found) = super::find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
     CalcitTypeAnnotation::TypeRef(name, args) if name.trim_start_matches('\'') == "Dyn" => {
       let detail = match args.as_slice() {
         [single] => format!("got `{}` instead of a trait", single.to_brief_string()),
@@ -278,8 +289,201 @@ fn find_dyn_object_safety_error(
       Ok(None) => None,
       Err(err) => Some(format!("at {candidate_path}: {err}")),
     },
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      let (alias_ns, alias_def) = program::resolve_type_name_in_ns(file_ns, name)?;
+      let alias = crate::calcit::type_annotation::type_alias_declaration(&format!("{alias_ns}/{alias_def}"))?;
+      if visited_aliases.len() >= 128 {
+        return None;
+      }
+      let key = format!(
+        "{alias_ns}/{alias_def}<{}>",
+        args.iter().map(|arg| arg.to_brief_string()).collect::<Vec<_>>().join(",")
+      );
+      if !visited_aliases.insert(key.clone()) {
+        return None;
+      }
+      let expanded = alias.expand(&alias_ns, args);
+      let result = find_dyn_object_safety_error_inner(&expanded, candidate_path, &alias_ns, scope_types, visited_aliases);
+      visited_aliases.remove(&key);
+      result
+    }
+    CalcitTypeAnnotation::Fn(info) => info.cases.iter().enumerate().find_map(|(idx, case_sig)| {
+      find_dyn_object_safety_error_inner(
+        &Arc::new(CalcitTypeAnnotation::Fn(case_sig.clone())),
+        &format!("{candidate_path}.cases.{idx}"),
+        file_ns,
+        scope_types,
+        visited_aliases,
+      )
+    }),
     _ => None,
-  })
+  }) {
+    return Some(found);
+  }
+  None
+}
+
+/// Validate any `(Dyn ...)` references declared inside a `deftype` body.
+pub(super) fn reject_non_object_safe_dyn_traits_in_deftype(
+  ns: &str,
+  def: &str,
+  source_code: &Calcit,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Some(alias) = crate::calcit::type_annotation::type_alias_from_code(source_code) else {
+    return Ok(());
+  };
+  let generic_vars: Vec<Arc<CalcitTypeAnnotation>> = alias
+    .generics
+    .iter()
+    .map(|g| Arc::new(CalcitTypeAnnotation::TypeVar(g.clone())))
+    .collect();
+  let expanded = alias.expand(ns, &generic_vars);
+  let location = alias
+    .body
+    .get_location()
+    .or_else(|| Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))));
+  reject_non_object_safe_dyn_traits(
+    &format!("{ns}/{def}"),
+    "deftype",
+    &expanded,
+    ns,
+    Some(scope_types),
+    call_stack,
+    location,
+  )
+}
+
+/// Validate `(Dyn ...)` references in `deftrait` method signatures.
+pub(super) fn reject_non_object_safe_dyn_traits_in_deftrait(
+  owner: &str,
+  args: &CalcitList,
+  file_ns: &str,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+  fallback_location: Option<&NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let Some(Calcit::List(methods)) = args.get(1) else {
+    return Ok(());
+  };
+  for entry in methods.iter().skip(1) {
+    let Calcit::List(pair) = entry else {
+      continue;
+    };
+    let start = if matches!(pair.first(), Some(Calcit::Proc(CalcitProc::List)))
+      || matches!(pair.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "[]")
+    {
+      1
+    } else {
+      0
+    };
+    let (Some(name_node), Some(type_form)) = (pair.get(start), pair.get(start + 1)) else {
+      continue;
+    };
+    let method_name = match name_node {
+      Calcit::Tag(tag) => tag.ref_str(),
+      Calcit::Symbol { sym, .. } => sym.trim_start_matches(':').trim_start_matches('.'),
+      _ => continue,
+    };
+    let inner_form = match type_form {
+      Calcit::List(quoted) if quoted.len() == 2 && matches!(quoted.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) => &quoted[1],
+      other => other,
+    };
+    if let Ok(method_annotation) = crate::builtins::meta::parse_trait_method_signature(method_name, inner_form) {
+      reject_non_object_safe_dyn_traits(
+        owner,
+        &format!("deftrait method `.{method_name}`"),
+        &method_annotation,
+        file_ns,
+        Some(scope_types),
+        call_stack,
+        type_form.get_location().or_else(|| fallback_location.cloned()),
+      )?;
+    }
+  }
+  Ok(())
+}
+
+/// Validate `(Dyn ...)` references in `defenum` variant payload types (`&enum-def:new`).
+pub(super) fn reject_non_object_safe_dyn_traits_in_defenum(args: &CalcitList, ctx: &PreprocessContext) -> Result<(), CalcitErr> {
+  let mut idx = 1;
+  let mut generics: Vec<Arc<str>> = ctx.scope_types.generic_names();
+  if let Some(Calcit::List(items)) = args.get(1) {
+    let start = if matches!(items.first(), Some(Calcit::Proc(CalcitProc::List)))
+      || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "[]")
+      || matches!(items.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "[]")
+    {
+      1
+    } else {
+      0
+    };
+    if !matches!(items.get(start), Some(Calcit::Tag(_))) {
+      for item in items.iter().skip(start) {
+        if let Some(name) = match item {
+          Calcit::Symbol { sym, .. } => Some(sym.trim_start_matches('\'')),
+          Calcit::List(q) if q.len() == 2 && matches!(q.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) => match q.get(1) {
+            Some(Calcit::Symbol { sym, .. }) => Some(sym.trim_start_matches('\'')),
+            _ => None,
+          },
+          _ => None,
+        } && !name.is_empty()
+        {
+          generics.push(Arc::from(name));
+        }
+      }
+      idx = 2;
+    }
+  }
+  if matches!(args.get(idx), Some(Calcit::Map(_)))
+    || matches!(args.get(idx), Some(Calcit::List(m)) if matches!(m.first(), Some(Calcit::Proc(CalcitProc::NativeMap))) || matches!(m.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "{}"))
+  {
+    idx += 1;
+  }
+
+  for variant in args.iter().skip(idx) {
+    let Calcit::List(entry) = variant else {
+      continue;
+    };
+    let start = if matches!(entry.first(), Some(Calcit::Proc(CalcitProc::List)))
+      || matches!(entry.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "[]")
+      || matches!(entry.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "[]")
+    {
+      1
+    } else {
+      0
+    };
+    if !matches!(entry.get(start), Some(Calcit::Tag(_))) {
+      continue;
+    }
+    for payload in entry.iter().skip(start + 1) {
+      let unwrapped = match payload {
+        Calcit::List(quoted)
+          if quoted.len() == 2
+            && (matches!(quoted.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+              || matches!(quoted.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote")) =>
+        {
+          &quoted[1]
+        }
+        other => other,
+      };
+      let desugared = super::desugar_compact_type_form(unwrapped, ctx)?;
+      let payload_type = super::resolve_local_type_refs_for_body(
+        CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&desugared, &generics),
+        ctx.scope_types,
+      );
+      reject_non_object_safe_dyn_traits(
+        ctx.file_ns,
+        "defenum payload",
+        &payload_type,
+        ctx.file_ns,
+        Some(ctx.scope_types),
+        ctx.call_stack,
+        payload.get_location().or_else(|| ctx.call_location.clone()),
+      )?;
+    }
+  }
+  Ok(())
 }
 
 fn resolve_dyn_box_trait_operand(trait_raw: &Calcit, ctx: &mut PreprocessContext) -> Result<(Arc<CalcitTrait>, Calcit), CalcitErr> {

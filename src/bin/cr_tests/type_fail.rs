@@ -8179,6 +8179,31 @@ fn dyn_trait_object_safety_and_boxing_rejections() {
       "E_TRAIT_NOT_OBJECT_SAFE",
     );
     expect_error(
+      "Dyn in defenum payload rejected",
+      "defenum BadEnum (:c (Dyn Eq))\ndefn main! () (do BadEnum &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn in deftrait method signature rejected",
+      "deftrait BadTrait\n  .use-it $ Fn Self (Dyn Eq) (-> Unit)\ndefn main! () (do BadTrait &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    {
+      let entries = load_snippet_entries("deftype BadAlias (Dyn Eq)\ndefn main! () &unit");
+      let warnings = RefCell::new(vec![]);
+      let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "BadAlias", &warnings, &CallStackList::default())
+        .expect_err("standalone deftype BadAlias (Dyn Eq) must fail E_TRAIT_NOT_OBJECT_SAFE");
+      assert!(
+        err.to_string().contains("E_TRAIT_NOT_OBJECT_SAFE"),
+        "expected E_TRAIT_NOT_OBJECT_SAFE for deftype declaration, got: {err}"
+      );
+    }
+    expect_error(
+      "deftype alias to non-object-safe Dyn rejected in Fn signature",
+      "deftype BadAlias (Dyn Eq)\ndefn use-alias (x)\n  hint-fn $ Fn BadAlias (-> Unit)\n  &unit\ndefn main! () (do use-alias &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
       "dyn:box rejects non-object-safe trait",
       "defn bad () (dyn:box 1 Eq)\ndefn main! () (do bad &unit)",
       "E_TRAIT_NOT_OBJECT_SAFE",

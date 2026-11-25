@@ -609,6 +609,8 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     let to_str_idx = ctx.dyn_traits.borrow_mut().ensure_to_str_trampoline();
     ctx.emit(Instruction::LocalGet(v_i32));
     ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+    ctx.emit(Instruction::I32Const(super::dyn_trait::DYN_TRAIT_ID_MASK as i32));
+    ctx.emit(Instruction::I32And);
     ctx.emit(Instruction::Call(to_str_idx));
     ctx.emit(Instruction::LocalSet(result));
     ctx.emit(Instruction::End);

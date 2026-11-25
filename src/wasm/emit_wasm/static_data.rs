@@ -185,6 +185,7 @@ impl<'a> ReachabilityState<'a> {
         continue;
       }
       self.seen_traits.push(reachable.clone());
+      self.extra_exprs.push(Calcit::Trait(reachable.clone()));
       if let Some(reference) = &reachable.definition_ref {
         self.enqueue_qualified(reference.as_ref());
       }
@@ -595,6 +596,9 @@ impl<'a> ReachabilityState<'a> {
       self.visit_expr(&compiled.codegen_form, &ns, false);
       if let Some(type_def) = try_parse_defrecord_form(&compiled.preprocessed_code) {
         self.visit_struct_def(&type_def, &ns);
+      }
+      if let Some(trait_def) = crate::wasm::host::runner::preprocess::lookup_source_backed_trait_def(&ns, &name) {
+        self.record_trait(&Arc::new(trait_def.with_definition_ref(&ns, &name)), &ns);
       }
     }
   }
@@ -1242,6 +1246,13 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>, include_n
         strings.push(format!("(&dyn {})", reachable.name));
       }
     }
+    Calcit::Import(_) => {
+      if let Ok(trait_def) = super::dyn_trait::resolve_wasm_trait_def(expr, "") {
+        for reachable in trait_def.normalized_reachable_traits().unwrap_or_default() {
+          strings.push(format!("(&dyn {})", reachable.name));
+        }
+      }
+    }
     Calcit::Local(local) => {
       let mut seen = HashSet::new();
       collect_dyn_trait_strings_from_annotation(&local.type_info, strings, &mut seen);
@@ -1259,6 +1270,14 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>, include_n
     Calcit::List(xs) => {
       if xs.len() == 1 && super::expr_uses_wasi_stdio(expr) {
         strings.push(String::new());
+      }
+      if xs.len() == 3
+        && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::DynBox, _)))
+        && let Ok(trait_def) = super::dyn_trait::resolve_wasm_trait_def(&xs[2], "")
+      {
+        for reachable in trait_def.normalized_reachable_traits().unwrap_or_default() {
+          strings.push(format!("(&dyn {})", reachable.name));
+        }
       }
       if xs.len() == 2
         && let Calcit::Proc(p) = &xs[0]

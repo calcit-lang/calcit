@@ -296,7 +296,7 @@ pub(crate) struct TypeAliasDecl {
 
 impl TypeAliasDecl {
   /// The aliased type with `args` substituted for the generics.
-  fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
+  pub(crate) fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(&self.body), &self.generics);
     let parsed = super::type_refs::qualify_namespace_type_refs(parsed, ns);
     if self.generics.is_empty() {

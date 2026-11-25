@@ -2208,6 +2208,7 @@ fn ensure_ns_def_preprocessed(
         })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
+      object_safety::reject_non_object_safe_dyn_traits_in_deftype(ns, def, &code, &scope_types, &next_stack)?;
       if ns != calcit::CORE_NS && should_emit_project_source_lint(ns) {
         for advisory in effect_features::check_definition(ns, def, &resolved_code) {
           push_advisory(advisory);
@@ -2623,7 +2624,7 @@ fn resolve_trait_def_from_source_code(code: &Calcit, file_ns: &str) -> Option<Ca
   None
 }
 
-fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
+pub(crate) fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
   thread_local! {
     static ACTIVE_SOURCE_TRAITS: RefCell<Vec<(String, String)>> = const { RefCell::new(vec![]) };
   }
@@ -5374,6 +5375,10 @@ fn preprocess_list_call(
     let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
     desugar_struct_field_types(&args, &ctx)?
   } else {
+    if matches!(&head_form, Calcit::Proc(CalcitProc::NativeEnumNew)) {
+      let ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+      object_safety::reject_non_object_safe_dyn_traits_in_defenum(&args, &ctx)?;
+    }
     args
   };
   // A literal argument list has exact positional evidence and no observable
@@ -7096,6 +7101,14 @@ fn preprocess_list_call(
                   .with_code("E_TRAIT_METHOD_SIGNATURE"),
                 );
               }
+              object_safety::reject_non_object_safe_dyn_traits_in_deftrait(
+                &format!("{file_ns}/{signature_owner}"),
+                &processed_args,
+                file_ns,
+                scope_types,
+                call_stack,
+                call_location.as_ref(),
+              )?;
               type_inference::check_trait_requires_declaration(&processed_args, scope_types, file_ns, &signature_owner)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
             }
