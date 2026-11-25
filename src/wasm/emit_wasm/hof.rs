@@ -504,7 +504,7 @@ pub(super) fn emit_foldl_proc_call(
 }
 
 /// Resolve a callee to a `FoldlCallKind`, also accepting native procs.
-pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, _elem: u32) -> Result<FoldlCallKind, String> {
+pub(super) fn resolve_callee_kind(ctx: &mut WasmGenCtx, callee: &Calcit, _acc: u32, _elem: u32) -> Result<FoldlCallKind, String> {
   resolve_hof_callee(ctx, callee, 2)
 }
 
@@ -533,15 +533,8 @@ pub(super) fn emit_foldl_step(
         types[1].as_ref().map(|e| e.annotation.clone()),
       ],
     ),
-    // Dynamic dispatch via call_indirect: (acc_f64, elem_f64) → f64. Canonical type 2.
-    FoldlCallKind::Dynamic(fn_local_idx) => {
-      ctx.emit(Instruction::LocalGet(acc));
-      ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::LocalGet(*fn_local_idx));
-      ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(call_indirect(2));
-      Ok(())
-    }
+    // Dynamic dispatch via closure BrTable trampoline: (closure_f64, acc_f64, elem_f64) -> f64.
+    FoldlCallKind::Dynamic(fn_local_idx) => super::closure::emit_closure_call_from_locals(ctx, *fn_local_idx, &[acc, elem]),
   }
 }
 
@@ -847,15 +840,8 @@ fn emit_unary_step_with_evidence(
       }
       result
     }
-    // Dynamic dispatch via call_indirect: local holds f64 table slot index.
-    // Canonical type 1 = (f64) → f64.
-    FoldlCallKind::Dynamic(fn_local_idx) => {
-      ctx.emit(Instruction::LocalGet(arg));
-      ctx.emit(Instruction::LocalGet(*fn_local_idx));
-      ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(call_indirect(1));
-      Ok(())
-    }
+    // Dynamic dispatch via closure BrTable trampoline: (closure_f64, arg_f64) -> f64.
+    FoldlCallKind::Dynamic(fn_local_idx) => super::closure::emit_closure_call_from_locals(ctx, *fn_local_idx, &[arg]),
   }
 }
 
@@ -891,20 +877,18 @@ fn emit_binary_step_ie(
       )
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
-    // Dynamic dispatch: (idx_as_f64, elem_f64) → f64. Canonical type 2.
+    // Dynamic dispatch via closure BrTable trampoline: (closure_f64, idx_f64, elem_f64) -> f64.
     FoldlCallKind::Dynamic(fn_local_idx) => {
+      let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
-      ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::LocalGet(*fn_local_idx));
-      ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(call_indirect(2));
-      Ok(())
+      ctx.emit(Instruction::LocalSet(idx_f64));
+      super::closure::emit_closure_call_from_locals(ctx, *fn_local_idx, &[idx_f64, elem])
     }
   }
 }
 
 /// Resolve a HOF callee for the argument count supplied by its caller.
-fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
+fn resolve_hof_callee(ctx: &mut WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
   if expected_arity == 1
     && match callee {
       Calcit::Proc(CalcitProc::NilQuestion) => true,
@@ -917,7 +901,9 @@ fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) ->
   {
     return Ok(FoldlCallKind::Proc(CalcitProc::NilQuestion));
   }
-  if let Some(closure) = resolve_inline_closure(ctx, callee) {
+  if let Some(closure) = resolve_inline_closure(ctx, callee)
+    && !closure.body.iter().any(check_uses_recur)
+  {
     return Ok(FoldlCallKind::Inline(closure));
   }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee, expected_arity) {
@@ -926,7 +912,7 @@ fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) ->
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
   }
-  // Local variable holding a function value (dyn dispatch via call_indirect)
+  // Local variable or dynamic expression holding a closure pointer (dispatch via __closure_call_<arity>).
   if let Some(name) = match callee {
     Calcit::Local(local) => Some(local.sym.as_ref()),
     Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => Some(sym.as_ref()),
@@ -939,11 +925,17 @@ fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) ->
       .ok_or_else(|| format!("HOF callee local not found: {name}"))?;
     return Ok(FoldlCallKind::Dynamic(local_idx));
   }
+  if matches!(callee, Calcit::Fn { .. }) || matches!(callee, Calcit::List(xs) if !xs.is_empty()) {
+    let local_idx = ctx.alloc_local();
+    emit_expr(ctx, callee)?;
+    ctx.emit(Instruction::LocalSet(local_idx));
+    return Ok(FoldlCallKind::Dynamic(local_idx));
+  }
   Err(format!("HOF callee must be a static fn/import/symbol in WASM, got: {callee}"))
 }
 
 /// Resolve a single-arg HOF callee (map, filter, each, any?, etc.).
-fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKind, String> {
+fn resolve_unary_callee(ctx: &mut WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKind, String> {
   resolve_hof_callee(ctx, callee, 1)
 }
 
@@ -1016,14 +1008,7 @@ pub(super) fn emit_map_fold_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       emit_inline_closure_body_with_evidences(ctx, closure, &[acc, key, value], &[acc_ev, key_ev, val_ev])?
     }
     FoldlCallKind::Proc(proc) => emit_map_fold_kv_proc_call(ctx, proc, acc, key, value)?,
-    FoldlCallKind::Dynamic(fn_idx) => {
-      ctx.emit(Instruction::LocalGet(acc));
-      ctx.emit(Instruction::LocalGet(key));
-      ctx.emit(Instruction::LocalGet(value));
-      ctx.emit(Instruction::LocalGet(*fn_idx));
-      ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(call_indirect(3));
-    }
+    FoldlCallKind::Dynamic(fn_idx) => super::closure::emit_closure_call_from_locals(ctx, *fn_idx, &[acc, key, value])?,
   }
   ctx.emit(Instruction::LocalSet(acc));
 
@@ -1568,7 +1553,7 @@ mod tests {
         atom_is_scalar: HashMap::new(),
         value_imports: HashMap::new(),
         static_fn_defs: HashMap::new(),
-        fn_table_index: HashMap::new(),
+        closures: Default::default(),
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
@@ -1610,21 +1595,21 @@ mod tests {
       };
       for supplied in [1, 2] {
         for callee in [&alias, &symbol] {
-          let kind = resolve_hof_callee(&ctx, callee, supplied).expect("local call strategy");
+          let kind = resolve_hof_callee(&mut ctx, callee, supplied).expect("local call strategy");
           if arity == supplied {
             assert!(matches!(kind, FoldlCallKind::Static(index, None) if index == arity));
           } else {
             assert!(matches!(kind, FoldlCallKind::Dynamic(index) if index == slot));
-            assert!(resolve_hof_callee(&ctx, &Calcit::Import(definition.clone()), supplied).is_err());
+            assert!(resolve_hof_callee(&mut ctx, &Calcit::Import(definition.clone()), supplied).is_err());
           }
         }
       }
       assert_eq!(
-        matches!(resolve_unary_callee(&ctx, &alias).unwrap(), FoldlCallKind::Static(_, _)),
+        matches!(resolve_unary_callee(&mut ctx, &alias).unwrap(), FoldlCallKind::Static(_, _)),
         arity == 1
       );
       assert_eq!(
-        matches!(resolve_callee_kind(&ctx, &alias, 0, 0).unwrap(), FoldlCallKind::Static(_, _)),
+        matches!(resolve_callee_kind(&mut ctx, &alias, 0, 0).unwrap(), FoldlCallKind::Static(_, _)),
         arity == 2
       );
       // An unknown local shadows the same-named global, even with a matching arity.
@@ -1632,15 +1617,15 @@ mod tests {
       ctx.fn_arity.insert(name.to_string(), arity);
       ctx.local_function_values.remove(&slot);
       for supplied in [1, 2] {
-        assert!(matches!(resolve_hof_callee(&ctx, &symbol, supplied).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
+        assert!(matches!(resolve_hof_callee(&mut ctx, &symbol, supplied).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
       }
-      assert!(matches!(resolve_callee_kind(&ctx, &symbol, 0, 0).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
+      assert!(matches!(resolve_callee_kind(&mut ctx, &symbol, 0, 0).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
       ctx.local_function_values.insert(slot, definition);
       // Rest functions still use the shared pack-or-trap path at either call site.
       ctx.fn_has_rest.insert(format!("tests.hof/{name}"), arity - 1);
       for supplied in [1, 2] {
         assert!(
-          matches!(resolve_hof_callee(&ctx, &alias, supplied).unwrap(), FoldlCallKind::Static(_, Some(fixed)) if fixed == arity - 1)
+          matches!(resolve_hof_callee(&mut ctx, &alias, supplied).unwrap(), FoldlCallKind::Static(_, Some(fixed)) if fixed == arity - 1)
         );
       }
     }
@@ -1678,7 +1663,7 @@ mod tests {
         atom_is_scalar: HashMap::new(),
         value_imports: HashMap::new(),
         static_fn_defs: HashMap::new(),
-        fn_table_index: HashMap::new(),
+        closures: Default::default(),
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,

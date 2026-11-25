@@ -498,10 +498,29 @@ fn component_file_capabilities_check_only_without_writing_an_artifact() {
   assert!(supported.status.success(), "{}", String::from_utf8_lossy(&supported.stderr));
   assert!(!output.path().join("program.wasm").exists());
 
+  let dynamic_valid = calcit(
+    &[
+      "--init-fn",
+      "app.main/main-unknown-alias!",
+      "tests/fixtures/wasi-command-03.cirru",
+      "wasi",
+      "--boundary",
+      "component",
+      "--check-only",
+    ],
+    output.path(),
+  );
+  assert!(
+    dynamic_valid.status.success(),
+    "app.main/main-unknown-alias!: {}",
+    String::from_utf8_lossy(&dynamic_valid.stderr)
+  );
+  assert!(!output.path().join("program.wasm").exists());
+
   for (entry, diagnostic) in [
     ("app.main/main-unsupported!", "E_WASI_COMMAND_DEPENDENCY"),
     ("app.main/main-unsupported-alias!", "E_WASI_COMMAND_DEPENDENCY"),
-    ("app.main/main-unknown-alias!", "E_WASI_COMMAND_INDIRECT"),
+    ("app.main/main-dynamic-unsupported!", "E_WASI_COMMAND_DEPENDENCY"),
   ] {
     let checked = calcit(
       &["--init-fn", entry, "tests/fixtures/wasi-command-03.cirru", "--check-only"],
@@ -934,5 +953,139 @@ fn wasi_command_selective_linking_prunes_unused_number_format_and_preserves_floa
       .expect("run float WASI 0.3 command");
     assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
     assert_eq!(String::from_utf8_lossy(&run.stdout), "3.75\n");
+  }
+}
+
+#[test]
+fn wasi_command_runs_lifted_closures_composition_and_nested_recur_without_call_indirect() {
+  let out = tempfile::tempdir().expect("temp dir");
+  let snapshot = out.path().join("wasi-closures.cirru");
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |wasi-closures)
+  :about "|WASI 0.3 closure lifting, composition, zero-capture singletons, and nested recursive defn test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/reload!) (:target :wasm)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'app.main
+    %{} 'FileEntry
+      :defs $ {}
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'dec1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn dec1 (x) (- x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'make-adder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-adder (k)
+            fn (x)
+              hint-fn $ Fn Number (-> Number)
+              + x k
+          :examples $ []
+          :schema $ quote $ Fn Number $ -> $ Fn Number (-> Number)
+        'compose $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compose (f g)
+            fn (x)
+              hint-fn $ Fn Number (-> Number)
+              f (g x)
+          :examples $ []
+          :schema $ quote $ Fn (Fn Number (-> Number)) (Fn Number (-> Number)) $ -> $ Fn Number (-> Number)
+        'make-summer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-summer (bias)
+            let
+                sum-loop $ defn sum-loop (n acc)
+                  hint-fn $ Fn Number Number (-> Number)
+                  if (&<= n 0) (+ acc bias) (sum-loop (- n 1) (+ acc n))
+              fn (n)
+                hint-fn $ Fn Number (-> Number)
+                sum-loop n 0
+          :examples $ []
+          :schema $ quote $ Fn Number $ -> $ Fn Number (-> Number)
+        'make-countdown $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-countdown (base)
+            fn (n acc)
+              hint-fn $ Fn Number Number (-> Number)
+              if (&<= n 0) (+ acc base) (recur (- n 1) (+ acc n))
+          :examples $ []
+          :schema $ quote $ Fn Number $ -> $ Fn Number Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                chosen $ if (empty? (get-args)) inc1 dec1
+                c1 $ compose (make-adder 10) chosen
+                c2 $ make-summer 100
+                c3 $ make-countdown 50
+                same-fn? $ identical? inc1 inc1
+                r1 $ c1 5
+                r2 $ c2 4
+                r3 $ c3 4 0
+              println $ str (if same-fn? |T |F) |: r1 |: r2 |: r3 |: c1 |: (= (type-of chosen) :fn)
+              , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.main
+"#,
+  )
+  .expect("write WASI closure snapshot");
+  let compile = calcit(
+    &[snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    out.path(),
+  );
+  assert!(compile.status.success(), "{}", String::from_utf8_lossy(&compile.stderr));
+  let bytes = fs::read(out.path().join("program.wasm")).expect("read wasi closures component");
+  wasmparser::Validator::new_with_features(wasmparser::WasmFeatures::all())
+    .validate_all(&bytes)
+    .expect("WASI closures component must validate cleanly");
+  for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+    if let wasmparser::Payload::ModuleSection { unchecked_range, .. } = payload.expect("valid wasm payload") {
+      // ModuleSection 0 is Calcit's emitted core module; subsequent sections are wit-component adapter shims.
+      let core = &bytes[unchecked_range.start as usize..unchecked_range.end as usize];
+      for inner in wasmparser::Parser::new(0).parse_all(core) {
+        match inner.expect("valid core module payload") {
+          wasmparser::Payload::TableSection(section) => {
+            assert_eq!(section.count(), 0, "Calcit core module must emit zero funcref tables");
+          }
+          wasmparser::Payload::CodeSectionEntry(body) => {
+            let mut reader = body.get_operators_reader().expect("operators reader");
+            while !reader.eof() {
+              let op = reader.read().expect("valid operator");
+              assert!(
+                !matches!(op, wasmparser::Operator::CallIndirect { .. }),
+                "WASI closure module must emit zero CallIndirect instructions"
+              );
+            }
+          }
+          _ => {}
+        }
+      }
+      break;
+    }
+  }
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let run = Command::new(cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "-W",
+        "component-model-async-stackful=y",
+      ])
+      .arg(out.path().join("program.wasm"))
+      .output()
+      .expect("run WASI closure component");
+    assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "T:14:110:60:(&fn):true\n");
   }
 }

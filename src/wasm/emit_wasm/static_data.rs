@@ -35,6 +35,7 @@ const BUILTIN_TYPE_TAGS: &[&str] = &[
   "object",
   "total-limit",
   "dyn-trait",
+  "closure",
 ];
 
 const CORE_BUILTIN_IMPL_DEFS: &[&str] = &[
@@ -952,6 +953,7 @@ pub(super) fn build_string_pool_with_extras(
     strings.push("true".into());
     strings.push("false".into());
     strings.push("(&any-box)".into());
+    strings.push("(&fn)".into());
     strings.extend(tag_index.keys().cloned());
   }
   if options.needs_value_formatting || needs_edn_format || needs_edn_parse {
@@ -1134,6 +1136,178 @@ pub(super) fn build_static_data_and_atoms(
     atom_initial_values,
     atom_globals,
   }
+}
+
+/// Static 16-byte closure singleton descriptor placed in the static data segment (`ptr < static_end`).
+#[derive(Clone, Debug)]
+pub(super) struct StaticClosureSingleton {
+  pub(super) qualified: String,
+  pub(super) closure_id: u32,
+  pub(super) static_ptr: u32,
+}
+
+/// Scans reachable expressions for first-class top-level function references and appends a
+/// 24-byte `[HEAP_MAGIC][closure_tag][id:i32][env_count=0:i32][heap_mask=0:i64]` singleton
+/// to `data_segment` for each one before `WasmMemoryLayout::compute`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn build_static_closure_singletons(
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  value_imports: &HashMap<String, Calcit>,
+  defref_defs: &[(String, Option<Calcit>)],
+  extra_reachable_exprs: &[Calcit],
+  wasm_import_names: &HashMap<String, u32>,
+  component_import_adapters: &[ComponentImportAdapter],
+  tag_index: &HashMap<String, u32>,
+  data_segment: &mut Vec<u8>,
+  heap_start: &mut i32,
+  atom_initial_values: &mut [f64],
+) -> Vec<StaticClosureSingleton> {
+  let mut known_fns: HashSet<String> = HashSet::new();
+  let mut short_counts: HashMap<String, usize> = HashMap::new();
+  let mut short_to_qualified: HashMap<String, String> = HashMap::new();
+
+  for (ns, name, _, _) in fn_defs {
+    let qualified = format!("{ns}/{name}");
+    if known_fns.insert(qualified.clone()) {
+      *short_counts.entry(name.clone()).or_insert(0) += 1;
+      short_to_qualified.insert(name.clone(), qualified);
+    }
+  }
+  for key in wasm_import_names.keys() {
+    if key.contains('/') && known_fns.insert(key.clone()) {
+      let short = key.rsplit_once('/').map_or(key.as_str(), |(_, n)| n).to_owned();
+      *short_counts.entry(short.clone()).or_insert(0) += 1;
+      short_to_qualified.insert(short, key.clone());
+    }
+  }
+  for adapter in component_import_adapters {
+    if known_fns.insert(adapter.definition.clone()) {
+      let short = adapter
+        .definition
+        .rsplit_once('/')
+        .map_or(adapter.definition.as_str(), |(_, n)| n)
+        .to_owned();
+      *short_counts.entry(short.clone()).or_insert(0) += 1;
+      short_to_qualified.insert(short, adapter.definition.clone());
+    }
+  }
+  short_to_qualified.retain(|k, _| short_counts.get(k).copied() == Some(1));
+
+  let mut used: BTreeSet<String> = BTreeSet::new();
+  fn resolve_candidate(expr: &Calcit, known_fns: &HashSet<String>, short_to_qualified: &HashMap<String, String>) -> Option<String> {
+    match expr {
+      Calcit::Import(imp) => {
+        let q = format!("{}/{}", imp.ns, imp.def);
+        if known_fns.contains(&q) {
+          Some(q)
+        } else {
+          short_to_qualified.get(imp.def.as_ref()).cloned()
+        }
+      }
+      Calcit::Fn { info, .. } => info.def_ref.as_ref().and_then(|d| {
+        let q = format!("{}/{}", d.def_ns, d.def_name);
+        if known_fns.contains(&q) {
+          Some(q)
+        } else {
+          short_to_qualified.get(d.def_name.as_ref()).cloned()
+        }
+      }),
+      Calcit::Symbol { sym, info, .. } => {
+        let q = format!("{}/{}", info.at_ns, sym);
+        if known_fns.contains(&q) {
+          Some(q)
+        } else {
+          short_to_qualified.get(sym.as_ref()).cloned()
+        }
+      }
+      _ => None,
+    }
+  }
+
+  fn scan_expr(
+    expr: &Calcit,
+    in_call_head: bool,
+    known_fns: &HashSet<String>,
+    short_to_qualified: &HashMap<String, String>,
+    used: &mut BTreeSet<String>,
+  ) {
+    if !in_call_head && let Some(q) = resolve_candidate(expr, known_fns, short_to_qualified) {
+      used.insert(q);
+    }
+    match expr {
+      Calcit::List(xs) if !xs.is_empty() => {
+        if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _))) {
+          return;
+        }
+        let head_is_direct = matches!(xs.first(), Some(Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Fn { .. }));
+        scan_expr(&xs[0], head_is_direct, known_fns, short_to_qualified, used);
+        for item in xs.iter().skip(1) {
+          scan_expr(item, false, known_fns, short_to_qualified, used);
+        }
+      }
+      Calcit::Fn { info, .. } => {
+        for b in info.body.iter() {
+          scan_expr(b, false, known_fns, short_to_qualified, used);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  for (_, _, _, body) in fn_defs {
+    for expr in body {
+      scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+    }
+  }
+  for expr in value_imports.values() {
+    scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+  }
+  for (_, init_opt) in defref_defs {
+    if let Some(expr) = init_opt {
+      scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+    }
+  }
+  for expr in extra_reachable_exprs {
+    scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+  }
+
+  let closure_tag_id = *tag_index.get("closure").expect("closure type tag must exist");
+  let mut singletons = Vec::with_capacity(used.len());
+  let mut ptr_by_qualified: HashMap<String, u32> = HashMap::with_capacity(used.len());
+  for (id, qualified) in used.into_iter().enumerate() {
+    let logical_ptr = (*heap_start as u32) + 8;
+    data_segment.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
+    data_segment.extend_from_slice(&closure_tag_id.to_le_bytes());
+    data_segment.extend_from_slice(&(id as u32).to_le_bytes());
+    data_segment.extend_from_slice(&0u32.to_le_bytes());
+    data_segment.extend_from_slice(&0u64.to_le_bytes());
+    *heap_start += 24;
+    ptr_by_qualified.insert(qualified.clone(), logical_ptr);
+    singletons.push(StaticClosureSingleton {
+      qualified,
+      closure_id: id as u32,
+      static_ptr: logical_ptr,
+    });
+  }
+
+  for (idx, (_, init_opt)) in defref_defs.iter().enumerate() {
+    let mut current = init_opt.as_ref();
+    while let Some(Calcit::List(items)) = current
+      && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+      && items.len() >= 2
+    {
+      current = Some(&items[1]);
+    }
+    if let Some(expr) = current
+      && let Some(q) = resolve_candidate(expr, &known_fns, &short_to_qualified)
+      && let Some(&ptr) = ptr_by_qualified.get(&q)
+    {
+      atom_initial_values[idx] = ptr as f64;
+    }
+  }
+
+  debug_assert_eq!(*heap_start % 8, 0);
+  singletons
 }
 
 /// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only

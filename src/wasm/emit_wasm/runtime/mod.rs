@@ -49,6 +49,7 @@ pub(super) struct ModuleFunctionLayout {
 
 /// `call_indirect` for a function value called with `arity` arguments: the
 /// canonical type `(f64 x arity) -> f64` and the funcref table for that arity.
+#[cfg(test)]
 pub(super) fn call_indirect(arity: u32) -> Instruction<'static> {
   Instruction::CallIndirect {
     type_index: arity,
@@ -650,6 +651,7 @@ pub(super) fn build_runtime_fns(
       bool_tag,
       number: number_tag,
       any_box: *tag_index.get("any-box").expect("any-box tag must exist") as i32,
+      closure: *tag_index.get("closure").expect("closure tag must exist") as i32,
     };
     let fwd_grow_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_fwd_grow"), fwd_grow_idx);
@@ -1178,6 +1180,7 @@ pub(super) fn build_runtime_fns(
     bool_tag,
     number: number_tag,
     any_box: *tag_index.get("any-box").expect("any-box tag must exist") as i32,
+    closure: *tag_index.get("closure").expect("closure tag must exist") as i32,
   };
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
@@ -1656,6 +1659,7 @@ pub(super) struct ValueRuntimeTags {
   pub(super) bool_tag: i32,
   pub(super) number: i32,
   pub(super) any_box: i32,
+  pub(super) closure: i32,
 }
 
 pub(super) fn build_rt_value_hash(
@@ -1676,6 +1680,7 @@ pub(super) fn build_rt_value_hash(
     bool_tag,
     number: number_tag,
     any_box: any_box_tag,
+    closure: closure_tag,
   } = tags;
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
@@ -1761,6 +1766,14 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::End);
   b.emit(Instruction::I32Xor);
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(closure_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
   for (index, kind) in [
@@ -1963,6 +1976,14 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
 
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(closure_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   for (index, kind) in [list_tag, enum_tag, set_tag, map_tag].into_iter().enumerate() {
     b.emit(Instruction::LocalGet(tag));
     b.emit(Instruction::I32Const(kind));
@@ -2099,6 +2120,7 @@ fn build_rt_value_equal(
     bool_tag,
     number: number_tag,
     any_box: any_box_tag,
+    closure: closure_tag,
   } = tags;
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
@@ -2555,7 +2577,15 @@ fn build_rt_value_equal(
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(closure_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  // Equal closure pointers already returned 1 at the fast path; distinct pointers are not equal.
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
   b.emit(Instruction::End); // dyn_trait if
   b.emit(Instruction::End); // any_box if
   b.emit(Instruction::End); // number if
@@ -2599,6 +2629,7 @@ mod tests {
       bool_tag: 10,
       number: 11,
       any_box: 12,
+      closure: 13,
     };
     let is_heap_ptr_stub = CompiledFn {
       export_name: None,

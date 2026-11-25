@@ -384,17 +384,41 @@ pub(super) fn emit_type_of_local(ctx: &mut WasmGenCtx, value_local: u32) {
   let number_tag = get_type_tag(ctx, "number");
   let is_valid_ptr = emit_is_heap_value(ctx, value_local);
 
-  ctx.emit(Instruction::LocalGet(is_valid_ptr));
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::LocalGet(value_local));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(4));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::Else);
-  ctx.emit(f64_const(number_tag));
-  ctx.emit(Instruction::End);
+  if let Some(&closure_tag) = ctx.tag_index.get("closure") {
+    let fn_tag = get_type_tag(ctx, "fn");
+    let tag_local = ctx.alloc_local_typed(ValType::I32);
+    ctx.emit(Instruction::LocalGet(is_valid_ptr));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.emit(Instruction::LocalGet(value_local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Sub);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::LocalTee(tag_local));
+    ctx.emit(Instruction::I32Const(closure_tag as i32));
+    ctx.emit(Instruction::I32Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.emit(f64_const(fn_tag));
+    ctx.emit(Instruction::Else);
+    ctx.emit(Instruction::LocalGet(tag_local));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(Instruction::End);
+    ctx.emit(Instruction::Else);
+    ctx.emit(f64_const(number_tag));
+    ctx.emit(Instruction::End);
+  } else {
+    ctx.emit(Instruction::LocalGet(is_valid_ptr));
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.emit(Instruction::LocalGet(value_local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Sub);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::F64ConvertI32U);
+    ctx.emit(Instruction::Else);
+    ctx.emit(f64_const(number_tag));
+    ctx.emit(Instruction::End);
+  }
 }
 
 fn emit_heap_count_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {

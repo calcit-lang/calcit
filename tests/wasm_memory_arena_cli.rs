@@ -3214,3 +3214,181 @@ fn core_wasm_dyn_trait_cross_ns_str_and_scalar_aliasing_equality() {
   assert_eq!(read_wasm_str(&mut store, &instance, pair_ptr), "262152;alive-str");
   arena_reset.call(&mut store, ()).expect("__arena_reset final");
 }
+
+#[test]
+fn core_wasm_closures_promote_and_compact_mixed_captures_across_defref() {
+  let dir = TestDirectory::create("wasm-closures-compaction");
+  let snapshot = r#"
+{} (:package |closure-arena)
+  :about "|Test snapshot verifying heap-mask exact promotion/compaction of closures with mixed scalar + heap captures and zero-capture static defn singletons."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'closure-arena.main/main!) (:mode :native) (:reload-fn 'closure-arena.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'closure-arena.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*saved $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *saved (fn (x) (assert-type x Number) x)
+          :examples $ []
+          :schema $ quote $ Ref $ Fn Number (-> Number)
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |init
+          :examples $ []
+          :schema $ quote $ Ref String
+        'add-one $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn add-one (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'sub-one $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sub-one (x) (- x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'make-adder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-adder (delta)
+            fn (x)
+              hint-fn $ Fn Number (-> Number)
+              + x delta
+          :examples $ []
+          :schema $ quote $ Fn Number $ -> $ Fn Number (-> Number)
+        'compose $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compose (f g)
+            fn (x)
+              hint-fn $ Fn Number (-> Number)
+              f (g x)
+          :examples $ []
+          :schema $ quote $ Fn (Fn Number (-> Number)) (Fn Number (-> Number)) $ -> $ Fn Number (-> Number)
+        'store-mixed-closure $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-mixed-closure (raw-scalar label)
+            let
+                ; Verify zero-capture top-level defn values preserve pointer identity and :fn metadata.
+                same-id? $ identical? add-one add-one
+                diff-id? $ not $ identical? add-one sub-one
+                is-fn? $ fn? add-one
+                tag-ok? $ = (type-of add-one) :fn
+                text-ok? $ = (str add-one) "|(&fn)"
+                f1 $ fn (x) (hint-fn $ Fn Number (-> Number)) (+ x 1)
+                esc-same? $ identical? f1 f1
+                ; Nested closure capturing both a heap String (`label`) and a heap-address-like Number (`raw-scalar`).
+                inner $ fn (n)
+                  hint-fn $ Fn Number (-> Number)
+                  + (+ n raw-scalar) (&str:count label)
+                outer $ compose (make-adder 10) inner
+              reset! *saved outer
+              if (and same-id? diff-id? is-fn? tag-ok? text-ok? esc-same?) 1 0
+          :examples $ []
+          :schema $ quote $ Fn Number String (-> Number)
+        'churn-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-heap (s)
+            reset! *churn s
+            if (non-nil? @*churn) 1 0
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'invoke-saved $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export invoke-saved (x)
+            let
+                f @*saved
+              f x
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'store-static-defn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-static-defn ()
+            reset! *saved add-one
+            let ((f @*saved)) (f 41)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns closure-arena.main
+"#;
+  let wasm_path = compile_core_wasm(&dir, snapshot);
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  for payload in wasmparser::Parser::new(0).parse_all(&bytes) {
+    match payload.expect("valid wasm payload") {
+      wasmparser::Payload::TableSection(section) => {
+        assert_eq!(section.count(), 0, "closure compilation must emit zero funcref tables");
+      }
+      wasmparser::Payload::CodeSectionEntry(body) => {
+        let mut reader = body.get_operators_reader().expect("operators reader");
+        while !reader.eof() {
+          let op = reader.read().expect("valid wasm operator");
+          assert!(
+            !matches!(op, wasmparser::Operator::CallIndirect { .. }),
+            "closure compilation must emit zero CallIndirect instructions"
+          );
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let heap_ptr_start = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let store_static_defn = instance
+    .get_typed_func::<(), f64>(&mut store, "store-static-defn")
+    .expect("store-static-defn export");
+  let store_mixed = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "store-mixed-closure")
+    .expect("store-mixed-closure export");
+  let churn_fn = instance
+    .get_typed_func::<f64, f64>(&mut store, "churn-heap")
+    .expect("churn-heap export");
+  let invoke_saved = instance
+    .get_typed_func::<f64, f64>(&mut store, "invoke-saved")
+    .expect("invoke-saved export");
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert_eq!(store_static_defn.call(&mut store, ()).expect("store-static-defn"), 42.0);
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__persistent_ptr"),
+    pers_before,
+    "zero-capture top-level defn singleton must live below static_end and require zero persistent promotion"
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset after static-defn");
+
+  let label = "captured-str";
+  let src = heap_ptr_start + 64;
+  memory.write(&mut store, src as usize, label.as_bytes()).expect("write label");
+  let label_ptr = str_new.call(&mut store, (src, label.len() as i32)).expect("__str_new label");
+  // Store a raw scalar equal to a semi-space-sized integer alongside the heap String capture.
+  assert_eq!(
+    store_mixed.call(&mut store, (262_152.0, label_ptr)).expect("store mixed closure"),
+    1.0
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset after store");
+
+  let payload = "Z".repeat(300_000);
+  for _ in 0..5 {
+    let heap_top = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+    memory
+      .write(&mut store, heap_top as usize, payload.as_bytes())
+      .expect("write payload");
+    let p_ptr = str_new
+      .call(&mut store, (heap_top, payload.len() as i32))
+      .expect("__str_new payload");
+    assert_eq!(churn_fn.call(&mut store, p_ptr).expect("churn"), 1.0);
+    arena_reset.call(&mut store, ()).expect("__arena_reset after churn");
+  }
+
+  // Invoke composed closure from defref after semi-space compaction: 5 + 262152 + 12 + 10 = 262179
+  assert_eq!(
+    invoke_saved.call(&mut store, 5.0).expect("invoke saved closure after compaction"),
+    262_179.0
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}

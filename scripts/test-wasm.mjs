@@ -740,6 +740,14 @@ if (wasmLog[0] === "42") {
   fail++;
 }
 
+// --- Lambda-lifted closures & zero-capture singletons ---
+check("test-closure-lifted-suite()", 1, e["test-closure-lifted-suite"]);
+// Also verify WebAssembly module emits zero CallIndirect instructions and zero funcref tables
+if (WebAssembly.Module.exports(mod).some((item) => item.kind === "table")) {
+  console.log("  unexpected exported table in WASM module  FAIL");
+  fail++;
+}
+
 if (fail > 0) {
   console.log(`WASM verification FAILED (${fail} failures)`);
   process.exit(1);

@@ -482,6 +482,57 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-lexical-capture-through-map)
             :code $ quote $ assert= 1 (test-closure-capture-map)
             :tags $ #{} :core :unit :wasm
+        'test-closure-lifted-suite $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-closure-lifted-suite ()
+            let
+                make-adder $ fn (k)
+                  hint-fn $ Fn Number $ ->
+                    Fn Number $ -> Number
+                  fn (x)
+                    hint-fn $ Fn Number $ -> Number
+                    + x k
+                compose $ fn (f g)
+                  hint-fn $ Fn
+                    Fn Number $ -> Number
+                    Fn Number $ -> Number
+                    -> $ Fn Number $ -> Number
+                  fn (x)
+                    hint-fn $ Fn Number $ -> Number
+                    f $ g x
+                nested-rec $ let
+                    prefix |ok:
+                    step $ defn step (n acc)
+                      hint-fn $ Fn Number Number $ -> Number
+                      if (&<= n 0)
+                        + acc $ &str:count prefix
+                        recur (- n 1) (+ acc n)
+                  fn (n)
+                    hint-fn $ Fn Number $ -> Number
+                    step n 0
+                recur-lambda $ let
+                    base 10
+                  fn (n acc)
+                    hint-fn $ Fn Number Number $ -> Number
+                    if (&<= n 0) (+ acc base)
+                      recur (- n 1) (+ acc n)
+                c1 $ compose (make-adder 10) test-closure-static-inc
+                r1 $ c1 5
+                r2 $ nested-rec 4
+                r3 $ recur-lambda 4 0
+                same-static? $ identical? test-closure-static-inc test-closure-static-inc
+                same-local? $ identical? c1 c1
+                diff-id? $ not $ identical? test-closure-static-inc c1
+                kind-ok? $ = (type-of c1) :fn
+                pred-ok? $ fn? c1
+                str-ok? $ .starts-with? (str c1) "|(&fn"
+              if
+                and (= r1 16) (= r2 13) (= r3 20) same-static? same-local? diff-id? kind-ok? pred-ok? str-ok?
+                , 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |lifted-closures-and-composition)
+            :code $ quote $ assert= 1 (test-closure-lifted-suite)
+            :tags $ #{} :core :unit :wasm
         'test-closure-map-indexed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-closure-map-indexed ()
             let
@@ -495,6 +546,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |preserves-number-index-in-wasm)
             :code $ quote $ assert= 1 (test-closure-map-indexed)
             :tags $ #{} :core :unit :wasm
+        'test-closure-static-inc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-closure-static-inc (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
         'test-coherent-enum-many-variants $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-coherent-enum-many-variants (n)
             let

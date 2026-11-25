@@ -2215,7 +2215,7 @@ try {
       assert.equal(scalarExports["choose-bool"](1), 1);
       const emptyText = scalarExports["empty-text"]();
       assert.notEqual(emptyText, 0, "an empty String must retain a nonzero heap identity");
-      assert.equal(scalarExports["first-function"](), 0, "exercise the zero-based function table slot");
+      assert.notEqual(scalarExports["first-function"](), 0, "first-class function singleton must retain a nonzero heap identity");
 
       // Non-Bool, dynamic WASM boundary, and unsafe scalar-to-condition rewrites fail closed on both core WASM and WASI.
       const scalarPositive = await readFile(scalarSnapshot);

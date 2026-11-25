@@ -491,6 +491,13 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       ctx.emit(f64_const(ptr as f64));
       return Ok(());
     }
+    Some(CalcitTypeAnnotation::Fn(_)) | Some(CalcitTypeAnnotation::DynFn) => {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      let ptr = *ctx.string_pool.get("(&fn)").ok_or("missing WASM (&fn) string literal")?;
+      ctx.emit(f64_const(ptr as f64));
+      return Ok(());
+    }
     Some(CalcitTypeAnnotation::DynTrait(trait_def)) => {
       let text = format!("(&dyn {})", trait_def.name);
       let ptr = *ctx
@@ -622,6 +629,16 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       ctx.emit(Instruction::I32Eq);
       ctx.begin_block_if();
       ctx.emit(f64_const(any_ptr as f64));
+      ctx.emit(Instruction::LocalSet(result));
+      ctx.emit(Instruction::End);
+    }
+    if let (Some(closure_tag), Some(fn_ptr)) = (ctx.tag_index.get("closure").copied(), ctx.string_pool.get("(&fn)").copied()) {
+      ctx.emit(Instruction::LocalGet(raw_base));
+      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::I32Const(closure_tag as i32));
+      ctx.emit(Instruction::I32Eq);
+      ctx.begin_block_if();
+      ctx.emit(f64_const(fn_ptr as f64));
       ctx.emit(Instruction::LocalSet(result));
       ctx.emit(Instruction::End);
     }
