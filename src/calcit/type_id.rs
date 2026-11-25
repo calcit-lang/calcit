@@ -553,7 +553,7 @@ mod tests {
       other => panic!("expected Fn, got {other}"),
     };
     assert_eq!(opt_param_sig.call_arity(), ProcArity { min: 0, max: Some(1) });
-    let mut required_opt_sig = opt_param_sig.clone();
+    let mut required_opt_sig = opt_param_sig;
     required_opt_sig.runtime_arity = Some(ProcArity { min: 1, max: Some(1) });
     assert_eq!(required_opt_sig.call_arity(), ProcArity { min: 1, max: Some(1) });
 
