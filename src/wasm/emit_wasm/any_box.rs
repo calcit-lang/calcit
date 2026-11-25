@@ -78,11 +78,54 @@ pub(super) fn collect_any_type_table(
   AnyTypeTable { keys_to_id }
 }
 
+fn collect_union_scalar_kinds(
+  union_def: &crate::wasm::host::calcit::CalcitUnionDef,
+  visited: &mut std::collections::HashSet<String>,
+  kinds: &mut BTreeSet<&'static str>,
+) {
+  let key = union_def
+    .definition_ref()
+    .map(|r| r.trim_start_matches('\'').to_owned())
+    .unwrap_or_else(|| union_def.name.ref_str().to_owned());
+  if !visited.insert(key) {
+    return;
+  }
+  for member in union_def.members() {
+    let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&member);
+    if let Some(kind) = super::proven_scalar_kind(&expanded) {
+      kinds.insert(kind);
+    } else if let Some(nested) = expanded.resolve_to_union() {
+      collect_union_scalar_kinds(&nested, visited, kinds);
+    }
+  }
+}
+
+/// Rejects boxing `defunion` values whose reachable members include >= 2 unboxed
+/// scalar kinds (`Bool`, `Number`, `Tag`) that collide in WASM's scalar `f64` ABI.
+fn reject_colliding_scalar_union_box(type_key: &str) -> Result<(), String> {
+  let Some(union_name) = type_key.strip_prefix("union:") else {
+    return Ok(());
+  };
+  let union_ty = CalcitTypeAnnotation::TypeRef(Arc::from(union_name), Arc::new(vec![]));
+  let Some(union_def) = union_ty.resolve_to_union() else {
+    return Ok(());
+  };
+  let mut visited = std::collections::HashSet::new();
+  let mut kinds = BTreeSet::new();
+  collect_union_scalar_kinds(&union_def, &mut visited, &mut kinds);
+  if kinds.len() >= 2 {
+    let list: Vec<&str> = kinds.into_iter().collect();
+    return Err(format!(
+      "E_WASM_NIL_TYPE_EVIDENCE: any:box on union `{union_name}` cannot distinguish unboxed scalar members ({}) in the current WASM scalar ABI; narrow with `match` before boxing",
+      list.join(", ")
+    ));
+  }
+  Ok(())
+}
+
 /// Whether the boxed canonical `type_key` has a scalar `f64` runtime payload.
 /// Known scalar payloads (`flags = 0`) never enter `is_heap_ptr` checks or GC tracing,
 /// preventing numeric scalars that numerically alias heap addresses from corruption.
-/// Deriving this from `type_id.type_key` keeps `flags` consistent with `preprocess_any_box`
-/// and `__rt_value_hash` even when local WASM expression inference returns `None`.
 fn type_key_is_scalar_payload(type_key: &str) -> bool {
   matches!(type_key, "nil" | "unit" | "bool" | "number" | "tag") || type_key.starts_with("numeric:")
 }
@@ -97,6 +140,7 @@ pub(super) fn emit_any_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   else {
     return Err(String::from("any:box requires preprocessed canonical TypeId handle"));
   };
+  reject_colliding_scalar_union_box(type_id.type_key.as_ref())?;
   let compact_id = ctx.any_type_table.id_for_key(type_id.type_key.as_ref());
   if compact_id == 0 {
     return Err(format!(
@@ -104,24 +148,22 @@ pub(super) fn emit_any_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
       type_id.type_key
     ));
   }
-  let is_scalar = type_id.is_scalar_payload || type_key_is_scalar_payload(type_id.type_key.as_ref());
-  let flags = if is_scalar { 0 } else { 1 };
+  let flags = if type_key_is_scalar_payload(type_id.type_key.as_ref()) {
+    0
+  } else {
+    1
+  };
 
   emit_expr(ctx, value_expr)?;
   let val_local = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(val_local));
+  // Only canonicalize `bool` and `nil` (whose unboxed values 0.0 / 1.0 are strictly
+  // below HEAP_BASE) when boxed JSON scalars are reachable in the module, so raw
+  // `Number` or union values matching heap addresses are never probed.
   if ctx.has_boxed_json_scalars && !super::expr_is_guaranteed_unboxed_scalar(ctx, value_expr) {
     match type_id.type_key.as_ref() {
       "bool" => super::emit_unbox_scalar_if_tag(ctx, val_local, "bool", false),
       "nil" => super::emit_unbox_scalar_if_tag(ctx, val_local, "nil", true),
-      k if k == "number" || k.starts_with("numeric:") => {
-        super::emit_unbox_scalar_if_tag(ctx, val_local, "number", false);
-      }
-      _ if is_scalar => {
-        super::emit_unbox_scalar_if_tag(ctx, val_local, "bool", false);
-        super::emit_unbox_scalar_if_tag(ctx, val_local, "nil", true);
-        super::emit_unbox_scalar_if_tag(ctx, val_local, "number", false);
-      }
       _ => {}
     }
   }

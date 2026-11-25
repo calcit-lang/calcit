@@ -78,7 +78,7 @@ pub use type_annotation::{
   install_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_type_slot, resolve_type_slot,
   value_matches_type_annotation, with_type_annotation_warning_context,
 };
-pub use type_id::{CanonicalTypeIdError, CompiledAnyTypeId, canonical_type_hash, canonical_type_key, is_scalar_payload_type};
+pub use type_id::{CanonicalTypeIdError, CompiledAnyTypeId, canonical_type_hash, canonical_type_key};
 pub use union_def::CalcitUnionDef;
 
 use compare::{

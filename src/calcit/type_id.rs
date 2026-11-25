@@ -9,34 +9,19 @@ use crate::calcit::{
 
 const MAX_TYPE_ID_DEPTH: usize = 128;
 
-fn type_key_is_scalar(type_key: &str) -> bool {
-  matches!(type_key, "nil" | "unit" | "bool" | "number" | "tag") || type_key.starts_with("numeric:")
-}
-
 /// Compile-time metadata handle attached by preprocessing to lowered `any:box`
 /// and `any:downcast` forms. Cannot be constructed from user Cirru source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledAnyTypeId {
   pub type_key: Arc<str>,
   pub type_hash: u64,
-  pub is_scalar_payload: bool,
 }
 
 impl CompiledAnyTypeId {
   pub fn new(type_key: impl Into<Arc<str>>) -> Self {
     let type_key: Arc<str> = type_key.into();
     let type_hash = canonical_type_hash(&type_key);
-    let is_scalar_payload = type_key_is_scalar(&type_key);
-    Self {
-      type_key,
-      type_hash,
-      is_scalar_payload,
-    }
-  }
-
-  pub fn with_scalar_payload(mut self, is_scalar_payload: bool) -> Self {
-    self.is_scalar_payload = is_scalar_payload;
-    self
+    Self { type_key, type_hash }
   }
 
   pub fn into_calcit_handle(self) -> Calcit {
@@ -103,84 +88,6 @@ pub fn canonical_type_key(ty: &CalcitTypeAnnotation, default_ns: Option<&str>) -
   match default_ns {
     Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-id"), run),
     None => run(),
-  }
-}
-
-/// Whether values of `ty` are guaranteed to have scalar `f64` runtime payloads
-/// in WASM (no heap pointers, including all-scalar `defunion` types).
-pub fn is_scalar_payload_type(ty: &CalcitTypeAnnotation, default_ns: Option<&str>) -> bool {
-  let run = || {
-    let mut visiting = HashSet::new();
-    let mut visited_aliases = Vec::new();
-    is_scalar_payload_inner(ty, &mut visiting, &mut visited_aliases, 0)
-  };
-  match default_ns {
-    Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-scalar"), run),
-    None => run(),
-  }
-}
-
-fn is_scalar_payload_inner(
-  ty: &CalcitTypeAnnotation,
-  visiting: &mut HashSet<String>,
-  visited_aliases: &mut Vec<CalcitTypeAnnotation>,
-  depth: usize,
-) -> bool {
-  if depth >= MAX_TYPE_ID_DEPTH {
-    return false;
-  }
-  match ty {
-    CalcitTypeAnnotation::Nil
-    | CalcitTypeAnnotation::Unit
-    | CalcitTypeAnnotation::Bool
-    | CalcitTypeAnnotation::Number
-    | CalcitTypeAnnotation::Numeric(_)
-    | CalcitTypeAnnotation::Tag => true,
-    CalcitTypeAnnotation::TypeSlot(slot_name) => {
-      let visit_key = format!("slot:{slot_name}");
-      if !visiting.insert(visit_key.clone()) {
-        return false;
-      }
-      let result =
-        resolve_type_slot(slot_name).is_some_and(|bound| is_scalar_payload_inner(bound.as_ref(), visiting, visited_aliases, depth + 1));
-      visiting.remove(&visit_key);
-      result
-    }
-    CalcitTypeAnnotation::TypeRef(..) => {
-      if let Some(union_def) = ty.resolve_to_union() {
-        let union_key = union_def
-          .definition_ref()
-          .map(|r| format!("union:{}", r.trim_start_matches('\'')))
-          .unwrap_or_else(|| format!("union:{}", union_def.name.ref_str()));
-        if !visiting.insert(union_key.clone()) {
-          return true;
-        }
-        let result = union_def
-          .members()
-          .iter()
-          .all(|member| is_scalar_payload_inner(member.as_ref(), visiting, visited_aliases, depth + 1));
-        visiting.remove(&union_key);
-        return result;
-      }
-      if ty.resolve_to_struct_with_ref().is_some()
-        || ty.resolve_to_enum_with_ref().is_some()
-        || ty.resolve_to_source_trait_with_ref().is_some()
-        || ty.resolve_to_external_object_trait_with_ref().is_some()
-      {
-        return false;
-      }
-      if let Some(aliased) = ty.expand_single_type_alias() {
-        if visited_aliases.contains(ty) {
-          return false;
-        }
-        visited_aliases.push(ty.clone());
-        let result = is_scalar_payload_inner(aliased.as_ref(), visiting, visited_aliases, depth + 1);
-        visited_aliases.pop();
-        return result;
-      }
-      false
-    }
-    _ => false,
   }
 }
 
@@ -311,13 +218,21 @@ fn canonical_type_key_inner(
         .collect();
       features.sort_unstable();
       features.dedup();
+      let arity = sig.call_arity();
+      let arity_suffix = match arity.max {
+        Some(max) => format!(":arity[{}..{max}]", arity.min),
+        None => format!(":arity[{}..*]", arity.min),
+      };
       let async_suffix = if sig.is_async_invocation() { ":async" } else { "" };
       let feature_suffix = if features.is_empty() {
         String::new()
       } else {
         format!(":features[{}]", features.join(","))
       };
-      Ok(format!("fn<({})->{ret_key}{async_suffix}{feature_suffix}>", params.join(",")))
+      Ok(format!(
+        "fn<({})->{ret_key}{arity_suffix}{async_suffix}{feature_suffix}>",
+        params.join(",")
+      ))
     }
 
     CalcitTypeAnnotation::Struct(struct_def, args) => {
@@ -520,7 +435,7 @@ mod tests {
     );
     let fn_ty =
       CalcitTypeAnnotation::from_function_parts(vec![Arc::new(CalcitTypeAnnotation::Number)], Arc::new(CalcitTypeAnnotation::String));
-    assert_eq!(canonical_type_key(&fn_ty, None).unwrap(), "fn<(number)->string>");
+    assert_eq!(canonical_type_key(&fn_ty, None).unwrap(), "fn<(number)->string:arity[1..1]>");
   }
 
   #[test]
@@ -615,13 +530,64 @@ mod tests {
     let k_io_state_b = canonical_type_key(&io_state_b, None).unwrap();
     let k_io_only = canonical_type_key(&io_only, None).unwrap();
 
-    assert_eq!(k_sync, "fn<(number)->number>");
-    assert_eq!(k_async, "fn<(number)->number:async>");
-    assert_eq!(k_io_state_a, "fn<(number)->number:features[io,state]>");
+    assert_eq!(k_sync, "fn<(number)->number:arity[1..1]>");
+    assert_eq!(k_async, "fn<(number)->number:arity[1..1]:async>");
+    assert_eq!(k_io_state_a, "fn<(number)->number:arity[1..1]:features[io,state]>");
     assert_eq!(k_io_state_a, k_io_state_b);
-    assert_eq!(k_io_only, "fn<(number)->number:features[io]>");
+    assert_eq!(k_io_only, "fn<(number)->number:arity[1..1]:features[io]>");
     assert_ne!(k_sync, k_async);
     assert_ne!(k_sync, k_io_only);
     assert_ne!(k_io_only, k_io_state_a);
+  }
+
+  #[test]
+  fn fn_type_key_distinguishes_required_option_from_optional_call_arity() {
+    use crate::calcit::ProcArity;
+
+    let opt_num = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+    ));
+    let opt_param_sig = match CalcitTypeAnnotation::from_function_parts(vec![opt_num], Arc::new(CalcitTypeAnnotation::Number)) {
+      CalcitTypeAnnotation::Fn(sig) => sig.as_ref().clone(),
+      other => panic!("expected Fn, got {other}"),
+    };
+    assert_eq!(opt_param_sig.call_arity(), ProcArity { min: 0, max: Some(1) });
+    let mut required_opt_sig = opt_param_sig.clone();
+    required_opt_sig.runtime_arity = Some(ProcArity { min: 1, max: Some(1) });
+    assert_eq!(required_opt_sig.call_arity(), ProcArity { min: 1, max: Some(1) });
+
+    let base_sig = match CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::Number),
+    ) {
+      CalcitTypeAnnotation::Fn(sig) => sig.as_ref().clone(),
+      other => panic!("expected Fn, got {other}"),
+    };
+    let fixed_inferred = CalcitTypeAnnotation::Fn(Arc::new(base_sig.clone()));
+    let mut fixed_explicit_sig = base_sig.clone();
+    fixed_explicit_sig.runtime_arity = Some(ProcArity { min: 1, max: Some(1) });
+    let fixed_explicit = CalcitTypeAnnotation::Fn(Arc::new(fixed_explicit_sig));
+
+    let mut optional_sig = base_sig.clone();
+    optional_sig.runtime_arity = Some(ProcArity { min: 0, max: Some(1) });
+    let optional_fn = CalcitTypeAnnotation::Fn(Arc::new(optional_sig));
+
+    let mut variadic_sig = base_sig;
+    variadic_sig.rest_type = Some(Arc::new(CalcitTypeAnnotation::String));
+    variadic_sig.runtime_arity = Some(ProcArity { min: 1, max: None });
+    let variadic_fn = CalcitTypeAnnotation::Fn(Arc::new(variadic_sig));
+
+    let k_fixed_inferred = canonical_type_key(&fixed_inferred, None).unwrap();
+    let k_fixed_explicit = canonical_type_key(&fixed_explicit, None).unwrap();
+    let k_optional = canonical_type_key(&optional_fn, None).unwrap();
+    let k_variadic = canonical_type_key(&variadic_fn, None).unwrap();
+
+    assert_eq!(k_fixed_inferred, k_fixed_explicit);
+    assert_eq!(k_fixed_inferred, "fn<(number)->number:arity[1..1]>");
+    assert_eq!(k_optional, "fn<(number)->number:arity[0..1]>");
+    assert_eq!(k_variadic, "fn<(number,...string)->number:arity[1..*]>");
+    assert_ne!(k_fixed_explicit, k_optional);
+    assert_ne!(k_fixed_explicit, k_variadic);
   }
 }

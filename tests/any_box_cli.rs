@@ -344,6 +344,10 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
         'Id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype Id (:generics T) T
           :examples $ []
+        'BoolOrNum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion BoolOrNum Bool Number
+          :examples $ []
+          :schema $ quote UnionDef
         'run-checks! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-checks! ()
             let
@@ -359,6 +363,8 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
                 buf2 $ any:box (&buffer 1 3)
                 buf1-eq $ any:box (&buffer 1 2)
                 buf-set $ #{} buf1 buf2 buf1-eq
+                u-false $ any:box (assert-type false BoolOrNum)
+                u-zero $ any:box (assert-type 0 BoolOrNum)
               match (any:downcast b-c CounterAlias)
                 (:some got) $ do
                   assert= c got
@@ -380,6 +386,8 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
               assert= true (&= buf1 buf1-eq)
               assert= false (&= buf1 buf2)
               assert= true (not= (&compare buf1 buf2) 0)
+              assert= false (&= u-false u-zero)
+              assert= true (not= (&hash u-false) (&hash u-zero))
               match (any:downcast b-u TokenUnion)
                 (:some got)
                   match got
@@ -457,10 +465,6 @@ fn any_box_handles_structs_aliases_and_unions_on_wasm() {
         'TokenUnionAlias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype TokenUnionAlias any-test.main/TokenUnion
           :examples $ []
-        'ScalarUnion $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defunion ScalarUnion Number Tag
-          :examples $ []
-          :schema $ quote UnionDef
         'Id $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype Id (:generics T) T
           :examples $ []
@@ -530,21 +534,10 @@ fn any_box_handles_structs_aliases_and_unions_on_wasm() {
                         b-lit-false $ any:box false
                       and (&= b-json-false b-lit-false) (&= (&hash b-json-false) (&hash b-lit-false))
                   (:none) false
-                scalar-u $ assert-type 262152 ScalarUnion
-                b-su $ any:box scalar-u
-                scalar-u-ok $ and
-                  &= b-su (any:box (assert-type 262152 ScalarUnion))
-                  not (&= b-su (any:box 262152))
-                  match (any:downcast b-su ScalarUnion)
-                    (:some got)
-                      match got
-                        (Number _) true
-                        (Tag _) false
-                    (:none) false
                 nested-id-ok $ match (any:downcast (any:box 42) (Id (Id Number)))
                   (:some n) (&= n 42)
                   (:none) false
-              if (and num-ok tag-ok json-bool-ok scalar-u-ok nested-id-ok) 1 0
+              if (and num-ok tag-ok json-bool-ok nested-id-ok) 1 0
           :examples $ []
           :schema $ quote $ Fn (-> Number)
 "#;
@@ -600,6 +593,45 @@ fn any_box_handles_structs_aliases_and_unions_on_wasm() {
       func.call(&mut store, ()).unwrap_or_else(|e| panic!("call `{name}`: {e}")),
       1.0,
       "{name}"
+    );
+  }
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn wasm_any_box_rejects_colliding_scalar_union_with_e_wasm_nil_type_evidence() {
+  for (label, members) in [("bool-num", "Bool Number"), ("num-tag", "Number Tag")] {
+    let dir = TestDirectory::create();
+    let snapshot = dir.snapshot();
+    let extra = format!(
+      r#"
+        'ScalarUnion $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defunion ScalarUnion {members}
+          :examples $ []
+          :schema $ quote UnionDef
+        'bad-box! $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export bad-box! (u) (any:box u)
+          :examples $ []
+          :schema $ quote $ Fn ScalarUnion (-> Any)
+"#
+    );
+    fs::write(&snapshot, base_snapshot(&extra)).expect("write snapshot");
+    let wasm_out = dir.path.join("wasm-out");
+    fs::create_dir(&wasm_out).expect("create wasm out dir");
+    let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .env("NO_COLOR", "1")
+      .env("CALCIT_PROOF_AUDIT", "0")
+      .args(["--tips-level", "none", "--emit-path"])
+      .arg(&wasm_out)
+      .arg(&snapshot)
+      .arg("wasm")
+      .output()
+      .expect("compile wasm");
+    let text = combined_output(&compile);
+    assert!(!compile.status.success(), "{label} should fail WASM compile:\n{text}");
+    assert!(
+      text.contains("E_WASM_NIL_TYPE_EVIDENCE"),
+      "{label} expected E_WASM_NIL_TYPE_EVIDENCE:\n{text}"
     );
   }
 }
