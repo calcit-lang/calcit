@@ -3335,6 +3335,43 @@ mod tests {
   }
 
   #[test]
+  fn type_coverage_recognizes_union_members_without_a_separate_schema() {
+    let closed = code_entry(
+      list(vec![
+        leaf("defunion"),
+        leaf("GridKey"),
+        leaf("String"),
+        list(vec![leaf("List"), leaf("GridKey")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    let row = type_coverage::analyze_code_entry("app.main", "GridKey", &closed);
+    assert_eq!(row.kind, type_coverage::DefKind::Data);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Full);
+    assert_eq!(row.data_type.as_deref(), Some("union"));
+    assert!(type_coverage::analyze_weak_types_entry("app.main", "GridKey", &closed, &type_coverage::WeakTypeKind::all()).is_none());
+
+    let open = code_entry(
+      list(vec![
+        leaf("defunion"),
+        leaf("Open"),
+        leaf("String"),
+        list(vec![leaf("List"), leaf("Dynamic")]),
+      ]),
+      CalcitTypeAnnotation::Dynamic,
+    );
+    let row = type_coverage::analyze_code_entry("app.main", "Open", &open);
+    assert_eq!(row.level, type_coverage::CoverageLevel::Partial);
+    let kinds =
+      std::collections::BTreeSet::from([type_coverage::WeakTypeKind::SchemaDynamic, type_coverage::WeakTypeKind::DataDynamic]);
+    let weak = type_coverage::analyze_weak_types_entry("app.main", "Open", &open, &kinds).expect("open union member");
+    assert_eq!(weak.occurrences.len(), 2);
+    assert_eq!(weak.occurrences[0].detail, "schema-dynamic:root");
+    assert_eq!(weak.occurrences[1].detail, "data-dynamic:union-member:1");
+    assert_eq!(weak.occurrences[1].path, "code@3.1");
+  }
+
+  #[test]
   fn weak_types_data_dynamic_reports_declaration_members_only_when_selected() {
     let data_only = std::collections::BTreeSet::from([type_coverage::WeakTypeKind::DataDynamic]);
     let details = |entry: &snapshot::CodeEntry| -> Vec<(String, String)> {
