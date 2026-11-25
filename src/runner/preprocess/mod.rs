@@ -19940,6 +19940,20 @@ pub fn preprocess_any_downcast(
     qualify_assert_type_form(&desugared, ctx.file_ns, ctx.scope_types)
   };
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&type_form, &[]);
+  target.validate_applied_type_args().map_err(|error| {
+    let code = if error.starts_with("type alias ") {
+      unknown_type_names::TYPE_ALIAS_ARITY_ERROR
+    } else {
+      "E_TYPE_EXPR_SYNTAX"
+    };
+    CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("{head} target `{}`: {error}", target.to_brief_string()),
+      code,
+      ctx.call_stack,
+      source_type_arg.get_location().or_else(|| box_form.get_location()),
+    )
+  })?;
   ensure_annotation_slot_representatives(ctx.file_ns, &target, ctx.check_warnings, ctx.call_stack)?;
   let type_key = calcit::canonical_type_key(&target, Some(ctx.file_ns)).map_err(|error| {
     CalcitErr::use_msg_stack_location_with_code(

@@ -78,12 +78,13 @@ pub(super) fn collect_any_type_table(
   AnyTypeTable { keys_to_id }
 }
 
-/// Whether the boxed runtime `f64` payload may contain a heap pointer.
+/// Whether the boxed canonical `type_key` has a scalar `f64` runtime payload.
 /// Known scalar payloads (`flags = 0`) never enter `is_heap_ptr` checks or GC tracing,
 /// preventing numeric scalars that numerically alias heap addresses from corruption.
-fn payload_is_heap_or_poly(ty: &Arc<CalcitTypeAnnotation>) -> bool {
-  let expanded = CalcitTypeAnnotation::expand_schema_alias(ty);
-  super::proven_scalar_kind(&expanded).is_none()
+/// Deriving this from `type_id.type_key` keeps `flags` consistent with `preprocess_any_box`
+/// and `__rt_value_hash` even when local WASM expression inference returns `None`.
+fn type_key_is_scalar_payload(type_key: &str) -> bool {
+  matches!(type_key, "nil" | "unit" | "bool" | "number" | "tag") || type_key.starts_with("numeric:")
 }
 
 pub(super) fn emit_any_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
@@ -103,10 +104,11 @@ pub(super) fn emit_any_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
       type_id.type_key
     ));
   }
-  let is_heap_or_poly = super::infer_wasm_static_type(ctx, value_expr)
-    .as_ref()
-    .is_none_or(payload_is_heap_or_poly);
-  let flags = if is_heap_or_poly { 1 } else { 0 };
+  let flags = if type_key_is_scalar_payload(type_id.type_key.as_ref()) {
+    0
+  } else {
+    1
+  };
 
   emit_expr(ctx, value_expr)?;
   let val_local = ctx.alloc_local();

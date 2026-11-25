@@ -269,7 +269,7 @@ fn any_prevents_implicit_widening_and_rejects_type_args_or_static_eq() {
     );
   }
 
-  // 3. Applied (Any Number) is rejected by type expression arity check
+  // 3. Applied (Any Number) and wrong generic deftype / struct arity are rejected
   {
     let dir = TestDirectory::create();
     let snapshot = dir.snapshot();
@@ -284,6 +284,31 @@ fn any_prevents_implicit_widening_and_rejects_type_args_or_static_eq() {
     let text = combined_output(&out);
     assert!(!out.status.success(), "(Any Number) should fail:\n{text}");
     assert!(text.contains("E_TYPE_EXPR_SYNTAX"), "{text}");
+  }
+  for (label, target_expr, expected_code) in [
+    ("alias-too-many-args", "(MyOpt Number String)", "E_TYPE_ALIAS_ARITY"),
+    ("alias-missing-arg-bare", "MyOpt", "E_TYPE_ALIAS_ARITY"),
+    ("alias-empty-app", "(MyOpt)", "E_TYPE_EXPR_SYNTAX"),
+    ("non-generic-struct-with-arg", "(Counter Number)", "E_TYPE_EXPR_SYNTAX"),
+  ] {
+    let dir = TestDirectory::create();
+    let snapshot = dir.snapshot();
+    let extra = format!(
+      r#"
+        'MyOpt $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ deftype MyOpt (:generics T) (Option T)
+          :examples $ []
+        'bad-target-arity $ %{{}} 'CodeEntry (:doc |)
+          :code $ quote $ defn bad-target-arity (b) (any:downcast b {target_expr})
+          :examples $ []
+          :schema $ quote $ Fn Any (-> Dynamic)
+"#
+    );
+    fs::write(&snapshot, base_snapshot(&extra)).expect("write snapshot");
+    let out = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+    let text = combined_output(&out);
+    assert!(!out.status.success(), "{label} should fail:\n{text}");
+    assert!(text.contains(expected_code), "{label} expected {expected_code}:\n{text}");
   }
 }
 
@@ -303,7 +328,9 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
                 u $ assert-type |leaf TokenUnion
                 b-u $ any:box u
               match (any:downcast b-c CounterAlias)
-                (:some got) (assert= c got)
+                (:some got) $ do
+                  assert= c got
+                  assert= 7 (:n got)
                 (:none) (raise |expected-counter-hit)
               match (any:downcast b-c OtherCounter)
                 (:some _) (raise |expected-other-counter-miss)
@@ -368,4 +395,140 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
   let node_out = combined_output(&node_run);
   assert!(node_run.status.success(), "node execution failed:\n{node_out}");
   assert!(node_out.contains("ANY-OK"), "{node_out}");
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn any_box_handles_structs_aliases_and_unions_on_wasm() {
+  use std::collections::HashSet;
+  use wasmtime::{Engine, ExternType, Linker, Module, Store};
+
+  let dir = TestDirectory::create();
+  let snapshot = dir.snapshot();
+  let extra = r#"
+        'NumAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype NumAlias Number
+          :examples $ []
+        'TagAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype TagAlias Tag
+          :examples $ []
+        'TokenUnionAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype TokenUnionAlias any-test.main/TokenUnion
+          :examples $ []
+        'check-counter! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-counter! ()
+            let
+                c $ Counter :n 7
+                b-c $ any:box c
+              match (any:downcast b-c CounterAlias)
+                (:some got) (if (and (&= c got) (&= 7 (:n got))) 1 0)
+                (:none) 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-other! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-other! ()
+            let
+                c $ Counter :n 7
+                b-c $ any:box c
+              match (any:downcast b-c OtherCounter)
+                (:some _) 0
+                (:none) 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-list! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-list! ()
+            let
+                xs $ assert-type ([] 1 2) NumListAlias
+                b-xs $ any:box xs
+              match (any:downcast b-xs (List Number))
+                (:some got) (if (&= ([] 1 2) got) 1 0)
+                (:none) 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-union! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-union! ()
+            let
+                u $ assert-type |leaf TokenUnion
+                b-u $ any:box u
+                union-hit $ match (any:downcast b-u TokenUnionAlias)
+                  (:some got)
+                    match got
+                      (String s) (&= |leaf s)
+                      (Number _) false
+                  (:none) false
+                union-miss $ match (any:downcast b-u String)
+                  (:some _) false
+                  (:none) true
+              if (and union-hit union-miss) 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-num-tag! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-num-tag! ()
+            let
+                b-num $ any:box (assert-type 262152 NumAlias)
+                b-tag $ any:box (assert-type :ok TagAlias)
+                num-ok $ match (any:downcast b-num Number)
+                  (:some n) (&= n 262152)
+                  (:none) false
+                tag-ok $ match (any:downcast b-tag Tag)
+                  (:some t) (&= t :ok)
+                  (:none) false
+              if (and num-ok tag-ok) 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+"#;
+  fs::write(&snapshot, base_snapshot(extra)).expect("write snapshot");
+
+  let wasm_out = dir.path.join("wasm-out");
+  fs::create_dir(&wasm_out).expect("create wasm out dir");
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("CALCIT_PROOF_AUDIT", "0")
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(&wasm_out)
+    .arg(&snapshot)
+    .arg("wasm")
+    .output()
+    .expect("compile wasm");
+  assert!(compile.status.success(), "wasm compile failed:\n{}", combined_output(&compile));
+
+  let engine = Engine::default();
+  let module = Module::from_file(&engine, wasm_out.join("program.wasm")).expect("load wasm");
+  let mut linker = Linker::new(&engine);
+  let mut registered = HashSet::new();
+  for import in module.imports() {
+    let key = (import.module().to_owned(), import.name().to_owned());
+    if !registered.insert(key) {
+      continue;
+    }
+    if let ExternType::Func(func_ty) = import.ty() {
+      let result_tys: Vec<_> = func_ty.results().collect();
+      linker
+        .func_new(import.module(), import.name(), func_ty, move |_caller, _params, results| {
+          for (idx, ty) in result_tys.iter().enumerate() {
+            results[idx] = match ty {
+              wasmtime::ValType::I32 => wasmtime::Val::I32(0),
+              wasmtime::ValType::I64 => wasmtime::Val::I64(0),
+              wasmtime::ValType::F32 => wasmtime::Val::F32(0),
+              wasmtime::ValType::F64 => wasmtime::Val::F64(0),
+              _ => wasmtime::Val::I32(0),
+            };
+          }
+          Ok(())
+        })
+        .expect("stub import");
+    }
+  }
+  let mut store = Store::new(&engine, ());
+  let instance = linker.instantiate(&mut store, &module).expect("instantiate wasm");
+  for name in ["check-counter!", "check-other!", "check-list!", "check-union!", "check-num-tag!"] {
+    let func = instance
+      .get_typed_func::<(), f64>(&mut store, name)
+      .unwrap_or_else(|e| panic!("missing export `{name}`: {e}"));
+    assert_eq!(
+      func.call(&mut store, ()).unwrap_or_else(|e| panic!("call `{name}`: {e}")),
+      1.0,
+      "{name}"
+    );
+  }
 }

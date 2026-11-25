@@ -78,10 +78,14 @@ pub fn canonical_type_hash(type_key: &str) -> u64 {
 /// `Trait`/`TraitSet`, `Never` including `List Never` / `Option Never`, etc.)
 /// with `E_ANY_OPEN_TYPE`.
 pub fn canonical_type_key(ty: &CalcitTypeAnnotation, default_ns: Option<&str>) -> Result<String, CanonicalTypeIdError> {
-  let mut visiting = HashSet::new();
+  let run = || {
+    ty.validate_applied_type_args().map_err(CanonicalTypeIdError::open_type)?;
+    let mut visiting = HashSet::new();
+    canonical_type_key_inner(ty, &mut visiting, 0)
+  };
   match default_ns {
-    Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-id"), || canonical_type_key_inner(ty, &mut visiting, 0)),
-    None => canonical_type_key_inner(ty, &mut visiting, 0),
+    Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-id"), run),
+    None => run(),
   }
 }
 

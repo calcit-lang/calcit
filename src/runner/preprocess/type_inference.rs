@@ -2463,9 +2463,10 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
               .and_then(Result::ok);
             CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(form), &[])
           };
+          let normalized = CalcitTypeAnnotation::normalize_any_downcast_target(&target);
           Arc::new(CalcitTypeAnnotation::TypeRef(
             Arc::from("calcit.core/Option"),
-            Arc::new(vec![target]),
+            Arc::new(vec![normalized]),
           ))
         }),
 

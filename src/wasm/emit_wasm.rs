@@ -7763,9 +7763,10 @@ fn infer_wasm_evidence_in_scope(
               .and_then(Result::ok);
             CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(&items[2]), &[])
           };
+          let normalized = CalcitTypeAnnotation::normalize_any_downcast_target(&target);
           Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::TypeRef(
             Arc::from("calcit.core/Option"),
-            Arc::new(vec![target]),
+            Arc::new(vec![normalized]),
           ))))
         }
         Calcit::Syntax(CalcitSyntax::Match, _) if items.len() >= 3 => {
@@ -14926,11 +14927,7 @@ fn resolve_match_payload_type(binding: &Calcit, sub_pt: Arc<CalcitTypeAnnotation
 }
 
 pub(super) fn expand_wasm_value_type(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  if matches!(ty.as_ref(), CalcitTypeAnnotation::TypeRef(..)) && (ty.resolve_to_struct().is_some() || ty.resolve_to_enum().is_some()) {
-    ty.clone()
-  } else {
-    CalcitTypeAnnotation::expand_schema_alias(ty)
-  }
+  CalcitTypeAnnotation::expand_value_type_aliases(ty)
 }
 
 fn extract_fixed_list_slot_types(
@@ -15930,7 +15927,10 @@ fn static_predicate_condition_outcome_in_scope(
   }
   let ty = infer_wasm_evidence_in_scope(ctx, operand, local_types, closures, &mut HashSet::new())
     .map(|ev| expand_wasm_value_type(&ev.annotation))?;
-  if nil_type_evidence_is_open(&ty) || matches!(ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_)) {
+  if nil_type_evidence_is_open(&ty)
+    || matches!(ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _) | CalcitTypeAnnotation::Custom(_))
+    || ty.resolve_to_union().is_some()
+  {
     return None;
   }
   match proc {

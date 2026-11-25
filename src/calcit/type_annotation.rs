@@ -5696,7 +5696,10 @@ impl CalcitTypeAnnotation {
       (Arc::from(CORE_NS), Arc::from(name))
     };
     if let Some(alias) = lookup_def_code_registered(&ns, &def).and_then(|code| type_alias_from_code(&code)) {
-      return Some(alias.expand(&ns, args));
+      if alias.generics.len() == args.len() {
+        return Some(alias.expand(&ns, args));
+      }
+      return None;
     }
     if !args.is_empty() {
       return None;
@@ -5709,6 +5712,90 @@ impl CalcitTypeAnnotation {
       return None;
     }
     Some(super::type_refs::qualify_namespace_type_refs(schema, &ns))
+  }
+
+  /// Follows `TypeSlot` and `deftype` / non-constructor schema alias chains
+  /// until reaching a concrete type, nominal reference (`Struct`, `Enum`,
+  /// `Union`, `Trait`), or unexpanded root, stopping before constructor
+  /// metadata (`StructDef`, `EnumDef`, `Custom`, `Macro`, `Syntax`, `Trait`).
+  pub fn expand_value_type_aliases(type_value: &Arc<Self>) -> Arc<Self> {
+    let mut visited: Vec<Arc<Self>> = Vec::new();
+    let mut current = type_value.clone();
+    for _ in 0..256 {
+      match current.as_ref() {
+        Self::TypeSlot(slot) => {
+          let Some(bound) = resolve_type_slot(slot) else {
+            return current;
+          };
+          if visited
+            .iter()
+            .any(|seen| Arc::ptr_eq(seen, &bound) || seen.as_ref() == bound.as_ref())
+          {
+            return current;
+          }
+          visited.push(current.clone());
+          current = bound;
+        }
+        Self::TypeRef(..) => {
+          if current.resolve_to_struct_with_ref().is_some()
+            || current.resolve_to_enum_with_ref().is_some()
+            || current.resolve_to_union().is_some()
+            || current.resolve_to_source_trait_with_ref().is_some()
+            || current.resolve_to_external_object_trait_with_ref().is_some()
+          {
+            return current;
+          }
+          let Some(expanded) = current.expand_single_type_alias() else {
+            return current;
+          };
+          if visited
+            .iter()
+            .any(|seen| Arc::ptr_eq(seen, &expanded) || seen.as_ref() == expanded.as_ref())
+          {
+            return current;
+          }
+          visited.push(current.clone());
+          current = expanded;
+        }
+        _ => return current,
+      }
+    }
+    current
+  }
+
+  /// Expands `deftype` and non-constructor aliases on an `any:downcast` target
+  /// recursively across container and type-arg positions while preserving
+  /// nominal references (`Struct`, `Enum`, `Union`) and stopping on cycles.
+  pub fn normalize_any_downcast_target(type_value: &Arc<Self>) -> Arc<Self> {
+    let mut visiting = Vec::new();
+    Self::normalize_any_downcast_target_inner(type_value, &mut visiting, 0)
+  }
+
+  fn normalize_any_downcast_target_inner(type_value: &Arc<Self>, visiting: &mut Vec<Arc<Self>>, depth: usize) -> Arc<Self> {
+    let expanded = Self::expand_value_type_aliases(type_value);
+    if depth >= 64 || visiting.iter().any(|seen| seen.as_ref() == expanded.as_ref()) {
+      return expanded;
+    }
+    visiting.push(expanded.clone());
+    let mut norm = |child: &Arc<Self>| Self::normalize_any_downcast_target_inner(child, visiting, depth + 1);
+    let result = match expanded.as_ref() {
+      Self::List(inner) => Arc::new(Self::List(norm(inner))),
+      Self::Set(inner) => Arc::new(Self::Set(norm(inner))),
+      Self::Ref(inner) => Arc::new(Self::Ref(norm(inner))),
+      Self::Nullable(inner, origin) => Arc::new(Self::Nullable(norm(inner), *origin)),
+      Self::Tuple(items) => Arc::new(Self::Tuple(Arc::new(items.iter().map(&mut norm).collect()))),
+      Self::Map(k, v) => Arc::new(Self::Map(norm(k), norm(v))),
+      Self::TypeRef(name, args) if !args.is_empty() => {
+        Arc::new(Self::TypeRef(name.clone(), Arc::new(args.iter().map(&mut norm).collect())))
+      }
+      Self::Struct(base, args) if !args.is_empty() => {
+        Arc::new(Self::Struct(base.clone(), Arc::new(args.iter().map(&mut norm).collect())))
+      }
+      Self::Enum(base, args) if !args.is_empty() => Arc::new(Self::Enum(base.clone(), Arc::new(args.iter().map(&mut norm).collect()))),
+      _ => expanded.clone(),
+    };
+    visiting.pop();
+    result
   }
 
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
