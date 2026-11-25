@@ -1308,6 +1308,15 @@ fn child_is_return_position(
 }
 
 fn code_declares_embedded_type_schema(code: &Cirru) -> bool {
+  if let Cirru::List(items) = code
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "defunion")
+  {
+    let mut dynamic_leaves = vec![];
+    for member in items.iter().skip(2) {
+      collect_dynamic_leaves(member, &mut vec![], &mut dynamic_leaves);
+    }
+    return dynamic_leaves.is_empty();
+  }
   matches!(
     code,
     Cirru::List(items)
@@ -3328,6 +3337,17 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
           }
         }
       }
+      "defunion" => {
+        for member in items.iter().skip(2) {
+          let mut dynamic_leaves = vec![];
+          collect_dynamic_leaves(member, &mut vec![], &mut dynamic_leaves);
+          if dynamic_leaves.is_empty() {
+            typed_slots += 1;
+          } else {
+            dynamic_slots += 1;
+          }
+        }
+      }
       "deftrait" => {
         for method in items.iter().skip(2) {
           if entry_parts(method, '.').is_none() {
@@ -3384,7 +3404,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
 
   let (kind, params, param_annotations, return_type_hints, data_type, level) = match &entry.code {
     Cirru::List(xs) => match xs.first() {
-      Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum" | "deftrait" | "defimpl") => (
+      Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defstruct" | "defenum" | "defunion" | "deftrait" | "defimpl") => (
         DefKind::Data,
         Vec::new(),
         BTreeMap::new(),
