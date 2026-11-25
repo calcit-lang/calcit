@@ -1069,6 +1069,15 @@ fn gen_call_code(
           }
           _ => Err(format!("any:downcast expected a value and a type expression, got: {body}")),
         },
+        CalcitSyntax::DynBox => match (body.first(), body.get(1)) {
+          (Some(value), Some(trait_form)) if body.len() == 2 => {
+            let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
+            let trait_code = to_js_code(trait_form, ns, local_defs, file_imports, tags, None)?;
+            let call = format!("{}dyn_box({value_code}, {trait_code})", get_proc_prefix(ns));
+            Ok(wrap_call_with_prelude(String::new(), call, return_label, detect_await(&body)))
+          }
+          _ => Err(format!("dyn:box expected 2 arguments, got: {body}")),
+        },
         CalcitSyntax::Match => gen_match_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
         _ => {
           let (prelude, args_code) =

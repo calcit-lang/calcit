@@ -33,6 +33,7 @@ import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitUnionDef } from "./js-union-def.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 import { CalcitAnyBox } from "./js-any-box.mjs";
+import { CalcitDynTrait } from "./js-dyn-trait.mjs";
 
 export * from "./calcit-data.mjs";
 export * from "./js-any-box.mjs";
@@ -46,6 +47,7 @@ export * from "./js-set.mjs";
 export * from "./js-primes.mjs";
 export * from "./js-enum-value.mjs";
 export { CalcitTrait } from "./js-trait.mjs";
+export { CalcitDynTrait } from "./js-dyn-trait.mjs";
 export * from "./custom-formatter.mjs";
 export * from "./js-cirru.mjs";
 export * from "./js-arity-helpers.mjs";
@@ -115,6 +117,9 @@ export let type_of = (x: any): CalcitTag => {
   }
   if (x instanceof CalcitTrait) {
     return newTag("trait");
+  }
+  if (x instanceof CalcitDynTrait) {
+    return newTag("dyn-trait");
   }
   if (x instanceof CalcitCirruQuote) {
     return newTag("cirru-quote");
@@ -337,6 +342,12 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   if (arguments.length !== 2) throw new Error("&assert-traits expected 2 arguments");
   if (!(traitDef instanceof CalcitTrait)) {
     throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
+  }
+  if (value instanceof CalcitDynTrait) {
+    if (!value.traitDef.reachable().includes(traitDef)) {
+      throw new Error(`assert-traits failed: ${value.toString()} does not satisfy required trait ${traitDef.toString()}`);
+    }
+    return value;
   }
   // Resolve the requested origin from builtin + attached impls. Ordinary
   // method tables may already belong to a later generated core; instance-only
@@ -3415,7 +3426,53 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait, includeDefIns
   return [impls, tag];
 }
 
+export function dyn_box(value: CalcitValue, traitDef: CalcitValue): CalcitDynTrait {
+  if (arguments.length !== 2) throw new Error("dyn:box expected 2 arguments");
+  if (!(traitDef instanceof CalcitTrait)) {
+    throw new Error(`[E_DYN_BOX_TYPE] dyn:box expects a trait definition as second argument, but received: ${toString(traitDef, true)}`);
+  }
+  if (value instanceof CalcitDynTrait) {
+    throw new Error("[E_DYN_BOX_TYPE] dyn:box cannot re-box an existing (Dyn ...) trait object");
+  }
+  const vtable = new Map<string, (...args: CalcitValue[]) => CalcitValue>();
+  for (const required of traitDef.reachable()) {
+    const pair = lookup_impls(value, required);
+    if (pair == null) {
+      throw new Error(`[E_DYN_BOX_TYPE] dyn:box cannot resolve impls for: ${toString(value, true)}`);
+    }
+    const matching = pair[0].filter((impl) => impl != null && impl.origin === required);
+    if (matching.length > 1) {
+      throw new Error(
+        `[E_DUPLICATE_TRAIT_IMPL] dyn:box: trait ${required.name.toString()} has ${matching.length} implementations on ${toString(value, true)}`
+      );
+    }
+    if (matching.length === 0) {
+      throw new Error(
+        `[E_DYN_BOX_TYPE] dyn:box: ${toString(value, true)} does not implement trait ${required.name.toString()}`
+      );
+    }
+    const selected = matching[0];
+    for (const member of required.methods) {
+      const fn = selected.getOrNil(member.value);
+      if (typeof fn !== "function") {
+        throw new Error(
+          `[E_DYN_BOX_TYPE] dyn:box: method .${member.value} for trait ${required.name.toString()} is not a function: ${toString(fn, true)}`
+        );
+      }
+      vtable.set(member.value, fn);
+    }
+  }
+  return new CalcitDynTrait(traitDef, value, vtable);
+}
+
 export function invoke_method(p: string, obj: CalcitValue, ...args: CalcitValue[]) {
+  if (obj instanceof CalcitDynTrait) {
+    const fn = obj.vtable.get(p);
+    if (fn == null) {
+      throw new Error(`No method '.${p}' for '${obj.toString()}' object.`);
+    }
+    return fn(obj.value, ...args);
+  }
   if (obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef) {
     const defImpls = normalize_builtin_impls(calcit_builtin_impls.def) ?? [];
     for (let idx = 0; idx < defImpls.length; idx++) {
@@ -3513,6 +3570,10 @@ export function _$n_methods_of(obj: CalcitValue): CalcitSliceList {
   if (obj instanceof CalcitTrait) {
     return new CalcitSliceList(obj.methods.map((m) => invoke_method_closure(m.value)));
   }
+  if (obj instanceof CalcitDynTrait) {
+    const names = Array.from(obj.vtable.keys()).sort();
+    return new CalcitSliceList(names.map((m) => invoke_method_closure(m)));
+  }
   let pair = lookup_impls(obj, undefined, true);
   if (pair == null) {
     throw new Error(`&methods-of cannot resolve impls for: ${toString(obj, true)}`);
@@ -3551,6 +3612,20 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
     console.log("  - dot is part of the method name, first arg is the receiver\n");
     const names = obj.methods.map((m) => "." + m.value);
     console.log(`Trait methods declared directly (no impls): ${names.length}`);
+    console.log(`\nAll methods (unique, high → low): ${names.length}`);
+    console.log("  " + names.join(" "));
+    console.log("\n");
+    return obj;
+  }
+  if (obj instanceof CalcitDynTrait) {
+    console.log("\n&inspect-methods");
+    console.log(`Note: ${toString(note, true)}`);
+    console.log(`Value type: ${type_of(obj).toString()}`);
+    console.log(`Value: ${toString(obj, true)}`);
+    console.log("Method call syntax: `.method self p1 p2`");
+    console.log("  - dot is part of the method name, first arg is the receiver\n");
+    const names = Array.from(obj.vtable.keys()).sort().map((m) => "." + m);
+    console.log(`Dyn trait vtable methods: ${names.length}`);
     console.log(`\nAll methods (unique, high → low): ${names.length}`);
     console.log("  " + names.join(" "));
     console.log("\n");
@@ -3610,6 +3685,16 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
   if (!traitHasMethod) {
     const ms = traitDef.methods.map((m) => m.toString()).join(" ");
     throw new Error(`&trait-call: trait ${traitDef.name.toString()} does not define method :${methodName}. Available methods: ${ms}`);
+  }
+  if (obj instanceof CalcitDynTrait) {
+    if (!obj.traitDef.reachable().includes(traitDef)) {
+      throw new Error(`&trait-call: ${obj.toString()} does not provide trait ${traitDef.name.toString()}`);
+    }
+    const fn = obj.vtable.get(methodName);
+    if (fn == null) {
+      throw new Error(`&trait-call: ${obj.toString()} has no method :${methodName}`);
+    }
+    return fn(obj.value, ...args);
   }
   const pair = lookup_impls(obj, traitDef);
   if (pair == null) {

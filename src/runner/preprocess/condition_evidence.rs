@@ -345,7 +345,7 @@ fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
       }
     }
     Some(Calcit::Syntax(CalcitSyntax::HintFn | CalcitSyntax::Quote, _)) => Outcomes::unknown(true),
-    Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)) => items
+    Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce | CalcitSyntax::DynBox, _)) => items
       .get(1)
       .map(|value| visit::<EFFECTS_ONLY, PORTABLE>(value, scope, aliases, remaining, depth + 1))
       .unwrap_or_else(|| Outcomes::unknown(false)),

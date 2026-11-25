@@ -12,6 +12,7 @@ import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
 import { CalcitAnyBox } from "./js-any-box.mjs";
+import { CalcitDynTrait } from "./js-dyn-trait.mjs";
 
 export type CalcitValue =
   | string
@@ -31,6 +32,7 @@ export type CalcitValue =
   | CalcitStructValue
   | CalcitImpl
   | CalcitTrait
+  | CalcitDynTrait
   | CalcitStructDef
   | CalcitEnumDef
   | CalcitUnionDef
@@ -70,6 +72,7 @@ enum PseudoTypeIndex {
   enum_def,
   union_def,
   trait,
+  dyn_trait,
   impl,
   fn,
   cirru_quote,
@@ -99,6 +102,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitEnumDef) return PseudoTypeIndex.enum_def;
   if (x instanceof CalcitUnionDef) return PseudoTypeIndex.union_def;
   if (x instanceof CalcitTrait) return PseudoTypeIndex.trait;
+  if (x instanceof CalcitDynTrait) return PseudoTypeIndex.dyn_trait;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   if (x instanceof CalcitAnyBox) return PseudoTypeIndex.any_box;
   // proc, fn, macro, syntax, not distinguished
@@ -171,6 +175,12 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
       case PseudoTypeIndex.trait:
         return rawCompare(traitIdentity(a as CalcitTrait), traitIdentity(b as CalcitTrait));
+      case PseudoTypeIndex.dyn_trait: {
+        const left = a as CalcitDynTrait;
+        const right = b as CalcitDynTrait;
+        const traitOrd = rawCompare(traitIdentity(left.traitDef), traitIdentity(right.traitDef));
+        return traitOrd !== 0 ? traitOrd : _$n_compare(left.value, right.value);
+      }
       case PseudoTypeIndex.fn: {
         const left = a as CalcitFn & { __calcitMethodName?: string };
         const right = b as CalcitFn & { __calcitMethodName?: string };

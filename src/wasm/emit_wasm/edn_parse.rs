@@ -4017,6 +4017,7 @@ mod tests {
   fn nil_decode_guard_accepts_inferred_nonzero_nullable_raw_zero() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),

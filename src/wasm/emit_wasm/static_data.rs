@@ -34,6 +34,7 @@ const BUILTIN_TYPE_TAGS: &[&str] = &[
   "array",
   "object",
   "total-limit",
+  "dyn-trait",
 ];
 
 const CORE_BUILTIN_IMPL_DEFS: &[&str] = &[
@@ -90,6 +91,8 @@ struct ReachabilityState<'a> {
   wildcard_methods: bool,
   seen_impls: Vec<Arc<crate::wasm::host::calcit::CalcitImpl>>,
   seen_impl_ptrs: HashSet<usize>,
+  seen_traits: Vec<Arc<crate::wasm::host::calcit::CalcitTrait>>,
+  seen_trait_ptrs: HashSet<usize>,
   visited_annotations: HashSet<(usize, String)>,
   retained_annotations: Vec<Arc<CalcitTypeAnnotation>>,
   active_alias_expansions: Vec<(Arc<str>, Vec<CalcitTypeAnnotation>)>,
@@ -120,6 +123,8 @@ impl<'a> ReachabilityState<'a> {
       wildcard_methods: false,
       seen_impls: Vec::new(),
       seen_impl_ptrs: HashSet::new(),
+      seen_traits: Vec::new(),
+      seen_trait_ptrs: HashSet::new(),
       visited_annotations: HashSet::new(),
       retained_annotations: Vec::new(),
       active_alias_expansions: Vec::new(),
@@ -173,6 +178,30 @@ impl<'a> ReachabilityState<'a> {
     }
   }
 
+  fn record_trait(&mut self, trait_def: &Arc<crate::wasm::host::calcit::CalcitTrait>, current_ns: &str) {
+    for reachable in trait_def.normalized_reachable_traits().unwrap_or_default() {
+      let ptr = Arc::as_ptr(&reachable) as usize;
+      if !self.seen_trait_ptrs.insert(ptr) {
+        continue;
+      }
+      self.seen_traits.push(reachable.clone());
+      if let Some(reference) = &reachable.definition_ref {
+        self.enqueue_qualified(reference.as_ref());
+      }
+      for (idx, method_name) in reachable.methods.iter().enumerate() {
+        let should_visit = self.wildcard_methods || self.called_methods.contains(method_name.ref_str());
+        if should_visit && let Some(default_fn) = reachable.defaults.get(idx).and_then(|d| d.as_ref()) {
+          let val = Calcit::Fn {
+            id: default_fn.name.clone(),
+            info: default_fn.clone(),
+          };
+          self.extra_exprs.push(val.clone());
+          self.visit_expr(&val, current_ns, false);
+        }
+      }
+    }
+  }
+
   fn record_method_call(&mut self, method_name: &str, current_ns: &str) {
     if !self.called_methods.insert(method_name.to_owned()) {
       return;
@@ -187,6 +216,17 @@ impl<'a> ReachabilityState<'a> {
         self.visit_expr(&entry, current_ns, false);
       }
     }
+    let traits = self.seen_traits.clone();
+    for tr in traits {
+      if let Some(default_fn) = tr.get_default(method_name) {
+        let val = Calcit::Fn {
+          id: default_fn.name.clone(),
+          info: default_fn.clone(),
+        };
+        self.extra_exprs.push(val.clone());
+        self.visit_expr(&val, current_ns, false);
+      }
+    }
   }
 
   fn enable_wildcard_methods(&mut self, current_ns: &str) {
@@ -199,6 +239,17 @@ impl<'a> ReachabilityState<'a> {
       for entry in imp.values.iter() {
         self.extra_exprs.push(entry.clone());
         self.visit_expr(entry, current_ns, false);
+      }
+    }
+    let traits = self.seen_traits.clone();
+    for tr in traits {
+      for default_fn in tr.defaults.iter().flatten() {
+        let val = Calcit::Fn {
+          id: default_fn.name.clone(),
+          info: default_fn.clone(),
+        };
+        self.extra_exprs.push(val.clone());
+        self.visit_expr(&val, current_ns, false);
       }
     }
   }
@@ -305,6 +356,9 @@ impl<'a> ReachabilityState<'a> {
       }
       CalcitTypeAnnotation::EnumValue(def) | CalcitTypeAnnotation::EnumDef(def) => {
         self.visit_enum_def(def, current_ns);
+      }
+      CalcitTypeAnnotation::DynTrait(trait_def) | CalcitTypeAnnotation::Trait(trait_def) => {
+        self.record_trait(trait_def, current_ns);
       }
       CalcitTypeAnnotation::TypeRef(name, args) => {
         self.enqueue_type_ref(current_ns, name.as_ref());
@@ -435,6 +489,9 @@ impl<'a> ReachabilityState<'a> {
         for member in u.members() {
           self.visit_annotation(&member, current_ns);
         }
+      }
+      Calcit::Trait(trait_def) => {
+        self.record_trait(trait_def, current_ns);
       }
       Calcit::Impl(imp) => {
         self.record_impl(imp, current_ns);
@@ -1126,11 +1183,69 @@ fn collect_strings_from_data_shape(graph: &DataShapeGraph, strings: &mut Vec<Str
   }
 }
 
+fn collect_dyn_trait_strings_from_annotation(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  strings: &mut Vec<String>,
+  seen: &mut HashSet<usize>,
+) {
+  let ptr = Arc::as_ptr(annotation) as usize;
+  if !seen.insert(ptr) {
+    return;
+  }
+  match annotation.as_ref() {
+    CalcitTypeAnnotation::DynTrait(trait_def) | CalcitTypeAnnotation::Trait(trait_def) => {
+      for reachable in trait_def.normalized_reachable_traits().unwrap_or_default() {
+        strings.push(format!("(&dyn {})", reachable.name));
+      }
+    }
+    CalcitTypeAnnotation::List(inner)
+    | CalcitTypeAnnotation::Set(inner)
+    | CalcitTypeAnnotation::Ref(inner)
+    | CalcitTypeAnnotation::Variadic(inner)
+    | CalcitTypeAnnotation::Nullable(inner, _) => {
+      collect_dyn_trait_strings_from_annotation(inner, strings, seen);
+    }
+    CalcitTypeAnnotation::Tuple(slots) => {
+      for slot in slots.iter() {
+        collect_dyn_trait_strings_from_annotation(slot, strings, seen);
+      }
+    }
+    CalcitTypeAnnotation::Map(k, v) => {
+      collect_dyn_trait_strings_from_annotation(k, strings, seen);
+      collect_dyn_trait_strings_from_annotation(v, strings, seen);
+    }
+    CalcitTypeAnnotation::Fn(fn_sig) => {
+      for arg in &fn_sig.arg_types {
+        collect_dyn_trait_strings_from_annotation(arg, strings, seen);
+      }
+      if let Some(rest) = &fn_sig.rest_type {
+        collect_dyn_trait_strings_from_annotation(rest, strings, seen);
+      }
+      collect_dyn_trait_strings_from_annotation(&fn_sig.return_type, strings, seen);
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+      for arg in args.iter() {
+        collect_dyn_trait_strings_from_annotation(arg, strings, seen);
+      }
+    }
+    _ => {}
+  }
+}
+
 fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>, include_number_literals: bool) {
   if let Some(graph) = DataShapeGraph::from_calcit_handle(expr) {
     collect_strings_from_data_shape(&graph, strings);
   }
   match expr {
+    Calcit::Trait(trait_def) => {
+      for reachable in trait_def.normalized_reachable_traits().unwrap_or_default() {
+        strings.push(format!("(&dyn {})", reachable.name));
+      }
+    }
+    Calcit::Local(local) => {
+      let mut seen = HashSet::new();
+      collect_dyn_trait_strings_from_annotation(&local.type_info, strings, &mut seen);
+    }
     Calcit::Number(number) if include_number_literals => {
       strings.push(crate::wasm::host::util::number::format_calcit_number(*number));
     }

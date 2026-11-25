@@ -205,6 +205,7 @@ fn code_to_calcit_in(
       "any:box" => Ok(Calcit::Syntax(CalcitSyntax::AnyBox, Arc::clone(ns))),
       "any:downcast" => Ok(Calcit::Syntax(CalcitSyntax::AnyDowncast, Arc::clone(ns))),
       "assert-traits" => Ok(Calcit::Syntax(CalcitSyntax::AssertTraits, Arc::clone(ns))),
+      "dyn:box" => Ok(Calcit::Syntax(CalcitSyntax::DynBox, Arc::clone(ns))),
       "" => Err(String::from("Empty string is invalid")),
       // anonymous enum constructor syntax
       "::" => Ok(Calcit::Proc(CalcitProc::NativeEnum)),

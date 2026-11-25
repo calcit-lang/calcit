@@ -149,7 +149,8 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
       | CalcitSyntax::TryDecodeMapAs
       | CalcitSyntax::EncodeMapAs
       | CalcitSyntax::UnsafeCoerce
-      | CalcitSyntax::JsCast,
+      | CalcitSyntax::JsCast
+      | CalcitSyntax::DynBox,
       _,
     ) => {
       let Some(value) = items.get(1) else { return Ok(expr.clone()) };

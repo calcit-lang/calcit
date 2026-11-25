@@ -770,7 +770,7 @@ fn parse_zero_payload_schema_wrapper(value: &Edn) -> Option<Arc<CalcitTypeAnnota
     return Some(open);
   }
   let canonical = CalcitTypeAnnotation::canonical_type_symbol_name(&view.variant)?;
-  if matches!(canonical, "JsNullish" | "Variadic") {
+  if matches!(canonical, "JsNullish" | "Variadic" | "Dyn") {
     return None;
   }
   Some(CalcitTypeAnnotation::parse_type_annotation_from_edn(&Edn::Symbol(Arc::from(

@@ -130,6 +130,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Import { .. } => Ok(Calcit::tag("import")),
     Registered(..) => Ok(Calcit::tag("registered")),
     Trait(..) => Ok(Calcit::tag("trait")),
+    DynTrait(..) => Ok(Calcit::tag("dyn-trait")),
     Impl(..) => Ok(Calcit::tag("impl")),
     AnyBox(..) => Ok(Calcit::tag("any-box")),
     AnyRef(..) => Ok(Calcit::tag("any-ref")),
@@ -1819,6 +1820,7 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let impls_value = runner::evaluate_symbol_from_program("&core-def-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
+    DynTrait(dyn_trait) => invoke_dyn_trait_callable(dyn_trait, name, &method_args[1..], call_stack),
     x => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("invoke-method cannot resolve impls for value: {x}"),
@@ -1948,6 +1950,134 @@ fn method_call_impls(
   ))
 }
 
+fn invoke_method_callable(callable: &Calcit, method_args: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  match callable {
+    Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
+    Calcit::Proc(proc) => builtins::handle_proc(*proc, method_args, call_stack),
+    Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Syntax,
+      format!("invoke-method cannot get syntax here since instance is always evaluated, but received: {syn}"),
+      call_stack,
+    )),
+    y => Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!("invoke-method expected a function to invoke, but received: {y}"),
+      call_stack,
+      y.get_location(),
+    )),
+  }
+}
+
+fn invoke_dyn_trait_callable(
+  dyn_trait: &crate::calcit::CalcitDynTrait,
+  method_name: &str,
+  extra_args: &[Calcit],
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let key = EdnTag::new(method_name);
+  let Some(callable) = dyn_trait.vtable.get(&key) else {
+    let available = dyn_trait
+      .vtable
+      .keys()
+      .map(|tag| format!(".{}", tag.ref_str()))
+      .collect::<Vec<_>>()
+      .join(" ");
+    return Err(CalcitErr::use_msg_stack(
+      CalcitErrKind::Type,
+      format!(
+        "unknown method `.{method_name}` on (&dyn {}). Available methods: {available}",
+        dyn_trait.trait_def.name
+      ),
+      call_stack,
+    ));
+  };
+  let mut method_args = Vec::with_capacity(extra_args.len() + 1);
+  method_args.push(dyn_trait.value.clone());
+  method_args.extend_from_slice(extra_args);
+  invoke_method_callable(callable, &method_args, call_stack)
+}
+
+/// Build the flat vtable mapping every reachable trait method to its concrete
+/// implementation (or trait default) on `value`.
+pub(crate) fn build_dyn_trait_vtable(
+  value: &Calcit,
+  trait_def: &Arc<crate::calcit::CalcitTrait>,
+  call_stack: &CallStackList,
+) -> Result<std::collections::HashMap<EdnTag, Calcit>, CalcitErr> {
+  let reachable = trait_def.normalized_reachable_traits().map_err(trait_requires_error)?;
+  let impls = collect_impls_for_value(value, call_stack).map_err(|err| err.with_code("E_DYN_BOX_TYPE"))?;
+  let mut vtable = std::collections::HashMap::new();
+  for required in reachable {
+    let mut matching_impls: Vec<&Arc<CalcitImpl>> = vec![];
+    for imp in iter_impls_in_precedence_order(value, &impls) {
+      if imp.implements_trait(required.as_ref()) {
+        matching_impls.push(imp);
+      }
+    }
+    if matching_impls.len() > 1 {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "dyn:box: trait {} has {} implementations attached to receiver {}; dispatch cannot choose between duplicate impls",
+          required.origin_label(),
+          matching_impls.len(),
+          value
+        ),
+        "E_DUPLICATE_TRAIT_IMPL",
+        call_stack,
+        value.get_location(),
+      ));
+    }
+    let Some(selected_impl) = matching_impls.first() else {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!("dyn:box: {value} does not implement trait {}", required.origin_label()),
+        "E_DYN_BOX_TYPE",
+        call_stack,
+        value.get_location(),
+      ));
+    };
+    for (method, kind) in required.methods.iter().zip(required.member_kinds.iter()) {
+      if *kind == crate::calcit::CalcitTraitMemberKind::Field {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "dyn:box: trait {} has `:field` member `{}` and is not object-safe",
+            required.origin_label(),
+            method.ref_str()
+          ),
+          "E_TRAIT_NOT_OBJECT_SAFE",
+          call_stack,
+          value.get_location(),
+        ));
+      }
+      let callable = if let Some(entry) = selected_impl.get(method.ref_str()) {
+        entry.clone()
+      } else if let Some(default_fn) = required.get_default(method.ref_str()) {
+        Calcit::Fn {
+          id: Arc::from(format!("default:{}:{}", required.name.ref_str(), method.ref_str())),
+          info: default_fn.clone(),
+        }
+      } else {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "dyn:box: impl {} for trait {} is missing method `.{}`",
+            selected_impl.name(),
+            required.origin_label(),
+            method.ref_str()
+          ),
+          "E_DYN_BOX_TYPE",
+          call_stack,
+          value.get_location(),
+        ));
+      };
+      vtable.insert(method.clone(), callable);
+    }
+  }
+  Ok(vtable)
+}
+
 fn invoke_impl_method(
   impl_value: &CalcitImpl,
   v0: &Calcit,
@@ -1956,24 +2086,7 @@ fn invoke_impl_method(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   match impl_value.get(name) {
-    Some(v) => {
-      match v {
-        // dirty copy...
-        Calcit::Fn { info, .. } => runner::run_fn(method_args, info, call_stack),
-        Calcit::Proc(proc) => builtins::handle_proc(*proc, method_args, call_stack),
-        Calcit::Syntax(syn, _ns) => Err(CalcitErr::use_msg_stack(
-          CalcitErrKind::Syntax,
-          format!("invoke-method cannot get syntax here since instance is always evaluated, but received: {syn}"),
-          call_stack,
-        )),
-        y => Err(CalcitErr::use_msg_stack_location(
-          CalcitErrKind::Type,
-          format!("invoke-method expected a function to invoke, but received: {y}"),
-          call_stack,
-          y.get_location(),
-        )),
-      }
-    }
+    Some(v) => invoke_method_callable(v, method_args, call_stack),
     None => {
       let content = impl_value.fields().iter().map(|x| x.to_string()).collect::<Vec<_>>().join(" ");
       Err(CalcitErr::use_msg_stack(
@@ -2290,6 +2403,21 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   }
 
   let receiver = &xs[2];
+  if let Calcit::DynTrait(dyn_trait) = receiver {
+    let reachable = dyn_trait.trait_def.normalized_reachable_traits().map_err(trait_requires_error)?;
+    if !reachable.iter().any(|candidate| candidate.has_same_origin(&trait_def)) {
+      return Err(CalcitErr::use_msg_stack(
+        CalcitErrKind::Type,
+        format!(
+          "&trait-call: (&dyn {}) does not provide trait {}",
+          dyn_trait.trait_def.name,
+          trait_def.origin_label()
+        ),
+        call_stack,
+      ));
+    }
+    return invoke_dyn_trait_callable(dyn_trait, &method_name, &xs[3..], call_stack);
+  }
   let impls = collect_impls_for_value(receiver, false, call_stack)?;
 
   let mut matching_impls: Vec<&Arc<CalcitImpl>> = vec![];
@@ -2353,6 +2481,10 @@ pub fn methods_of(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
   let value = &xs[0];
   let methods = if let Calcit::Trait(trait_def) = value {
     trait_dot_method_names(trait_def)
+  } else if let Calcit::DynTrait(dyn_trait) = value {
+    let mut names = dyn_trait.vtable.keys().map(|m| format!(".{}", m.ref_str())).collect::<Vec<_>>();
+    names.sort();
+    names
   } else {
     let impls = collect_impls_for_value(value, true, call_stack)?;
     collect_method_names(value, &impls)
@@ -2403,6 +2535,11 @@ pub fn inspect_methods(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calc
     let names = trait_dot_method_names(trait_def);
     eprintln!("\nTrait methods declared directly (no impls): {}", names.len());
     names
+  } else if let Calcit::DynTrait(dyn_trait) = value {
+    let mut names = dyn_trait.vtable.keys().map(|m| format!(".{}", m.ref_str())).collect::<Vec<_>>();
+    names.sort();
+    eprintln!("\nDyn trait vtable methods: {}", names.len());
+    names
   } else {
     let impls = collect_impls_for_value(value, true, call_stack)?;
     eprintln!("\nImpl records (high → low precedence): {}", impls.len());
@@ -2437,6 +2574,22 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
       );
     }
   };
+
+  if let Calcit::DynTrait(dyn_trait) = value {
+    let reachable = dyn_trait.trait_def.normalized_reachable_traits().map_err(trait_requires_error)?;
+    if reachable.iter().any(|candidate| candidate.has_same_origin(&trait_def)) {
+      return Ok(value.to_owned());
+    }
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "assert-traits failed: {value} does not satisfy required trait {}",
+        trait_def.origin_label()
+      ),
+      call_stack,
+      value.get_location(),
+    ));
+  }
 
   let impls = collect_impls_for_value(value, false, call_stack)?;
   let selected_impl = iter_impls_in_precedence_order(value, &impls, false).find(|imp| imp.implements_trait(&trait_def));
@@ -2663,6 +2816,7 @@ fn find_value_outside_code(code: &Calcit) -> Option<&'static str> {
     Calcit::Recur(_) => Some("recur"),
     Calcit::Trait(_) => Some("trait"),
     Calcit::AnyBox(_) => Some("any-box"),
+    Calcit::DynTrait(_) => Some("dyn-trait"),
     Calcit::Thunk(thunk) => find_value_outside_code(thunk.get_code()),
     Calcit::List(xs) => xs.iter().find_map(find_value_outside_code),
     Calcit::Set(xs) => xs.iter().find_map(find_value_outside_code),

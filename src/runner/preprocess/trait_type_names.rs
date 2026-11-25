@@ -39,14 +39,21 @@ fn type_name_is_trait(file_ns: &str, name: &str) -> bool {
 }
 
 /// Find the first trait name used as a type in `annotation`.
+/// `(Dyn Trait)` holds a trait intentionally in trait-object position and is checked
+/// separately for object safety rather than `E_TRAIT_AS_TYPE`.
 pub(super) fn find_trait_type_name(annotation: &Arc<CalcitTypeAnnotation>, file_ns: &str, path: &str) -> Option<TraitTypeName> {
-  super::find_schema_annotation(annotation, path, &mut |candidate, candidate_path| match candidate.as_ref() {
-    CalcitTypeAnnotation::TypeRef(name, _) if type_name_is_trait(file_ns, name) => Some(TraitTypeName {
-      path: candidate_path.to_owned(),
-      name: Arc::from(name.trim_start_matches('\'')),
-    }),
-    _ => None,
-  })
+  super::find_schema_annotation_with(
+    annotation,
+    path,
+    &mut |candidate, candidate_path| match candidate.as_ref() {
+      CalcitTypeAnnotation::TypeRef(name, _) if type_name_is_trait(file_ns, name) => Some(TraitTypeName {
+        path: candidate_path.to_owned(),
+        name: Arc::from(name.trim_start_matches('\'')),
+      }),
+      _ => None,
+    },
+    &|candidate| matches!(candidate.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.trim_start_matches('\'') == "Dyn"),
+  )
 }
 
 /// Reject a trait name used as a type in `annotation`, pointing to the
@@ -66,7 +73,9 @@ pub(super) fn reject_trait_type_names(
   let hint = if position == "assert-type" {
     format!("check the capability with `assert-traits x {name}` instead")
   } else {
-    format!("bound a type parameter instead: add `(:generics T) (:where $ T {name})` to the Fn type and write `T` in place of `{name}`")
+    format!(
+      "bound a type parameter instead: add `(:generics T) (:where $ T {name})` to the Fn type and write `T` in place of `{name}`, or use `(Dyn {name})` for an object-safe trait object"
+    )
   };
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,

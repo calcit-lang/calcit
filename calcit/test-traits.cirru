@@ -8,6 +8,200 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
+    'test-traits.dyn $ %{} 'FileEntry
+      :defs $ {}
+        'BaseAlert $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait BaseAlert
+            .kind $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'AlertPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AlertPlugin (requires BaseAlert)
+            .alert $ Fn Self Number (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'Alert01 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert01 (:msg String) (:impls BaseAlert AlertPlugin calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert01Base $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert01 BaseAlert
+            .kind $ fn (s)
+              hint-fn $ Fn Alert01 (-> String)
+              , |base-01
+          :examples $ []
+          :schema $ quote Impl
+        'Alert01Impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert01 AlertPlugin
+            .alert $ fn (s n)
+              hint-fn $ Fn Alert01 Number (-> String)
+              &str:concat (:msg s) (&str:concat |: (to-string n))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert01Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert01 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert01 (-> String)
+              &str:concat |S1: (:msg s)
+          :examples $ []
+          :schema $ quote Impl
+        'Alert02 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert02 (:code Number) (:impls BaseAlert AlertPlugin calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert02Base $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert02 BaseAlert
+            .kind $ fn (s)
+              hint-fn $ Fn Alert02 (-> String)
+              , |base-02
+          :examples $ []
+          :schema $ quote Impl
+        'Alert02Impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert02 AlertPlugin
+            .alert $ fn (s n)
+              hint-fn $ Fn Alert02 Number (-> String)
+              to-string (&+ (:code s) n)
+          :examples $ []
+          :schema $ quote Impl
+        'Alert02Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert02 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert02 (-> String)
+              &str:concat |S2: (to-string (:code s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert03 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert03 (:flag Bool) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert03Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert03 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert03 (-> String)
+              if (:flag s) |S3:on |S3:off
+          :examples $ []
+          :schema $ quote Impl
+        'Alert04 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert04 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert04Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert04 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert04 (-> String)
+              &str:concat |S4: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert05 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert05 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert05Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert05 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert05 (-> String)
+              &str:concat |S5: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert06 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert06 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert06Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert06 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert06 (-> String)
+              &str:concat |S6: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert07 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert07 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert07Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert07 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert07 (-> String)
+              &str:concat |S7: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert08 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert08 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert08Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert08 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert08 (-> String)
+              &str:concat |S8: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert09 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert09 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert09Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert09 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert09 (-> String)
+              &str:concat |S9: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'Alert10 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Alert10 (:v Number) (:impls calcit.core/Show)
+          :examples $ []
+          :schema $ quote StructDef
+        'Alert10Show $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Alert10 calcit.core/Show
+            .show $ fn (s)
+              hint-fn $ Fn Alert10 (-> String)
+              &str:concat |S10: (to-string (:v s))
+          :examples $ []
+          :schema $ quote Impl
+        'read-base-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-base-kind (x)
+            .kind x
+          :examples $ []
+          :schema $ quote $ Fn T (-> String) (:generics T) (:where $ T test-traits.dyn/BaseAlert)
+        'dyn-plugin-suite $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn dyn-plugin-suite ()
+            let
+                shows $ assert-type
+                  []
+                    dyn:box (Alert01 :msg |hi) calcit.core/Show
+                    dyn:box (Alert02 :code 2) calcit.core/Show
+                    dyn:box (Alert03 :flag true) calcit.core/Show
+                    dyn:box (Alert04 :v 4) calcit.core/Show
+                    dyn:box (Alert05 :v 5) calcit.core/Show
+                    dyn:box (Alert06 :v 6) calcit.core/Show
+                    dyn:box (Alert07 :v 7) calcit.core/Show
+                    dyn:box (Alert08 :v 8) calcit.core/Show
+                    dyn:box (Alert09 :v 9) calcit.core/Show
+                    dyn:box (Alert10 :v 10) calcit.core/Show
+                  List (Dyn calcit.core/Show)
+                rendered $ map shows $ fn (item) (.show item)
+                plugins $ assert-type
+                  {}
+                    :first $ dyn:box (Alert01 :msg |warn) AlertPlugin
+                    :second $ dyn:box (Alert02 :code 30) AlertPlugin
+                  Map Tag (Dyn AlertPlugin)
+                first-plugin $ .unwrap-or (.get plugins :first) (dyn:box (Alert01 :msg |fallback) AlertPlugin)
+                second-plugin $ .unwrap-or (.get plugins :second) (dyn:box (Alert01 :msg |fallback) AlertPlugin)
+              assert= ([] |S1:hi |S2:2 |S3:on |S4:4 |S5:5 |S6:6 |S7:7 |S8:8 |S9:9 |S10:10) rendered
+              assert= |base-01 $ .kind first-plugin
+              assert= |base-02 $ read-base-kind second-plugin
+              assert= |warn:5 $ .alert first-plugin 5
+              assert= |35 $ .alert second-plugin 5
+              assert= true $ = (dyn:box (Alert01 :msg |hi) calcit.core/Show) (&list:nth shows 0)
+              assert= false $ = (dyn:box (Alert01 :msg |no) calcit.core/Show) (&list:nth shows 0)
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |dyn-trait-ten-types-map-and-transitive-requires)
+            :code $ quote $ assert= 1 (test-traits.dyn/dyn-plugin-suite)
+            :tags $ #{} :struct-origin-portable :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-traits.dyn
     'test-traits.external $ %{} 'FileEntry
       :defs $ {}
         'Counter $ %{} 'CodeEntry (:doc |)

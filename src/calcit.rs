@@ -144,6 +144,8 @@ pub enum Calcit {
   UnionDef(Arc<CalcitUnionDef>),
   /// trait definition value, carries method signatures
   Trait(Arc<CalcitTrait>),
+  /// Object-safe fat pointer boxing a concrete value with a resolved trait vtable.
+  DynTrait(Arc<CalcitDynTrait>),
   /// trait implementation value, carries methods and target trait name
   Impl(Arc<CalcitImpl>),
   /// native functions that providing feature from Rust
@@ -189,6 +191,23 @@ impl Eq for CalcitAnyBox {}
 pub enum RawCodeType {
   Js,
 }
+
+/// Runtime representation of an object-safe `(Dyn Trait)` trait object.
+#[derive(Debug, Clone)]
+pub struct CalcitDynTrait {
+  pub trait_def: Arc<CalcitTrait>,
+  pub value: Calcit,
+  /// Resolved callable entries covering `trait_def` and transitively required traits.
+  pub vtable: Arc<std::collections::HashMap<EdnTag, Calcit>>,
+}
+
+impl PartialEq for CalcitDynTrait {
+  fn eq(&self, other: &Self) -> bool {
+    self.trait_def == other.trait_def && self.value == other.value
+  }
+}
+
+impl Eq for CalcitDynTrait {}
 
 impl fmt::Display for Calcit {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -325,6 +344,7 @@ impl fmt::Display for Calcit {
         f.write_char(')')
       }
       Trait(t) => write!(f, "{t}"),
+      DynTrait(dt) => write!(f, "(&dyn {})", dt.trait_def.name),
       Impl(impl_def) => {
         write!(f, "(%impl :{}", impl_def.name())?;
         for idx in 0..impl_def.fields().len() {
@@ -624,6 +644,11 @@ impl Hash for Calcit {
         "trait:".hash(_state);
         t.hash(_state);
       }
+      DynTrait(dt) => {
+        "dyn-trait:".hash(_state);
+        dt.trait_def.hash(_state);
+        dt.value.hash(_state);
+      }
       Impl(impl_def) => {
         "impl:".hash(_state);
         impl_def.name.hash(_state);
@@ -781,6 +806,10 @@ impl Ord for Calcit {
       (Trait { .. }, _) => Less,
       (_, Trait { .. }) => Greater,
 
+      (DynTrait(a), DynTrait(b)) => compare_calcit_trait_values(&a.trait_def, &b.trait_def).then_with(|| a.value.cmp(&b.value)),
+      (DynTrait(_), _) => Less,
+      (_, DynTrait(_)) => Greater,
+
       (Impl(a), Impl(b)) => compare_calcit_impl_values(a, b),
       (Impl { .. }, _) => Less,
       (_, Impl { .. }) => Greater,
@@ -858,6 +887,7 @@ impl PartialEq for Calcit {
       (EnumDef(a), EnumDef(b)) => a == b,
       (UnionDef(a), UnionDef(b)) => a == b,
       (Trait(a), Trait(b)) => a == b,
+      (DynTrait(a), DynTrait(b)) => a == b,
       (Impl(a), Impl(b)) => a == b,
       (Proc(a), Proc(b)) => a == b,
       (Macro { id: a, .. }, Macro { id: b, .. }) => a == b,
@@ -1061,6 +1091,7 @@ impl Calcit {
       EnumDef(enm) => format!("**Calcit enum definition** (`{}`)", enm.name()),
       UnionDef(union_def) => format!("**Calcit union definition** (`{}`)", union_def.name),
       Trait(trt) => format!("**Calcit trait** (`{}`) — trait definition", trt.name),
+      DynTrait(dt) => format!("**Calcit dyn trait** (`(&dyn {})`)", dt.trait_def.name),
       Impl(imp) => format!("**Calcit impl** (`{}`) — trait implementation", imp.name),
       Proc(p) => format!("**Calcit procedure** (`{p}`) — native function"),
       Macro { id, .. } => format!("**Calcit macro** (`{id}`)"),

@@ -577,6 +577,7 @@ pub(super) fn build_runtime_fns(
   let enum_tag = require_tag("enum");
   let set_tag = require_tag("set");
   let struct_tag = require_tag("struct");
+  let dyn_trait_tag = require_tag("dyn-trait");
   let nil_tag = require_tag("nil");
   let bool_tag = require_tag("bool");
   let number_tag = require_tag("number");
@@ -644,6 +645,7 @@ pub(super) fn build_runtime_fns(
       set: set_tag,
       struct_tag,
       enum_tag,
+      dyn_trait: dyn_trait_tag,
       nil: nil_tag,
       bool_tag,
       number: number_tag,
@@ -1171,6 +1173,7 @@ pub(super) fn build_runtime_fns(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -1648,6 +1651,7 @@ pub(super) struct ValueRuntimeTags {
   pub(super) map: i32,
   pub(super) set: i32,
   pub(super) struct_tag: i32,
+  pub(super) dyn_trait: i32,
   pub(super) nil: i32,
   pub(super) bool_tag: i32,
   pub(super) number: i32,
@@ -1667,6 +1671,7 @@ pub(super) fn build_rt_value_hash(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -1725,6 +1730,24 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::I32Const((number_tag as u32).wrapping_mul(0x0100_0193) as i32));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(dyn_trait_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(self_idx));
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -2059,6 +2082,7 @@ fn build_rt_value_equal(
     map: map_tag,
     set: set_tag,
     struct_tag,
+    dyn_trait: dyn_trait_tag,
     nil: nil_tag,
     bool_tag,
     number: number_tag,
@@ -2482,7 +2506,46 @@ fn build_rt_value_equal(
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(dyn_trait_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::LocalSet(elem_b));
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(elem_a));
+  b.emit(Instruction::LocalGet(elem_b));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End); // dyn_trait if
   b.emit(Instruction::End); // any_box if
   b.emit(Instruction::End); // number if
   b.emit(Instruction::End); // bool if

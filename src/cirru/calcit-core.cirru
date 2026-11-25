@@ -5153,6 +5153,26 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+          :tests $ [] $ %{} 'TestEntry (:name |dyn-countable-dispatches-ten-concrete-types)
+            :code $ quote $ let
+                xs $ assert-type
+                  []
+                    dyn:box |hello Countable
+                    dyn:box ([] 1 2 3) Countable
+                    dyn:box ([] |a |b) Countable
+                    dyn:box ({} (:a 1) (:b 2)) Countable
+                    dyn:box ({} (|k 9)) Countable
+                    dyn:box (#{} :x :y :z) Countable
+                    dyn:box (Option :some 7) Countable
+                    dyn:box (Result :ok |yes) Countable
+                    dyn:box (StreamConsumeError :total-limit) Countable
+                    dyn:box (JsonValue :array ([] (JsonValue :null))) Countable
+                  List (Dyn Countable)
+                counts $ map xs $ fn (item) (.count item)
+              assert= ([] 5 3 2 2 1 3 2 2 1 2) counts
+              assert= :dyn-trait $ type-of $ &list:nth xs 0
+              assert= "|(&dyn Countable)" $ &str $ &list:nth xs 0
+            :tags $ #{} :core :unit
         'Data $ %{} 'CodeEntry
           :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
           :code $ quote $ defenum Data (:nil) (:bool Bool) (:number Number) (:string String) (:tag Tag) (:symbol Symbol)
@@ -5992,6 +6012,26 @@
           :examples $ []
           :schema $ quote Trait
           :tags $ #{} :trait
+          :tests $ [] $ %{} 'TestEntry (:name |dyn-to-string-handles-scalars-equality-and-where)
+            :code $ quote $ let
+                as-text $ fn (x)
+                  hint-fn $ Fn T (-> String) (:generics T) (:where $ T ToString)
+                  .to-string x
+                xs $ []
+                  dyn:box 42 ToString
+                  dyn:box |ok ToString
+                  dyn:box true ToString
+                  dyn:box false ToString
+                  dyn:box :ready ToString
+                  dyn:box nil ToString
+                rendered $ map xs as-text
+              assert= ([] |42 |ok |true |false |ready |) rendered
+              assert= true $ = (dyn:box 42 ToString) (dyn:box 42 ToString)
+              assert= false $ = (dyn:box 1 ToString) (dyn:box true ToString)
+              assert= false $ = (dyn:box 0 ToString) (dyn:box nil ToString)
+              assert= "|(&dyn ToString)" $ &str $ &list:nth xs 0
+              assert= :dyn-trait $ type-of $ &list:nth xs 0
+            :tags $ #{} :core :unit
         '[] $ %{} 'CodeEntry
           :doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements"
           :code $ quote &runtime-implementation

@@ -162,6 +162,7 @@ pub(super) struct PromoteTypeTags {
   pub set: i32,
   pub struct_tag: i32,
   pub enum_tag: i32,
+  pub dyn_trait: i32,
   pub nil: i32,
   pub bool_tag: i32,
   pub number: i32,
@@ -1821,6 +1822,27 @@ pub(super) fn build_rt_promote_value_fn(
   emit_copy_f64_elems(&mut instructions, 8);
   instructions.push(Instruction::End);
 
+  // DynTrait: 16-byte fat pointer `[vtable_id:i32 @ 0][trait_id:i32 @ 4][data:f64 @ 8]`
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.dyn_trait),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(1),
+    Instruction::LocalSet(count),
+    Instruction::I32Const(16),
+    Instruction::LocalSet(payload),
+  ]);
+  emit_persistent_alloc_and_forward(&mut instructions, payload, tags.dyn_trait, &value_fwd_ctx);
+  instructions.extend([
+    Instruction::LocalGet(dst),
+    Instruction::LocalGet(ptr),
+    Instruction::I64Load(mem_arg_i64(0)),
+    Instruction::I64Store(mem_arg_i64(0)),
+  ]);
+  emit_copy_f64_elems(&mut instructions, 8);
+  instructions.push(Instruction::End);
+
   // Struct: compact 8-byte header + descriptor-driven field trace
   instructions.extend([
     Instruction::LocalGet(tag),
@@ -2654,6 +2676,18 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
     Instruction::If(BlockType::Empty),
     Instruction::LocalGet(ptr),
     Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(count),
+  ]);
+  emit_relocate_elem_loop(&mut instructions, 8);
+  instructions.push(Instruction::End);
+
+  // DynTrait: 16-byte fat pointer `[vtable_id:i32 @ 0][trait_id:i32 @ 4][data:f64 @ 8]`
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.dyn_trait),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(1),
     Instruction::LocalSet(count),
   ]);
   emit_relocate_elem_loop(&mut instructions, 8);

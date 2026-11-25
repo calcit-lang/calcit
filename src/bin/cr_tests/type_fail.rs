@@ -8100,6 +8100,126 @@ defn main! ()
 }
 
 #[test]
+fn dyn_trait_object_safety_and_boxing_rejections() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let expect_error = |name: &str, code: &str, expected_code: &str| {
+      let entries = load_snippet_entries(code);
+      let err = run_check_only(&entries).expect_err(name);
+      assert!(err.contains(expected_code), "{name}: expected {expected_code}, got: {err}");
+    };
+
+    // Object-safety rejections on built-in and user traits across annotation positions.
+    expect_error(
+      "Dyn Eq rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Eq) (-> Bool)\n  false\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn Compare rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Compare) (-> Number)\n  0\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn Add rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Add) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn Mappable rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Mappable) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn Deserialize rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Deserialize) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn Self return rejected",
+      "def Cloner $ deftrait Cloner $ .dup $ Fn Self (-> Self)\ndefn bad (x)\n  hint-fn $ Fn (Dyn Cloner) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn :rest method rejected",
+      "def VariadicT $ deftrait VariadicT $ .log $ Fn Self (& Number) (-> Unit)\ndefn bad (x)\n  hint-fn $ Fn (Dyn VariadicT) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn DynFn method rejected",
+      "def OpenFnT $ deftrait OpenFnT $ .run AnyFn\ndefn bad (x)\n  hint-fn $ Fn (Dyn OpenFnT) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn non-Self arg0 rejected",
+      "def ListSelfT $ deftrait ListSelfT $ .items $ Fn (List Self) (-> Number)\ndefn bad (x)\n  hint-fn $ Fn (Dyn ListSelfT) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn method with extra generic rejected",
+      "def GenericMethodT $ deftrait GenericMethodT $ .tag-it $ Fn Self U (-> Number) (:generics U)\ndefn bad (x)\n  hint-fn $ Fn (Dyn GenericMethodT) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn external-object :ffi trait rejected",
+      "defexternal HostObj\n  :label String\ndefn bad (x)\n  hint-fn $ Fn (Dyn HostObj) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn non-trait type rejected",
+      "defn bad (x)\n  hint-fn $ Fn (Dyn Number) (-> Unit)\n  &unit\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "Dyn in defstruct field rejected",
+      "defstruct Holder (:item (Dyn Eq))\ndefn main! () (do Holder &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+    expect_error(
+      "dyn:box rejects non-object-safe trait",
+      "defn bad () (dyn:box 1 Eq)\ndefn main! () (do bad &unit)",
+      "E_TRAIT_NOT_OBJECT_SAFE",
+    );
+
+    // E_TRAIT_AS_TYPE hint mentions both :where and (Dyn ...).
+    {
+      let entries = load_snippet_entries("defn bad (x)\n  hint-fn $ Fn Show (-> String)\n  x .show\ndefn main! () (do bad &unit)");
+      let err = run_check_only(&entries).expect_err("bare Show should fail E_TRAIT_AS_TYPE");
+      assert!(err.contains("E_TRAIT_AS_TYPE"), "{err}");
+      assert!(
+        err.contains(":where") && err.contains("(Dyn "),
+        "expected both :where and Dyn in hint: {err}"
+      );
+    }
+
+    // E_DYN_BOX_TYPE rejections.
+    expect_error(
+      "dyn:box rejects open Dynamic value",
+      "defn bad (x)\n  hint-fn $ Fn Dynamic (-> (Dyn Show))\n  dyn:box x Show\ndefn main! () (do bad &unit)",
+      "E_DYN_BOX_TYPE",
+    );
+    expect_error(
+      "dyn:box rejects unimplemented struct",
+      "defstruct Unshown (:n Number)\ndefn bad () (dyn:box (Unshown :n 1) Show)\ndefn main! () (do bad &unit)",
+      "E_DYN_BOX_TYPE",
+    );
+    expect_error(
+      "dyn:box rejects Option Dynamic",
+      "defn bad (x)\n  hint-fn $ Fn (Option Dynamic) (-> (Dyn Countable))\n  dyn:box x Countable\ndefn main! () (do bad &unit)",
+      "E_DYN_BOX_TYPE",
+    );
+    expect_error(
+      "dyn:box rejects non-trait second argument",
+      "defn bad () (dyn:box 1 2)\ndefn main! () (do bad &unit)",
+      "E_DYN_BOX_TYPE",
+    );
+  });
+}
+
+#[test]
 fn tightened_core_generic_schemas_enforce_bounds_and_cases() {
   run_with_large_stack(|| {
     injection::inject_platform_apis();
@@ -8346,5 +8466,212 @@ defn main! ()
     assert!(warnings.is_empty(), "custom Compare 2-arg sort warnings: {warnings:?}");
     let fresh_entries = prepare_app(custom_sort_by);
     run_check_only(&fresh_entries).expect("custom Compare 2-arg sort should pass check-only");
+  });
+}
+
+#[test]
+fn dyn_trait_positive_type_check_and_where_satisfaction() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let code = r#"
+deftrait BaseNamed
+  .base-name $ Fn Self (-> String)
+
+deftrait Plugin (requires BaseNamed)
+  .run $ Fn Self Number (-> String)
+
+defstruct Alpha (:id Number) (:impls BaseNamed Plugin)
+defimpl Alpha BaseNamed $ .base-name $ fn (self) (hint-fn $ Fn Alpha (-> String)) |alpha
+defimpl Alpha Plugin $ .run $ fn (self n) (hint-fn $ Fn Alpha Number (-> String)) (str |alpha: n)
+
+defstruct Beta (:label String) (:impls BaseNamed Plugin)
+defimpl Beta BaseNamed $ .base-name $ fn (self) (hint-fn $ Fn Beta (-> String)) (:label self)
+defimpl Beta Plugin $ .run $ fn (self n) (hint-fn $ Fn Beta Number (-> String)) (str (:label self) |: n)
+
+defn via-where (x)
+  hint-fn $ Fn T (-> String) (:generics T) (:where $ T BaseNamed)
+  x .base-name
+
+defn render-all (items)
+  hint-fn $ Fn (List (Dyn Plugin)) (-> (List String))
+  map items $ fn (item) (str (via-where item) |= (item .run 7))
+
+defn main! ()
+  hint-fn $ Fn (-> Unit) (:features :io)
+  let
+      items $ [] (dyn:box (Alpha :id 1) Plugin) (dyn:box (Beta :label |beta) Plugin)
+      out $ render-all items
+    println out
+"#;
+    let entries = load_snippet_entries(code);
+    run_check_only(&entries).expect("Dyn Plugin with transitive requires and :where bound should pass strict check");
+  });
+}
+
+#[cfg(feature = "wasm")]
+#[test]
+fn dyn_trait_wasm_uses_br_table_without_call_indirect_and_checks_wasi_capabilities() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let valid_code = r#"
+deftrait Plugin
+  .emit-code $ Fn Self Number (-> Number)
+
+defstruct P1 (:k Number) (:impls Plugin)
+defimpl P1 Plugin $ .emit-code $ fn (self n) (hint-fn $ Fn P1 Number (-> Number)) (&+ (:k self) n)
+
+defstruct P2 (:k Number) (:impls Plugin)
+defimpl P2 Plugin $ .emit-code $ fn (self n) (hint-fn $ Fn P2 Number (-> Number)) (&* (:k self) n)
+
+defn sum-plugins (items)
+  hint-fn $ Fn (List (Dyn Plugin)) (-> Number)
+  foldl items 0 $ fn (acc item) (&+ acc (item .emit-code 3))
+
+defn run-dyn-test ()
+  hint-fn $ Fn (-> Number)
+  let
+      items $ [] (dyn:box (P1 :k 10) Plugin) (dyn:box (P2 :k 5) Plugin)
+    sum-plugins items
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let ((_total (run-dyn-test))) &unit
+"#;
+    let core_code = format!("{valid_code}\ndefwasm-export run-core-dyn-test ()\n  hint-fn $ Fn (-> Number)\n  run-dyn-test\n");
+    let core_entries = load_snippet_entries(&core_code);
+    run_check_only(&core_entries).expect("valid Core WASM dyn trait snippet should preprocess");
+
+    let out_dir = tempfile::tempdir().expect("temp dir");
+    let emit_str = out_dir.path().to_str().expect("utf8 path");
+    calcit::wasm::emit_wasm::emit_wasm_with_world(
+      &core_entries.init_ns,
+      &core_entries.init_def,
+      emit_str,
+      calcit::wasm::emit_wasm::WasmTarget::Core,
+      calcit::wasm::emit_wasm::WasmBoundary::Native,
+      calcit::wasm::emit_wasm::WasiWorld::Command,
+    )
+    .expect("core WASM emit for Dyn Plugin should succeed");
+
+    let wasm_bytes = fs::read(out_dir.path().join("program.wasm")).expect("program.wasm");
+    let mut call_indirect_count = 0usize;
+    let mut br_table_count = 0usize;
+    let mut table_entries = 0u64;
+    for payload in wasmparser::Parser::new(0).parse_all(&wasm_bytes) {
+      match payload.expect("valid wasm payload") {
+        wasmparser::Payload::TableSection(reader) => {
+          for table in reader {
+            let table = table.expect("table entry");
+            table_entries += table.ty.initial;
+          }
+        }
+        wasmparser::Payload::CodeSectionEntry(body) => {
+          let mut ops = body.get_operators_reader().expect("operators");
+          while !ops.eof() {
+            match ops.read().expect("op") {
+              wasmparser::Operator::CallIndirect { .. } => call_indirect_count += 1,
+              wasmparser::Operator::BrTable { .. } => br_table_count += 1,
+              _ => {}
+            }
+          }
+        }
+        _ => {}
+      }
+    }
+    assert_eq!(call_indirect_count, 0, "Dyn Trait WASM dispatch must emit zero CallIndirect");
+    assert_eq!(table_entries, 0, "Dyn Trait WASM dispatch must add zero funcref table entries");
+    assert!(br_table_count > 0, "Dyn Trait WASM dispatch must emit BrTable trampoline");
+
+    let load_wasi_entries = |snippet: &str| {
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+      annotate_snippet_macros(&mut file);
+      file.defs.get_mut("main!").expect("main! entry").schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![],
+        Arc::new(CalcitTypeAnnotation::Unit),
+      ));
+      snapshot.files.insert("app.main".to_owned(), file);
+      prepare_snapshot_entries(snapshot)
+    };
+
+    let entries = load_wasi_entries(valid_code);
+    run_check_only(&entries).expect("valid WASI dyn trait snippet should preprocess");
+    calcit::wasm::emit_wasm::check_wasi_component(&entries.init_ns, &entries.init_def, calcit::wasm::emit_wasm::WasiWorld::Command)
+      .expect("pure Dyn Trait program must pass WASI 0.3 command component check");
+
+    // A boxed concrete impl that invokes a host capability disallowed on Core WASM (`wait-ms`)
+    // must be caught through the reachable BrTable trampoline, while an unboxed impl must not poison Core WASM.
+    let bad_wasi_code = r#"
+deftrait TaskPlugin
+  .step $ Fn Self (-> Number)
+
+defstruct GoodWorker (:n Number) (:impls TaskPlugin)
+defimpl GoodWorker TaskPlugin $ .step $ fn (self)
+  hint-fn $ Fn GoodWorker (-> Number)
+  :n self
+
+defstruct BadWorker (:n Number) (:impls TaskPlugin)
+defimpl BadWorker TaskPlugin $ .step $ fn (self)
+  hint-fn $ Fn BadWorker (-> Number)
+  do (wait-ms 1) (:n self)
+      w $ dyn:box (BadWorker :n 7) TaskPlugin
+      _n $ w .step
+    , &unit
+"#;
+    let bad_core_entries = load_wasi_entries(bad_wasi_code);
+    run_check_only(&bad_core_entries).expect("snippet preprocesses");
+    let core_err = calcit::wasm::emit_wasm::emit_wasm_with_world(
+      &bad_core_entries.init_ns,
+      &bad_core_entries.init_def,
+      emit_str,
+      calcit::wasm::emit_wasm::WasmTarget::Core,
+      calcit::wasm::emit_wasm::WasmBoundary::Native,
+      calcit::wasm::emit_wasm::WasiWorld::Command,
+    )
+    .expect_err("Core WASM must catch disallowed capability inside reachable Dyn Trait BrTable arm");
+    assert!(
+      core_err.contains("E_WASM_CAPABILITY") || core_err.contains("E_WASM_TARGET"),
+      "expected E_WASM_CAPABILITY/E_WASM_TARGET, got: {core_err}"
+    );
+
+    // WASI Native boundary must reject component-only `read-stdin-text` inside a reachable Dyn Trait arm.
+    let bad_native_wasi = bad_wasi_code.replace("(wait-ms 1)", "(read-stdin-text)");
+    let bad_native_entries = load_wasi_entries(&bad_native_wasi);
+    run_check_only(&bad_native_entries).expect("bad WASI native snippet preprocesses");
+    let wasi_err = calcit::wasm::emit_wasm::emit_wasm_with_world(
+      &bad_native_entries.init_ns,
+      &bad_native_entries.init_def,
+      emit_str,
+      calcit::wasm::emit_wasm::WasmTarget::Wasi,
+      calcit::wasm::emit_wasm::WasmBoundary::Native,
+      calcit::wasm::emit_wasm::WasiWorld::Command,
+    )
+    .expect_err("WASI must catch disallowed capability inside reachable Dyn Trait impl");
+    assert!(
+      wasi_err.contains("E_WASI_COMMAND_CAPABILITY") || wasi_err.contains("E_WASM_TARGET"),
+      "expected E_WASI_COMMAND_CAPABILITY, got: {wasi_err}"
+    );
+
+    // WASI 0.3 Component check must reject unsupported FsPath `.walk-dir` inside a reachable Dyn Trait arm.
+    let bad_component_wasi = bad_wasi_code.replace("(wait-ms 1)", "(.walk-dir (FsPath :value |.))");
+    let bad_component_entries = load_wasi_entries(&bad_component_wasi);
+    run_check_only(&bad_component_entries).expect("bad component snippet preprocesses");
+    let comp_err = calcit::wasm::emit_wasm::check_wasi_component(
+      &bad_component_entries.init_ns,
+      &bad_component_entries.init_def,
+      calcit::wasm::emit_wasm::WasiWorld::Command,
+    )
+    .expect_err("WASI 0.3 command component check must catch unsupported op inside reachable Dyn Trait impl");
+    assert!(
+      comp_err.contains("E_WASI_COMMAND") || comp_err.contains("E_WASM_CAPABILITY"),
+      "expected WASI component capability error, got: {comp_err}"
+    );
   });
 }

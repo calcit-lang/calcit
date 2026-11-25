@@ -45,6 +45,7 @@ use crate::wasm::host::runner::preprocess::{
 
 mod any_box;
 mod component;
+mod dyn_trait;
 mod edn_parse;
 mod http_proxy;
 mod link;
@@ -1304,8 +1305,10 @@ fn emit_wasm_impl(
     }
   }
 
+  let dyn_base_fn_idx = num_imports + runtime_fn_count + fn_defs.len() as u32;
   let env = WasmCompileEnv {
     function_value_dependencies: Rc::default(),
+    dyn_traits: Rc::new(RefCell::new(dyn_trait::DynTraitRegistry::new(dyn_base_fn_idx))),
     fn_index,
     fn_arity,
     fn_has_rest,
@@ -1467,6 +1470,8 @@ fn emit_wasm_impl(
       }
     }
   }
+
+  dyn_trait::compile_dyn_trampolines(&env, &mut compiled_fns, &mut unsupported_dependencies)?;
 
   if boundary == WasmBoundary::Native && !native_export_wrappers.is_empty() {
     let native = global_layout.native.expect("native turn globals must exist on Native boundary");
@@ -6085,6 +6090,8 @@ struct WasmCompileEnv {
   value_imports: HashMap<String, Calcit>,
   /// Statically resolved function definitions available for closure-argument specialization.
   static_fn_defs: HashMap<String, Arc<StaticFnDef>>,
+  /// Registry for object-safe `(Dyn Trait)` fat pointers and `BrTable` dispatch trampolines.
+  dyn_traits: Rc<RefCell<dyn_trait::DynTraitRegistry>>,
   /// qualified function name → funcref table slot index (0-based, for call_indirect)
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
@@ -6509,6 +6516,8 @@ struct WasmGenCtx {
   value_imports: HashMap<String, Calcit>,
   /// Statically resolved function definitions available for closure-argument specialization.
   static_fn_defs: HashMap<String, Arc<StaticFnDef>>,
+  /// Registry for object-safe `(Dyn Trait)` fat pointers and `BrTable` dispatch trampolines.
+  dyn_traits: Rc<RefCell<dyn_trait::DynTraitRegistry>>,
   /// qualified function name → funcref table slot index (for call_indirect)
   fn_table_index: HashMap<String, u32>,
   /// Target-approved host imports keyed by `(module, field)`.
@@ -6606,6 +6615,7 @@ impl WasmGenCtx {
       atom_is_scalar: env.atom_is_scalar,
       value_imports: env.value_imports,
       static_fn_defs: env.static_fn_defs,
+      dyn_traits: env.dyn_traits,
       fn_table_index: env.fn_table_index,
       host_imports: env.host_imports,
       target: env.target,
@@ -7987,6 +7997,16 @@ fn infer_wasm_evidence_in_scope(
             known_function,
             exact_impls: inner.is_some_and(|ev| ev.exact_impls),
           })
+        }
+        Calcit::Syntax(CalcitSyntax::DynBox, _) if items.len() == 3 => {
+          let file_ns = ctx
+            .specialization_stack
+            .last()
+            .and_then(|qualified| qualified.rsplit_once('/').map(|(ns, _)| ns))
+            .unwrap_or(&ctx.source_ns);
+          dyn_trait::resolve_wasm_trait_def(&items[2], file_ns)
+            .ok()
+            .map(|trait_def| WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::DynTrait(trait_def))))
         }
         Calcit::Syntax(CalcitSyntax::EncodeMapAs, _) => {
           let target = resolve_codec_target_annotation(items)?;
@@ -9502,6 +9522,7 @@ fn wasm_non_nil_value_is_nonzero(annotation: &CalcitTypeAnnotation) -> bool {
       | CalcitTypeAnnotation::StructDef(_)
       | CalcitTypeAnnotation::EnumDef(_)
       | CalcitTypeAnnotation::Any
+      | CalcitTypeAnnotation::DynTrait(_)
   )
 }
 
@@ -10929,7 +10950,10 @@ fn check_uses_recur(expr: &Calcit) -> bool {
 fn expr_uses_trait_call(expr: &Calcit) -> bool {
   match expr {
     Calcit::List(items) => {
-      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeTraitCall))) || items.iter().any(expr_uses_trait_call)
+      matches!(
+        items.first(),
+        Some(Calcit::Proc(CalcitProc::NativeTraitCall) | Calcit::Syntax(CalcitSyntax::DynBox, _))
+      ) || items.iter().any(expr_uses_trait_call)
     }
     _ => false,
   }
@@ -11839,6 +11863,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       CalcitSyntax::TryDecodeMapAs => edn_parse::emit_try_decode_map_as(ctx, &args_list),
       CalcitSyntax::DecodeMapAs => edn_parse::emit_decode_map_as(ctx, &args_list),
       CalcitSyntax::EncodeMapAs => edn_parse::emit_encode_map_as(ctx, &args_list),
+      CalcitSyntax::DynBox => dyn_trait::emit_dyn_box(ctx, &args_list),
       CalcitSyntax::JsCast => Err(format!("{syn} is not yet supported in WASM codegen")),
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
       CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
@@ -12723,6 +12748,10 @@ fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
     .filter(|evidence| !nil_type_evidence_is_open(&evidence.annotation) && !evidence.annotation.contains_type_var())
     .ok_or_else(|| "E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires a concrete receiver type".to_owned())?;
   let receiver_type = receiver.annotation;
+  let expanded_receiver = expand_wasm_value_type(&receiver_type);
+  if let CalcitTypeAnnotation::DynTrait(boxed_trait) = expanded_receiver.as_ref() {
+    return dyn_trait::emit_dyn_trait_dispatch(ctx, boxed_trait, &args[0], method_name.ref_str(), &args[2..]);
+  }
   let nominal = receiver_type.resolve_to_enum().is_some()
     || receiver_type.resolve_to_struct().is_some()
     || matches!(receiver_type.as_ref(), CalcitTypeAnnotation::AnonymousEnum)
@@ -14858,6 +14887,7 @@ pub(super) fn proven_disjoint_value_kind(annotation: &CalcitTypeAnnotation) -> O
       Some("enum-def")
     }
     CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => Some("fn"),
+    CalcitTypeAnnotation::DynTrait(_) => Some("dyn-trait"),
     CalcitTypeAnnotation::TypeRef(_, _) => {
       if annotation.resolve_to_struct().is_some() {
         Some("struct")
@@ -17056,6 +17086,7 @@ mod tests {
 
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -17245,6 +17276,7 @@ mod tests {
     ]);
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: fn_index.clone(),
       fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
       fn_has_rest: HashMap::new(),
@@ -17473,6 +17505,7 @@ mod tests {
   fn proc_spread_inlines_literals_and_rejects_runtime_lists() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -17581,6 +17614,7 @@ mod tests {
   fn anonymous_method_expansion_guard_is_scoped_to_the_body() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -17667,6 +17701,7 @@ mod tests {
 
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -17773,6 +17808,7 @@ mod tests {
     };
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -20095,6 +20131,7 @@ mod tests {
       0,
       WasmCompileEnv {
         function_value_dependencies: Default::default(),
+        dyn_traits: Default::default(),
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
@@ -20172,6 +20209,7 @@ mod tests {
       0,
       WasmCompileEnv {
         function_value_dependencies: Default::default(),
+        dyn_traits: Default::default(),
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),
@@ -20482,6 +20520,7 @@ mod tests {
 
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -20695,6 +20734,7 @@ mod tests {
 
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -20817,6 +20857,7 @@ mod tests {
   fn recur_back_edge_validates_and_invalidates_scalar_origin() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -20962,6 +21003,7 @@ mod tests {
   fn map_equality_checks_value_scalar_collision() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -21092,6 +21134,7 @@ mod tests {
   fn list_concat_equality_checks_closed_element_types() {
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
       fn_index: HashMap::new(),
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
@@ -21186,6 +21229,7 @@ mod tests {
 
         let env = WasmCompileEnv {
           function_value_dependencies: Default::default(),
+          dyn_traits: Default::default(),
           fn_index: HashMap::new(),
           fn_arity: HashMap::new(),
           fn_has_rest: HashMap::new(),

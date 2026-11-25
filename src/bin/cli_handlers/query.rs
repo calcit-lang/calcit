@@ -1217,7 +1217,7 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
       && !name.starts_with('\'')
       && CalcitTypeAnnotation::canonical_type_symbol_name(name).is_some()
       // Constructors that need a payload have no bare meaning.
-      && !matches!(name, "Optional" | "JsNullish" | "Variadic");
+      && !matches!(name, "Optional" | "JsNullish" | "Variadic" | "Dyn");
     if !is_legacy_type_name && !is_builtin_type_symbol {
       return Err(format!(
         "Unknown builtin type `{target}`. Use a builtin type name such as `Number`, a type expression such as `List Number`, or `namespace/definition`."
