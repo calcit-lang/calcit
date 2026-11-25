@@ -1493,6 +1493,7 @@ fn bounded_plain_type_relation<'a>(
         | CalcitTypeAnnotation::Method
         | CalcitTypeAnnotation::JsObject
         | CalcitTypeAnnotation::FfiResource
+        | CalcitTypeAnnotation::Any
         | CalcitTypeAnnotation::Nil
         | CalcitTypeAnnotation::Unit
         | CalcitTypeAnnotation::List(_)
@@ -1678,6 +1679,7 @@ fn bounded_plain_type_relation<'a>(
       | (Type::Method, Type::Method)
       | (Type::JsObject, Type::JsObject)
       | (Type::FfiResource, Type::FfiResource)
+      | (Type::Any, Type::Any)
       | (Type::AnonymousEnum, Type::AnonymousEnum)
       | (Type::Nil, Type::Nil)
       | (Type::Unit, Type::Unit) => {}
@@ -2007,6 +2009,9 @@ pub enum CalcitTypeAnnotation {
   /// Non-serializable, checked at `decode-map-as` / `try-decode-map-as` and field-write
   /// boundaries, and released automatically when the final host lease drops.
   FfiResource,
+  /// Closed existential box carrying a compile-time canonical `TypeId` + typed payload.
+  /// Unlike `Dynamic`, concrete types never widen to `Any` implicitly (`any:box` / `any:downcast`).
+  Any,
   /// A type slot reference declared via `deftype-slot` and bound via `bind-type`.
   /// At type-checking time, this is resolved by looking up the global TYPE_SLOTS registry.
   TypeSlot(Arc<str>),
@@ -2470,6 +2475,7 @@ impl CalcitTypeAnnotation {
       | Self::Unit
       | Self::JsObject
       | Self::FfiResource
+      | Self::Any
       | Self::TypeSlot(_) => Ok(()),
     }
   }
@@ -2508,6 +2514,7 @@ impl CalcitTypeAnnotation {
       "unit" => Some(Self::Unit),
       "js-object" => Some(Self::JsObject),
       "ffi-resource" => Some(Self::FfiResource),
+      "any-box" => Some(Self::Any),
       other => CalcitNumericRefinement::from_name(other).map(Self::Numeric),
     }
   }
@@ -2536,6 +2543,7 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("unit"),
       Self::JsObject => Some("js-object"),
       Self::FfiResource => Some("ffi-resource"),
+      Self::Any => Some("any-box"),
       _ => None,
     }
   }
@@ -2578,6 +2586,7 @@ impl CalcitTypeAnnotation {
       "method" | "Method" => Some("Method"),
       "js-object" | "JsObject" => Some("JsObject"),
       "ffi-resource" | "FfiResource" => Some("FfiResource"),
+      "any-box" | "Any" => Some("Any"),
       "js-nullish" | "JsNullish" => Some("JsNullish"),
       "&" | "variadic" | "Variadic" => Some("Variadic"),
       "record" | "Record" | "struct" | "Struct" => Some("Struct"),
@@ -2645,6 +2654,7 @@ impl CalcitTypeAnnotation {
       "Method" => Some(Self::Method),
       "JsObject" => Some(Self::JsObject),
       "FfiResource" => Some(Self::FfiResource),
+      "Any" => Some(Self::Any),
       "Struct" => Some(Self::Custom(Arc::new(Calcit::tag("struct")))),
       "StructDef" => Some(Self::Custom(Arc::new(Calcit::tag("struct-def")))),
       "EnumDef" => Some(Self::Custom(Arc::new(Calcit::tag("enum-def")))),
@@ -4530,6 +4540,7 @@ impl CalcitTypeAnnotation {
               | "Method"
               | "JsObject"
               | "FfiResource"
+              | "Any"
               | "Record"
               | "Struct"
               | "Enum"
@@ -4748,6 +4759,7 @@ impl CalcitTypeAnnotation {
                   | "Method"
                   | "JsObject"
                   | "FfiResource"
+                  | "Any"
                   | "Record"
                   | "Struct"
                   | "Enum"
@@ -5667,6 +5679,38 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Expands one `deftype` or non-constructor schema alias step from a `TypeRef`.
+  /// Unlike `resolve_schema_alias`, this stops before following a nominal type
+  /// target into its constructor `:schema` metadata (`StructDef`, `EnumDef`,
+  /// `Trait`, or `UnionDef`).
+  pub(crate) fn expand_single_type_alias(&self) -> Option<Arc<Self>> {
+    let Self::TypeRef(name, args) = self else {
+      return None;
+    };
+    let name = name.trim_start_matches('\'').trim_start_matches(':');
+    let (ns, def) = if let Some((ns, def)) = name.split_once('/') {
+      (Arc::from(ns), Arc::from(def))
+    } else if let Some(ns) = current_type_annotation_namespace() {
+      (ns, Arc::from(name))
+    } else {
+      (Arc::from(CORE_NS), Arc::from(name))
+    };
+    if let Some(alias) = lookup_def_code_registered(&ns, &def).and_then(|code| type_alias_from_code(&code)) {
+      return Some(alias.expand(&ns, args));
+    }
+    if !args.is_empty() {
+      return None;
+    }
+    let schema = lookup_schema_registered(&ns, &def)?;
+    if matches!(
+      schema.as_ref(),
+      Self::StructDef(_) | Self::EnumDef(_) | Self::Custom(_) | Self::Macro(_) | Self::Syntax(_) | Self::Trait(_) | Self::TraitSet(_)
+    ) {
+      return None;
+    }
+    Some(super::type_refs::qualify_namespace_type_refs(schema, &ns))
+  }
+
   fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
       Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
@@ -5680,6 +5724,7 @@ impl CalcitTypeAnnotation {
       Self::Nil | Self::Bool | Self::Tag | Self::Symbol => Some("&core-text-scalar-impls"),
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
+      Self::Any => Some("&core-any-box-impls"),
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -5821,6 +5866,7 @@ impl CalcitTypeAnnotation {
       Some("&core-fn-impls") => &["Debug"],
       Some("&core-scalar-impls") => &["Debug", "Eq"],
       Some("&core-cirru-quote-impls") => &["Debug", "Eq"],
+      Some("&core-any-box-impls") => &["Debug"],
       Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],
       _ => &[],
     }
@@ -6096,6 +6142,7 @@ impl CalcitTypeAnnotation {
       | (Self::Method, Self::Method)
       | (Self::JsObject, Self::JsObject)
       | (Self::FfiResource, Self::FfiResource)
+      | (Self::Any, Self::Any)
       | (Self::Nil, Self::Nil)
       | (Self::Unit, Self::Unit) => true,
       (Self::Numeric(actual), Self::Numeric(expected)) => actual == expected,
@@ -6854,6 +6901,7 @@ impl CalcitTypeAnnotation {
       Calcit::Buffer(_) => Self::Buffer,
       Calcit::BufList(_) => Self::BufList,
       Calcit::CirruQuote(_) => Self::CirruQuote,
+      Calcit::AnyBox(_) => Self::Any,
       Calcit::AnyRef(reference) if is_native_ffi_resource_ref(reference) => Self::FfiResource,
       Calcit::Method(_, crate::calcit::MethodKind::Invoke(_)) => Self::Method,
       Calcit::Trait(trait_def) => Self::Trait(trait_def.to_owned()),
@@ -7175,6 +7223,7 @@ impl CalcitTypeAnnotation {
       Self::CirruQuote => Edn::Symbol(Arc::from("CirruQuote")),
       Self::JsObject => Edn::Symbol(Arc::from("JsObject")),
       Self::FfiResource => Edn::Symbol(Arc::from("FfiResource")),
+      Self::Any => Edn::Symbol(Arc::from("Any")),
       // TypeVar: source syntax uses `'T`, while Cirru EDN stores that as `Edn::Symbol("T")`.
       Self::TypeVar(name) => Edn::Symbol(Arc::from(source_type_variable(name).trim_start_matches('\''))),
       Self::TypeRef(name, args) => {
@@ -7461,6 +7510,7 @@ impl CalcitTypeAnnotation {
       Self::Unit => 30,
       Self::JsObject => 31,
       Self::FfiResource => 41,
+      Self::Any => 42,
       Self::TypeSlot(_) => 32,
       Self::StructDef(_) => 33,
       Self::EnumDef(_) => 34,
@@ -8741,6 +8791,7 @@ mod tests {
       (CalcitTypeAnnotation::Symbol, "&core-text-scalar-impls"),
       (CalcitTypeAnnotation::Unit, "&core-scalar-impls"),
       (CalcitTypeAnnotation::CirruQuote, "&core-cirru-quote-impls"),
+      (CalcitTypeAnnotation::Any, "&core-any-box-impls"),
     ];
 
     for (annotation, definition) in cases {
@@ -12119,6 +12170,7 @@ impl Hash for CalcitTypeAnnotation {
       Self::Unit => "unit".hash(state),
       Self::JsObject => "js-object".hash(state),
       Self::FfiResource => "ffi-resource".hash(state),
+      Self::Any => "any-box".hash(state),
       Self::TypeSlot(name) => {
         "type-slot".hash(state);
         name.hash(state);
@@ -12151,7 +12203,8 @@ impl Ord for CalcitTypeAnnotation {
       | (Self::BufList, Self::BufList)
       | (Self::CirruQuote, Self::CirruQuote)
       | (Self::Method, Self::Method)
-      | (Self::FfiResource, Self::FfiResource) => Ordering::Equal,
+      | (Self::FfiResource, Self::FfiResource)
+      | (Self::Any, Self::Any) => Ordering::Equal,
       (Self::Numeric(a), Self::Numeric(b)) => a.cmp(b),
       (Self::List(a), Self::List(b)) => a.cmp(b),
       (Self::Tuple(a), Self::Tuple(b)) => a.cmp(b),
@@ -13088,6 +13141,7 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     }
     CalcitTypeAnnotation::JsObject => true, // opaque external data, allow any
     CalcitTypeAnnotation::FfiResource => is_native_ffi_resource_value(value),
+    CalcitTypeAnnotation::Any => matches!(value, Calcit::AnyBox(_)),
   }
 }
 
@@ -13220,6 +13274,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     Calcit::Buffer(_) => Arc::new(CalcitTypeAnnotation::Buffer),
     Calcit::BufList(_) => Arc::new(CalcitTypeAnnotation::BufList),
     Calcit::CirruQuote(_) => Arc::new(CalcitTypeAnnotation::CirruQuote),
+    Calcit::AnyBox(_) => Arc::new(CalcitTypeAnnotation::Any),
     Calcit::AnyRef(reference) if is_native_ffi_resource_ref(reference) => Arc::new(CalcitTypeAnnotation::FfiResource),
     Calcit::Method(_, crate::calcit::MethodKind::Invoke(_)) => Arc::new(CalcitTypeAnnotation::Method),
     Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
@@ -13321,6 +13376,7 @@ pub fn brief_type_of_value(value: &Calcit) -> &'static str {
     Calcit::Method(..) => "method",
     Calcit::Trait(_) => "trait",
     Calcit::Impl(_) => "impl",
+    Calcit::AnyBox(_) => "any-box",
     Calcit::AnyRef(reference) => {
       if is_native_ffi_resource_ref(reference) {
         "ffi-resource"

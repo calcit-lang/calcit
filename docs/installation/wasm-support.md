@@ -137,6 +137,7 @@ write-file
 | `E_WASM_EDN_DEPTH` | 数据形状嵌套过深 | 拆分数据结构 |
 | `E_WASM_EDN_SYNTAX`、`E_WASM_EDN_TAG`、`E_WASM_EDN_ENUM`、`E_WASM_EDN_RANGE` | 运行时解析失败：语法错误、未知 tag、Enum 不匹配、数值越界；返回 `Result :err` | 按 Result 分支处理 |
 | `E_WASM_EDN_INPUT_LIMIT`、`E_WASM_EDN_TOKEN_LIMIT`、`E_WASM_EDN_MAP_LIMIT` | 运行时输入超过 64 KiB、List 4096 项或 Map 2048 项；返回 `Result :err` | 拆分输入 |
+| `E_WASM_ANY_TYPE_ID` | `any:box` / `any:downcast` 未在整程序 WASM `AnyTypeTable` 中登记规范 `TypeId` 句柄，或参数结构缺少编译期 `CompiledAnyTypeId` | 确保通过正常预处理路径生成 `any:box` / `any:downcast`，并使用可单态化的闭合目标类型 |
 | `E_WASI_WORLD` | 未知的 `--world`，或 `--world http` 与 `--boundary native` 组合 | `--world` 仅支持 `command` 或 `http`，且 `http` 必须使用 `--boundary component` |
 | `E_WASI_HTTP_ENTRY` | HTTP 入口不是单参数函数，或缺少精确 `Fn HttpRequest (-> (Result HttpResponse String))` schema | 为 `:init-fn` 声明匹配的入参与返回值类型 |
 | `E_WASI_HTTP_EXPORT` | 在 `--world http` 下额外声明通用 `defwasm-export` | HTTP proxy world 只导出 `wasi:http/incoming-handler@0.2.12`，移除多余 `defwasm-export` |

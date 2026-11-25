@@ -808,6 +808,9 @@ impl GraphBuilder {
       CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),
       CalcitTypeAnnotation::FfiResource if self.allow_ffi_resource => Ok(self.push(DataShapeNode::FfiResource)),
       CalcitTypeAnnotation::FfiResource => Err(unsupported_type("FfiResource is an opaque non-serializable native resource")),
+      CalcitTypeAnnotation::Any => Err(unsupported_type(
+        "closed Any carries arbitrary typed payloads and cannot be decoded or encoded via DataShape",
+      )),
       CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => {
         Err(unsupported_type("JsNullish is an opaque JavaScript boundary value"))
       }

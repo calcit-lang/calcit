@@ -131,6 +131,7 @@ pub fn type_of(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Registered(..) => Ok(Calcit::tag("registered")),
     Trait(..) => Ok(Calcit::tag("trait")),
     Impl(..) => Ok(Calcit::tag("impl")),
+    AnyBox(..) => Ok(Calcit::tag("any-box")),
     AnyRef(..) => Ok(Calcit::tag("any-ref")),
   }
 }
@@ -1790,6 +1791,10 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let impls_value = runner::evaluate_symbol_from_program("&core-cirru-quote-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
+    AnyBox(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-any-box-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
     x => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("invoke-method cannot resolve impls for value: {x}"),
@@ -2146,6 +2151,7 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
       collect_optional_core_impls("&core-text-scalar-impls", call_stack)
     }
     Calcit::CirruQuote(..) => collect_optional_core_impls("&core-cirru-quote-impls", call_stack),
+    Calcit::AnyBox(..) => collect_optional_core_impls("&core-any-box-impls", call_stack),
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),

@@ -21,6 +21,7 @@ mod syntax_name;
 mod thunk;
 pub(crate) mod type_annotation;
 pub(crate) mod type_expr;
+pub mod type_id;
 pub(crate) mod type_refs;
 pub mod union_def;
 
@@ -77,6 +78,7 @@ pub use type_annotation::{
   install_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_type_slot, resolve_type_slot,
   value_matches_type_annotation, with_type_annotation_warning_context,
 };
+pub use type_id::{CanonicalTypeIdError, CompiledAnyTypeId, canonical_type_hash, canonical_type_key};
 pub use union_def::CalcitUnionDef;
 
 use compare::{
@@ -161,9 +163,27 @@ pub enum Calcit {
   Method(Arc<str>, MethodKind),
   /// currently only JavaScript calls are handled
   RawCode(RawCodeType, Arc<str>),
+  /// closed boxed value carrying a compile-time canonical TypeId
+  AnyBox(Arc<CalcitAnyBox>),
   /// reference to native Rust data, not intended for Calcit usages
   AnyRef(EdnAnyRef),
 }
+
+/// Closed boxed value carrying a deterministic compile-time TypeId (`type_key` + `type_hash`).
+#[derive(Debug, Clone)]
+pub struct CalcitAnyBox {
+  pub type_key: Arc<str>,
+  pub type_hash: u64,
+  pub value: Calcit,
+}
+
+impl PartialEq for CalcitAnyBox {
+  fn eq(&self, other: &Self) -> bool {
+    self.type_hash == other.type_hash && self.type_key == other.type_key && self.value == other.value
+  }
+}
+
+impl Eq for CalcitAnyBox {}
 
 #[derive(Debug, Clone)]
 pub enum RawCodeType {
@@ -372,6 +392,7 @@ impl fmt::Display for Calcit {
         MethodKind::InvokeNativeOptional => write!(f, ".?!{name}"),
       },
       RawCode(_, code) => write!(f, "(&raw-code {code})"),
+      AnyBox(_) => f.write_str("(&any-box)"),
       AnyRef(_r) => f.write_str("(&any-ref ...)"),
     }
   }
@@ -610,6 +631,12 @@ impl Hash for Calcit {
         impl_def.fields.hash(_state);
         impl_def.values.hash(_state);
       }
+      AnyBox(boxed) => {
+        "any-box:".hash(_state);
+        boxed.type_hash.hash(_state);
+        boxed.type_key.hash(_state);
+        boxed.value.hash(_state);
+      }
       AnyRef(_) => {
         "any-ref:".hash(_state);
       }
@@ -784,6 +811,10 @@ impl Ord for Calcit {
       (RawCode(..), _) => Less,
       (_, RawCode(..)) => Greater,
 
+      (AnyBox(a), AnyBox(b)) => a.type_key.cmp(&b.type_key).then_with(|| a.value.cmp(&b.value)),
+      (AnyBox(..), _) => Less,
+      (_, AnyBox(..)) => Greater,
+
       (AnyRef(a), AnyRef(b)) => compare_any_ref_values(a, b),
     }
   }
@@ -834,6 +865,7 @@ impl PartialEq for Calcit {
       (Fn { id: a, .. }, Fn { id: b, .. }) => a == b,
       (Syntax(a, _), Syntax(b, _)) => a == b,
       (Method(a, b), Method(c, d)) => a == c && b == d,
+      (AnyBox(a), AnyBox(b)) => a == b,
       (AnyRef(a), AnyRef(b)) => a == b,
       (_, _) => false,
     }
@@ -1050,6 +1082,7 @@ impl Calcit {
         format!("**Calcit method shorthand** (`.{name}`, {kind_label})")
       }
       RawCode(_, code) => format!("**Calcit raw code** (`{code}`) — inline code snippet"),
+      AnyBox(boxed) => format!("**Calcit closed Any box** (`{}`)", boxed.type_key),
       AnyRef(_) => "**Calcit any-ref** — reference to native Rust data".to_string(),
     }
   }

@@ -50,6 +50,7 @@ pub fn is_identical(a: &Calcit, b: &Calcit) -> bool {
     (BufList(x), BufList(y)) => Arc::ptr_eq(x, y),
     (Fn { info: x, .. }, Fn { info: y, .. }) => Arc::ptr_eq(x, y),
     (Macro { info: x, .. }, Macro { info: y, .. }) => Arc::ptr_eq(x, y),
+    (AnyBox(x), AnyBox(y)) => Arc::ptr_eq(x, y),
     (AnyRef(x), AnyRef(y)) => Arc::ptr_eq(&x.0, &y.0),
     // scalars, procs, syntax and definition values have no separate per-construction identity
     _ => a == b,

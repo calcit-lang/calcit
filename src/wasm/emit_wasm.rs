@@ -43,6 +43,7 @@ use crate::wasm::host::runner::preprocess::{
   expression_definitely_diverges, infer_static_type_from_expr, resolve_runtime_method_callable, resolve_static_trait_callable,
 };
 
+mod any_box;
 mod component;
 mod edn_parse;
 mod http_proxy;
@@ -678,6 +679,7 @@ fn emit_wasm_impl(
     Some(&reachable_defs),
   )?;
   struct_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
+  let any_type_table = any_box::collect_any_type_table(&fn_defs, &value_imports, &reachable_extra_exprs);
 
   let atom_count = atom_initial_values.len() as u32;
   let memory_layout = WasmMemoryLayout::compute(heap_start, atom_count);
@@ -1322,6 +1324,7 @@ fn emit_wasm_impl(
     target,
     boundary,
     world,
+    any_type_table,
   };
   for adapter in &mut component_adapters {
     adapter.target_index = *env
@@ -6025,7 +6028,8 @@ impl NativeValRepr {
       | CalcitTypeAnnotation::StructValue(_)
       | CalcitTypeAnnotation::Enum(_, _)
       | CalcitTypeAnnotation::EnumValue(_)
-      | CalcitTypeAnnotation::AnonymousEnum => Self::HeapPtrI32,
+      | CalcitTypeAnnotation::AnonymousEnum
+      | CalcitTypeAnnotation::Any => Self::HeapPtrI32,
       CalcitTypeAnnotation::TypeRef(_, _) if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() => {
         Self::HeapPtrI32
       }
@@ -6071,6 +6075,7 @@ struct WasmCompileEnv {
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
   struct_layouts: StructLayouts,
+  any_type_table: any_box::AnyTypeTable,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -6488,6 +6493,8 @@ struct WasmGenCtx {
   tag_index: HashMap<String, u32>,
   /// Stable definition identities, display names, and field layouts.
   struct_layouts: StructLayouts,
+  /// Whole-program canonical `TypeId` table (`1..=N`, `0` = never-boxed).
+  any_type_table: any_box::AnyTypeTable,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -6592,6 +6599,7 @@ impl WasmGenCtx {
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
       struct_layouts: env.struct_layouts,
+      any_type_table: env.any_type_table,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -7741,6 +7749,25 @@ fn infer_wasm_evidence_in_scope(
     Calcit::List(items) => items
       .first()
       .and_then(|head| match head {
+        Calcit::Syntax(CalcitSyntax::AnyBox, _) => Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Any))),
+        Calcit::Syntax(CalcitSyntax::AnyDowncast, _) if items.len() >= 3 => {
+          let lowered = items
+            .get(3)
+            .and_then(crate::wasm::host::calcit::CompiledAnyTypeId::from_calcit_handle)
+            .is_some();
+          let target = if lowered {
+            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&items[2], &[])
+          } else {
+            let desugared = crate::wasm::host::calcit::type_expr::desugar_quoted_form(&items[2])
+              .or_else(|| crate::wasm::host::calcit::type_expr::desugar_bare_form(&items[2]))
+              .and_then(Result::ok);
+            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(&items[2]), &[])
+          };
+          Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::TypeRef(
+            Arc::from("calcit.core/Option"),
+            Arc::new(vec![target]),
+          ))))
+        }
         Calcit::Syntax(CalcitSyntax::Match, _) if items.len() >= 3 => {
           let subject_ev = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting);
           let subject_ty = subject_ev
@@ -9500,6 +9527,7 @@ fn wasm_non_nil_value_is_nonzero(annotation: &CalcitTypeAnnotation) -> bool {
       | CalcitTypeAnnotation::Enum(_, _)
       | CalcitTypeAnnotation::StructDef(_)
       | CalcitTypeAnnotation::EnumDef(_)
+      | CalcitTypeAnnotation::Any
   )
 }
 
@@ -11775,6 +11803,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       CalcitSyntax::CallSpread => emit_call_spread(ctx, &args_list),
       CalcitSyntax::If => emit_if(ctx, &args_list),
       CalcitSyntax::CoreLet => emit_let(ctx, &args_list),
+      CalcitSyntax::AnyBox => any_box::emit_any_box(ctx, &args_list),
+      CalcitSyntax::AnyDowncast => any_box::emit_any_downcast(ctx, &args_list),
       CalcitSyntax::Match => emit_match(ctx, &args_list),
       CalcitSyntax::HintFn => {
         // hint-fn is metadata-only; emit nothing (0.0 placeholder)
@@ -14817,6 +14847,7 @@ pub(super) fn proven_disjoint_value_kind(annotation: &CalcitTypeAnnotation) -> O
   match annotation {
     CalcitTypeAnnotation::String => Some("string"),
     CalcitTypeAnnotation::Buffer => Some("buffer"),
+    CalcitTypeAnnotation::Any => Some("any-box"),
     CalcitTypeAnnotation::Symbol => Some("symbol"),
     CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("list"),
     CalcitTypeAnnotation::Set(_) => Some("set"),
@@ -14957,7 +14988,7 @@ fn is_safe_heap_type_against_open_dynamic(annotation: &Arc<CalcitTypeAnnotation>
   }
   let expanded = expand_wasm_value_type(annotation);
   match expanded.as_ref() {
-    CalcitTypeAnnotation::Never | CalcitTypeAnnotation::String | CalcitTypeAnnotation::Buffer => true,
+    CalcitTypeAnnotation::Never | CalcitTypeAnnotation::String | CalcitTypeAnnotation::Buffer | CalcitTypeAnnotation::Any => true,
     CalcitTypeAnnotation::Struct(_, _)
     | CalcitTypeAnnotation::StructValue(_)
     | CalcitTypeAnnotation::Enum(_, _)
@@ -17053,6 +17084,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(1, env.clone());
     let numeric = WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number));
@@ -17253,6 +17285,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     ctx.static_fn_defs.insert(
@@ -17480,6 +17513,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let spread = || Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm"));
@@ -17587,6 +17621,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let closure = InlineClosure {
@@ -17672,6 +17707,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let list_literal = |items: &[f64]| {
@@ -17777,6 +17813,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     // Calls `call_indirect` on `slot` with `arity` arguments 10, 20, ...
@@ -20130,6 +20167,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        any_type_table: Default::default(),
       },
     );
     ctx.locals.insert("arg".into(), 0);
@@ -20174,6 +20212,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        any_type_table: Default::default(),
       },
     );
     let local_node = |name: &str| {
@@ -20483,6 +20522,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let local_x = |type_info: Arc<CalcitTypeAnnotation>| {
       Calcit::Local(CalcitLocal {
@@ -20695,6 +20735,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let nullable_num_ty = Arc::new(CalcitTypeAnnotation::Nullable(
@@ -20833,6 +20874,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
 
     let info = Arc::new(CalcitSymbolInfo {
@@ -20964,6 +21006,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
       at_ns: Arc::from("tests.wasm"),
@@ -21093,6 +21136,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
       at_ns: Arc::from("tests.wasm"),
@@ -21186,6 +21230,7 @@ mod tests {
           target: WasmTarget::Core,
           boundary: WasmBoundary::Native,
           world: WasiWorld::Command,
+          any_type_table: Default::default(),
         };
         let info = Arc::new(CalcitSymbolInfo {
           at_ns: Arc::from("tests.wasm"),

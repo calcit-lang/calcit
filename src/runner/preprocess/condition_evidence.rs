@@ -355,7 +355,10 @@ fn visit<const EFFECTS_ONLY: bool, const PORTABLE: bool>(
         .skip(1)
         .all(|item| quoted_preserves_locals(item, scope, aliases, remaining, depth + 1)),
     ),
-    Some(Calcit::Syntax(CalcitSyntax::DecodeMapAs | CalcitSyntax::EncodeMapAs, _)) => Outcomes::unknown(
+    Some(Calcit::Syntax(
+      CalcitSyntax::DecodeMapAs | CalcitSyntax::EncodeMapAs | CalcitSyntax::AnyBox | CalcitSyntax::AnyDowncast,
+      _,
+    )) => Outcomes::unknown(
       items
         .get(1)
         .is_some_and(|input| visit::<EFFECTS_ONLY, PORTABLE>(input, scope, aliases, remaining, depth + 1).preserves_locals()),

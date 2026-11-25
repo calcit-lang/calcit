@@ -11,6 +11,7 @@ import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
+import { CalcitAnyBox } from "./js-any-box.mjs";
 
 export type CalcitValue =
   | string
@@ -34,6 +35,7 @@ export type CalcitValue =
   | CalcitEnumDef
   | CalcitUnionDef
   | CalcitCirruQuote
+  | CalcitAnyBox
   | Uint8Array
   | undefined
   | null;
@@ -70,6 +72,7 @@ enum PseudoTypeIndex {
   impl,
   fn,
   cirru_quote,
+  any_box,
 }
 
 let typeAsInt = (x: CalcitValue): number => {
@@ -95,6 +98,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitUnionDef) return PseudoTypeIndex.union_def;
   if (x instanceof CalcitTrait) return PseudoTypeIndex.trait;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
+  if (x instanceof CalcitAnyBox) return PseudoTypeIndex.any_box;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
   throw new Error("unknown type to compare");
@@ -226,6 +230,11 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
       }
       case PseudoTypeIndex.cirru_quote:
         return rawCompare(a, b); // TODO not stable
+      case PseudoTypeIndex.any_box: {
+        const left = a as CalcitAnyBox;
+        const right = b as CalcitAnyBox;
+        return compareUnicodeStrings(left.typeKey, right.typeKey) || _$n_compare(left.value, right.value);
+      }
       case PseudoTypeIndex.list:
         return compareSequences(listToArray(a as CalcitList), listToArray(b as CalcitList));
       case PseudoTypeIndex.enum_value: {

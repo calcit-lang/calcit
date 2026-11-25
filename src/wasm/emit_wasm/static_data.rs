@@ -25,6 +25,7 @@ const BUILTIN_TYPE_TAGS: &[&str] = &[
   "string",
   "symbol",
   "buffer",
+  "any-box",
   "none",
   "some",
   "ok",
@@ -48,6 +49,7 @@ const CORE_BUILTIN_IMPL_DEFS: &[&str] = &[
   "&core-struct-impls",
   "&core-enum-impls",
   "&core-scalar-impls",
+  "&core-any-box-impls",
 ];
 
 pub(super) struct ReachableProgram {
@@ -885,6 +887,7 @@ pub(super) fn build_string_pool_with_extras(
   if options.needs_value_formatting || needs_edn_format || needs_edn_parse || needs_json_format {
     strings.push("true".into());
     strings.push("false".into());
+    strings.push("(&any-box)".into());
     strings.extend(tag_index.keys().cloned());
   }
   if options.needs_value_formatting || needs_edn_format || needs_edn_parse {

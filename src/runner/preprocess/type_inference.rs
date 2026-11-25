@@ -2451,6 +2451,24 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           ))
         }),
 
+        Calcit::Syntax(CalcitSyntax::AnyBox, _) => Some(Arc::new(CalcitTypeAnnotation::Any)),
+
+        Calcit::Syntax(CalcitSyntax::AnyDowncast, _) => xs.get(2).map(|form| {
+          let lowered = xs.get(3).and_then(calcit::CompiledAnyTypeId::from_calcit_handle).is_some();
+          let target = if lowered {
+            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])
+          } else {
+            let desugared = crate::calcit::type_expr::desugar_quoted_form(form)
+              .or_else(|| crate::calcit::type_expr::desugar_bare_form(form))
+              .and_then(Result::ok);
+            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(form), &[])
+          };
+          Arc::new(CalcitTypeAnnotation::TypeRef(
+            Arc::from("calcit.core/Option"),
+            Arc::new(vec![target]),
+          ))
+        }),
+
         // Local variable as head (function call)
         // If it's a function type, return its return type
         Calcit::Local(_) | Calcit::Registered(_) => {

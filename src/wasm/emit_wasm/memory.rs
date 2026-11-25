@@ -165,6 +165,7 @@ pub(super) struct PromoteTypeTags {
   pub nil: i32,
   pub bool_tag: i32,
   pub number: i32,
+  pub any_box: i32,
 }
 
 fn emit_space_bounds_for_flag(
@@ -1662,6 +1663,67 @@ pub(super) fn build_rt_promote_value_fn(
     Instruction::End,
   ]);
 
+  // AnyBox: 16-byte payload `[type_id:u32 @ 0][flags:u32 @ 4][payload:f64 @ 8]`
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.any_box),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(16),
+    Instruction::LocalGet(tag),
+    Instruction::LocalGet(1),
+    Instruction::Call(fns.persistent_alloc),
+    Instruction::LocalTee(dst),
+    Instruction::I32Eqz,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(1),
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::Else,
+    Instruction::I32Const(2),
+    Instruction::GlobalSet(pers.needs_compact),
+    Instruction::LocalGet(0),
+    Instruction::Return,
+    Instruction::End,
+    Instruction::End,
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(4),
+    Instruction::I32Or,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(ptr),
+    Instruction::LocalGet(dst),
+    Instruction::Call(fns.fwd_put),
+    Instruction::End,
+    Instruction::LocalGet(dst),
+    Instruction::LocalGet(ptr),
+    Instruction::I64Load(mem_arg_i64(0)),
+    Instruction::I64Store(mem_arg_i64(0)),
+    Instruction::LocalGet(dst),
+    Instruction::LocalGet(ptr),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::I32Const(1),
+    Instruction::I32And,
+    Instruction::If(BlockType::Result(ValType::F64)),
+    Instruction::LocalGet(ptr),
+    Instruction::F64Load(mem_arg_f64(8)),
+    Instruction::LocalGet(1),
+    Instruction::LocalGet(2),
+    Instruction::LocalGet(3),
+    Instruction::LocalGet(4),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::Call(fns.promote_value),
+    Instruction::Else,
+    Instruction::LocalGet(ptr),
+    Instruction::F64Load(mem_arg_f64(8)),
+    Instruction::End,
+    Instruction::F64Store(mem_arg_f64(8)),
+    Instruction::LocalGet(dst),
+    Instruction::F64ConvertI32U,
+    Instruction::Return,
+    Instruction::End,
+  ]);
+
   let value_fwd_ctx = PersistentForwardCtx {
     dst,
     src_ptr: ptr,
@@ -2806,6 +2868,39 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
     Instruction::End,
     Instruction::End,
   ]);
+
+  // AnyBox: relocate payload @ +8 only when flags & 1 != 0
+  instructions.extend([
+    Instruction::LocalGet(tag),
+    Instruction::I32Const(tags.any_box),
+    Instruction::I32Eq,
+    Instruction::LocalGet(ptr),
+    Instruction::I32Load(mem_arg_i32(4)),
+    Instruction::I32Const(1),
+    Instruction::I32And,
+    Instruction::I32And,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(ptr),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalSet(addr),
+  ]);
+  emit_relocate_f64_slot(
+    &mut instructions,
+    memory,
+    pers,
+    fns,
+    &RelocateSlotLocals {
+      addr,
+      old_base: 1,
+      old_end: 2,
+      depth: 3,
+      do_patch: 4,
+      fval,
+      reloc,
+    },
+  );
+  instructions.extend([Instruction::Return, Instruction::End]);
 
   CompiledFn {
     export_name: None,

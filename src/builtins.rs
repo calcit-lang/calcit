@@ -673,6 +673,8 @@ pub fn handle_syntax(
     DecodeMapAs => syntax::decode_map_as(nodes, scope, file_ns, call_stack),
     TryDecodeMapAs => syntax::try_decode_map_as(nodes, scope, file_ns, call_stack),
     EncodeMapAs => syntax::encode_map_as(nodes, scope, file_ns, call_stack),
+    AnyBox => syntax::any_box(nodes, scope, file_ns, call_stack),
+    AnyDowncast => syntax::any_downcast(nodes, scope, file_ns, call_stack),
     AssertTraits => syntax::assert_traits(nodes, scope, file_ns, call_stack),
     Match => syntax::syntax_match(nodes, scope, file_ns, call_stack),
   }
