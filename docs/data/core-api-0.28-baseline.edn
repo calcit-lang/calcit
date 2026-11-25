@@ -1355,6 +1355,7 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Bool)
         :args $ [] (:: 'List 'T) 'T
         :generics $ [] 'T
+        :where $ {} $ 'T 'Eq
     {}
       :failure "|判断_key，不判断_value"
       :name |.contains-key?

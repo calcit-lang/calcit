@@ -1,6 +1,30 @@
 
 {}
   :migrations $ []
+    {} (:family |methods) (:issue |#2950)
+      :reason "|&list:includes?_compares_elements_with_=,_so_element_type_T_must_satisfy_Eq"
+      :version |0.48.0
+      :after $ {}
+        :failure "|判断元素，不判断位置"
+        :name |.includes?
+        :provenance 'calcit.core/&list:includes?
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+          :args $ [] (:: 'List 'T) 'T
+          :generics $ [] 'T
+          :where $ {} $ 'T 'Eq
+      :before $ {}
+        :failure "|判断元素，不判断位置"
+        :name |.includes?
+        :provenance 'calcit.core/&list:includes?
+        :receiver "|:: 'List 'Number"
+        :features $ []
+        :runtime-arity $ {} (:max 2) (:min 2)
+        :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+          :args $ [] (:: 'List 'T) 'T
+          :generics $ [] 'T
     {} (:family |definitions) (:issue |#2942)
       :reason "|distinct-values_deduplicates_Map_values_using_a_Set,_so_value_type_V_must_satisfy_Eq_and_Hash"
       :version |0.47.0

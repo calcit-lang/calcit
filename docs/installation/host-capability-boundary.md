@@ -202,6 +202,15 @@ migration diagnostic is deterministic and the replacement is documented.
 - Is there one implementation of ownership, retry, and lifecycle behavior?
 - Are compatibility, deprecation, consumer migration, and release order documented?
 
+## 核心与宿主 FFI 边界索引
+
+Calcit 在内部将语言构造与宿主 FFI 边界按目标平台（`js`、`native`、`wasm`）统一划分，确保编译器各阶段与类型系统使用同一边界：
+
+- **JavaScript 宿主边界（`js`）**：语法形式 `js-cast`、专属语法与原语（`is_js_syntax_procs`，如 `new`、`js-await`、`js-object`、`js-get`/`js-set`、`aget`/`aset`、`&raw-code`）、非核心方法形态（`.-`/`-?`、`!`/`?!` 及 external-object 访问/调用）以及类型 `JsObject`。函数体中的宿主操作需在 schema 中显式声明 `:features $ #{} :js-ffi`，`js-object` 宏返回 `Expr JsObject` 且带 `:features :js-ffi`。
+- **Native 宿主边界（`native`）**：`FfiResource` 表示 `resource-v1` 协议管理的不透明原生资源句柄，不可跨边界序列化或装箱进便携 `Any`；`ffi:task` 与 `ffi:response` 在模块适配边界将原始原生能力包装为名义类型 `FfiTask` 与 `FfiResponse`，两者的 `raw` 入参保留 `(:open :host)` 边界并打上 `:ffi` 标签。
+- **WASM / Component 宿主边界（`wasm`）**：`defwasm-export` 与 `defwasm-import` 为 WASM 导出/导入边界语法；`ReadableByteStream` 是 Component Model 只读字节流的标记类型，仅可作为 async `defwasm-export` 的唯一直接参数传递。
+- **核心语言构造**：其余 `CalcitSyntax`、普通方法调用 `Invoke`、tag 字段访问 `TagAccess` 以及普通内建/名义类型均属于可移植核心层；`Method`（`.method` 选择器）支持内建 `Debug`、`Eq` 与 `Hash`。
+
 See also [Rust bindings](ffi-bindings.md),
 [Asynchronous FFI task protocol](ffi-async-protocol.md), and
 [FFI upgrade guide](ffi-upgrade-guide.md).

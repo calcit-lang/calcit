@@ -681,36 +681,6 @@ pub fn handle_syntax(
   }
 }
 
-// detects extra javascript things in js mode,
-// mostly internal procs, also some syntaxs
-pub fn is_js_syntax_procs(s: &str) -> bool {
-  matches!(
-    s,
-    "aget"
-      | "aset"
-      | "js-get" // alias for aget
-      | "js-set" // alias for aset
-      | "js-delete"
-      | "exists?"
-      | "extract-cirru-edn"
-      | "foldl"
-      | "instance?"
-      | "&js-object"
-      | "js-array"
-      | "js-await"
-      | "load-console-formatter!"
-      | "printable"
-      | "new"
-      | "set!"
-      | "timeout-call"
-      | "to-calcit-data"
-      | "to-cirru-edn"
-      | "to-js-data"
-      | "&raw-code"
-      | "js-for-await"
-  )
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

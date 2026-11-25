@@ -52,7 +52,7 @@ struct CheckContext<'a> {
 }
 
 fn append_js_ffi_type_hint(mut message: String, expected_type: &CalcitTypeAnnotation, actual_type: &CalcitTypeAnnotation) -> String {
-  if matches!(actual_type, CalcitTypeAnnotation::JsObject)
+  if actual_type.host_target() == Some(crate::ffi_boundary::HostTarget::Js)
     && matches!(expected_type, CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_))
   {
     message.push_str(

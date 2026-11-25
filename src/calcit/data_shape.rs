@@ -805,9 +805,14 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) | CalcitTypeAnnotation::DynTrait(_) => {
         Err(unsupported_type("trait constraints are not data shapes"))
       }
-      CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),
       CalcitTypeAnnotation::FfiResource if self.allow_ffi_resource => Ok(self.push(DataShapeNode::FfiResource)),
-      CalcitTypeAnnotation::FfiResource => Err(unsupported_type("FfiResource is an opaque non-serializable native resource")),
+      CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::FfiResource => match target.host_target() {
+        Some(crate::ffi_boundary::HostTarget::Js) => Err(unsupported_type("JsObject is an opaque host value")),
+        Some(crate::ffi_boundary::HostTarget::Native) => {
+          Err(unsupported_type("FfiResource is an opaque non-serializable native resource"))
+        }
+        Some(crate::ffi_boundary::HostTarget::Wasm) | None => unreachable!("host-target partition covers JsObject and FfiResource"),
+      },
       CalcitTypeAnnotation::Any => Err(unsupported_type(
         "closed Any carries arbitrary typed payloads and cannot be decoded or encoded via DataShape",
       )),

@@ -10,6 +10,7 @@ pub mod codegen;
 pub mod def_diff;
 pub mod detailed_snapshot;
 pub mod effects_graph;
+pub mod ffi_boundary;
 pub mod js_ffi_source;
 pub mod program;
 pub mod program_diff;

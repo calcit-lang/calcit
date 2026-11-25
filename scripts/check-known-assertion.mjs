@@ -750,7 +750,7 @@ try {
         ["direct-number", "T", false, ", 1", "'T", false, /E_ERASED_GENERIC_RELATION/],
         ["nested-number", "U", true, ", 1", "'U", false, /E_ERASED_GENERIC_RELATION/],
         ["direct-list", "U", false, "[] 1", "(:: 'List 'U)", false, /E_ERASED_GENERIC_RELATION/],
-        ["nested-mixed-branch", "T", true, "if (= value value) 1 value", "'T", false, /E_FN_RETURN_UNPROVEN/],
+        ["nested-mixed-branch", "T", true, "if (&= value value) 1 value", "'T", false, /E_FN_RETURN_UNPROVEN/],
         ["nested-open-payload", "T", true, ", raw", "'T", true, /E_ERASED_GENERIC_RELATION/],
         ["direct-missing-input", "T", false, ", value", "'T", false, /E_FN_RETURN_UNPROVEN/, false],
       ].map(([label, inner, nested, returned, returnType, extra, diagnostic, declaredArgs = true]) => {

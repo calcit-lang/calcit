@@ -42,7 +42,7 @@ pub(crate) use js_ffi::{is_host_value_type, trait_is_external_object};
 pub(crate) use recur_tail::non_tail_recur_forms;
 
 use crate::{
-  builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
+  builtins::{self, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
     CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitSymbolInfo, CalcitSyntax,
@@ -51,7 +51,9 @@ use crate::{
     pop_type_slot_override, push_type_slot_override, register_type_slot, validate_definition_schema_shape,
   },
   call_stack::{CallStackList, StackKind, find_macro_location_in_def, find_preferred_macro_location},
-  codegen, program, runner,
+  codegen,
+  ffi_boundary::is_js_syntax_procs,
+  program, runner,
 };
 
 use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
@@ -14163,7 +14165,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
     CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
-    CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("&core-def-impls"),
+    CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) | CalcitTypeAnnotation::Method => Some("&core-def-impls"),
     CalcitTypeAnnotation::Custom(value)
       if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
         || matches!(

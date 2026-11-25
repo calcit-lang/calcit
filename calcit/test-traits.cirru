@@ -192,8 +192,8 @@
               assert= |base-02 $ read-base-kind second-plugin
               assert= |warn:5 $ .alert first-plugin 5
               assert= |35 $ .alert second-plugin 5
-              assert= true $ = (dyn:box (Alert01 :msg |hi) calcit.core/Show) (&list:nth shows 0)
-              assert= false $ = (dyn:box (Alert01 :msg |no) calcit.core/Show) (&list:nth shows 0)
+              assert= true $ &= (dyn:box (Alert01 :msg |hi) calcit.core/Show) (&list:nth shows 0)
+              assert= false $ &= (dyn:box (Alert01 :msg |no) calcit.core/Show) (&list:nth shows 0)
               , 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
@@ -343,8 +343,8 @@
                 assert= false $ = left-impl right-impl
                 assert= 0 $ &compare left-impl same-impl
                 assert= 1 $ &compare right-impl left-impl
-                assert= true $ = (impl-traits Item left-impl) (impl-traits Item same-impl)
-                assert= false $ = (impl-traits Item left-impl) (impl-traits Item right-impl)
+                assert= true $ &= (impl-traits Item left-impl) (impl-traits Item same-impl)
+                assert= false $ &= (impl-traits Item left-impl) (impl-traits Item right-impl)
               :tags $ #{} :trait :unit
             %{} 'TestEntry (:name |orders-definition-kinds-like-native)
               :code $ quote $ let
@@ -2087,10 +2087,10 @@
                   fn () 0
                   fn (value) value
                 assert= 1 $ if-let (value present) value 0
-                assert= true $ =
+                assert= true $ &=
                   .unwrap-or (first open-list) 0
                   , 1
-                assert= true $ = 1 $ .unwrap-or (first open-list) 0
+                assert= true $ &= 1 $ .unwrap-or (first open-list) 0
                 assert=
                   [] ([] 0 1) ([] 1 |x)
                   map-indexed open-list $ fn (idx value) ([] idx value)

@@ -403,12 +403,15 @@ fn canonical_type_key_inner(
     CalcitTypeAnnotation::Never => Err(CanonicalTypeIdError::open_type(
       "`Never` (such as an empty list `[]` or unannotated `None`) has no concrete element type and cannot be boxed into or downcast from `Any`; annotate it explicitly",
     )),
-    CalcitTypeAnnotation::JsObject => Err(CanonicalTypeIdError::open_type(
-      "`JsObject` is an untyped host boundary and cannot be boxed into or downcast from `Any`; declare an external-object trait or decode it",
-    )),
-    CalcitTypeAnnotation::FfiResource => Err(CanonicalTypeIdError::open_type(
-      "`FfiResource` is a native-only host handle and cannot be boxed into portable `Any`",
-    )),
+    CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::FfiResource => match ty.host_target() {
+      Some(crate::ffi_boundary::HostTarget::Js) => Err(CanonicalTypeIdError::open_type(
+        "`JsObject` is an untyped host boundary and cannot be boxed into or downcast from `Any`; declare an external-object trait or decode it",
+      )),
+      Some(crate::ffi_boundary::HostTarget::Native) => Err(CanonicalTypeIdError::open_type(
+        "`FfiResource` is a native-only host handle and cannot be boxed into portable `Any`",
+      )),
+      Some(crate::ffi_boundary::HostTarget::Wasm) | None => unreachable!("host-target partition covers JsObject and FfiResource"),
+    },
     CalcitTypeAnnotation::Method => Err(CanonicalTypeIdError::open_type(
       "`Method` shorthand cannot be boxed into or downcast from `Any`",
     )),

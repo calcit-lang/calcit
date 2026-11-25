@@ -740,6 +740,7 @@
                   hint-fn $ Fn T
                     -> $ Map Tag T
                     :generics T
+                    :where $ T Eq
                   if (= item item) ({}) ({})
                 empty-set $ fn (item)
                   hint-fn $ Fn T
@@ -753,6 +754,7 @@
           :schema $ quote $ Fn T
             -> $ List T
             :generics T
+            :where $ T Eq
           :tests $ []
             %{} 'TestEntry (:name |empty-collections-number)
               :code $ quote $ assert= ([]) (lexical-generic-empty-collections 1)
@@ -913,7 +915,7 @@
         'literal-equality-string $ %{} 'CodeEntry
           :doc "|Equality narrows in either operand order; the String branch uses string operations."
           :code $ quote $ defn literal-equality-string (x)
-            if (= |a x) (&str:concat x |!) |none
+            if (&= |a x) (&str:concat x |!) |none
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> String)
           :tests $ [] $ %{} 'TestEntry (:name |narrows-string-equality-either-order)
@@ -924,7 +926,7 @@
         'literal-equality-tag $ %{} 'CodeEntry
           :doc "|Equality with a Tag literal narrows the open value to Tag in the true branch."
           :code $ quote $ defn literal-equality-tag (x)
-            if (= x :a) x :b
+            if (&= x :a) x :b
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> Tag)
           :tests $ [] $ %{} 'TestEntry (:name |narrows-tag-equality)
