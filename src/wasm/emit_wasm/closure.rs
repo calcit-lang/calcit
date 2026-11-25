@@ -909,8 +909,12 @@ fn build_lifted_dedup_key(
             || String::from("_"),
             |ms| ms.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join("+"),
           );
+          let elems = ev.list_element_types.as_ref().map_or_else(
+            || String::from("_"),
+            |ts| ts.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join("+"),
+          );
           format!(
-            "{}:{origin}:{}:{codec}:[{members}]",
+            "{}:{origin}:{}:{codec}:[{members}]:[{elems}]",
             ev.annotation.to_brief_string(),
             usize::from(ev.exact_impls)
           )
@@ -1825,5 +1829,35 @@ mod tests {
       ][..],
     )));
     assert!(!closure_name_may_escape("f", &[expr]));
+  }
+
+  #[test]
+  fn lifted_dedup_key_distinguishes_list_element_types() {
+    let shape = ClosureParamShape {
+      params: vec!["x".into()],
+      required: 1,
+      rest: false,
+      option_types: Vec::new(),
+    };
+    let any_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
+    let cap_num = CaptureSpec {
+      name: "xs".into(),
+      is_heap: true,
+      evidence: Some(WasmTypeEvidence {
+        list_element_types: Some(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+        ..WasmTypeEvidence::contract(any_list.clone())
+      }),
+    };
+    let cap_mixed = CaptureSpec {
+      name: "xs".into(),
+      is_heap: true,
+      evidence: Some(WasmTypeEvidence {
+        list_element_types: Some(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::Bool)]),
+        ..WasmTypeEvidence::contract(any_list)
+      }),
+    };
+    let k1 = build_lifted_dedup_key("app.main", None, &shape, &[], &[Calcit::Number(1.0)], &[cap_num]);
+    let k2 = build_lifted_dedup_key("app.main", None, &shape, &[], &[Calcit::Number(1.0)], &[cap_mixed]);
+    assert_ne!(k1, k2);
   }
 }

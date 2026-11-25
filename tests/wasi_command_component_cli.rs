@@ -1161,9 +1161,15 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
                     if (&<= n 0) 0 (countdown (- n 1))
                   d1 $ countdown 3
                   h1 $ &list:nth (map ([] 2 3) countdown) 1
+                  walk $ defn walk (n)
+                    hint-fn $ Fn Number (-> Number)
+                    if (&<= n 0) 0 $ + 1 $ &list:nth (map ([] (- n 1)) (assert-type walk (Fn Number (-> Number)))) 0
+                  w1 $ walk 2
                   q1 $ helper/cb 5
+                  o1 $ touch-other 5
+                  m1 $ &list:nth (map ([] 5) helper/cb) 0
                   a1 $ @*alias-cb 41
-                println $ str same? |: d1 |: h1 |: q1 |: a1
+                println $ str same? |: d1 |: h1 |: w1 |: q1 |: o1 |: m1 |: a1
                 , &unit
             :examples $ []
             :schema $ quote $ Fn (-> Unit) (:features :io)
@@ -1197,7 +1203,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
       .output()
       .expect("run WASI closure edge cases component");
     assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
-    assert_eq!(String::from_utf8_lossy(&run.stdout), "true:0:0:15:42\n");
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "true:0:0:2:15:1004:15:42\n");
   }
 
   // Unsupported target initialized into defref must be rejected in WASI Component.
@@ -1302,5 +1308,185 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
   assert!(
     anon_stderr.contains("E_WASM_CLOSURE_SPECIALIZATION"),
     "expected E_WASM_CLOSURE_SPECIALIZATION for anon defref, got: {anon_stderr}"
+  );
+
+  // Reading after unconditional `reset!` to a supported function succeeds; branch-only `reset!` still rejects.
+  let reset_ok_snapshot = dir.path().join("anon-defref-reset-ok.cirru");
+  let reset_ok_out = dir.path().join("anon-reset-ok-out");
+  fs::create_dir_all(&reset_ok_out).expect("create anon reset ok out");
+  fs::write(
+    &reset_ok_snapshot,
+    r#"{} (:package |anon-defref-reset)
+  :about "|Verify reset! before read allows supported replacement of an anonymous closure defref."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'anon-defref-reset.main/main!) (:mode :native) (:reload-fn 'anon-defref-reset.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'anon-defref-reset.main
+    %{} 'FileEntry
+      :defs $ {}
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*anon-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *anon-cb (fn (x) (hint-fn $ Fn Number (-> Number)) x)
+          :examples $ []
+          :schema $ quote $ Ref $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            reset! *anon-cb inc1
+            let ((f @*anon-cb)) (println (f 41))
+            , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns anon-defref-reset.main
+"#,
+  )
+  .expect("write anon reset ok snapshot");
+  let reset_ok_compile = calcit(
+    &[reset_ok_snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    &reset_ok_out,
+  );
+  assert!(
+    reset_ok_compile.status.success(),
+    "{}",
+    String::from_utf8_lossy(&reset_ok_compile.stderr)
+  );
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let run = Command::new(cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "-W",
+        "component-model-async-stackful=y",
+      ])
+      .arg(reset_ok_out.join("program.wasm"))
+      .output()
+      .expect("run reset ok component");
+    assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "42\n");
+  }
+
+  let reset_branch_snapshot = dir.path().join("anon-defref-reset-branch.cirru");
+  let reset_branch_out = dir.path().join("anon-reset-branch-out");
+  fs::create_dir_all(&reset_branch_out).expect("create anon reset branch out");
+  fs::write(
+    &reset_branch_snapshot,
+    r#"{} (:package |anon-defref-branch)
+  :about "|Verify branch-only reset! still rejects read when initial value may be observed."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'anon-defref-branch.main/main!) (:mode :native) (:reload-fn 'anon-defref-branch.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'anon-defref-branch.main
+    %{} 'FileEntry
+      :defs $ {}
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*anon-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *anon-cb (fn (x) (hint-fn $ Fn Number (-> Number)) x)
+          :examples $ []
+          :schema $ quote $ Ref $ Fn Number (-> Number)
+        'probe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn probe (flag)
+            if flag (reset! *anon-cb inc1) inc1
+            let ((f @*anon-cb)) (f 41)
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            println (probe true)
+            , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns anon-defref-branch.main
+"#,
+  )
+  .expect("write anon reset branch snapshot");
+  let reset_branch_compile = calcit(
+    &[
+      reset_branch_snapshot.to_str().expect("utf8 path"),
+      "wasi",
+      "--boundary",
+      "component",
+    ],
+    &reset_branch_out,
+  );
+  assert!(!reset_branch_compile.status.success(), "branch-only reset! must fail");
+  assert!(
+    String::from_utf8_lossy(&reset_branch_compile.stderr).contains("E_WASM_CLOSURE_SPECIALIZATION"),
+    "expected E_WASM_CLOSURE_SPECIALIZATION for branch-only reset!, got: {}",
+    String::from_utf8_lossy(&reset_branch_compile.stderr)
+  );
+
+  // Function-valued call initializer in defref must reject with E_WASM_CLOSURE_SPECIALIZATION.
+  let call_snapshot = dir.path().join("call-defref.cirru");
+  let call_out = dir.path().join("call-out");
+  fs::create_dir_all(&call_out).expect("create call out");
+  fs::write(
+    &call_snapshot,
+    r#"{} (:package |call-defref)
+  :about "|Verify call-initialized closure defref rejects cleanly instead of leaving null callable."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'call-defref.main/main!) (:mode :native) (:reload-fn 'call-defref.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'call-defref.main
+    %{} 'FileEntry
+      :defs $ {}
+        'make-adder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-adder (k)
+            fn (x)
+              hint-fn $ Fn Number (-> Number)
+              + x k
+          :examples $ []
+          :schema $ quote $ Fn Number (-> (Fn Number (-> Number)))
+        '*saved $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *saved (make-adder 10)
+          :examples $ []
+          :schema $ quote $ Ref $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let ((f @*saved)) (println (f 1))
+            , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns call-defref.main
+"#,
+  )
+  .expect("write call defref snapshot");
+  let call_compile = calcit(
+    &[call_snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    &call_out,
+  );
+  assert!(!call_compile.status.success(), "call closure in defref must fail");
+  let call_stderr = String::from_utf8_lossy(&call_compile.stderr);
+  assert!(
+    call_stderr.contains("E_WASM_CLOSURE_SPECIALIZATION"),
+    "expected E_WASM_CLOSURE_SPECIALIZATION for call defref, got: {call_stderr}"
   );
 }

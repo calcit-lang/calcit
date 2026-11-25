@@ -9,6 +9,7 @@ fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32)
   {
     return resolve_callee_fn_idx(ctx, &Calcit::Import(definition), expected_arity);
   }
+  let is_explicit_import = matches!(callee, Calcit::Import(_));
   let (qualified, short) = match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info
@@ -27,16 +28,16 @@ fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32)
   let fn_idx = ctx
     .fn_index
     .get(&qualified)
-    .or_else(|| ctx.fn_index.get(&short))
+    .or_else(|| (!is_explicit_import).then(|| ctx.fn_index.get(&short)).flatten())
     .copied()
     .ok_or_else(|| format!("unknown HOF callee: {qualified}"))?;
   // Rest calls pack their arguments or trap when fixed arguments are missing.
   // Ordinary functions must match exactly, including Imports and known locals.
-  if !ctx.fn_has_rest.contains_key(&qualified) && !ctx.fn_has_rest.contains_key(&short) {
+  if !ctx.fn_has_rest.contains_key(&qualified) && (is_explicit_import || !ctx.fn_has_rest.contains_key(&short)) {
     let arity = ctx
       .fn_arity
       .get(&qualified)
-      .or_else(|| ctx.fn_arity.get(&short))
+      .or_else(|| (!is_explicit_import).then(|| ctx.fn_arity.get(&short)).flatten())
       .ok_or_else(|| format!("unknown HOF callee arity: {qualified}"))?;
     if *arity != expected_arity {
       return Err(format!(
@@ -55,6 +56,7 @@ fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
   {
     return resolve_callee_rest_fixed(ctx, &Calcit::Import(definition));
   }
+  let is_explicit_import = matches!(callee, Calcit::Import(_));
   let (qualified, short) = match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info.def_ref.as_ref()?;
@@ -64,7 +66,11 @@ fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
     Calcit::Symbol { sym, .. } => (sym.to_string(), sym.to_string()),
     _ => return None,
   };
-  ctx.fn_has_rest.get(&qualified).or_else(|| ctx.fn_has_rest.get(&short)).copied()
+  ctx
+    .fn_has_rest
+    .get(&qualified)
+    .or_else(|| (!is_explicit_import).then(|| ctx.fn_has_rest.get(&short)).flatten())
+    .copied()
 }
 
 /// Calls a static HOF callee with argument locals. For a `&` rest callee the
@@ -522,7 +528,12 @@ pub(super) fn emit_foldl_step(
       emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[acc, elem]);
       Ok(())
     }
-    FoldlCallKind::Inline(closure) => emit_inline_closure_body_with_evidences(ctx, closure, &[acc, elem], &types),
+    FoldlCallKind::Inline(closure) => {
+      let saved_resets = ctx.reset_initialized_atoms.clone();
+      let res = emit_inline_closure_body_with_evidences(ctx, closure, &[acc, elem], &types);
+      ctx.reset_initialized_atoms = saved_resets;
+      res
+    }
     FoldlCallKind::Proc(proc) => emit_foldl_proc_call(
       ctx,
       proc,
@@ -801,7 +812,12 @@ fn emit_unary_step_with_evidence(
       emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[arg]);
       Ok(())
     }
-    FoldlCallKind::Inline(closure) => emit_inline_closure_body_with_evidences(ctx, closure, &[arg], &[evidence]),
+    FoldlCallKind::Inline(closure) => {
+      let saved_resets = ctx.reset_initialized_atoms.clone();
+      let res = emit_inline_closure_body_with_evidences(ctx, closure, &[arg], &[evidence]);
+      ctx.reset_initialized_atoms = saved_resets;
+      res
+    }
     FoldlCallKind::Proc(proc) => {
       let sym: Arc<str> = Arc::from("__hof_arg__");
       let dummy_info = Arc::new(CalcitSymbolInfo {
@@ -868,12 +884,15 @@ fn emit_binary_step_ie(
       let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::LocalSet(idx_f64));
-      emit_inline_closure_body_with_evidences(
+      let saved_resets = ctx.reset_initialized_atoms.clone();
+      let res = emit_inline_closure_body_with_evidences(
         ctx,
         closure,
         &[idx_f64, elem],
         &[Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number))), elem_ev],
-      )
+      );
+      ctx.reset_initialized_atoms = saved_resets;
+      res
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
     // Dynamic dispatch via closure BrTable trampoline: (closure_f64, idx_f64, elem_f64) -> f64.
@@ -887,7 +906,13 @@ fn emit_binary_step_ie(
 }
 
 /// Resolve a HOF callee for the argument count supplied by its caller.
-fn resolve_hof_callee(ctx: &mut WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
+fn resolve_hof_callee(ctx: &mut WasmGenCtx, mut callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
+  while let Calcit::List(xs) = callee
+    && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+    && xs.len() >= 2
+  {
+    callee = &xs[1];
+  }
   if expected_arity == 1
     && match callee {
       Calcit::Proc(CalcitProc::NilQuestion) => true,
@@ -907,24 +932,53 @@ fn resolve_hof_callee(ctx: &mut WasmGenCtx, callee: &Calcit, expected_arity: u32
     let local_idx = super::closure::emit_materialize_inline_closure(ctx, &closure, Some(callee))?;
     return Ok(FoldlCallKind::Dynamic(local_idx));
   }
+  let qualified_binding = match callee {
+    Calcit::Import(imp) => Some(format!("{}/{}", imp.ns, imp.def)),
+    Calcit::Symbol { sym, info, .. }
+      if !ctx.locals.contains_key(sym.as_ref()) && !ctx.self_closure.as_ref().is_some_and(|(s, _, _)| s == sym.as_ref()) =>
+    {
+      Some(format!("{}/{}", info.at_ns, sym))
+    }
+    _ => None,
+  };
+  if let Some(q) = qualified_binding.as_deref()
+    && !ctx.fn_index.contains_key(q)
+    && (ctx.value_imports.contains_key(q) || ctx.atom_globals.contains_key(q))
+  {
+    let local_idx = ctx.alloc_local();
+    emit_expr(ctx, callee)?;
+    ctx.emit(Instruction::LocalSet(local_idx));
+    return Ok(FoldlCallKind::Dynamic(local_idx));
+  }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee, expected_arity) {
     return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
   }
-  // Local variable or dynamic expression holding a closure pointer (dispatch via __closure_call_<arity>).
+  // Local variable, lifted closure self-binding, or dynamic expression holding a closure pointer.
   if let Some(name) = match callee {
     Calcit::Local(local) => Some(local.sym.as_ref()),
-    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => Some(sym.as_ref()),
+    Calcit::Symbol { sym, .. }
+      if ctx.locals.contains_key(sym.as_ref()) || ctx.self_closure.as_ref().is_some_and(|(s, _, _)| s == sym.as_ref()) =>
+    {
+      Some(sym.as_ref())
+    }
     _ => None,
   } {
-    let local_idx = ctx
-      .locals
-      .get(name)
-      .copied()
-      .ok_or_else(|| format!("HOF callee local not found: {name}"))?;
-    return Ok(FoldlCallKind::Dynamic(local_idx));
+    if let Some(&local_idx) = ctx.locals.get(name) {
+      return Ok(FoldlCallKind::Dynamic(local_idx));
+    }
+    if let Some((ref self_name, _, _)) = ctx.self_closure
+      && self_name == name
+    {
+      let local_idx = ctx.alloc_local();
+      ctx.emit(Instruction::LocalGet(0));
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalSet(local_idx));
+      return Ok(FoldlCallKind::Dynamic(local_idx));
+    }
+    return Err(format!("HOF callee local not found: {name}"));
   }
   if matches!(callee, Calcit::Fn { .. }) || matches!(callee, Calcit::List(xs) if !xs.is_empty()) {
     let local_idx = ctx.alloc_local();
@@ -1747,5 +1801,62 @@ mod tests {
     });
     emit_map(&mut ctx, &[list_receiver, inline_nil_lambda])
       .expect("map over List<Bool> with inline nil? callback and unresolved param must receive element type evidence");
+  }
+
+  #[test]
+  fn resolve_hof_callee_loads_lifted_self_closure_when_unshadowed() {
+    use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+    let mut ctx = WasmGenCtx::new(
+      1,
+      WasmCompileEnv {
+        function_value_dependencies: Default::default(),
+        dyn_traits: Default::default(),
+        fn_index: HashMap::new(),
+        fn_arity: HashMap::new(),
+        fn_has_rest: HashMap::new(),
+        fn_signatures: HashMap::new(),
+        has_boxed_json_scalars: true,
+        runtime_fn_index: HashMap::new(),
+        tag_index: HashMap::new(),
+        struct_layouts: StructLayouts::default(),
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        atom_is_scalar: HashMap::new(),
+        value_imports: HashMap::new(),
+        static_fn_defs: HashMap::new(),
+        closures: Default::default(),
+        host_imports: HashMap::new(),
+        target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
+        world: WasiWorld::Command,
+        non_coherent_nominal_defs: Default::default(),
+        any_type_table: Default::default(),
+      },
+    );
+    ctx.self_closure = Some((
+      "walk".into(),
+      42,
+      super::closure::ClosureParamShape {
+        params: vec!["n".into()],
+        required: 1,
+        rest: false,
+        option_types: Vec::new(),
+      },
+    ));
+    let walk_local = Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: Arc::from("walk"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.hof"),
+        at_def: Arc::from("walk"),
+      }),
+      location: None,
+      type_info: DYNAMIC_TYPE.clone(),
+    });
+    let resolved = resolve_hof_callee(&mut ctx, &walk_local, 1).expect("unshadowed self_closure should resolve");
+    assert!(matches!(resolved, FoldlCallKind::Dynamic(_)));
+    ctx.locals.insert("walk".into(), 9);
+    let shadowed = resolve_hof_callee(&mut ctx, &walk_local, 1).expect("shadowed local should win over self_closure");
+    assert!(matches!(shadowed, FoldlCallKind::Dynamic(9)));
   }
 }

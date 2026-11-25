@@ -612,7 +612,84 @@ fn emit_wasm_impl(
   // Collect top-level value defs and defref definitions before building the static pool
   // so both persistent initializers and Dual-Region memory layout are ready before runtime helpers.
   let mut value_imports: HashMap<String, Calcit> = HashMap::new();
+  fn expr_evaluates_to_function(expr: &Calcit, program_data: &program::CompiledProgram, visited: &mut HashSet<String>) -> bool {
+    let mut current = expr;
+    while let Calcit::List(xs) = current
+      && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+      && xs.len() >= 2
+    {
+      current = &xs[1];
+    }
+    match current {
+      Calcit::Fn { .. } => true,
+      Calcit::List(xs) if !xs.is_empty() => match &xs[0] {
+        Calcit::Syntax(CalcitSyntax::Defn, _) => true,
+        Calcit::Syntax(CalcitSyntax::CoreLet, _) => xs
+          .iter()
+          .last()
+          .is_some_and(|tail| expr_evaluates_to_function(tail, program_data, visited)),
+        Calcit::Syntax(CalcitSyntax::If, _) => {
+          xs.get(2).is_some_and(|t| expr_evaluates_to_function(t, program_data, visited))
+            || xs.get(3).is_some_and(|e| expr_evaluates_to_function(e, program_data, visited))
+        }
+        Calcit::Fn { info, .. } => info
+          .body
+          .last()
+          .is_some_and(|tail| expr_evaluates_to_function(tail, program_data, visited)),
+        Calcit::Import(imp) => {
+          let q = format!("{}/{}", imp.ns, imp.def);
+          if !visited.insert(q) {
+            return false;
+          }
+          let Some(compiled) = program_data.get(imp.ns.as_ref()).and_then(|f| f.defs.get(imp.def.as_ref())) else {
+            return false;
+          };
+          let schema = CalcitTypeAnnotation::expand_schema_alias(&compiled.schema);
+          if matches!(
+            schema.as_ref(),
+            CalcitTypeAnnotation::Fn(sig) if matches!(CalcitTypeAnnotation::expand_schema_alias(&sig.return_type).as_ref(), CalcitTypeAnnotation::Fn(_))
+          ) {
+            return true;
+          }
+          if let Calcit::Fn { info, .. } = &compiled.preprocessed_code {
+            return info
+              .body
+              .last()
+              .is_some_and(|tail| expr_evaluates_to_function(tail, program_data, visited));
+          }
+          false
+        }
+        Calcit::Symbol { sym, info, .. } => {
+          let q = format!("{}/{}", info.at_ns, sym);
+          if !visited.insert(q) {
+            return false;
+          }
+          let Some(compiled) = program_data.get(info.at_ns.as_ref()).and_then(|f| f.defs.get(sym.as_ref())) else {
+            return false;
+          };
+          let schema = CalcitTypeAnnotation::expand_schema_alias(&compiled.schema);
+          if matches!(
+            schema.as_ref(),
+            CalcitTypeAnnotation::Fn(sig) if matches!(CalcitTypeAnnotation::expand_schema_alias(&sig.return_type).as_ref(), CalcitTypeAnnotation::Fn(_))
+          ) {
+            return true;
+          }
+          if let Calcit::Fn { info, .. } = &compiled.preprocessed_code {
+            return info
+              .body
+              .last()
+              .is_some_and(|tail| expr_evaluates_to_function(tail, program_data, visited));
+          }
+          false
+        }
+        _ => false,
+      },
+      _ => false,
+    }
+  }
+
   let mut defref_defs: Vec<(String, Option<Calcit>)> = Vec::new();
+  let mut defref_fn_valued: HashSet<String> = HashSet::new();
   let mut atom_is_scalar: HashMap<String, bool> = HashMap::new();
   let mut atom_is_scalar_vec: Vec<bool> = Vec::new();
   for ns in &ns_order {
@@ -630,14 +707,28 @@ fn emit_wasm_impl(
       if let Calcit::List(xs) = &compiled.preprocessed_code
         && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defref, _)))
       {
+        let expanded_schema = CalcitTypeAnnotation::expand_schema_alias(&compiled.schema);
         let is_scalar = matches!(
-          CalcitTypeAnnotation::expand_schema_alias(&compiled.schema).as_ref(),
+          expanded_schema.as_ref(),
           CalcitTypeAnnotation::Ref(inner)
             if proven_scalar_kind(&CalcitTypeAnnotation::expand_schema_alias(inner)).is_some()
         );
+        let schema_is_fn = matches!(
+          expanded_schema.as_ref(),
+          CalcitTypeAnnotation::Ref(inner)
+            if matches!(CalcitTypeAnnotation::expand_schema_alias(inner).as_ref(), CalcitTypeAnnotation::Fn(_))
+        );
+        let init_expr = xs.get(2).cloned();
+        let init_is_fn = schema_is_fn
+          || init_expr
+            .as_ref()
+            .is_some_and(|expr| expr_evaluates_to_function(expr, &program_data, &mut HashSet::new()));
+        if init_is_fn {
+          defref_fn_valued.insert(qualified.clone());
+        }
         atom_is_scalar.insert(qualified.clone(), is_scalar);
         atom_is_scalar_vec.push(is_scalar);
-        defref_defs.push((qualified, xs.get(2).cloned()));
+        defref_defs.push((qualified, init_expr));
       }
     }
   }
@@ -670,6 +761,7 @@ fn emit_wasm_impl(
     &fn_defs,
     &value_imports,
     &defref_defs,
+    &defref_fn_valued,
     &reachable_extra_exprs,
     &wasm_import_names,
     &component_import_adapters,
@@ -6564,6 +6656,8 @@ struct WasmGenCtx {
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
+  /// qualified atom names whose unsupported initializers have been overwritten by a dominating `reset!`.
+  reset_initialized_atoms: HashSet<String>,
   /// String literal pool: string content → logical pointer (f64).
   /// Strings are pre-allocated in a data segment before the heap.
   string_pool: HashMap<String, u32>,
@@ -6681,6 +6775,7 @@ impl WasmGenCtx {
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
       atom_is_scalar: env.atom_is_scalar,
+      reset_initialized_atoms: HashSet::new(),
       value_imports: env.value_imports,
       static_fn_defs: env.static_fn_defs,
       dyn_traits: env.dyn_traits,
@@ -10828,9 +10923,11 @@ fn emit_recur_loop(
   let old_recur_shape = std::mem::replace(&mut ctx.recur_shape, shape);
   let old_evidence = std::mem::replace(&mut ctx.recur_evidence, evidence);
   let old_block_depth = std::mem::replace(&mut ctx.block_depth, 0);
+  let pre_loop_resets = ctx.reset_initialized_atoms.clone();
   ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
   let result = emit_body(ctx, body);
   ctx.emit(Instruction::End);
+  ctx.reset_initialized_atoms = pre_loop_resets;
   ctx.block_depth = old_block_depth;
   ctx.arg_indices = old_arg_indices;
   ctx.recur_shape = old_recur_shape;
@@ -11523,15 +11620,18 @@ fn emit_inline_iife(
 /// Loads a global `defref` slot, rejecting uninitialized closure initializers and recording any
 /// static function target for reachability/specialization validation.
 fn emit_atom_global_load(ctx: &mut WasmGenCtx, qualified: &str, global_idx: u32) -> Result<(), String> {
-  let err_opt = ctx.closures.borrow().atom_uninitialized_closures.get(qualified).cloned();
-  if let Some(err) = err_opt {
-    return Err(err);
-  }
-  let fn_target = ctx.closures.borrow().atom_initial_fn_targets.get(qualified).cloned();
-  if let Some(target_fn) = fn_target {
-    let short_name = target_fn.rsplit_once('/').map_or(target_fn.as_str(), |(_, n)| n);
-    closure::validate_static_closure_target(ctx, &target_fn, short_name)?;
-    ctx.record_function_value(&target_fn);
+  let reset_replaced = ctx.reset_initialized_atoms.contains(qualified);
+  if !reset_replaced {
+    let err_opt = ctx.closures.borrow().atom_uninitialized_closures.get(qualified).cloned();
+    if let Some(err) = err_opt {
+      return Err(err);
+    }
+    let fn_target = ctx.closures.borrow().atom_initial_fn_targets.get(qualified).cloned();
+    if let Some(target_fn) = fn_target {
+      let short_name = target_fn.rsplit_once('/').map_or(target_fn.as_str(), |(_, n)| n);
+      closure::validate_static_closure_target(ctx, &target_fn, short_name)?;
+      ctx.record_function_value(&target_fn);
+    }
   }
   ctx.emit(Instruction::GlobalGet(global_idx));
   Ok(())
@@ -12217,6 +12317,13 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         let tmp = ctx.alloc_local();
         ctx.emit(Instruction::LocalTee(tmp));
         ctx.emit(Instruction::GlobalSet(global_idx));
+        let resets_to_null = matches!(&args_list[1], Calcit::Nil | Calcit::Unit | Calcit::Bool(false))
+          || matches!(&args_list[1], Calcit::Number(n) if *n == 0.0);
+        if resets_to_null {
+          ctx.reset_initialized_atoms.remove(&qualified);
+        } else {
+          ctx.reset_initialized_atoms.insert(qualified);
+        }
         ctx.emit(Instruction::LocalGet(tmp));
         Ok(())
       }
@@ -16429,15 +16536,18 @@ fn emit_if_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_repr: NativeValRep
     }
   }
   emit_if_condition(ctx, &args[0])?;
+  let after_cond_resets = ctx.reset_initialized_atoms.clone();
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(dst_repr.val_type())));
   ctx.block_depth += 1;
   emit_expr_as_repr(ctx, &args[1], dst_repr)?;
+  let then_resets = std::mem::replace(&mut ctx.reset_initialized_atoms, after_cond_resets);
   ctx.emit(Instruction::Else);
   if args.len() == 3 {
     emit_expr_as_repr(ctx, &args[2], dst_repr)?;
   } else {
     emit_unit_const_repr(ctx, dst_repr);
   }
+  ctx.reset_initialized_atoms.retain(|k| then_resets.contains(k));
   ctx.block_depth -= 1;
   ctx.emit(Instruction::End);
   Ok(())
@@ -16921,6 +17031,8 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   // For each tag branch we emit:
   //   if (tag_local == variant_tag_id) then { bind payloads; body }
   //   else { next branch or wildcard }
+  let after_subject_resets = ctx.reset_initialized_atoms.clone();
+  let mut joined_resets: Option<HashSet<String>> = None;
   for (i, (pattern, body)) in tag_branches.iter().enumerate() {
     let Calcit::List(pat_xs) = pattern else {
       return Err(format!("match pattern expected list, got: {pattern}"));
@@ -16997,7 +17109,12 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     }
 
     // Emit body
+    ctx.reset_initialized_atoms.clone_from(&after_subject_resets);
     emit_expr(ctx, body)?;
+    match &mut joined_resets {
+      Some(acc) => acc.retain(|k| ctx.reset_initialized_atoms.contains(k)),
+      None => joined_resets = Some(ctx.reset_initialized_atoms.clone()),
+    }
 
     for (bind_name, prev_ev) in saved_types {
       if let Some(ev) = prev_ev {
@@ -17010,14 +17127,20 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::Else);
     // If this is the last tag branch, emit wildcard or default
     if i == num_tag_branches - 1 {
+      ctx.reset_initialized_atoms.clone_from(&after_subject_resets);
       if let Some(wb) = wildcard_body {
         emit_expr(ctx, wb)?;
       } else {
         ctx.emit(f64_const(0.0));
       }
+      match &mut joined_resets {
+        Some(acc) => acc.retain(|k| ctx.reset_initialized_atoms.contains(k)),
+        None => joined_resets = Some(ctx.reset_initialized_atoms.clone()),
+      }
     }
     // Otherwise the next iteration will emit the next if/else inside this else block
   }
+  ctx.reset_initialized_atoms = joined_resets.unwrap_or(after_subject_resets);
 
   // Close all the if/else blocks (one End per branch)
   for _ in 0..num_tag_branches {
@@ -17045,9 +17168,11 @@ fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::cod
   emit_ds_empty(ctx, std::slice::from_ref(shape.subject))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
+  let after_cond_resets = ctx.reset_initialized_atoms.clone();
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   ctx.block_depth += 1;
   emit_expr(ctx, shape.none_body)?;
+  let none_resets = std::mem::replace(&mut ctx.reset_initialized_atoms, after_cond_resets);
   ctx.emit(Instruction::Else);
   let prev_head = shape.head.and_then(|h| ctx.local_types.get(h.as_ref()).cloned());
   let prev_tail = shape.tail.and_then(|t| ctx.local_types.get(t.as_ref()).cloned());
@@ -17093,6 +17218,7 @@ fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::cod
     ctx.emit(Instruction::LocalSet(idx));
   }
   emit_expr(ctx, shape.some_body)?;
+  ctx.reset_initialized_atoms.retain(|k| none_resets.contains(k));
   if let Some(head) = shape.head {
     if let Some(ev) = prev_head {
       ctx.local_types.insert(head.to_string(), ev);

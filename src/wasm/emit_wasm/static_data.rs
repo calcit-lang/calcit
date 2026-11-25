@@ -1162,6 +1162,7 @@ pub(super) fn build_static_closure_singletons(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   value_imports: &HashMap<String, Calcit>,
   defref_defs: &[(String, Option<Calcit>)],
+  defref_fn_valued: &HashSet<String>,
   extra_reachable_exprs: &[Calcit],
   wasm_import_names: &HashMap<String, u32>,
   component_import_adapters: &[ComponentImportAdapter],
@@ -1327,6 +1328,7 @@ pub(super) fn build_static_closure_singletons(
 
   fn resolve_defref_closure_init(
     expr: Option<&Calcit>,
+    fn_valued_defref: bool,
     known_fns: &HashSet<String>,
     short_to_qualified: &HashMap<String, String>,
     value_imports: &HashMap<String, Calcit>,
@@ -1360,6 +1362,8 @@ pub(super) fn build_static_closure_singletons(
         Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
           DefrefClosureInit::NonStaticClosure(String::from("local `defn` closure literal"))
         }
+        Calcit::Nil | Calcit::Unit => DefrefClosureInit::NotClosure,
+        _ if fn_valued_defref => DefrefClosureInit::NonStaticClosure(String::from("non-static closure initializer expression")),
         _ => DefrefClosureInit::NotClosure,
       };
     }
@@ -1368,7 +1372,14 @@ pub(super) fn build_static_closure_singletons(
   let mut atom_initial_fn_targets: HashMap<String, String> = HashMap::new();
   let mut atom_uninitialized_closures: HashMap<String, String> = HashMap::new();
   for (idx, (atom_qualified, init_opt)) in defref_defs.iter().enumerate() {
-    match resolve_defref_closure_init(init_opt.as_ref(), &known_fns, &short_to_qualified, value_imports, &atom_names) {
+    match resolve_defref_closure_init(
+      init_opt.as_ref(),
+      defref_fn_valued.contains(atom_qualified),
+      &known_fns,
+      &short_to_qualified,
+      value_imports,
+      &atom_names,
+    ) {
       DefrefClosureInit::ResolvedFn(q) => {
         if let Some(&ptr) = ptr_by_qualified.get(&q) {
           atom_initial_values[idx] = ptr as f64;
