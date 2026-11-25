@@ -164,7 +164,7 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
       case PseudoTypeIndex.tag:
         return compareUnicodeStrings((a as CalcitTag).value, (b as CalcitTag).value);
       case PseudoTypeIndex.symbol:
-        return rawCompare(a, b);
+        return compareUnicodeStrings((a as CalcitSymbol).value, (b as CalcitSymbol).value);
       case PseudoTypeIndex.string:
         return compareUnicodeStrings(a as string, b as string);
       case PseudoTypeIndex.ref:

@@ -27,7 +27,7 @@
         'f $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn f (v) (show-it v)
           :examples $ []
-          :schema $ quote $ Fn CssValue (-> String)
+          :schema $ quote $ Fn Geo (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println $ f |a
@@ -38,6 +38,6 @@
           :code $ quote $ defn show-it (x) (to-lispy-string x)
           :examples $ []
           :schema $ quote $ Fn T (-> String) (:generics T)
-            :where $ T Hash
+            :where $ T ToString
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

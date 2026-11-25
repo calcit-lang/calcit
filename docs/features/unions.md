@@ -14,7 +14,7 @@ parent: core/features
 
 # Unions (defunion)
 
-`defunion` 给已有的“几种已知类型之一”的数据加一个可检查的闭合边界。union 值在运行时没有包装，`CssValue` 的值就是一个 String 或一个 Number。它不是通用类型能力：不推断、不做谓词窄化、不参与 trait，值必须先用 `match` 的类型模式拆成具体类型才能继续使用。
+`defunion` 给已有的“几种已知类型之一”的数据加一个可检查的闭合边界。union 值在运行时没有包装，`CssValue` 的值就是一个 String 或一个 Number。它本身没有自己的方法，直接调用 `.method` 须先用 `match` 的类型模式拆解；当闭合 `defunion` 的全部成员都满足某个 trait（如 `Debug`、`Eq`、`Hash`、`Compare`）时，该 union 类型也会自动满足相应的泛型 `:where` 约束（例如递归 union `CirruNode` 满足 `Debug`、`Eq`、`Hash`，可直接传入 `hash`、`distinct`、`frequencies`、`group-by`、`index-of`）。
 
 需要给变体起名字或带多个字段时，用 [Enums](enums.md)。
 

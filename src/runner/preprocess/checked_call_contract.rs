@@ -3,7 +3,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use crate::calcit::{self, Calcit, CalcitList, CalcitTypeAnnotation};
+use crate::calcit::{self, Calcit, CalcitList, CalcitSyntax, CalcitTypeAnnotation};
 
 use super::{
   ScopeTypes, is_nil_bridge_head,
@@ -325,6 +325,23 @@ pub(crate) fn select_fn_case(
     0 => None,
     1 => Some(matched.remove(0)),
     _ => {
+      let has_spread = args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
+      if !has_spread {
+        let arity_matched: Vec<_> = matched
+          .iter()
+          .filter(|case| {
+            let arity = case.call_arity();
+            args.len() >= arity.min && arity.max.is_none_or(|max| args.len() <= max)
+          })
+          .cloned()
+          .collect();
+        if arity_matched.len() == 1 {
+          return Some(arity_matched.into_iter().next().expect("checked single arity match"));
+        }
+        if !arity_matched.is_empty() {
+          matched = arity_matched;
+        }
+      }
       // Multiple cases match arg 0 (e.g. `&list:sort-by` accepting a `Fn` or `Tag` selector).
       // Disambiguate using arg 1 when available; if arg 1 is Dynamic or ambiguous, fall back.
       let Some(arg1) = args.get(1) else {

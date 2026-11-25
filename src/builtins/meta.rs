@@ -1795,6 +1795,30 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let impls_value = runner::evaluate_symbol_from_program("&core-any-box-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
+    Unit => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-scalar-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
+    Nil | Bool(..) | Tag(..) | Symbol { .. } => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-text-scalar-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
+    Ref(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-ref-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
+    Buffer(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-buffer-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
+    BufList(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-buf-list-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
+    StructDef(..) | EnumDef(..) | UnionDef(..) | Trait(..) | Impl(..) => {
+      let impls_value = runner::evaluate_symbol_from_program("&core-def-impls", calcit::CORE_NS, None, call_stack)?;
+      method_call(&impls_value, v0, name, method_args, call_stack)
+    }
     x => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("invoke-method cannot resolve impls for value: {x}"),
@@ -2152,6 +2176,11 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
     }
     Calcit::CirruQuote(..) => collect_optional_core_impls("&core-cirru-quote-impls", call_stack),
     Calcit::AnyBox(..) => collect_optional_core_impls("&core-any-box-impls", call_stack),
+    Calcit::Unit => collect_optional_core_impls("&core-scalar-impls", call_stack),
+    Calcit::Ref(..) => collect_optional_core_impls("&core-ref-impls", call_stack),
+    Calcit::Buffer(..) => collect_optional_core_impls("&core-buffer-impls", call_stack),
+    Calcit::BufList(..) => collect_optional_core_impls("&core-buf-list-impls", call_stack),
+    Calcit::UnionDef(..) | Calcit::Trait(..) | Calcit::Impl(..) => collect_optional_core_impls("&core-def-impls", call_stack),
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),

@@ -1651,6 +1651,7 @@ mod type_query_tests {
         ".sqrt",
         ".debug",
         ".eq?",
+        ".hash",
         ".add",
         ".multiply",
         ".to-string",

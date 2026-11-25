@@ -20,6 +20,7 @@ import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CalcitAnyBox } from "./js-any-box.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
+import { CalcitBufList } from "./js-buf-list.mjs";
 
 // we have to inject cache in a dirty way in some cases
 const calcit_dirty_hash_key = "_calcit_cached_hash";
@@ -638,6 +639,20 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
   }
   if (x instanceof CalcitAnyBox) {
     return x.toString();
+  }
+  if (x instanceof Uint8Array) {
+    let text = "(&buffer";
+    const limit = Math.min(x.length, 8);
+    for (let i = 0; i < limit; i++) {
+      text += " " + x[i].toString(16).padStart(2, "0");
+    }
+    if (x.length > 8) {
+      text += ` ..+${x.length - 8}`;
+    }
+    return text + ")";
+  }
+  if (x instanceof CalcitBufList) {
+    return `(&buf-list count=${x.buf.length})`;
   }
 
   if (!disableJsDataWarning) {

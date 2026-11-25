@@ -28,6 +28,41 @@ Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用�
 泛型函数通过 `:where $ {} ('T 'Emptyable)` 取得能力后，调用 `.empty` 仍得到原来的 `T`，不会抹掉 List 成员或 Map 的 key/value 类型。
 自定义 Struct/Enum 在定义上写 `(:impls Emptyable)`，再用 `defimpl 类型 Emptyable` 提供实现（函数内的局部类型用 `impl-traits` 挂载）；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
 
+## 核心值能力：Hash、Eq、Compare 与 Debug
+
+核心库沿用统一的 `Eq`、[`Compare`](#核心值能力hasheqcompare-与-debug)、`Hash` 与 `ToString`/`Show`/`Debug` 能力体系：
+
+- **`Hash`（`.hash $ Fn Self (-> Number)`）**：定义值的哈希契约；公开辅助函数 `hash`（`:where $ T Hash`）与 `.hash` 方法返回 `Number`，并与 `Eq` 保持一致。
+- **`Compare`（`.compare $ Fn Self Self (-> Number)`）**：提供同类型三向序比较；公开辅助函数 `compare`（`:where $ T Compare`）返回 `-1`、`0` 或 `1`，按同类型自然顺序或 UTF-8/Unicode 标量序比较，在 Native、JS 与 WASM 上保持一致。
+- **`ToString` / `Show` / `Debug`**：`Debug` 提供结构与调试文本，与 `ToString`/`Show` 职责分离。
+
+```cirru
+let
+    ordered-tags $ sort $ [] :😀 :b :a
+    unique-items $ distinct $ [] 1 2 1 3
+  assert= ([] :a :b :😀) ordered-tags
+  assert= ([] 1 2 3) unique-items
+  assert= -1 $ compare :a :b
+  assert= (hash :ready) (.hash :ready)
+```
+
+内建类型与一等元数据值的实现覆盖：
+
+- `Number`、`String`、`List`/`Tuple`、`Map`、`Set`、`Enum`、`Struct`、`CirruQuote` 实现 `Debug`、`Eq`、`Hash`。
+- `Number`、`String`、`Unit` 与 `Nil`/`Bool`/`Tag`/`Symbol` 实现 `Debug`、`Eq`、`Hash`、`Compare`（`Nil`/`Bool`/`Tag`/`Symbol` 与 `String` 同时实现 `ToString`）。
+- `Buffer` 实现 `Debug`、`Eq`、`Hash`。
+- `Ref` 与 `BufList` 实现 `Debug`。
+- 一等元数据值（`StructDef`、`EnumDef`、`UnionDef`、`Trait`、`Impl`）实现 `Debug`、`Eq`、`Hash`。
+
+核心通用集合操作通过 `:where` 声明所需的值能力：
+
+- `distinct`、`&list:distinct`、`&list:to-set`、`frequencies` 要求元素 `:where $ T Eq Hash`；`distinct-values` 要求 Map 值 `:where $ V Eq Hash`；`group-by` 要求键结果 `:where $ K Eq Hash`。
+- `index-of`、`&list:index-of-from`、`&list:last-index-of` 要求元素 `:where $ T Eq`。
+- `sort` 单参数自然排序要求 `:where $ T Compare`，双参数 `(sort xs cmp)` 保持无约束以支持自定义比较函数；`&list:sort-by` 在使用函数键提取器时要求 `:where $ K Compare`，传 `:tag` 字段选择器时继续按字段访问检查。
+- 空集合（`[]`、`&{}`）在静态类型已具化为空集合且无其它矛盾约束时可安全通过；需要保留底层动态入口的场景继续使用 `&hash`、`&compare`、`&=`。
+
+闭合 `defunion` 的全部展开成员都满足同一个 trait 时，该 union 类型也会满足对应的 `:where` 约束：例如递归 union `CirruNode`（`String | List CirruNode`）的所有成员都满足 `Debug`、`Eq`、`Hash`，因此可以直接传入 `hash`、`distinct`、`frequencies`、`group-by`、`index-of` 等泛型函数，而 `String | Ref Number` 仅满足 `Debug`；直接对 union 值调用 `.method` 仍须先通过 `match` 拆解。
+
 ## Quick Recipes
 
 - **Define Trait**: `deftrait MyTrait $ .method $ Fn …`

@@ -2240,6 +2240,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Struct(struct_value) => Some(infer_struct_value_annotation(struct_value, scope_types)),
     Calcit::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::StructDef(struct_def.to_owned()))),
     Calcit::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::EnumDef(enum_def.to_owned()))),
+    Calcit::UnionDef(_) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("union-def"))))),
     Calcit::Trait(trait_def) => Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Trait(
       trait_def.to_owned(),
     ))))),

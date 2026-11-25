@@ -7951,3 +7951,255 @@ defn main! ()
     }
   });
 }
+
+#[test]
+fn closed_defunion_trait_propagation_and_tightened_bounds() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let run_app = |app_code: &str| {
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+      );
+      let entries = prepare_snapshot_entries(snap);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let compile_res =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      (compile_res, warnings.into_inner(), entries)
+    };
+
+    // Positive: recursive union (CirruNode and custom Tree) propagates Debug/Eq/Hash;
+    // union of Compare scalars propagates Compare; String | Ref Number propagates Debug.
+    let positive_code = r#"
+ns app.main
+
+defunion Tree Number (List Tree)
+defunion OrderedScalar Number String Tag Bool Symbol
+defunion MixedDebug String (Ref Number)
+
+defn debug-generic (x)
+  hint-fn $ Fn T (-> String) (:generics T) (:where $ T Debug)
+  x .debug
+
+defn check-tree (t)
+  hint-fn $ Fn Tree (-> Number)
+  let
+      d $ debug-generic t
+      xs $ distinct ([] t)
+    assert-type d String
+    assert-type xs (List Tree)
+    hash t
+
+defn check-cirru (node)
+  hint-fn $ Fn CirruNode (-> Number)
+  let
+      _d $ debug-generic node
+      _xs $ distinct ([] node)
+      _freq $ frequencies ([] node)
+      _grp $ group-by ([] node) (fn (n) n)
+      _idx $ index-of ([] node) node
+    hash node
+
+defn check-ordered (a b)
+  hint-fn $ Fn OrderedScalar OrderedScalar (-> (List OrderedScalar))
+  let
+      _c $ compare a b
+    sort ([] a b)
+
+defn check-mixed-debug (m)
+  hint-fn $ Fn MixedDebug (-> String)
+  debug-generic m
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  , check-tree check-cirru check-ordered check-mixed-debug
+  , &unit
+"#;
+    let (res, warnings, entries) = run_app(positive_code);
+    assert!(res.is_ok(), "positive closed-defunion test failed: {res:?}");
+    assert!(warnings.is_empty(), "unexpected warnings in positive test: {warnings:?}");
+    run_check_only(&entries).expect("positive closed-defunion snapshot should pass check-only");
+
+    // Negative cases: CirruNode / Tree reject Compare; MixedDebug rejects Eq / Hash / Compare.
+    for (label, bad_code) in [
+      (
+        "CirruNode rejected by sort Compare",
+        "ns app.main\ndefn bad (n)\n  hint-fn $ Fn CirruNode (-> (List CirruNode))\n  sort ([] n)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "Tree rejected by compare Compare",
+        "ns app.main\ndefunion Tree Number (List Tree)\ndefn bad (a b)\n  hint-fn $ Fn Tree Tree (-> Number)\n  compare a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "MixedDebug rejected by hash Hash",
+        "ns app.main\ndefunion MixedDebug String (Ref Number)\ndefn bad (m)\n  hint-fn $ Fn MixedDebug (-> Number)\n  hash m\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "MixedDebug rejected by distinct Eq Hash",
+        "ns app.main\ndefunion MixedDebug String (Ref Number)\ndefn bad (m)\n  hint-fn $ Fn MixedDebug (-> (List MixedDebug))\n  distinct ([] m)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+    ] {
+      let (_res, warnings, _entries) = run_app(bad_code);
+      assert!(
+        warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
+        "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
+fn tightened_core_generic_schemas_enforce_bounds_and_cases() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    let run_app = |app_code: &str| {
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
+      );
+      let entries = prepare_snapshot_entries(snap);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let compile_res =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      (compile_res, warnings.into_inner(), entries)
+    };
+
+    // Positive: empty collections (Never -> TypeVar), Never-then-concrete, Buffer,
+    // Option, 2-arg custom sort on Fn values, &list:sort-by with :tag selector,
+    // and constrained generic callers all pass cleanly.
+    let positive_code = r#"
+ns app.main
+
+defstruct Person (:name String)
+
+defn constrained-sort (xs)
+  hint-fn $ Fn (List T) (-> (List T)) (:generics T) (:where $ T Compare)
+  sort xs
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      f1 $ fn (x) (+ x 1)
+      f2 $ fn (x) (+ x 2)
+      buf $ &buffer 1 2
+      _d1 $ distinct ([])
+      _d2 $ &list:distinct ([])
+      _s1 $ &list:to-set ([])
+      _dv $ distinct-values (&{})
+      _fr $ frequencies ([])
+      _gb $ group-by ([]) (fn (x) x)
+      _so $ sort ([])
+      _sb $ &list:sort-by ([]) (fn (x) x)
+      _ix1 $ index-of ([]) 1
+      _ix2 $ &list:index-of-from ([]) 0 1
+      _ix3 $ &list:last-index-of ([]) 1
+      _buf-d $ distinct ([] buf)
+      _opt-f $ frequencies ([] (Some 1) (Some 2))
+      _sort-tags $ constrained-sort ([] :b :a)
+      _sort-custom $ sort ([] f1 f2) (fn (_a _b) 0)
+      _sort-tag-sel $ &list:sort-by ([] (Person :name |b) (Person :name |a)) :name
+      _cmp $ compare :a :b
+      _h $ hash buf
+    , &unit
+"#;
+    let (res, warnings, entries) = run_app(positive_code);
+    assert!(res.is_ok(), "positive tightened generics test failed: {res:?}");
+    assert!(
+      warnings.is_empty(),
+      "unexpected warnings in tightened generics positive test: {warnings:?}"
+    );
+    run_check_only(&entries).expect("positive tightened generics snapshot should pass check-only");
+
+    // Negative: every un-bounded / non-satisfying call reports E_GENERIC_WHERE_BOUND_MISMATCH.
+    for (label, bad_code) in [
+      (
+        "distinct rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct ([] (fn (x) x)))))\n    &unit",
+      ),
+      (
+        "&list:distinct rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:distinct ([] (fn (x) x)))))\n    &unit",
+      ),
+      (
+        "&list:to-set rejects Ref",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:to-set ([] (ref 1)))))\n    &unit",
+      ),
+      (
+        "distinct-values rejects Fn map values",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct-values ({} (:a (fn (x) x))))))\n    &unit",
+      ),
+      (
+        "frequencies rejects BufList",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (frequencies ([] (&buf-list:new)))))\n    &unit",
+      ),
+      (
+        "group-by rejects Fn keys",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (group-by ([] 1 2) (fn (x) (fn () x)))))\n    &unit",
+      ),
+      (
+        "index-of rejects Fn elements",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([] (fn (x) x)) (fn (y) y))))\n    &unit",
+      ),
+      (
+        "index-of empty list then Fn element rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([]) (fn (x) x))))\n    &unit",
+      ),
+      (
+        "&list:index-of-from rejects Ref",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:index-of-from ([] (ref 1)) 0 (ref 2))))\n    &unit",
+      ),
+      (
+        "&list:last-index-of rejects BufList",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:last-index-of ([] (&buf-list:new)) (&buf-list:new))))\n    &unit",
+      ),
+      (
+        "1-arg sort rejects Fn",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (sort ([] (fn (x) x)))))\n    &unit",
+      ),
+      (
+        "&list:sort-by key-fn rejects Fn keys",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:sort-by ([] 1 2) (fn (x) (fn () x)))))\n    &unit",
+      ),
+      (
+        "hash rejects Ref",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (hash (ref 1))))\n    &unit",
+      ),
+      (
+        "compare rejects Buffer",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (compare (&buffer 1) (&buffer 2))))\n    &unit",
+      ),
+      (
+        "unconstrained generic caller distinct rejected",
+        "ns app.main\ndefn bad (xs)\n  hint-fn $ Fn (List T) (-> (List T)) (:generics T)\n  distinct xs\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "unconstrained generic caller sort rejected",
+        "ns app.main\ndefn bad (xs)\n  hint-fn $ Fn (List T) (-> (List T)) (:generics T)\n  sort xs\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "unconstrained generic caller group-by rejected",
+        "ns app.main\ndefn bad (xs)\n  hint-fn $ Fn (List T) (-> Dynamic) (:generics T)\n  group-by xs (fn (x) x)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "unconstrained generic capture in empty group-by rejected",
+        "ns app.main\ndefn bad (y)\n  hint-fn $ Fn T (-> Dynamic) (:generics T)\n  group-by ([]) (fn (_x) y)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+    ] {
+      let (_res, warnings, _entries) = run_app(bad_code);
+      assert!(
+        warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
+        "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
+      );
+    }
+  });
+}

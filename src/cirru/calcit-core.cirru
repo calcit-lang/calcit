@@ -506,10 +506,47 @@
                       (:none) (assert= true false)
                   (:none) (assert= true false)
               :tags $ #{} :core :unit
+        '&core-buf-list-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for BufList: Debug.")
+          :code $ quote $ def &core-buf-list-impls
+            [] $ &impl::new Debug internal/&core-debug-impl
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-for-buf-list)
+            :code $ quote $ let
+                buf $ &buf-list:new
+              assert= "|(&buf-list count=0)" $ buf .debug
+              &buf-list:push buf 1
+              assert= "|(&buf-list count=1)" $ buf .debug
+            :tags $ #{} :core :unit
+        '&core-buffer-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for Buffer: Debug, Eq and Hash.")
+          :code $ quote $ def &core-buffer-impls
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-eq-and-hash-for-buffer)
+            :code $ quote $ let
+                a $ &buffer 10 255
+                b $ &buffer 10 255
+                c $ &buffer 10 1
+                zero-buf $ &buffer 0
+              assert= "|(&buffer 0a ff)" $ a .debug
+              assert= "|(&buffer 00)" $ zero-buf .debug
+              assert= true $ a .eq? b
+              assert= false $ a .eq? c
+              assert= true $ = a b
+              assert= false $ = a c
+              assert= (hash a) (a .hash)
+              assert= (hash a) (hash b)
+              assert= ([] a c)
+                distinct $ [] a b c
+              assert-traits a Debug Eq Hash
+            :tags $ #{} :core :unit
         '&core-cirru-quote-impls $ %{} 'CodeEntry
-          :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq."
+          :doc "|Built-in implementation list for CirruQuote: public methods plus Debug/Eq/Hash."
           :code $ quote $ def &core-cirru-quote-impls
-            [] &core-cirru-quote-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] &core-cirru-quote-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -557,9 +594,57 @@
                   fn (message) message
                 assert= 4 @*calls
               :tags $ #{} :cirru-quote-contract :core :unit
+        '&core-def-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for first-class definition/trait/impl metadata values: Debug, Eq and Hash.")
+          :code $ quote $ def &core-def-impls
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl)
+          :examples $ []
+          :schema $ quote $ List Impl
+          :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-debug-eq-and-hash-for-def-values)
+              :code $ quote $ let
+                  sample-impl $ &impl::new :SampleImpl
+                  other-impl $ &impl::new :OtherImpl
+                assert= true $ > (count (FsPath .debug)) 0
+                assert= true $ FsPath .eq? FsPath
+                assert= false $ &= FsPath HttpBody
+                assert= (hash FsPath) (FsPath .hash)
+                assert= true $ > (count (HttpBody .debug)) 0
+                assert= true $ HttpBody .eq? HttpBody
+                assert= (hash HttpBody) (HttpBody .hash)
+                assert= true $ > (count (CirruNode .debug)) 0
+                assert= true $ CirruNode .eq? CirruNode
+                assert= (hash CirruNode) (CirruNode .hash)
+                assert= true $ > (count (Hash .debug)) 0
+                assert= true $ Hash .eq? Hash
+                assert= false $ Hash .eq? Eq
+                assert= (hash Hash) (Hash .hash)
+                assert= true $ > (count (sample-impl .debug)) 0
+                assert= true $ sample-impl .eq? sample-impl
+                assert= false $ sample-impl .eq? other-impl
+                assert= (hash sample-impl) (sample-impl .hash)
+                assert-traits FsPath Debug Eq Hash
+                assert-traits HttpBody Debug Eq Hash
+                assert-traits CirruNode Debug Eq Hash
+                assert-traits Hash Debug Eq Hash
+                assert-traits sample-impl Debug Eq Hash
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |verifies-builtin-trait-assertions)
+              :code $ quote $ let
+                  u &unit
+                  t :alpha
+                  b false
+                  n nil
+                  buf $ &buf-list:new
+                assert-traits u Debug Eq Hash Compare
+                assert-traits t Debug Eq Hash Compare ToString
+                assert-traits b Debug Eq Hash Compare ToString
+                assert-traits n Debug Eq Hash Compare ToString
+                assert-traits buf Debug
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
-            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
+            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -665,7 +750,7 @@
         '&core-list-impls $ %{} 'CodeEntry
           :doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add."
           :code $ quote $ def &core-list-impls
-            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
+            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-list
               &impl::new Emptyable $ :: :empty &list:empty
           :examples $ []
@@ -679,7 +764,7 @@
           :tags $ #{} :internal
         '&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote $ def &core-map-impls
-            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
+            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
               &impl::new Emptyable $ :: :empty &map:empty
           :examples $ []
           :schema $ quote Dynamic
@@ -692,7 +777,7 @@
           :tags $ #{} :internal
         '&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote $ def &core-number-impls
-            [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
+            [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
               &impl::new ToString $ :: :to-string &turn-string
               &impl::new Emptyable $ :: :empty &number:empty
           :examples $ []
@@ -704,11 +789,22 @@
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
-        '&core-ref-impls $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-ref-impls ([] &core-ref-methods)
+        '&core-ref-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for Ref: public methods plus Debug.")
+          :code $ quote $ def &core-ref-impls
+            [] &core-ref-methods (&impl::new Debug internal/&core-debug-impl)
           :examples $ []
           :schema $ quote $ List Impl
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |implements-debug-for-ref)
+            :code $ quote $ let
+                r-num $ ref 1
+                r-nil $ ref nil
+                r-unit $ ref &unit
+              assert= true $ .starts-with? (r-num .debug) "|(&ref "
+              assert= true $ .starts-with? (r-nil .debug) "|(&ref "
+              assert= true $ .starts-with? (r-unit .debug) "|(&ref "
+              assert-traits r-num Debug
+            :tags $ #{} :core :unit
         '&core-ref-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-ref-methods
             &impl::new :&core-ref-methods $ :: :deref &atom:deref
@@ -716,15 +812,27 @@
           :schema $ quote Impl
           :tags $ #{} :internal
         '&core-scalar-impls $ %{} 'CodeEntry
-          :doc "|Built-in nominal Debug/Eq implementation list for Unit"
+          :doc "|Built-in nominal Debug/Eq/Hash/Compare implementation list for Unit"
           :code $ quote $ def &core-scalar-impls
-            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-unit-eq-hash-compare)
+              :code $ quote $ let
+                  u &unit
+                assert= true $ u .eq? &unit
+                assert= (hash &unit) (u .hash)
+                assert= 0 $ u .compare &unit
+                assert= 0 $ compare u &unit
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-unit-debug)
+              :code $ quote $ assert= "|&unit" $ &unit .debug
+              :tags $ #{} :core :unit
         '&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote $ def &core-set-impls
-            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
+            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
               &impl::new Emptyable $ :: :empty &set:empty
           :examples $ []
           :schema $ quote Dynamic
@@ -737,7 +845,7 @@
           :tags $ #{} :internal
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote $ def &core-string-impls
-            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-string
               &impl::new ToString $ :: :to-string &turn-string
               &impl::new Emptyable $ :: :empty &str:empty
@@ -759,7 +867,7 @@
                 assert= false $ includes? methods .write-file
         '&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote $ def &core-struct-impls
-            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl) (&impl::new ContainsField internal/&core-contains-field-struct-impl)
+            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl) (&impl::new ContainsField internal/&core-contains-field-struct-impl)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
@@ -775,11 +883,47 @@
         '&core-text-scalar-impls $ %{} 'CodeEntry
           :doc "|Nil、Bool、Tag 与 Symbol 的内建实现；与 Unit/CirruQuote 的开放 scalar 列表分离。"
           :code $ quote $ def &core-text-scalar-impls
-            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
               &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |implements-eq-hash-compare-for-tag-bool-nil)
+              :code $ quote $ let
+                  t :alpha
+                  b false
+                  n nil
+                assert= true $ t .eq? :alpha
+                assert= false $ b .eq? true
+                assert= true $ n .eq? nil
+                assert= (hash :alpha) (t .hash)
+                assert= (hash false) (b .hash)
+                assert= (hash nil) (n .hash)
+                assert= -1 $ t .compare :beta
+                assert= -1 $ b .compare true
+                assert= 0 $ n .compare nil
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-debug-for-tag-bool-nil)
+              :code $ quote $ let
+                  t :alpha
+                  b false
+                  n nil
+                assert= |:alpha $ t .debug
+                assert= |false $ b .debug
+                assert= | $ n .debug
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |implements-debug-eq-hash-compare-for-symbol)
+              :code $ quote $ let
+                  s 'alpha
+                assert= |'alpha $ s .debug
+                assert= true $ s .eq? 'alpha
+                assert= false $ s .eq? 'beta
+                assert= (hash 'alpha) (s .hash)
+                assert= -1 $ s .compare 'beta
+                assert= 1 $ compare 'beta s
+                assert-traits s Debug Eq Hash Compare ToString
+              :tags $ #{} :core :unit
         '&data-to-code $ %{} 'CodeEntry
           :doc "|internal function for converting data to code\nSyntax: (&data-to-code data)\nParams: data (EDN data)\nReturns: quoted code\nConverts EDN data structure back to executable code"
           :code $ quote &runtime-implementation
@@ -2131,9 +2275,14 @@
             identity &core-any-box-impls
             identity &core-text-scalar-impls
             identity &core-ref-impls
+            identity &core-buffer-impls
+            identity &core-buf-list-impls
+            identity &core-def-impls
             identity Add
+            identity Compare
             identity Debug
             identity Eq
+            identity Hash
             identity Len
             identity Mappable
             identity Multiply
@@ -2142,7 +2291,7 @@
             identity ToString
             if
               &= (&get-calcit-backend) :js
-              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls :anyBox &core-any-box-impls
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :cirru-quote &core-cirru-quote-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls :anyBox &core-any-box-impls :buffer &core-buffer-impls :buf-list &core-buf-list-impls :def &core-def-impls
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -2372,6 +2521,7 @@
           :schema $ quote $ Fn (List T)
             -> $ List T
             :generics T
+            :where $ T Eq Hash
           :tags $ #{} :builtin :internal
         '&list:empty $ %{} 'CodeEntry (:doc "|internal helper for list :empty method entry")
           :code $ quote $ defn &list:empty (_xs) ([])
@@ -2677,6 +2827,7 @@
           :schema $ quote $ Fn (List T) T Number
             -> $ Option Number
             :generics T
+            :where $ T Eq
         '&list:last $ %{} 'CodeEntry
           :doc "|Internal last-element reader: `Option :some last-element`, or `Option :none` for an empty list."
           :code $ quote $ &runtime-implementation
@@ -2707,6 +2858,7 @@
           :schema $ quote $ Fn (List T) T
             -> $ Option Number
             :generics T
+            :where $ T Eq
           :tags $ #{} :internal
         '&list:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map (xs f)
@@ -2982,6 +3134,7 @@
                 Fn T (-> K) (:features :pass)
                 -> $ List T
                 :generics T K
+                :where $ K Compare
               Fn (List T) Tag
                 -> $ List T
                 :generics T
@@ -2997,6 +3150,7 @@
           :schema $ quote $ Fn (List T)
             -> $ Set T
             :generics T
+            :where $ T Eq Hash
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |deduplicates-list-members)
             :code $ quote $ assert= (#{} 1)
@@ -4838,7 +4992,7 @@
               assert= false $ result:ok? $ try-decode-map-as ([] |a 1) (List CirruNode)
             :tags $ #{} :core :unit
         'Compare $ %{} 'CodeEntry
-          :doc "|Core trait for three-way comparison. Number and String implement it and return -1, 0, or 1."
+          :doc "|Core trait for three-way comparison returning -1, 0, or 1. Number, String, Tag, Bool, Symbol, Nil, and Unit implement it."
           :code $ quote $ deftrait Compare
             .compare $ Fn Self Self $ -> Number
           :examples $ []
@@ -4866,9 +5020,7 @@
         'ControlFlow $ %{} 'CodeEntry
           :doc "|Step result returned by fold-while reducers: :continue carries the next accumulator, :break stops the fold and returns its value."
           :code $ quote $ def ControlFlow
-            impl-traits
-              defenum ControlFlow (:generics A) (:continue A) (:break A)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum ControlFlow (:generics A) (:continue A) (:break A)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -4913,7 +5065,7 @@
                 :list $ List EdnValue
                 :set $ Set EdnValue
                 :map $ Map EdnValue EdnValue
-              , internal/&core-debug-impl internal/&core-eq-impl EdnValueOpsImpl
+              , EdnValueOpsImpl
           :examples $ []
             quote $ edn:parse "|{} (:ok true) (:items ([] 1 |a nil))"
             quote $ .to-edn $ EdnValue :list $ [] (EdnValue :tag |k) (EdnValue :number 1)
@@ -5090,6 +5242,48 @@
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
+        'Hash $ %{} 'CodeEntry (:doc "|Core trait: Hash. Value-equality types implement .hash returning Number consistent with Eq.")
+          :code $ quote $ deftrait Hash
+            .hash $ Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+          :tags $ #{} :trait
+          :tests $ []
+            %{} 'TestEntry (:name |hashes-values-consistently-across-types)
+              :code $ quote $ let
+                  o1 $ Some 1
+                  o2 $ Some 1
+                  o3 $ Some 2
+                assert= (hash 42) (.hash 42)
+                assert= (hash |hello) (.hash |hello)
+                assert= (hash :ready) (.hash :ready)
+                assert= (hash true) (.hash true)
+                assert= (hash nil) (.hash nil)
+                assert= (hash &unit) (.hash &unit)
+                assert= (hash $ [] 1 2) (.hash $ [] 1 2)
+                assert= (hash $ {} (:a 1)) (.hash $ {} (:a 1))
+                assert= (hash $ #{} 1 2) (.hash $ #{} 1 2)
+                assert= (hash o1) (hash o2)
+                assert= false $ = (hash o1) (hash o3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |hashes-closed-defunion-values)
+              :code $ quote $ let
+                  hash-of $ fn (v)
+                    hint-fn $ Fn T (-> Number) (:generics T)
+                      :where $ T Hash
+                    v .hash
+                  hash-node $ fn (node)
+                    hint-fn $ Fn CirruNode (-> Number)
+                    hash node
+                  t $ %:: _ :pair 1 |a
+                  r1 $ Result :ok |ok
+                  r2 $ Result :ok |ok
+                assert= (hash-of $ Some 1) (hash $ Some 1)
+                assert= (hash t) (.hash t)
+                assert= (hash r1) (hash r2)
+                assert= (hash-node |leaf) (hash |leaf)
+                assert= (hash-node $ [] |fn ([] |x)) (hash $ [] |fn ([] |x))
+              :tags $ #{} :core :unit
         'HttpBody $ %{} 'CodeEntry
           :doc "|Nominal HTTP message body: :empty, :text String, or :bytes Buffer."
           :code $ quote $ defenum HttpBody (:empty) (:text String) (:bytes Buffer)
@@ -5194,7 +5388,7 @@
               defenum JsonValue (:null) (:bool Bool) (:number Number) (:string String)
                 :array $ List JsonValue
                 :object $ Map String JsonValue
-              , internal/&core-debug-impl internal/&core-eq-impl JsonValueOpsImpl
+              , JsonValueOpsImpl
           :examples $ []
             quote $ json:parse "|{\"ok\":true,\"items\":[1,\"a\",null]}"
             quote $ .to-json $ JsonValue :array $ [] (JsonValue :number 1) (JsonValue :null)
@@ -5338,9 +5532,7 @@
         'MapEntryDecision $ %{} 'CodeEntry
           :doc "|Typed decision returned by filter-map-kv: :keep supplies the output key/value and :drop omits the input entry."
           :code $ quote $ def MapEntryDecision
-            impl-traits
-              defenum MapEntryDecision (:generics K V) (:keep K V) (:drop)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum MapEntryDecision (:generics K V) (:keep K V) (:drop)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5381,7 +5573,7 @@
           :code $ quote $ def Option
             impl-traits
               defenum Option (:generics T) (:some T) (:none)
-              , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
+              , OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5456,9 +5648,7 @@
         'PathError $ %{} 'CodeEntry
           :doc "|get-in 的失败值：:missing 表示路径不存在或遍历中遇到 nil；:shape 携带说明，表示中间值不是可遍历的集合。"
           :code $ quote $ def PathError
-            impl-traits
-              defenum PathError (:missing) (:shape String)
-              , internal/&core-debug-impl internal/&core-eq-impl
+            defenum PathError (:missing) (:shape String)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5478,7 +5668,7 @@
           :code $ quote $ def Result
             impl-traits
               defenum Result (:generics T E) (:ok T) (:err E)
-              , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
+              , ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -6818,6 +7008,35 @@
                 do (construct |not-a-quote) :accepted
                 fn (error) :rejected
             :tags $ #{} :core :js :native :shared :unit
+        'compare $ %{} 'CodeEntry
+          :doc "|按 Compare 合同比较两个同类型值，返回 -1、0 或 1；泛型参数须声明 Compare 约束。低层 &compare 仍接受任意 Dynamic。"
+          :code $ quote $ defn compare (a b) (.compare a b)
+          :examples $ []
+            quote $ assert= -1 $ compare 1 2
+            quote $ assert= 0 $ compare |a |a
+            quote $ assert= -1 $ compare :a :b
+          :schema $ quote $ Fn T T (-> Number) (:generics T)
+            :where $ T Compare
+          :tags $ #{} :core
+          :tests $ [] $ %{} 'TestEntry (:name |compares-ordered-values-with-trait-bound)
+            :code $ quote $ let
+                cmp-pair $ fn (x y)
+                  hint-fn $ Fn T T (-> Number) (:generics T)
+                    :where $ T Compare
+                  compare x y
+              assert= -1 $ cmp-pair 1 2
+              assert= 1 $ cmp-pair 2 1
+              assert= 0 $ cmp-pair 2 2
+              assert= -1 $ cmp-pair |a |b
+              assert= -1 $ cmp-pair :a :b
+              assert= -1 $ cmp-pair :b :😀
+              assert= 1 $ cmp-pair :😀 :b
+              assert= 0 $ cmp-pair :😀 :😀
+              assert= -1 $ cmp-pair false true
+              assert= 0 $ cmp-pair false false
+              assert= 0 $ cmp-pair nil nil
+              assert= 0 $ cmp-pair &unit &unit
+            :tags $ #{} :core :unit
         'concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn concat (& args)
             &list-match-internal args ([]) (a0 as) (&list:concat a0 & as)
@@ -8830,6 +9049,7 @@
           :schema $ quote $ Fn (List T)
             -> $ List T
             :generics T
+            :where $ T Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |keeps-first-occurrence-order)
             :code $ quote $ assert= ([] 1 2 3)
               distinct $ [] 1 2 3 1 2
@@ -8845,6 +9065,7 @@
           :schema $ quote $ Fn (Map K V)
             -> $ Set V
             :generics K V
+            :where $ V Eq Hash
           :tests $ []
             %{} 'TestEntry (:name |deduplicates-values)
               :code $ quote $ assert= (#{} 1 2)
@@ -10270,6 +10491,7 @@
           :schema $ quote $ Fn (List T)
             -> $ Map T Number
             :generics T
+            :where $ T Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |counts-repeated-list-members)
             :code $ quote $ do
               assert= (&{} 1 1 2 2 3 3)
@@ -10700,6 +10922,7 @@
             Fn T (-> K) (:features :pass)
             -> $ Map K $ List T
             :generics T K
+            :where $ K Eq Hash
           :tests $ [] $ %{} 'TestEntry (:name |groups-list-by-derived-key)
             :code $ quote $ do
               assert=
@@ -10709,6 +10932,37 @@
               assert= (&{})
                 group-by ([])
                   fn (x) 'Number x
+            :tags $ #{} :core :unit
+        'hash $ %{} 'CodeEntry
+          :doc "|按 Hash 合同计算值的哈希值，返回 Number；泛型参数须声明 Hash 约束。低层 &hash 仍接受 Dynamic 供运行时容器与内部实现使用。"
+          :code $ quote $ defn hash (value) (.hash value)
+          :examples $ []
+            quote $ assert= true $ = (hash 42) (hash 42)
+            quote $ assert= true $ = (hash :ready) (hash :ready)
+          :schema $ quote $ Fn T (-> Number) (:generics T)
+            :where $ T Hash
+          :tags $ #{} :core
+          :tests $ [] $ %{} 'TestEntry (:name |computes-hash-for-hashable-types)
+            :code $ quote $ let
+                wrap-hash $ fn (v)
+                  hint-fn $ Fn T (-> Number) (:generics T)
+                    :where $ T Hash
+                  hash v
+                m $ {} (:a 1) (:b 2)
+                s $ #{} 1 2 3
+                p $ FsPath :value |/tmp
+                o $ Some :x
+              assert= (wrap-hash 10) (.hash 10)
+              assert= (wrap-hash |abc) (.hash |abc)
+              assert= (wrap-hash :tag) (.hash :tag)
+              assert= (wrap-hash true) (.hash true)
+              assert= (wrap-hash nil) (.hash nil)
+              assert= (wrap-hash &unit) (.hash &unit)
+              assert= (wrap-hash $ [] 1 2) (.hash $ [] 1 2)
+              assert= (wrap-hash m) (.hash m)
+              assert= (wrap-hash s) (.hash s)
+              assert= (wrap-hash p) (.hash p)
+              assert= (wrap-hash o) (.hash o)
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
           :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n0.32.0 已删除两参数形式 (hint-fn f schema)，写出时报 E_LEGACY_HINT_FN_TARGET；把类型移到定义 f 的函数体内。\n限制：错误 wrapper、参数数量、旧子句写法会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
@@ -11434,6 +11688,7 @@
           :schema $ quote $ Fn (List T) T
             -> $ Option Number
             :generics T
+            :where $ T Eq
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-index-or-none)
             :code $ quote $ do
               assert= (Some 0)
@@ -14286,6 +14541,13 @@
             Fn T T (-> Number) (:features :pass)
             -> $ List T
             :generics T
+            :cases
+              Fn (List T) (-> (List T)) (:generics T)
+                :where $ T Compare
+              Fn (List T)
+                Fn T T (-> Number) (:features :pass)
+                -> $ List T
+                :generics T
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |orders-list-with-default-comparator)
@@ -14311,6 +14573,17 @@
                 assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
                   sort ([] 3 not-a-number 1 positive-infinity 0 not-a-number -1)
                     fn (a b) (&compare a b)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-tags-in-utf8-order)
+              :code $ quote $ assert= ([] :a :b :😀)
+                sort $ [] :😀 :b :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-custom-values-with-comparator)
+              :code $ quote $ let
+                  a $ FsPath :value |a
+                  b $ FsPath :value |b
+                  sorted $ sort ([] b a) (fn (x y) (compare (:value x) (:value y)))
+                assert= ([] a b) sorted
               :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
           :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
@@ -16057,6 +16330,11 @@
             &impl::new :&core-add-string-impl $ :: :add &str:concat
           :examples $ []
           :schema $ quote Dynamic
+        '&core-compare-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Compare on comparable scalars")
+          :code $ quote $ def &core-compare-impl
+            &impl::new :&core-compare-impl $ :: :compare &compare
+          :examples $ []
+          :schema $ quote Impl
         '&core-compare-number-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-compare-number-impl
             &impl::new :&core-compare-number-impl $ :: :compare &compare
@@ -16135,6 +16413,11 @@
             &impl::new :&core-eq-impl $ :: :eq? &=
           :examples $ []
           :schema $ quote Dynamic
+        '&core-hash-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Hash")
+          :code $ quote $ def &core-hash-impl
+            &impl::new :&core-hash-impl $ :: :hash &hash
+          :examples $ []
+          :schema $ quote Impl
         '&core-len-list-impl $ %{} 'CodeEntry (:doc "|Core trait impl for Len on list")
           :code $ quote $ def &core-len-list-impl
             &impl::new :&core-len-list-impl $ :: :len &list:count

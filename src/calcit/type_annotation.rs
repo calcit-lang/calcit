@@ -394,6 +394,8 @@ thread_local! {
   /// pair is assumed to hold (coinductively), so the relation terminates
   /// instead of recursing until the Rust stack overflows.
   static UNION_RELATION_ASSUMPTIONS: RefCell<HashSet<UnionRelationKey>> = RefCell::new(HashSet::new());
+  /// Union/trait pairs currently being checked for closed-union trait propagation.
+  static UNION_TRAIT_ASSUMPTIONS: RefCell<HashSet<UnionTraitKey>> = RefCell::new(HashSet::new());
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
@@ -1171,6 +1173,31 @@ fn enter_union_relation_assumption(
   // `then`, not `then_some`: building a guard for a pair that is already
   // active would drop it at once and remove the outer caller's entry.
   entered.then(|| UnionRelationAssumption { key })
+}
+
+type UnionTraitKey = (Arc<str>, Option<u64>, Option<Arc<str>>, Arc<str>);
+
+struct UnionTraitAssumption {
+  key: UnionTraitKey,
+}
+
+impl Drop for UnionTraitAssumption {
+  fn drop(&mut self) {
+    UNION_TRAIT_ASSUMPTIONS.with(|active| {
+      active.borrow_mut().remove(&self.key);
+    });
+  }
+}
+
+fn enter_union_trait_assumption(union_def: &CalcitUnionDef, expected_trait: &CalcitTrait) -> Option<UnionTraitAssumption> {
+  let key = (
+    union_relation_identity(union_def),
+    expected_trait.runtime_id,
+    expected_trait.definition_ref.clone(),
+    Arc::from(expected_trait.name.ref_str()),
+  );
+  let entered = UNION_TRAIT_ASSUMPTIONS.with(|active| active.borrow_mut().insert(key.clone()));
+  entered.then(|| UnionTraitAssumption { key })
 }
 
 fn type_ref_arity_resolution_key(name: &str) -> Arc<str> {
@@ -5538,6 +5565,8 @@ impl CalcitTypeAnnotation {
       // destination of that type like any other `T` into `JsNullish<T>`.
       (Some(_), None) => match expected {
         Self::Nullable(inner, _) => relate(self, inner.as_ref(), bindings),
+        // Trait bounds are satisfied when every closed union member satisfies the bound.
+        Self::Trait(_) | Self::TraitSet(_) => return None,
         _ => Mismatch,
       },
       (None, Some(expected)) => into_union(self, &expected, bindings),
@@ -5805,6 +5834,8 @@ impl CalcitTypeAnnotation {
       Self::Map(_, _) => Some("&core-map-impls"),
       Self::Set(_) => Some("&core-set-impls"),
       Self::Ref(_) => Some("&core-ref-impls"),
+      Self::Buffer => Some("&core-buffer-impls"),
+      Self::BufList => Some("&core-buf-list-impls"),
       Self::Number => Some("&core-number-impls"),
       Self::Numeric(_) => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
@@ -5812,6 +5843,16 @@ impl CalcitTypeAnnotation {
       Self::Unit => Some("&core-scalar-impls"),
       Self::CirruQuote => Some("&core-cirru-quote-impls"),
       Self::Any => Some("&core-any-box-impls"),
+      Self::StructDef(_) | Self::EnumDef(_) => Some("&core-def-impls"),
+      Self::Custom(value)
+        if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_))
+          || matches!(
+            value.as_ref(),
+            Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
+          ) =>
+      {
+        Some("&core-def-impls")
+      }
       Self::Nullable(inner, NullableOrigin::Inferred) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, args) => resolve_type_ref_as_schema(name, args).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -5929,18 +5970,29 @@ impl CalcitTypeAnnotation {
   /// changing whether an otherwise identical core call emits a warning.
   fn builtin_core_trait_names(&self) -> &'static [&'static str] {
     if matches!(self, Self::StructValue(_) | Self::Struct(_, _)) {
-      return &["Debug", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
     }
     if matches!(self, Self::AnonymousEnum | Self::EnumValue(_) | Self::Enum(_, _)) {
-      return &["Debug", "Eq", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
     }
     match self.core_impl_list_symbol() {
-      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Sliceable", "Emptyable"],
-      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
-      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-list-impls") => &[
+        "Debug",
+        "Eq",
+        "Hash",
+        "Add",
+        "Len",
+        "Mappable",
+        "Countable",
+        "Sliceable",
+        "Emptyable",
+      ],
+      Some("&core-map-impls") => &["Debug", "Eq", "Hash", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-set-impls") => &["Debug", "Eq", "Hash", "Len", "Mappable", "Countable", "Emptyable"],
       Some("&core-string-impls") => &[
         "Debug",
         "Eq",
+        "Hash",
         "Add",
         "Len",
         "Countable",
@@ -5949,12 +6001,16 @@ impl CalcitTypeAnnotation {
         "ToString",
         "Emptyable",
       ],
-      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
+      Some("&core-number-impls") => &["Debug", "Eq", "Hash", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
       Some("&core-fn-impls") => &["Debug"],
-      Some("&core-scalar-impls") => &["Debug", "Eq"],
-      Some("&core-cirru-quote-impls") => &["Debug", "Eq"],
       Some("&core-any-box-impls") => &["Debug"],
-      Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],
+      Some("&core-ref-impls") => &["Debug"],
+      Some("&core-buffer-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-buf-list-impls") => &["Debug"],
+      Some("&core-def-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-scalar-impls") => &["Debug", "Eq", "Hash", "Compare"],
+      Some("&core-cirru-quote-impls") => &["Debug", "Eq", "Hash"],
+      Some("&core-text-scalar-impls") => &["Debug", "Eq", "Hash", "Compare", "ToString"],
       _ => &[],
     }
   }
@@ -5974,6 +6030,19 @@ impl CalcitTypeAnnotation {
     None
   }
 
+  fn union_satisfies_trait_bound(&self, union_def: &CalcitUnionDef, expected_trait: &CalcitTrait) -> bool {
+    let Ok(members) = union_def.checked_members() else {
+      return false;
+    };
+    if members.is_empty() {
+      return false;
+    }
+    let Some(_assumption) = enter_union_trait_assumption(union_def, expected_trait) else {
+      return true;
+    };
+    members.iter().all(|member| member.annotation.satisfies_trait_bound(expected_trait))
+  }
+
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
     // A tuple keeps its arity and slot types, so it only has the capabilities
     // that do not return a value of its own type: slicing or emptying would
@@ -5981,13 +6050,22 @@ impl CalcitTypeAnnotation {
     // element type, which only a homogeneous tuple has.
     if let Self::Tuple(items) = self {
       match expected_trait.name.ref_str() {
-        "Debug" | "Eq" | "Countable" | "Len" => {}
+        "Debug" | "Eq" | "Hash" | "Countable" | "Len" => {}
         "Mappable" if Self::homogeneous_tuple_item(items).is_some() => {}
         _ => return false,
       }
     }
     if let Some(instance) = self.resolve_nominal_instance_type() {
       return instance.satisfies_trait_bound(expected_trait);
+    }
+    if let Some(union_def) = self.resolve_to_union() {
+      return self.union_satisfies_trait_bound(&union_def, expected_trait);
+    }
+    if matches!(self, Self::TypeRef(_, _)) && self.resolve_schema_alias().is_some() {
+      let expanded = Self::expand_schema_alias(&Arc::new(self.clone()));
+      if let Some(union_def) = expanded.resolve_to_union() {
+        return expanded.union_satisfies_trait_bound(&union_def, expected_trait);
+      }
     }
     match self {
       Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
@@ -6388,6 +6466,7 @@ impl CalcitTypeAnnotation {
           || self
             .resolve_nominal_instance_type()
             .is_some_and(|instance| instance.satisfies_trait_bound(trait_def.as_ref()))
+          || self.satisfies_trait_bound(trait_def.as_ref())
       }
       (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::trait_upcasts_to_type_ref(trait_def, name),
       (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b) || Self::trait_annotation_proves(a, b),
@@ -6893,6 +6972,20 @@ impl CalcitTypeAnnotation {
         .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
         None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
       },
+      (actual, Self::Trait(expected)) if actual.resolve_to_union().is_some() => {
+        if actual.satisfies_trait_bound(expected.as_ref()) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
+      (actual, Self::TraitSet(expected)) if actual.resolve_to_union().is_some() => {
+        if actual.satisfies_trait_bounds(expected.as_ref()) {
+          Proven
+        } else {
+          Mismatch
+        }
+      }
       (Self::TypeRef(name, args), other) => match self.resolve_schema_alias().or_else(|| resolve_type_ref_as_schema(name, args)) {
         Some(resolved) => match enter_alias_relation(name, other, true, true) {
           Ok(_guard) => resolved.prove_with_staged_bindings(other, bindings),
@@ -8879,6 +8972,11 @@ mod tests {
       (CalcitTypeAnnotation::Unit, "&core-scalar-impls"),
       (CalcitTypeAnnotation::CirruQuote, "&core-cirru-quote-impls"),
       (CalcitTypeAnnotation::Any, "&core-any-box-impls"),
+      (CalcitTypeAnnotation::Buffer, "&core-buffer-impls"),
+      (CalcitTypeAnnotation::BufList, "&core-buf-list-impls"),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("union-def"))), "&core-def-impls"),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("trait"))), "&core-def-impls"),
+      (CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("impl"))), "&core-def-impls"),
     ];
 
     for (annotation, definition) in cases {
@@ -12120,6 +12218,134 @@ mod tests {
     assert!(
       !code_declares_data_definition(&symbol("Point")),
       "aliases are left to the full resolver"
+    );
+  }
+
+  #[test]
+  fn closed_defunion_propagates_shared_traits_and_guards_cycles() {
+    let make_core_trait = |name: &str| CalcitTrait::new(EdnTag::new(name), vec![], vec![]).with_definition_ref(CORE_NS, name);
+    let debug_trait = make_core_trait("Debug");
+    let eq_trait = make_core_trait("Eq");
+    let hash_trait = make_core_trait("Hash");
+    let compare_trait = make_core_trait("Compare");
+
+    let mixed_debug_union = CalcitUnionDef::new(
+      EdnTag::new("MixedDebug"),
+      vec![
+        Calcit::Symbol {
+          sym: Arc::from("String"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("MixedDebug"),
+          }),
+          location: None,
+        },
+        Calcit::from(vec![
+          Calcit::Symbol {
+            sym: Arc::from("Ref"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("MixedDebug"),
+            }),
+            location: None,
+          },
+          Calcit::Symbol {
+            sym: Arc::from("Number"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("MixedDebug"),
+            }),
+            location: None,
+          },
+        ]),
+      ],
+    );
+    let mixed_annot = DYNAMIC_TYPE.as_ref();
+    assert!(mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &debug_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &eq_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &hash_trait));
+    assert!(!mixed_annot.union_satisfies_trait_bound(&mixed_debug_union, &compare_trait));
+
+    let ordered_union = CalcitUnionDef::new(
+      EdnTag::new("OrderedScalar"),
+      ["Number", "String", "Tag", "Bool", "Symbol"]
+        .into_iter()
+        .map(|name| Calcit::Symbol {
+          sym: Arc::from(name),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("OrderedScalar"),
+          }),
+          location: None,
+        })
+        .collect(),
+    );
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &debug_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &eq_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &hash_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &compare_trait));
+
+    let hashable_with_buffer = CalcitUnionDef::new(
+      EdnTag::new("TextOrBytes"),
+      ["String", "Buffer"]
+        .into_iter()
+        .map(|name| Calcit::Symbol {
+          sym: Arc::from(name),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("TextOrBytes"),
+          }),
+          location: None,
+        })
+        .collect(),
+    );
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &debug_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &eq_trait));
+    assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &hash_trait));
+    assert!(!DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &compare_trait));
+
+    // Active union cycle assumption short-circuits instead of recursing forever.
+    let cycle_union = CalcitUnionDef::new(
+      EdnTag::new("Cyclic"),
+      vec![
+        Calcit::Symbol {
+          sym: Arc::from("String"),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("test.union"),
+            at_def: Arc::from("Cyclic"),
+          }),
+          location: None,
+        },
+        Calcit::from(vec![
+          Calcit::Symbol {
+            sym: Arc::from("Ref"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("Cyclic"),
+            }),
+            location: None,
+          },
+          Calcit::Symbol {
+            sym: Arc::from("Number"),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: Arc::from("test.union"),
+              at_def: Arc::from("Cyclic"),
+            }),
+            location: None,
+          },
+        ]),
+      ],
+    );
+    {
+      let _guard = enter_union_trait_assumption(&cycle_union, &eq_trait).expect("fresh cycle assumption should enter");
+      assert!(
+        DYNAMIC_TYPE.union_satisfies_trait_bound(&cycle_union, &eq_trait),
+        "active cycle assumption should return true without infinite recursion"
+      );
+    }
+    assert!(
+      !DYNAMIC_TYPE.union_satisfies_trait_bound(&cycle_union, &eq_trait),
+      "removing cycle assumption restores member checking"
     );
   }
 }

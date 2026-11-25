@@ -139,6 +139,9 @@ $procs.register_calcit_builtin_impls({{
   textScalar: _$n_core_text_scalar_impls,
   ref: _$n_core_ref_impls,
   anyBox: _$n_core_any_box_impls,
+  buffer: _$n_core_buffer_impls,
+  bufList: _$n_core_buf_list_impls,
+  def: _$n_core_def_impls,
 }});
 
 let runtimeVersion = $procs.calcit_version;

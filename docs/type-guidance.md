@@ -487,6 +487,8 @@ lowering 也保留这些宽度：整数使用 `i32` / `i64`，浮点数使用 `f
 
 对已知 receiver 的集合调用，成员类型会先进入 inline callback 的参数与函数体，再由同一份 contract 检查调用参数和推断返回值。`any?`、`every?` 与 `each` 因而不需要让 callback 暂存未实例化的泛型，也不需要为使用它们的宏增加例外。
 
+通用排序、去重与分组操作按所需最小能力写 `:where` 约束：单参数 `sort` 与函数形式 `&list:sort-by` 的键结果要求 `Compare`（双参数 `sort` 与 `:tag` 选择器保留无约束重载）；`distinct`、`&list:distinct`、`&list:to-set`、`distinct-values`、`frequencies` 与 `group-by` 的键要求 `Eq Hash`；`index-of`、`&list:index-of-from` 与 `&list:last-index-of` 要求 `Eq`。`hash` 与 `compare` 分别约束 `Hash` 与 `Compare`（闭合 `defunion` 若全部成员都满足目标 trait 也可通过）。传入 `Fn`、`Ref`、`BufList` 等未实现对应能力的类型会报告 `E_GENERIC_WHERE_BOUND_MISMATCH`；需要开放比较/哈希的底层边界继续使用 `&=`、`&compare`、`&hash`。
+
 ## 严格检查与迁移清单
 
 新项目以默认严格预处理和实际目标测试作为发布门禁：

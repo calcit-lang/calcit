@@ -12858,6 +12858,23 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(b));
       let a_ty = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
       let b_ty = infer_wasm_static_type(ctx, &args[1]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
+      let scalar_compare_rank = |ty: Option<&CalcitTypeAnnotation>| -> Option<u8> {
+        match ty {
+          Some(CalcitTypeAnnotation::Nil) => Some(0),
+          Some(CalcitTypeAnnotation::Unit) => Some(1),
+          Some(CalcitTypeAnnotation::Bool) => Some(2),
+          Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => Some(3),
+          Some(CalcitTypeAnnotation::Tag) => Some(4),
+          Some(CalcitTypeAnnotation::String) => Some(5),
+          _ => None,
+        }
+      };
+      if let (Some(left_rank), Some(right_rank)) = (scalar_compare_rank(a_ty.as_deref()), scalar_compare_rank(b_ty.as_deref()))
+        && left_rank != right_rank
+      {
+        ctx.emit(f64_const(if left_rank < right_rank { -1.0 } else { 1.0 }));
+        return Ok(());
+      }
       let is_proven_numeric_scalar = |ty: Option<&CalcitTypeAnnotation>| {
         matches!(
           ty,
@@ -12870,7 +12887,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           )
         )
       };
-      if is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()) {
+      // `Tag` values are interned into monotonically increasing UTF-8-sorted IDs
+      // in `tag_index`, so comparing two proven `Tag` operands compares UTF-8 order.
+      if (is_proven_numeric_scalar(a_ty.as_deref()) && is_proven_numeric_scalar(b_ty.as_deref()))
+        || (matches!(a_ty.as_deref(), Some(CalcitTypeAnnotation::Tag)) && matches!(b_ty.as_deref(), Some(CalcitTypeAnnotation::Tag)))
+      {
         ctx.emit(Instruction::LocalGet(a));
         ctx.emit(Instruction::LocalGet(b));
         ctx.emit(Instruction::F64Lt);

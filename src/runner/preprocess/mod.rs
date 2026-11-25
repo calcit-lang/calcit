@@ -7481,7 +7481,7 @@ fn preprocess_known_function_call(
       checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
     let can_refresh_core_types = info.def_ns.as_ref() == calcit::CORE_NS
       && ((args.len() == 3 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce"))
-        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "sort")));
+        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "group-by" | "sort")));
     let callee_cases_schema = match program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
       CalcitTypeAnnotation::Fn(fn_annot) if !fn_annot.cases.is_empty() => Some(fn_annot.clone()),
       _ => None,
@@ -8089,6 +8089,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
     _ => None,
   };
 
+  // Method-call syntax `(Type .method ...)` passes `Calcit::Method` as the
+  // first argument and must fall through to postfix method dispatch below.
+  if matches!(args.first(), Some(Calcit::Method(..))) {
+    return Ok(None);
+  }
+
   let Some(type_info) = resolve_type_value(head_form, scope_types) else {
     return Ok(None);
   };
@@ -8100,13 +8106,6 @@ fn try_rewrite_struct_enum_constructor_head_call(
   if constructor_kind == Some("defstruct")
     && let Some((struct_def, ns_def_path)) = resolved_struct_definition
   {
-    // Only attempt constructor-style rewriting for tag/value-style positional args.
-    // Method-call syntax (expr .method ...) is represented as `Method` in the first arg
-    // and must be handled by the method-branch below.
-    if matches!(args.first(), Some(Calcit::Method(..))) {
-      return Ok(None);
-    }
-
     if !args.len().is_multiple_of(2) {
       gen_check_warning_code(
         format!(
@@ -9883,6 +9882,25 @@ fn check_struct_method_args(
     return;
   }
 
+  let declared_method_schema = program::lookup_def_schema(&fn_info.def_ns, &fn_info.name);
+  if let Some(schema_fn) = declared_method_schema.resolve_to_fn()
+    && let Some(selected_case) = checked_call_contract::select_fn_case(schema_fn.as_ref(), &fn_info.def_ns, args, scope_types)
+  {
+    type_checking::check_method_call_arg_types(
+      head,
+      &selected_case,
+      args,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
+    return;
+  }
+
   // Method args exclude receiver (first argument in args list)
   let Ok(method_args) = args.skip(1) else {
     return;
@@ -9974,6 +9992,19 @@ fn check_struct_method_args(
       }
     }
   }
+  type_checking::check_fn_where_bounds(
+    head,
+    fn_info,
+    args,
+    &bindings,
+    scope_types,
+    &CallTypeCheckInfo {
+      file_ns,
+      def_name,
+      call_location,
+    },
+    check_warnings,
+  );
 }
 
 /// Method inputs and whether they rely on a receiver-specific callback relation.
@@ -13856,7 +13887,7 @@ fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &Impl
     CalcitTypeAnnotation::Map(_, _) => "&core-map-methods",
     CalcitTypeAnnotation::Set(_) => "&core-set-methods",
     CalcitTypeAnnotation::Ref(_) => "&core-ref-methods",
-    CalcitTypeAnnotation::Number => "&core-number-methods",
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => "&core-number-methods",
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => "&core-fn-methods",
     CalcitTypeAnnotation::CirruQuote => "&core-cirru-quote-methods",
     _ => return false,
@@ -13959,15 +13990,28 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Symbol => {
       Some("&core-text-scalar-impls")
     }
+    CalcitTypeAnnotation::Unit => Some("&core-scalar-impls"),
     CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("&core-list-impls"),
     CalcitTypeAnnotation::String => Some("&core-string-impls"),
     CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
     CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
     CalcitTypeAnnotation::Ref(_) => Some("&core-ref-impls"),
-    CalcitTypeAnnotation::Number => Some("&core-number-impls"),
+    CalcitTypeAnnotation::Buffer => Some("&core-buffer-impls"),
+    CalcitTypeAnnotation::BufList => Some("&core-buf-list-impls"),
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("&core-number-impls"),
     CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
     CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
     CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
+    CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("&core-def-impls"),
+    CalcitTypeAnnotation::Custom(value)
+      if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_))
+        || matches!(
+          value.as_ref(),
+          Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
+        ) =>
+    {
+      Some("&core-def-impls")
+    }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
     // A schema alias such as `Coord` for `List Number` dispatches through the
     // core impls of the schema it names (#2590).
