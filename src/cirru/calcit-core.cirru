@@ -7180,7 +7180,7 @@
                 fn (error) :rejected
             :tags $ #{} :core :js :native :shared :unit
         'compare $ %{} 'CodeEntry
-          :doc "|按 Compare 合同比较两个同类型值，返回 -1、0 或 1；泛型参数须声明 Compare 约束。低层 &compare 仍接受任意 Dynamic。"
+          :doc "|按 Compare 合同比较两个同类型值，返回 -1、0 或 1；泛型参数须声明 Compare 约束（要求同型双操作数，不跨异构 defunion 传播）。低层 &compare 仍接受任意 Dynamic。"
           :code $ quote $ defn compare (a b) (.compare a b)
           :examples $ []
             quote $ assert= -1 $ compare 1 2

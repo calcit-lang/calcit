@@ -711,16 +711,16 @@
           :code $ quote $ defn group-open-rows (rows)
             group-by (&map:vals rows)
               fn (row)
-                .unwrap $ &map:get row :finished-time
+                str $ .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
-            -> $ Map Dynamic $ List (Map Tag Dynamic)
+            -> $ Map String $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |known-map-open-members)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
               assert=
-                {} $ 7 $ [] row
+                {} $ |7 $ [] row
                 group-open-rows $ {} $ |one row
             :tags $ #{} :callback-container-shape :unit
         'group-open-rows-alias $ %{} 'CodeEntry (:doc |)
@@ -729,11 +729,11 @@
                 group-items group-by
               group-items (&map:vals rows)
                 fn (row)
-                  .unwrap $ &map:get row :finished-time
+                  str $ .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
-            -> $ Map Dynamic $ List (Map Tag Dynamic)
+            -> $ Map String $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |callable-alias-known-map)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
@@ -745,11 +745,11 @@
           :code $ quote $ defn group-open-rows-arrow (rows)
             -> rows (&map:vals)
               group-by $ fn (row)
-                .unwrap $ &map:get row :finished-time
+                str $ .unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ quote $ Fn
             Map String $ Map Tag Dynamic
-            -> $ Map Dynamic $ List (Map Tag Dynamic)
+            -> $ Map String $ List (Map Tag Dynamic)
           :tests $ [] $ %{} 'TestEntry (:name |threaded-known-map)
             :code $ quote $ let
                 row $ {} (:finished-time 7) (:title |task)
@@ -3014,8 +3014,8 @@
           :schema $ quote $ Fn (List Dynamic)
             -> $ List Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |unused-open-input-is-safe)
-            :code $ quote $ assert= (#{} |two 1 :three)
-              .to-set $ constant-selector $ [] |two 1 :three
+            :code $ quote $ assert= ([] |two 1 :three)
+              constant-selector $ [] |two 1 :three
             :tags $ #{} :sort-selector-context :unit
         'copied-alias-survives-write $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn copied-alias-survives-write (rows)

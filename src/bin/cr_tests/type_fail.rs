@@ -7959,14 +7959,17 @@ fn closed_defunion_trait_propagation_and_tightened_bounds() {
     let _strict = StrictTypesReset::enabled();
     let _no_audit = ProofAuditReset::disabled();
 
-    let run_app = |app_code: &str| {
+    let prepare_app = |app_code: &str| {
       builtins::effects::init_effects_states();
       let mut snap = snapshot::Snapshot::default();
       snap.files.insert(
         "app.main".to_owned(),
         snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
       );
-      let entries = prepare_snapshot_entries(snap);
+      prepare_snapshot_entries(snap)
+    };
+    let run_app = |app_code: &str| {
+      let entries = prepare_app(app_code);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
       let compile_res =
         runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -8008,8 +8011,10 @@ defn check-cirru (node)
 defn check-ordered (a b)
   hint-fn $ Fn OrderedScalar OrderedScalar (-> (List OrderedScalar))
   let
-      _c $ compare a b
-    sort ([] a b)
+      _d $ debug-generic a
+      _xs $ distinct ([] a b)
+      _h $ hash a
+    sort ([] a b) (fn (_x _y) 0)
 
 defn check-mixed-debug (m)
   hint-fn $ Fn MixedDebug (-> String)
@@ -8025,11 +8030,20 @@ defn main! ()
     assert!(warnings.is_empty(), "unexpected warnings in positive test: {warnings:?}");
     run_check_only(&entries).expect("positive closed-defunion snapshot should pass check-only");
 
-    // Negative cases: CirruNode / Tree reject Compare; MixedDebug rejects Eq / Hash / Compare.
+    // Negative cases: CirruNode / Tree / OrderedScalar reject Compare (compare & 1-arg sort);
+    // MixedDebug rejects Eq / Hash / Compare.
     for (label, bad_code) in [
       (
         "CirruNode rejected by sort Compare",
         "ns app.main\ndefn bad (n)\n  hint-fn $ Fn CirruNode (-> (List CirruNode))\n  sort ([] n)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "OrderedScalar rejected by compare Compare",
+        "ns app.main\ndefunion OrderedScalar Number String Tag Bool Symbol\ndefn bad (a b)\n  hint-fn $ Fn OrderedScalar OrderedScalar (-> Number)\n  compare a b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
+      (
+        "OrderedScalar rejected by 1-arg sort Compare",
+        "ns app.main\ndefunion OrderedScalar Number String Tag Bool Symbol\ndefn bad (xs)\n  hint-fn $ Fn (List OrderedScalar) (-> (List OrderedScalar))\n  sort xs\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
       ),
       (
         "Tree rejected by compare Compare",
@@ -8049,6 +8063,12 @@ defn main! ()
         warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
         "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
       );
+      let fresh_entries = prepare_app(bad_code);
+      let check_err = run_check_only(&fresh_entries).expect_err(&format!("{label} should fail strict check-only"));
+      assert!(
+        check_err.contains("E_GENERIC_WHERE_BOUND_MISMATCH") || check_err.contains("Found 1 errors during preprocessing"),
+        "{label} check-only error should cite E_GENERIC_WHERE_BOUND_MISMATCH or fail preprocessing: {check_err}"
+      );
     }
   });
 }
@@ -8060,14 +8080,17 @@ fn tightened_core_generic_schemas_enforce_bounds_and_cases() {
     let _strict = StrictTypesReset::enabled();
     let _no_audit = ProofAuditReset::disabled();
 
-    let run_app = |app_code: &str| {
+    let prepare_app = |app_code: &str| {
       builtins::effects::init_effects_states();
       let mut snap = snapshot::Snapshot::default();
       snap.files.insert(
         "app.main".to_owned(),
         snapshot::create_file_from_snippet(app_code).expect("app code should parse"),
       );
-      let entries = prepare_snapshot_entries(snap);
+      prepare_snapshot_entries(snap)
+    };
+    let run_app = |app_code: &str| {
+      let entries = prepare_app(app_code);
       let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
       let compile_res =
         runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
@@ -8136,63 +8159,63 @@ defn main! ()
     for (label, bad_code) in [
       (
         "distinct rejects Fn",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct ([] (fn (x) x)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct ([] (fn (x) x)))))\n    , &unit",
       ),
       (
         "&list:distinct rejects Fn",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:distinct ([] (fn (x) x)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:distinct ([] (fn (x) x)))))\n    , &unit",
       ),
       (
         "&list:to-set rejects Ref",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:to-set ([] (ref 1)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:to-set ([] (ref 1)))))\n    , &unit",
       ),
       (
         "distinct-values rejects Fn map values",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct-values ({} (:a (fn (x) x))))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (distinct-values ({} (:a (fn (x) x))))))\n    , &unit",
       ),
       (
         "frequencies rejects BufList",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (frequencies ([] (&buf-list:new)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (frequencies ([] (&buf-list:new)))))\n    , &unit",
       ),
       (
         "group-by rejects Fn keys",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (group-by ([] 1 2) (fn (x) (fn () x)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (group-by ([] 1 2) (fn (x) (fn () x)))))\n    , &unit",
       ),
       (
         "index-of rejects Fn elements",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([] (fn (x) x)) (fn (y) y))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([] (fn (x) x)) (fn (y) y))))\n    , &unit",
       ),
       (
         "index-of empty list then Fn element rejects Fn",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([]) (fn (x) x))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (index-of ([]) (fn (x) x))))\n    , &unit",
       ),
       (
         "&list:index-of-from rejects Ref",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:index-of-from ([] (ref 1)) 0 (ref 2))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:index-of-from ([] (ref 1)) (ref 2) 0)))\n    , &unit",
       ),
       (
         "&list:last-index-of rejects BufList",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:last-index-of ([] (&buf-list:new)) (&buf-list:new))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:last-index-of ([] (&buf-list:new)) (&buf-list:new))))\n    , &unit",
       ),
       (
         "1-arg sort rejects Fn",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (sort ([] (fn (x) x)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (sort ([] (fn (x) x)))))\n    , &unit",
       ),
       (
         "&list:sort-by key-fn rejects Fn keys",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:sort-by ([] 1 2) (fn (x) (fn () x)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&list:sort-by ([] 1 2) (fn (x) (fn () x)))))\n    , &unit",
       ),
       (
         ".sort-by method key-fn rejects Fn keys",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (.sort-by ([] 1 2) (fn (x) (hint-fn $ Fn Number (-> (Fn Number (-> Number)))) (fn (y) y)))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (.sort-by ([] 1 2) (fn (x) (hint-fn $ Fn Number (-> (Fn Number (-> Number)))) (fn (y) y)))))\n    , &unit",
       ),
       (
         "hash rejects Ref",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (hash (ref 1))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (hash (ref 1))))\n    , &unit",
       ),
       (
         "compare rejects Buffer",
-        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (compare (&buffer 1) (&buffer 2))))\n    &unit",
+        "ns app.main\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (compare (&buffer 1) (&buffer 2))))\n    , &unit",
       ),
       (
         "unconstrained generic caller distinct rejected",
@@ -8216,12 +8239,86 @@ defn main! ()
         warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
         "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
       );
+      let fresh_entries = prepare_app(bad_code);
+      let check_err = run_check_only(&fresh_entries).expect_err(&format!("{label} should fail strict check-only"));
+      assert!(
+        check_err.contains("E_GENERIC_WHERE_BOUND_MISMATCH") || check_err.contains("Found 1 errors during preprocessing"),
+        "{label} check-only error should cite E_GENERIC_WHERE_BOUND_MISMATCH or fail preprocessing: {check_err}"
+      );
     }
 
     let (trait_err, _trait_warnings, _entries) = run_app(
-      "ns app.main\ndeftrait CustomMarker\n  .cmark $ Fn Self (-> Number)\ndefstruct MyBox (:x Number) (:impls CustomMarker)\ndefimpl MyBox CustomMarker\n  .cmark $ fn (self) 9\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&trait-call CustomMarker :cmark MyBox)))\n    &unit",
+      "ns app.main\ndeftrait CustomMarker\n  .cmark $ Fn Self (-> Number)\ndefstruct MyBox (:x Number) (:impls CustomMarker)\ndefimpl MyBox CustomMarker\n  .cmark $ fn (self) 9\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_x (&trait-call CustomMarker :cmark MyBox)))\n    , &unit",
     );
     let trait_err = trait_err.expect_err("StructDef must fail static &trait-call for instance-only trait");
     assert_eq!(trait_err.code(), Some("E_TRAIT_CALL_IMPL_MISSING"), "unexpected: {trait_err:?}");
+
+    // Lowered `&trait-call` and generic-enum methods retain declared method `:where` bounds.
+    let method_bound_positive = r#"
+ns app.main
+deftrait HashProbe
+  .probe $ Fn Self U (-> Number) (:generics U) (:where $ U Hash)
+defenum Holder (:val Number) (:impls HashProbe)
+defimpl Holder HashProbe
+  .probe $ fn (self item)
+    hint-fn $ Fn Holder U (-> Number) (:generics U) (:where $ U Hash)
+    hash item
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      h $ Holder :val 1
+      _a $ h .probe 42
+      _b $ &trait-call HashProbe :probe h 42
+    , &unit
+"#;
+    let (res, warnings, _entries) = run_app(method_bound_positive);
+    assert!(res.is_ok(), "method bound positive failed: {res:?}");
+    assert!(warnings.is_empty(), "method bound positive warnings: {warnings:?}");
+    let fresh_entries = prepare_app(method_bound_positive);
+    run_check_only(&fresh_entries).expect("method bound positive should pass check-only");
+
+    for (label, bad_code) in [
+      (
+        "enum method .probe rejects non-Hash fn argument",
+        "ns app.main\ndeftrait HashProbe\n  .probe $ Fn Self U (-> Number) (:generics U) (:where $ U Hash)\ndefenum Holder (:val Number) (:impls HashProbe)\ndefimpl Holder HashProbe\n  .probe $ fn (self item)\n    hint-fn $ Fn Holder U (-> Number) (:generics U) (:where $ U Hash)\n    hash item\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((h (Holder :val 1)) (_a (h .probe (fn (x) x))))\n    , &unit",
+      ),
+      (
+        "&trait-call :probe rejects non-Hash fn argument",
+        "ns app.main\ndeftrait HashProbe\n  .probe $ Fn Self U (-> Number) (:generics U) (:where $ U Hash)\ndefenum Holder (:val Number) (:impls HashProbe)\ndefimpl Holder HashProbe\n  .probe $ fn (self item)\n    hint-fn $ Fn Holder U (-> Number) (:generics U) (:where $ U Hash)\n    hash item\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((h (Holder :val 1)) (_b (&trait-call HashProbe :probe h (fn (x) x))))\n    , &unit",
+      ),
+    ] {
+      let (_res, warnings, _entries) = run_app(bad_code);
+      assert!(
+        warnings.iter().any(|w| w.code() == Some("E_GENERIC_WHERE_BOUND_MISMATCH")),
+        "{label} should emit E_GENERIC_WHERE_BOUND_MISMATCH, got: {warnings:?}"
+      );
+      let fresh_entries = prepare_app(bad_code);
+      let check_err = run_check_only(&fresh_entries).expect_err(&format!("{label} should fail strict check-only"));
+      assert!(
+        check_err.contains("E_GENERIC_WHERE_BOUND_MISMATCH") || check_err.contains("Found 1 errors during preprocessing"),
+        "{label} check-only error should cite E_GENERIC_WHERE_BOUND_MISMATCH or fail preprocessing: {check_err}"
+      );
+    }
+
+    let custom_sort_by = r#"
+ns app.main
+defstruct Rank (:v Number) (:impls Compare)
+defimpl Rank Compare
+  .compare $ fn (a b) (&compare (:v b) (:v a))
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      r1 $ Rank :v 1
+      r2 $ Rank :v 2
+      r3 $ Rank :v 3
+      sorted $ sort ([] r1 r3 r2) compare
+    assert= ([] r3 r2 r1) sorted
+    , &unit
+"#;
+    let (res, warnings, _entries) = run_app(custom_sort_by);
+    assert!(res.is_ok(), "custom Compare 2-arg sort failed: {res:?}");
+    assert!(warnings.is_empty(), "custom Compare 2-arg sort warnings: {warnings:?}");
+    let fresh_entries = prepare_app(custom_sort_by);
+    run_check_only(&fresh_entries).expect("custom Compare 2-arg sort should pass check-only");
   });
 }

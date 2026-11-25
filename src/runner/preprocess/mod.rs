@@ -6601,6 +6601,28 @@ fn preprocess_list_call(
           reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
         }
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
+        // Enforce specialized callable contracts before warning-emitting checks, matching postfix call order (#2637).
+        if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form
+          && let Some(receiver) = processed_args.first()
+          && let Some(type_value) = resolve_type_value(receiver, scope_types)
+          && let Some(context) = expected_method_argument_types(type_value.as_ref(), method_name, &processed_args, scope_types)
+          && context.receiver_specialized
+          && context
+            .argument_types
+            .iter()
+            .any(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
+          && let Ok(method_args) = processed_args.skip(1)
+        {
+          reject_strict_unproven_specialized_contract(
+            &head_form,
+            &method_args,
+            &context.argument_types,
+            context.receiver_specialized,
+            scope_types,
+            file_ns,
+            call_stack,
+          )?;
+        }
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_construction_fields(
@@ -6742,24 +6764,6 @@ fn preprocess_list_call(
           && let Some(receiver) = processed_args.first()
           && let Some(type_value) = resolve_type_value(receiver, scope_types)
         {
-          if let Some(context) = expected_method_argument_types(type_value.as_ref(), method_name, &processed_args, scope_types)
-            && context.receiver_specialized
-            && context
-              .argument_types
-              .iter()
-              .any(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
-            && let Ok(method_args) = processed_args.skip(1)
-          {
-            reject_strict_unproven_specialized_contract(
-              &head_form,
-              &method_args,
-              &context.argument_types,
-              context.receiver_specialized,
-              scope_types,
-              file_ns,
-              call_stack,
-            )?;
-          }
           // Reconstruct the list with updated Method node carrying inferred type
           let is_external = trait_list_for_receiver(type_value.as_ref(), scope_types)
             .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -9782,16 +9786,18 @@ fn check_struct_method_args(
   // Get function info from method entry
   let declared_schema = match method_entry {
     Calcit::Import(import) => Some((
+      import.ns.as_ref(),
       program::lookup_def_schema(&import.ns, &import.def),
       format!("{} / {}", import.ns, import.def),
     )),
     Calcit::Fn { info, .. } if info.def_ref.is_some() => Some((
+      info.def_ns.as_ref(),
       program::lookup_def_schema(&info.def_ns, &info.name),
       format!("{} / {}", info.def_ns, info.name),
     )),
     _ => None,
   };
-  if let Some((schema, implementation_name)) = declared_schema
+  if let Some((schema_ns, schema, implementation_name)) = declared_schema
     && schema.contains_type_var()
     && type_value.as_ref().resolve_to_enum().is_some()
   {
@@ -9857,6 +9863,19 @@ fn check_struct_method_args(
         );
       }
     }
+    type_checking::check_enum_method_where_bounds(
+      head,
+      (schema_ns, &schema, signature),
+      args,
+      &bindings,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
     return;
   }
 
@@ -14060,7 +14079,7 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
     CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
     CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("&core-def-impls"),
     CalcitTypeAnnotation::Custom(value)
-      if matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_))
+      if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
         || matches!(
           value.as_ref(),
           Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
@@ -14069,11 +14088,17 @@ fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation)
       Some("&core-def-impls")
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
-    // A schema alias such as `Coord` for `List Number` dispatches through the
-    // core impls of the schema it names (#2590).
-    CalcitTypeAnnotation::TypeRef(..) => type_value
-      .resolve_schema_alias()
-      .and_then(|schema| core_impl_list_symbol_from_type_annotation(schema.as_ref())),
+    // A `deftype` or non-constructor schema alias such as `Coord` for `List Number`
+    // dispatches through the core impls of the target it names (#2590), while
+    // nominal struct/enum/union references remain instance types rather than constructors.
+    CalcitTypeAnnotation::TypeRef(..) => {
+      let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&Arc::new(type_value.clone()));
+      if matches!(expanded.as_ref(), CalcitTypeAnnotation::TypeRef(..)) {
+        None
+      } else {
+        core_impl_list_symbol_from_type_annotation(expanded.as_ref())
+      }
+    }
     _ => None,
   }
 }

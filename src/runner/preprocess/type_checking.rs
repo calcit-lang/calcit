@@ -24,8 +24,8 @@ use super::type_inference::{async_invocation_result, infer_struct_field_type, in
 use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::union_def::UnionMemberKind;
 use crate::calcit::{
-  self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
-  CalcitTypeAnnotation, LocatedWarning, NodeLocation,
+  self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnTypeAnnotation, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc,
+  CalcitSyntax, CalcitTypeAnnotation, LocatedWarning, NodeLocation,
 };
 use crate::program;
 
@@ -101,17 +101,23 @@ fn check_generic_trait_bounds(
   bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   call_loop_proof: Option<&CallTypeProof>,
   declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
+  has_arg_mismatch: bool,
 ) {
   let declared_from_head = declared
     .is_none()
     .then(|| match ctx.head_form {
       Calcit::Import(import) => Some((import.ns.as_ref(), program::lookup_def_schema(&import.ns, &import.def))),
-      Calcit::Proc(proc) => Some((calcit::CORE_NS, program::lookup_def_schema(calcit::CORE_NS, proc.as_ref()))),
+      // `&trait-call` is only the dynamic dispatch transport; never let its
+      // open transport schema shadow the selected trait method's contract.
+      Calcit::Proc(proc) if !matches!(proc, CalcitProc::NativeTraitCall) => {
+        Some((calcit::CORE_NS, program::lookup_def_schema(calcit::CORE_NS, proc.as_ref())))
+      }
+      Calcit::Proc(CalcitProc::NativeTraitCall) => None,
       _ => resolve_type_value(ctx.head_form, ctx.scope_types).map(|annotation| (ctx.file_ns, annotation)),
     })
     .flatten();
   let declared = declared.or_else(|| declared_from_head.as_ref().map(|(ns, schema)| (*ns, schema)));
-  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, call_loop_proof, declared);
+  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, call_loop_proof, declared, has_arg_mismatch);
 }
 
 pub(super) fn check_fn_where_bounds(
@@ -164,6 +170,33 @@ pub(super) fn check_fn_where_bounds(
     check_warnings,
   };
   check_generic_trait_bounds_with_declared(&ctx, bindings, Some((&fn_info.def_ns, &declared)));
+}
+
+pub(super) fn check_enum_method_where_bounds(
+  head_form: &Calcit,
+  (schema_ns, declared, signature): (&str, &Arc<CalcitTypeAnnotation>, &CalcitFnTypeAnnotation),
+  args: &CalcitList,
+  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  scope_types: &ScopeTypes,
+  call_info: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if signature.where_bounds.is_empty() {
+    return;
+  }
+  let ctx = CheckContext {
+    head_form,
+    args,
+    expected_types: &signature.arg_types,
+    generics: &signature.generics,
+    where_bounds: &signature.where_bounds,
+    scope_types,
+    file_ns: call_info.file_ns,
+    call_location: call_info.call_location.clone(),
+    warning_code: "E_METHOD_ARG_TYPE_MISMATCH",
+    check_warnings,
+  };
+  check_generic_trait_bounds_with_declared(&ctx, bindings, Some((schema_ns, declared)));
 }
 
 fn never_at_type_var(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation, target_var: &str) -> Option<bool> {
@@ -235,7 +268,7 @@ fn check_generic_trait_bounds_with_declared(
   bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
 ) {
-  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, None, declared);
+  check_generic_trait_bounds_with_proof_and_declared(ctx, bindings, None, declared, false);
 }
 
 fn check_generic_trait_bounds_with_proof_and_declared(
@@ -243,6 +276,7 @@ fn check_generic_trait_bounds_with_proof_and_declared(
   bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   call_loop_proof: Option<&CallTypeProof>,
   declared: Option<(&str, &Arc<CalcitTypeAnnotation>)>,
+  has_arg_mismatch: bool,
 ) {
   // Core specialization can replace a declared generic parameter with a
   // concrete receiver/callback contract. Recover bound evidence from the
@@ -305,7 +339,7 @@ fn check_generic_trait_bounds_with_proof_and_declared(
     // covers a caller/callee generic with the same spelling: compatibility can
     // accept that identity without producing a concrete binding.
     let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
-    let actual_type = call_proof
+    let resolved_type = call_proof
       .as_ref()
       .or(call_loop_proof)
       .and_then(|proof| proof.result(&variable))
@@ -315,8 +349,13 @@ fn check_generic_trait_bounds_with_proof_and_declared(
           bound_solely_by_never(ctx.args, &sig.arg_types, sig.rest_type.as_ref(), ctx.scope_types, &bound.name)
             .then(|| calcit::type_annotation::NEVER_TYPE.clone())
         })
-      })
-      .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(bound.name.clone())));
+      });
+    // Skip cascading unbound-variable `:where` noise when an argument already failed proof
+    // and prevented `CallTypeProof` from committing a binding for this type parameter.
+    if has_arg_mismatch && resolved_type.is_none() {
+      continue;
+    }
+    let actual_type = resolved_type.unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(bound.name.clone())));
     let required = bound.as_type_annotation();
     if ctx.scope_types.proves_trait_bound(actual_type.as_ref(), required.as_ref()) {
       continue;
@@ -978,6 +1017,7 @@ where
       bindings.insert(name.clone(), widened);
     }
   }
+  let mut has_arg_mismatch = false;
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
@@ -1002,9 +1042,11 @@ where
             }
             let bound_rest_type = inner_type.substitute_type_vars(&bindings);
             if has_known_member_mismatch(rest_arg, &bound_rest_type, ctx.scope_types) {
+              has_arg_mismatch = true;
               ctx.emit_warning(idx + rest_idx + 1, bound_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
             }
           } else {
+            has_arg_mismatch = true;
             ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
           }
         }
@@ -1078,11 +1120,13 @@ where
           && !may_rebind_local(arg)
           && expression_is_proven_for(arg, expected_type, ctx.scope_types, false))
       {
+        has_arg_mismatch = true;
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       } else {
         let bound_expected = expected_type.substitute_type_vars(&bindings);
         if has_known_member_mismatch(arg, &bound_expected, ctx.scope_types) {
+          has_arg_mismatch = true;
           ctx.emit_warning(idx + 1, bound_expected.as_ref(), actual_type.as_ref(), &make_warning);
         }
       }
@@ -1099,7 +1143,7 @@ where
   }
 
   if complete_arguments {
-    check_generic_trait_bounds(&ctx, &bindings, Some(&proof), declared);
+    check_generic_trait_bounds(&ctx, &bindings, Some(&proof), declared, has_arg_mismatch);
   }
 }
 
@@ -1203,9 +1247,11 @@ pub(crate) fn check_proc_arg_types(
       // The builtin only transports a dispatch request. Its open signature
       // cannot replace the selected method's actual input contract.
       let method_args = args.skip(2).expect("resolved trait method has trait and method operands");
-      check_method_call_arg_types(
+      let method_schema = Arc::new(CalcitTypeAnnotation::Fn(signature.clone()));
+      check_method_call_arg_types_with_declared(
         &Calcit::Proc(*proc),
         &signature,
+        Some((file_ns, &method_schema)),
         &method_args,
         scope_types,
         &CallTypeCheckInfo {

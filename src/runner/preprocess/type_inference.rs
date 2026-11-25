@@ -5001,6 +5001,12 @@ fn infer_struct_applied_args<'a>(
     .enumerate()
     .filter_map(|(index, value)| {
       let expected = resolve_struct_field_type_by_index(&prototype, index)?;
+      // Empty collection literals (`[]`, `{}`, `#{}`) carry no element/entry
+      // type evidence on their own, so return-context instantiation leaves
+      // unbound container generics open rather than fixing them to `Never`.
+      if super::empty_container_has_no_type_evidence(value, expected.as_ref()) {
+        return None;
+      }
       // A field with no declared generic cannot contribute to its bindings.
       // Its ordinary constructor check still validates the field independently.
       struct_def
