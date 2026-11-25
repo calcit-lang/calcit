@@ -223,7 +223,8 @@ Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，�
 - 同一个 trait 有两个实现，或在 `(:impls …)` 中重复列出同一 trait（含别名指向同一来源）：`E_DUPLICATE_TRAIT_IMPL`。
 - `(:impls …)` 里的名字解析不到：`E_UNKNOWN_IMPLS_TRAIT`。
 - 类型没在 `(:impls …)` 里列出的 trait，旁边即使有 `defimpl` 也不会挂上。
-- `(:impls …)` 只用于顶层定义；`let` 里定义的 struct/enum 继续用 `impl-traits` 挂载。
+- 对于未在任何位置通过值级或局部 `impl-traits`（含 `&struct:impl-traits`、`&enum:impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`）动态改写实现表的顶层名义类型，编译器判定其为**静态连贯（statically coherent）**：整个程序中同一 `(Type, Trait)` 组合最多只能有一个顶层 `defimpl`（重复会直接报 `E_DUPLICATE_TRAIT_IMPL`）；WASM/WASI 后端直接信任该连贯契约，无需分配 `ImplSelector` 或受 8 路分支限制，参数、容器元素、结构体字段及 `defref` 中的值都可直接静态解析 `.method` 与 `&trait-call`。
+- `(:impls …)` 用于顶层定义；函数内/值级 `impl-traits`（及底层 `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits`）**已弃用（deprecated）**，仅保留用于既有测试与兼容路径。新代码应统一使用顶层 `defstruct` / `defenum` + `(:impls …)` + `defimpl`；需要跨类型动态派发时请使用对象安全的 `(Dyn Trait)` 与 `dyn:box`。
 
 热重载时，改动 `defimpl` 或 `(:impls …)` 会让类型和它的使用者重新编译，即使类型在另一个 ns。
 

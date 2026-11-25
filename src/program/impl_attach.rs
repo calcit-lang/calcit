@@ -22,10 +22,10 @@
 //! can be told apart from attachment written by hand. The code as written is
 //! kept aside and restored before attaching again on reload.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::calcit::{self, Calcit};
+use crate::calcit::{self, Calcit, CalcitImport, CalcitList, CalcitProc, CalcitSyntax, CalcitTypeAnnotation};
 
 use super::{ImportRule, ProgramCodeData, ProgramFileData};
 
@@ -236,6 +236,616 @@ fn resolve_trait_origin(program: &ProgramCodeData, start: &DefKey) -> DefKey {
   current
 }
 
+/// Follow simple top-level alias definitions (`def Alias Target`) to the underlying nominal definition key.
+fn resolve_nominal_target(
+  program: &ProgramCodeData,
+  ns: &str,
+  file: &ProgramFileData,
+  name: &str,
+  written: &HashMap<DefKey, (Calcit, Calcit)>,
+) -> Option<DefKey> {
+  let start = resolve_in(program, ns, file, name)?;
+  let mut current = start.clone();
+  let mut visited = vec![start];
+  while let Some(target_file) = program.get(&current.0)
+    && let Some(entry) = target_file.defs.get(&current.1)
+  {
+    let code = effective_written_code(&current, &entry.code, written);
+    if nominal_form(code).is_some() || code_defines_nominal_type(code) {
+      return Some(current);
+    }
+    let target_form = match code {
+      Calcit::List(items) if items.len() == 3 && items.first().and_then(symbol_name) == Some("def") => items.get(2),
+      _ => None,
+    };
+    let Some(target) = target_form else { break };
+    let next = match target {
+      Calcit::Symbol { sym, .. } => resolve_in(program, &current.0, target_file, sym.as_ref()),
+      Calcit::Import(import) => Some((import.ns.clone(), import.def.clone())),
+      _ => None,
+    };
+    let Some(next_key) = next else { break };
+    if visited.contains(&next_key) {
+      break;
+    }
+    visited.push(next_key.clone());
+    current = next_key;
+  }
+  None
+}
+
+fn is_impl_attach_head(program: &ProgramCodeData, ns: &str, file: &ProgramFileData, head: &Calcit) -> bool {
+  match head {
+    Calcit::Proc(
+      CalcitProc::NativeStructImplTraits
+      | CalcitProc::NativeEnumImplTraits
+      | CalcitProc::NativeStructValueImplTraits
+      | CalcitProc::NativeEnumValueImplTraits,
+    ) => true,
+    Calcit::Import(CalcitImport { ns: head_ns, def, .. }) => {
+      head_ns.as_ref() == calcit::CORE_NS
+        && matches!(
+          def.as_ref(),
+          "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits"
+        )
+    }
+    Calcit::Fn { info, .. } => info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "impl-traits",
+    Calcit::Symbol { sym, .. } => {
+      if matches!(
+        sym.as_ref(),
+        "impl-traits"
+          | GENERATED_ATTACH_HEAD
+          | "&struct:impl-traits"
+          | "&enum:impl-traits"
+          | "&struct-def:impl-traits"
+          | "&enum-def:impl-traits"
+      ) {
+        return true;
+      }
+      resolve_in(program, ns, file, sym.as_ref()).is_some_and(|(target_ns, target_def)| {
+        target_ns.as_ref() == calcit::CORE_NS
+          && matches!(
+            target_def.as_ref(),
+            "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits"
+          )
+      })
+    }
+    _ => false,
+  }
+}
+
+fn is_core_symbol_or_import(program: &ProgramCodeData, ns: &str, file: &ProgramFileData, head: &Calcit, expected: &str) -> bool {
+  match head {
+    Calcit::Import(CalcitImport { ns: head_ns, def, .. }) => head_ns.as_ref() == calcit::CORE_NS && def.as_ref() == expected,
+    Calcit::Symbol { sym, .. } => {
+      sym.as_ref() == expected
+        || resolve_in(program, ns, file, sym.as_ref())
+          .is_some_and(|(target_ns, target_def)| target_ns.as_ref() == calcit::CORE_NS && target_def.as_ref() == expected)
+    }
+    _ => false,
+  }
+}
+
+fn nominal_key_from_annotation(
+  program: &ProgramCodeData,
+  ns: &str,
+  file: &ProgramFileData,
+  annotation: &CalcitTypeAnnotation,
+  written: &HashMap<DefKey, (Calcit, Calcit)>,
+) -> Option<DefKey> {
+  let from_def_ref = |def_ref: Option<&str>| -> Option<DefKey> {
+    let (target_ns, target_def) = def_ref?.rsplit_once('/')?;
+    Some((Arc::from(target_ns), Arc::from(target_def)))
+  };
+  match annotation {
+    CalcitTypeAnnotation::StructDef(def) | CalcitTypeAnnotation::Struct(def, _) | CalcitTypeAnnotation::StructValue(def) => {
+      from_def_ref(def.definition_ref.as_deref())
+    }
+    CalcitTypeAnnotation::EnumDef(def) | CalcitTypeAnnotation::Enum(def, _) | CalcitTypeAnnotation::EnumValue(def) => {
+      from_def_ref(def.definition_ref().map(AsRef::as_ref))
+    }
+    CalcitTypeAnnotation::TypeRef(name, _) => {
+      let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+      resolve_nominal_target(program, ns, file, stripped, written)
+    }
+    _ => None,
+  }
+}
+
+fn fn_param_names_from_list(params: &CalcitList) -> Vec<Arc<str>> {
+  params
+    .iter()
+    .filter_map(|item| match item {
+      Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "?" | "&") => Some(sym.clone()),
+      Calcit::Local(local) => Some(local.sym.clone()),
+      _ => None,
+    })
+    .collect()
+}
+
+#[derive(Clone, Copy)]
+struct NonCoherentScanCtx<'a> {
+  program: &'a ProgramCodeData,
+  ns: &'a str,
+  file: &'a ProgramFileData,
+  written: &'a HashMap<DefKey, (Calcit, Calcit)>,
+}
+
+fn type_node_nominal_target(scan: NonCoherentScanCtx<'_>, node: &Calcit) -> Option<DefKey> {
+  let from_def_ref = |def_ref: Option<&str>| -> Option<DefKey> {
+    let (target_ns, target_def) = def_ref?.rsplit_once('/')?;
+    Some((Arc::from(target_ns), Arc::from(target_def)))
+  };
+  match node {
+    Calcit::Symbol { sym, .. } => resolve_nominal_target(
+      scan.program,
+      scan.ns,
+      scan.file,
+      sym.trim_start_matches('\'').trim_start_matches(':'),
+      scan.written,
+    ),
+    Calcit::Import(import) => resolve_nominal_target(
+      scan.program,
+      scan.ns,
+      scan.file,
+      &format!("{}/{}", import.ns, import.def),
+      scan.written,
+    ),
+    Calcit::StructDef(def) => from_def_ref(def.definition_ref.as_deref()),
+    Calcit::EnumDef(def) => from_def_ref(def.definition_ref().map(AsRef::as_ref)),
+    Calcit::Struct(def) => from_def_ref(def.struct_ref.definition_ref.as_deref()),
+    Calcit::Enum(def) => from_def_ref(def.sum_type.as_ref().and_then(|d| d.definition_ref()).map(AsRef::as_ref)),
+    Calcit::List(items) => {
+      let head = items.first()?;
+      if (matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _))
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "quote"))
+        && let Some(inner) = items.get(1)
+      {
+        return type_node_nominal_target(scan, inner);
+      }
+      if (matches!(head, Calcit::Proc(CalcitProc::NativeEnum))
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "::"))
+        && let Some(target) = items.get(1)
+      {
+        return type_node_nominal_target(scan, target);
+      }
+      type_node_nominal_target(scan, head)
+    }
+    _ => None,
+  }
+}
+
+fn hint_fn_arg_nodes(scan: NonCoherentScanCtx<'_>, body: &[Calcit]) -> Option<Vec<Calcit>> {
+  let spec = body.iter().find_map(|item| {
+    let Calcit::List(parts) = item else { return None };
+    let head = parts.first()?;
+    if matches!(head, Calcit::Syntax(CalcitSyntax::HintFn, _))
+      || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "hint-fn")
+    {
+      parts.get(1)
+    } else {
+      None
+    }
+  })?;
+  let Calcit::List(items) = spec else { return None };
+  let head = items.first()?;
+  if matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "Fn")
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "Fn")
+  {
+    let mut args = Vec::new();
+    for item in items.iter().skip(1) {
+      if let Calcit::List(clause) = item
+        && matches!(clause.first(), Some(Calcit::Tag(_)))
+      {
+        continue;
+      }
+      if let Calcit::List(clause) = item
+        && matches!(clause.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "->")
+      {
+        continue;
+      }
+      args.push(item.clone());
+    }
+    return Some(args);
+  }
+  if matches!(head, Calcit::Proc(CalcitProc::NativeMap)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "{}") {
+    for pair in items.iter().skip(1) {
+      if let Calcit::List(kv) = pair
+        && matches!(kv.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "args")
+        && let Some(Calcit::List(arg_list)) = kv.get(1)
+      {
+        let skip = usize::from(
+          matches!(arg_list.first(), Some(Calcit::Proc(CalcitProc::List)))
+            || arg_list
+              .first()
+              .is_some_and(|h| is_core_symbol_or_import(scan.program, scan.ns, scan.file, h, "[]")),
+        );
+        return Some(arg_list.iter().skip(skip).cloned().collect());
+      }
+    }
+  }
+  None
+}
+
+fn bind_fn_param_nominals(
+  scan: NonCoherentScanCtx<'_>,
+  params: &CalcitList,
+  schema: Option<&CalcitTypeAnnotation>,
+  body: &[Calcit],
+  local_bindings: &mut HashMap<Arc<str>, Vec<DefKey>>,
+) {
+  let param_names = fn_param_names_from_list(params);
+  if let Some(arg_nodes) = hint_fn_arg_nodes(scan, body) {
+    for (param, arg_node) in param_names.iter().zip(arg_nodes.iter()) {
+      if let Some(key) = type_node_nominal_target(scan, arg_node) {
+        local_bindings.insert(param.clone(), vec![key]);
+      } else {
+        local_bindings.remove(param);
+      }
+    }
+  } else if let Some(fn_ann) = schema.and_then(|ann| ann.resolve_to_fn()) {
+    for (param, arg_ty) in param_names.iter().zip(fn_ann.arg_types.iter()) {
+      if let Some(key) = nominal_key_from_annotation(scan.program, scan.ns, scan.file, arg_ty.as_ref(), scan.written) {
+        local_bindings.insert(param.clone(), vec![key]);
+      } else {
+        local_bindings.remove(param);
+      }
+    }
+  } else {
+    for param in &param_names {
+      local_bindings.remove(param);
+    }
+  }
+  for item in body {
+    let Calcit::List(parts) = item else { continue };
+    let Some(head) = parts.first() else { continue };
+    if (matches!(head, Calcit::Syntax(CalcitSyntax::AssertType, _))
+      || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "assert-type"))
+      && let (Some(target), Some(ty_expr)) = (parts.get(1), parts.get(2))
+      && let Some(param) = match target {
+        Calcit::Symbol { sym, .. } => Some(sym),
+        Calcit::Local(local) => Some(&local.sym),
+        _ => None,
+      }
+      && param_names.contains(param)
+      && let Some(key) = type_node_nominal_target(scan, ty_expr)
+    {
+      local_bindings.insert(param.clone(), vec![key]);
+    }
+  }
+}
+
+fn expr_nominal_targets(
+  program: &ProgramCodeData,
+  ns: &str,
+  file: &ProgramFileData,
+  expr: &Calcit,
+  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
+  written: &HashMap<DefKey, (Calcit, Calcit)>,
+) -> Vec<DefKey> {
+  match expr {
+    Calcit::Symbol { sym, .. } => {
+      if let Some(targets) = local_bindings.get(sym.as_ref()) {
+        return targets.clone();
+      }
+      resolve_nominal_target(program, ns, file, sym.as_ref(), written)
+        .into_iter()
+        .collect()
+    }
+    Calcit::Local(local) => {
+      if let Some(targets) = local_bindings.get(&local.sym) {
+        return targets.clone();
+      }
+      nominal_key_from_annotation(program, ns, file, local.type_info.as_ref(), written)
+        .into_iter()
+        .collect()
+    }
+    Calcit::Import(import) => resolve_nominal_target(program, ns, file, &format!("{}/{}", import.ns, import.def), written)
+      .or_else(|| {
+        program
+          .get(&import.ns)
+          .and_then(|target_file| target_file.defs.get(&import.def))
+          .and_then(|entry| {
+            let key = (import.ns.clone(), import.def.clone());
+            let code = effective_written_code(&key, &entry.code, written);
+            (nominal_form(code).is_some() || code_defines_nominal_type(code)).then_some(key)
+          })
+      })
+      .into_iter()
+      .collect(),
+    Calcit::Struct(s) => s
+      .struct_ref
+      .definition_ref
+      .as_deref()
+      .and_then(|r| r.rsplit_once('/'))
+      .map(|(n, d)| (Arc::from(n), Arc::from(d)))
+      .into_iter()
+      .collect(),
+    Calcit::StructDef(s) => s
+      .definition_ref
+      .as_deref()
+      .and_then(|r| r.rsplit_once('/'))
+      .map(|(n, d)| (Arc::from(n), Arc::from(d)))
+      .into_iter()
+      .collect(),
+    Calcit::Enum(e) => e
+      .sum_type
+      .as_ref()
+      .and_then(|d| d.definition_ref())
+      .and_then(|r| r.rsplit_once('/'))
+      .map(|(n, d)| (Arc::from(n), Arc::from(d)))
+      .into_iter()
+      .collect(),
+    Calcit::EnumDef(e) => e
+      .definition_ref()
+      .and_then(|r| r.rsplit_once('/'))
+      .map(|(n, d)| (Arc::from(n), Arc::from(d)))
+      .into_iter()
+      .collect(),
+    Calcit::List(items) => {
+      let Some(head) = items.first() else {
+        return Vec::new();
+      };
+      if is_impl_attach_head(program, ns, file, head) {
+        return items
+          .get(1)
+          .map(|base| expr_nominal_targets(program, ns, file, base, local_bindings, written))
+          .unwrap_or_default();
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) || is_core_symbol_or_import(program, ns, file, head, "if") {
+        let mut out = Vec::new();
+        for branch in [items.get(2), items.get(3)].into_iter().flatten() {
+          out.extend(expr_nominal_targets(program, ns, file, branch, local_bindings, written));
+        }
+        return out;
+      }
+      if is_core_symbol_or_import(program, ns, file, head, "do") {
+        return items
+          .iter()
+          .last()
+          .map(|tail| expr_nominal_targets(program, ns, file, tail, local_bindings, written))
+          .unwrap_or_default();
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
+        || is_core_symbol_or_import(program, ns, file, head, "let")
+        || is_core_symbol_or_import(program, ns, file, head, "&let")
+      {
+        let mut scoped = local_bindings.clone();
+        if let Some(Calcit::List(bindings)) = items.get(1) {
+          let mut apply_pair = |pair: &CalcitList| {
+            if let (Some(lhs), Some(rhs)) = (pair.first(), pair.get(1))
+              && let Some(name) = match lhs {
+                Calcit::Symbol { sym, .. } => Some(sym.clone()),
+                Calcit::Local(local) => Some(local.sym.clone()),
+                _ => None,
+              }
+            {
+              let targets = expr_nominal_targets(program, ns, file, rhs, &scoped, written);
+              if targets.is_empty() {
+                scoped.remove(&name);
+              } else {
+                scoped.insert(name, targets);
+              }
+            }
+          };
+          if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
+            apply_pair(bindings);
+          } else {
+            for entry in bindings.iter() {
+              if let Calcit::List(pair) = entry {
+                apply_pair(pair);
+              }
+            }
+          }
+        }
+        return items
+          .iter()
+          .last()
+          .map(|tail| expr_nominal_targets(program, ns, file, tail, &scoped, written))
+          .unwrap_or_default();
+      }
+      if matches!(
+        head,
+        Calcit::Proc(
+          CalcitProc::NativeStruct
+            | CalcitProc::NativeStructFromMap
+            | CalcitProc::NativeNamedEnumNew
+            | CalcitProc::NativeStructAssoc
+            | CalcitProc::NativeStructAssocAt
+            | CalcitProc::NativeStructWith
+            | CalcitProc::NativeStructWithAt
+        )
+      ) || is_core_symbol_or_import(program, ns, file, head, "%{}")
+        || is_core_symbol_or_import(program, ns, file, head, "%::")
+        || is_core_symbol_or_import(program, ns, file, head, "&*::new")
+        || is_core_symbol_or_import(program, ns, file, head, "&struct:new")
+        || is_core_symbol_or_import(program, ns, file, head, "&struct:from-map")
+        || is_core_symbol_or_import(program, ns, file, head, "&struct:assoc")
+        || is_core_symbol_or_import(program, ns, file, head, "&struct:with")
+        || is_core_symbol_or_import(program, ns, file, head, "&enum:new")
+        || is_core_symbol_or_import(program, ns, file, head, "update")
+      {
+        return items
+          .get(1)
+          .map(|base| expr_nominal_targets(program, ns, file, base, local_bindings, written))
+          .unwrap_or_default();
+      }
+      // Constructor call `(Point :x 1)` or `(Option :some 1)`.
+      match head {
+        Calcit::Symbol { sym, .. } => {
+          if let Some(targets) = local_bindings.get(sym.as_ref()) {
+            return targets.clone();
+          }
+          resolve_nominal_target(program, ns, file, sym.as_ref(), written)
+            .into_iter()
+            .collect()
+        }
+        Calcit::Import(_) => expr_nominal_targets(program, ns, file, head, local_bindings, written),
+        _ => Vec::new(),
+      }
+    }
+    _ => Vec::new(),
+  }
+}
+
+fn walk_expr_for_non_coherent(
+  scan: NonCoherentScanCtx<'_>,
+  expr: &Calcit,
+  local_bindings: &HashMap<Arc<str>, Vec<DefKey>>,
+  fn_schema: Option<&CalcitTypeAnnotation>,
+  out: &mut HashSet<String>,
+) {
+  let Calcit::List(items) = expr else { return };
+  let Some(head) = items.first() else { return };
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Quote, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "quote")
+  {
+    return;
+  }
+  if is_impl_attach_head(scan.program, scan.ns, scan.file, head)
+    && let Some(base) = items.get(1)
+  {
+    for (target_ns, target_def) in expr_nominal_targets(scan.program, scan.ns, scan.file, base, local_bindings, scan.written) {
+      out.insert(format!("{target_ns}/{target_def}"));
+    }
+  }
+  if (matches!(
+    head,
+    Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)
+  ) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "defn"))
+    && let Some(Calcit::List(params)) = items.get(2)
+  {
+    let mut scoped = local_bindings.clone();
+    let body: Vec<Calcit> = items.iter().skip(3).cloned().collect();
+    bind_fn_param_nominals(scan, params, fn_schema, &body, &mut scoped);
+    for item in &body {
+      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+    }
+    return;
+  }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _))
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "let")
+    || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "&let")
+  {
+    let mut scoped = local_bindings.clone();
+    if let Some(Calcit::List(bindings)) = items.get(1) {
+      let visit_pair = |pair: &CalcitList, scoped: &mut HashMap<Arc<str>, Vec<DefKey>>, out: &mut HashSet<String>| {
+        if let Some(rhs) = pair.get(1) {
+          walk_expr_for_non_coherent(scan, rhs, scoped, None, out);
+          if let Some(name) = match pair.first() {
+            Some(Calcit::Symbol { sym, .. }) => Some(sym.clone()),
+            Some(Calcit::Local(local)) => Some(local.sym.clone()),
+            _ => None,
+          } {
+            let targets = expr_nominal_targets(scan.program, scan.ns, scan.file, rhs, scoped, scan.written);
+            if targets.is_empty() {
+              scoped.remove(&name);
+            } else {
+              scoped.insert(name, targets);
+            }
+          }
+        }
+      };
+      if bindings.len() == 2 && !matches!(bindings.first(), Some(Calcit::List(_))) {
+        visit_pair(bindings, &mut scoped, out);
+      } else {
+        for entry in bindings.iter() {
+          if let Calcit::List(pair) = entry {
+            visit_pair(pair, &mut scoped, out);
+          } else {
+            walk_expr_for_non_coherent(scan, entry, &scoped, None, out);
+          }
+        }
+      }
+    }
+    for item in items.iter().skip(2) {
+      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+    }
+    return;
+  }
+  if matches!(head, Calcit::Fn { .. }) {
+    // Nested fn expression? Usually `(fn (args) body...)` is `Syntax::Defn` or `Symbol("fn")`.
+  }
+  if is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "fn")
+    && let Some(Calcit::List(params)) = items.get(1)
+  {
+    let mut scoped = local_bindings.clone();
+    let body: Vec<Calcit> = items.iter().skip(2).cloned().collect();
+    bind_fn_param_nominals(scan, params, None, &body, &mut scoped);
+    for item in &body {
+      walk_expr_for_non_coherent(scan, item, &scoped, None, out);
+    }
+    return;
+  }
+  for item in items.iter() {
+    walk_expr_for_non_coherent(scan, item, local_bindings, None, out);
+  }
+}
+
+fn collect_non_coherent_nominal_defs_inner(
+  program: &ProgramCodeData,
+  written: &HashMap<DefKey, (Calcit, Calcit)>,
+  rewrites: &HashMap<DefKey, (Calcit, Calcit)>,
+) -> HashSet<String> {
+  let mut out = HashSet::new();
+  for (ns, file) in program {
+    for (def_name, entry) in &file.defs {
+      let key: DefKey = (ns.to_owned(), def_name.to_owned());
+      let generated_match = rewrites.get(&key).is_some_and(|(_, generated)| *generated == entry.code)
+        || written.get(&key).is_some_and(|(_, generated)| *generated == entry.code);
+      let core_top_level_wrapper =
+        calcit::is_bundled_core_ns(ns) && code_is_top_level_impl_traits(&entry.code) && code_defines_nominal_type(&entry.code);
+      if !generated_match
+        && !core_top_level_wrapper
+        && code_is_top_level_impl_traits(&entry.code)
+        && code_defines_nominal_type(&entry.code)
+      {
+        out.insert(format!("{ns}/{def_name}"));
+      }
+      let root = if generated_match {
+        rewrites
+          .get(&key)
+          .or_else(|| written.get(&key))
+          .map(|(original, _)| original)
+          .unwrap_or(&entry.code)
+      } else if core_top_level_wrapper {
+        // Core wraps top-level definitions such as Option and Result with `def Name (impl-traits (defenum ...) ...)`.
+        // Skip that top-level attachment node itself while still scanning any inner expressions.
+        if let Calcit::List(items) = &entry.code
+          && items.first().and_then(symbol_name) == Some("def")
+          && let Some(Calcit::List(wrap)) = items.get(2)
+          && let Some(inner) = wrap.get(1)
+        {
+          inner
+        } else {
+          &entry.code
+        }
+      } else {
+        &entry.code
+      };
+      walk_expr_for_non_coherent(
+        NonCoherentScanCtx {
+          program,
+          ns,
+          file,
+          written,
+        },
+        root,
+        &HashMap::new(),
+        Some(entry.schema.as_ref()),
+        &mut out,
+      );
+    }
+  }
+  out
+}
+
+/// Collect nominal `ns/def` keys that appear as the base of any non-generated
+/// `impl-traits` / `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits` call.
+pub(crate) fn collect_non_coherent_nominal_defs(program: &ProgramCodeData) -> HashSet<String> {
+  let written = WRITTEN_CODE.lock().expect("lock written type code").clone();
+  collect_non_coherent_nominal_defs_inner(program, &written, &HashMap::new())
+}
+
 /// View the written form of a definition without mutating `program` before validation succeeds.
 fn effective_written_code<'a>(key: &DefKey, current: &'a Calcit, written: &'a HashMap<DefKey, (Calcit, Calcit)>) -> &'a Calcit {
   match written.get(key) {
@@ -257,7 +867,7 @@ pub(crate) fn stage_source_impls(program: &ProgramCodeData) -> Result<StagedSour
   let mut rewrites: HashMap<DefKey, (Calcit, Calcit)> = HashMap::new();
   let mut namespaces: Vec<&Arc<str>> = program.keys().collect();
   namespaces.sort();
-  for ns in namespaces {
+  for &ns in &namespaces {
     let file = &program[ns];
     let mut defs: Vec<&Arc<str>> = file.defs.keys().collect();
     defs.sort();
@@ -322,6 +932,42 @@ pub(crate) fn stage_source_impls(program: &ProgramCodeData) -> Result<StagedSour
       };
       rewrites.insert(type_key, (code.to_owned(), generated));
     }
+  }
+
+  let non_coherent = collect_non_coherent_nominal_defs_inner(program, &written, &rewrites);
+  let mut coherent_impls_by_pair: HashMap<(DefKey, DefKey), Vec<DefKey>> = HashMap::new();
+  for ns in &namespaces {
+    let file = &program[*ns];
+    let mut defs: Vec<&Arc<str>> = file.defs.keys().collect();
+    defs.sort();
+    for def in defs {
+      let impl_key: DefKey = ((*ns).to_owned(), def.to_owned());
+      let code = effective_written_code(&impl_key, &file.defs[def].code, &written);
+      let Some((type_name, trait_name)) = defimpl_type_and_trait(code) else {
+        continue;
+      };
+      let Some(type_key) = resolve_nominal_target(program, ns, file, type_name, &written) else {
+        continue;
+      };
+      if non_coherent.contains(&format!("{}/{}", type_key.0, type_key.1)) {
+        continue;
+      }
+      let Some(trait_key) = resolve_in(program, ns, file, trait_name) else {
+        continue;
+      };
+      let origin_key = resolve_trait_origin(program, &trait_key);
+      coherent_impls_by_pair.entry((type_key, origin_key)).or_default().push(impl_key);
+    }
+  }
+  let mut duplicate_pairs: Vec<_> = coherent_impls_by_pair.into_iter().filter(|(_, impls)| impls.len() >= 2).collect();
+  duplicate_pairs.sort_by(|(a, _), (b, _)| a.cmp(b));
+  if let Some(((type_key, origin_key), impls)) = duplicate_pairs.into_iter().next() {
+    let (a_ns, a_def) = &impls[0];
+    let (b_ns, b_def) = &impls[1];
+    return Err(format!(
+      "[{DUPLICATE_TRAIT_IMPL_ERROR}] {}/{} implements {}/{} twice: {a_ns}/{a_def} and {b_ns}/{b_def}; a coherent type has at most one implementation of a trait, remove one of them",
+      type_key.0, type_key.1, origin_key.0, origin_key.1
+    ));
   }
 
   Ok(StagedSourceImpls { rewrites })

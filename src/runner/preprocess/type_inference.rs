@@ -1105,7 +1105,9 @@ pub(super) fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
   match pattern {
     Calcit::Local(local) => {
       scope.insert(local.sym.clone(), local.type_info.clone());
-      scope.mark_incomplete_impls(local.sym.clone());
+      if !is_statically_coherent_nominal_type(&local.type_info) {
+        scope.mark_incomplete_impls(local.sym.clone());
+      }
     }
     Calcit::List(items) => {
       for item in items.iter() {
@@ -3196,6 +3198,60 @@ fn is_impl_traits_call_head(head: &Calcit) -> bool {
   ) || is_core_fn_head(head, "impl-traits")
 }
 
+pub(super) fn nominal_def_ref_of(annotation: &CalcitTypeAnnotation) -> Option<String> {
+  let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&Arc::new(annotation.clone()));
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::StructDef(def) => def.definition_ref.as_deref().map(str::to_owned),
+    CalcitTypeAnnotation::EnumDef(def) => def.definition_ref().map(|r| r.as_ref().to_owned()),
+    CalcitTypeAnnotation::Struct(def, _) | CalcitTypeAnnotation::StructValue(def) => def.definition_ref.as_deref().map(str::to_owned),
+    CalcitTypeAnnotation::Enum(def, _) | CalcitTypeAnnotation::EnumValue(def) => def.definition_ref().map(|r| r.as_ref().to_owned()),
+    CalcitTypeAnnotation::TypeRef(_, _) => {
+      if let Some((def, path)) = expanded.resolve_to_struct_with_ref() {
+        def
+          .definition_ref
+          .as_deref()
+          .map(str::to_owned)
+          .or_else(|| path.map(|(ns, def)| format!("{ns}/{def}")))
+      } else if let Some((def, path)) = expanded.resolve_to_enum_with_ref() {
+        def
+          .definition_ref()
+          .map(|r| r.as_ref().to_owned())
+          .or_else(|| path.map(|(ns, def)| format!("{ns}/{def}")))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+pub(crate) fn is_statically_coherent_nominal_type(annotation: &CalcitTypeAnnotation) -> bool {
+  nominal_def_ref_of(annotation).is_some_and(|def_ref| !program::is_non_coherent_nominal_def(&def_ref))
+}
+
+fn is_statically_coherent_nominal_ready(annotation: &CalcitTypeAnnotation) -> bool {
+  let Some(def_ref) = nominal_def_ref_of(annotation) else {
+    return false;
+  };
+  if program::is_non_coherent_nominal_def(&def_ref) {
+    return false;
+  }
+  if let Some((ns, def)) = def_ref.rsplit_once('/')
+    && definition_has_pending_impl_compilation(ns, def)
+  {
+    return false;
+  }
+  true
+}
+
+pub(crate) fn record_non_coherent_nominal_from_expr(base_expr: &Calcit, scope_types: &ScopeTypes) {
+  if let Some(ty) = resolve_type_value(base_expr, scope_types)
+    && let Some(def_ref) = nominal_def_ref_of(ty.as_ref())
+  {
+    program::record_non_coherent_nominal_def(&def_ref);
+  }
+}
+
 /// Resolve an expression's static type alongside whether its static impl table
 /// is known to contain every runtime trait impl. Nested `CoreLet`, `If`,
 /// `impl-traits`, and struct field-update expressions traverse their inputs in a
@@ -3206,16 +3262,18 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
     Calcit::Local(local) => {
       let ty = resolve_type_value(expr, scope_types);
       let complete = ty.as_deref().is_some_and(|resolved| {
-        !scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _))
+        !scope_types.has_incomplete_impls(&local.sym)
+          && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
       });
       (ty, complete)
     }
     Calcit::Symbol { sym, info, .. } => {
       if scope_types.contains_key(sym) {
         let ty = resolve_type_value(expr, scope_types);
-        let complete = ty
-          .as_deref()
-          .is_some_and(|resolved| !scope_types.has_incomplete_impls(sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+        let complete = ty.as_deref().is_some_and(|resolved| {
+          !scope_types.has_incomplete_impls(sym)
+            && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+        });
         (ty, complete)
       } else {
         resolve_named_nominal_completeness(&info.at_ns, sym, None, expr, scope_types)
@@ -3230,17 +3288,17 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         let inner_scope = core_let_scope(items, scope_types);
         let tail = &items[items.len() - 1];
         let (ty, tail_complete) = resolve_type_and_impl_completeness(tail, &inner_scope);
-        let complete = ty
-          .as_deref()
-          .is_some_and(|resolved| tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+        let complete = ty.as_deref().is_some_and(|resolved| {
+          tail_complete && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+        });
         return (ty, complete);
       }
       if is_core_fn_head(head, "do") && items.len() >= 2 {
         let tail = &items[items.len() - 1];
         let (ty, tail_complete) = resolve_type_and_impl_completeness(tail, scope_types);
-        let complete = ty
-          .as_deref()
-          .is_some_and(|resolved| tail_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+        let complete = ty.as_deref().is_some_and(|resolved| {
+          tail_complete && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+        });
         return (ty, complete);
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) {
@@ -3330,9 +3388,9 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
           return (proc_signature_return_type(&CalcitProc::NativeNamedEnumNew), false);
         };
         let inferred = infer_enum_annotation_with_proto(items, enum_proto, scope_types);
-        let complete = inferred
-          .as_deref()
-          .is_some_and(|resolved| proto_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+        let complete = inferred.as_deref().is_some_and(|resolved| {
+          proto_complete && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+        });
         let ty = inferred.or_else(|| proc_signature_return_type(&CalcitProc::NativeNamedEnumNew));
         return (ty, complete);
       }
@@ -3356,17 +3414,24 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
             } else {
               Some(record_type)
             };
-            let complete = ty
-              .as_deref()
-              .is_some_and(|resolved| recv_complete && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)));
+            let complete = ty.as_deref().is_some_and(|resolved| {
+              recv_complete
+                && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+            });
             return (ty, complete);
           }
         }
         return (resolve_type_value(expr, scope_types), false);
       }
-      (resolve_type_value(expr, scope_types), false)
+      let ty = resolve_type_value(expr, scope_types);
+      let complete = ty.as_deref().is_some_and(is_statically_coherent_nominal_ready);
+      (ty, complete)
     }
-    _ => (resolve_type_value(expr, scope_types), false),
+    _ => {
+      let ty = resolve_type_value(expr, scope_types);
+      let complete = ty.as_deref().is_some_and(is_statically_coherent_nominal_ready);
+      (ty, complete)
+    }
   }
 }
 
@@ -3446,10 +3511,14 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
   }
   match expr {
     Calcit::Struct(_) | Calcit::Enum(_) | Calcit::StructDef(_) | Calcit::EnumDef(_) => true,
-    Calcit::Local(local) => !scope_types.has_incomplete_impls(&local.sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)),
+    Calcit::Local(local) => {
+      !scope_types.has_incomplete_impls(&local.sym)
+        && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
+    }
     Calcit::Symbol { sym, info, .. } => {
       if scope_types.contains_key(sym) {
-        !scope_types.has_incomplete_impls(sym) && !matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _))
+        !scope_types.has_incomplete_impls(sym)
+          && (!matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(resolved))
       } else {
         resolve_named_nominal_completeness(&info.at_ns, sym, None, expr, scope_types).1
       }
@@ -3491,7 +3560,7 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
         )
       ) || is_core_fn_head(head, "update")
       {
-        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) {
+        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(resolved) {
           return false;
         }
         return items.get(1).is_some_and(|receiver| {
@@ -3500,13 +3569,13 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
         });
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::CoreLet, _)) && items.len() >= 3 {
-        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) {
+        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(resolved) {
           return false;
         }
         return resolve_type_and_impl_completeness(expr, scope_types).1;
       }
       if is_core_fn_head(head, "do") && items.len() >= 2 {
-        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) {
+        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(resolved) {
           return false;
         }
         return items
@@ -3515,15 +3584,15 @@ pub(crate) fn expr_has_complete_impls(expr: &Calcit, resolved: &CalcitTypeAnnota
           .is_some_and(|tail| resolve_type_and_impl_completeness(tail, scope_types).1);
       }
       if matches!(head, Calcit::Syntax(CalcitSyntax::If, _)) && items.len() == 4 {
-        // A joined `TypeRef` may carry runtime impls its declaration table lacks.
-        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) {
+        // A joined `TypeRef` may carry runtime impls its declaration table lacks unless it is statically coherent.
+        if matches!(resolved, CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(resolved) {
           return false;
         }
         return infer_if_branches(items, scope_types, true).1;
       }
-      false
+      is_statically_coherent_nominal_ready(resolved)
     }
-    _ => false,
+    _ => is_statically_coherent_nominal_ready(resolved),
   }
 }
 
@@ -3535,7 +3604,8 @@ pub(crate) fn check_impl_attachment_coherence(args: &CalcitList, scope_types: &S
   let (Some(base), resolved_complete) = resolve_type_and_impl_completeness(base_expr, scope_types) else {
     return None;
   };
-  let base_impls_complete = resolved_complete && !matches!(base.as_ref(), CalcitTypeAnnotation::TypeRef(_, _));
+  let base_impls_complete = resolved_complete
+    && (!matches!(base.as_ref(), CalcitTypeAnnotation::TypeRef(_, _)) || is_statically_coherent_nominal_ready(base.as_ref()));
   let mut impls: Vec<Arc<CalcitImpl>> = match base.as_ref() {
     CalcitTypeAnnotation::StructDef(definition)
     | CalcitTypeAnnotation::Struct(definition, _)
@@ -5192,7 +5262,8 @@ fn resolve_enum_value_inner(target: &Calcit, scope_types: &ScopeTypes, track_com
         },
         _ => t,
       };
-      let is_type_ref = matches!(unwrapped.as_ref(), CalcitTypeAnnotation::TypeRef(_, _));
+      let is_type_ref =
+        matches!(unwrapped.as_ref(), CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(unwrapped.as_ref());
       let resolved = match unwrapped.as_ref() {
         // Definition values stay distinct from enum instances in ordinary type
         // matching. Constructor inference is the one context that deliberately
@@ -5269,7 +5340,7 @@ fn resolve_struct_value_inner(
       let Some(t) = ty else {
         return (None, false);
       };
-      let is_type_ref = matches!(t.as_ref(), CalcitTypeAnnotation::TypeRef(_, _));
+      let is_type_ref = matches!(t.as_ref(), CalcitTypeAnnotation::TypeRef(_, _)) && !is_statically_coherent_nominal_ready(t.as_ref());
       let value = match t.as_ref() {
         // As above, only the explicit struct-construction path unwraps a
         // StructDef or EnumDef into the nominal metadata of the instance being created.
@@ -7726,5 +7797,65 @@ mod tests {
     let proto_incomplete = resolved_incomplete.expect("incomplete scoped EnumDef must still resolve prototype");
     assert_eq!(&proto_incomplete.struct_ref.name, scoped_enum.name());
     assert!(!incomplete_flag);
+  }
+
+  #[test]
+  fn coherent_nominal_parameter_and_type_ref_preserve_impl_completeness() {
+    let coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/CoherentWidget");
+    let non_coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/NonCoherentWidget");
+    crate::program::record_non_coherent_nominal_def(&non_coherent_ref);
+
+    let mut coherent_struct = CalcitStructDef::from_fields(EdnTag::from("CoherentWidget"), vec![EdnTag::from("value")]);
+    coherent_struct.definition_ref = Some(coherent_ref);
+    let coherent_arc = Arc::new(coherent_struct);
+    let coherent_ty = Arc::new(CalcitTypeAnnotation::StructDef(coherent_arc.clone()));
+
+    let mut non_coherent_struct = CalcitStructDef::from_fields(EdnTag::from("NonCoherentWidget"), vec![EdnTag::from("value")]);
+    non_coherent_struct.definition_ref = Some(non_coherent_ref);
+    let non_coherent_arc = Arc::new(non_coherent_struct);
+    let non_coherent_ty = Arc::new(CalcitTypeAnnotation::StructDef(non_coherent_arc.clone()));
+
+    assert!(is_statically_coherent_nominal_type(&coherent_ty));
+    assert!(!is_statically_coherent_nominal_type(&non_coherent_ty));
+
+    let coherent_val = Arc::new(CalcitTypeAnnotation::StructValue(coherent_arc));
+    let non_coherent_val = Arc::new(CalcitTypeAnnotation::StructValue(non_coherent_arc));
+    assert!(is_statically_coherent_nominal_type(&coherent_val));
+    assert!(!is_statically_coherent_nominal_type(&non_coherent_val));
+
+    let mut scope = ScopeTypes::new();
+    scope.bind_parameter(Arc::from("good"), coherent_ty.clone());
+    scope.bind_parameter(Arc::from("detached"), non_coherent_ty.clone());
+
+    let sym = |name: &str| Calcit::Symbol {
+      sym: Arc::from(name),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.coherent-unit"),
+        at_def: Arc::from("check"),
+      }),
+      location: None,
+    };
+
+    assert!(
+      expr_has_complete_impls(&sym("good"), &coherent_ty, &scope),
+      "coherent nominal parameter must retain complete static impls"
+    );
+    assert!(
+      !expr_has_complete_impls(&sym("detached"), &non_coherent_ty, &scope),
+      "non-coherent nominal parameter must stay marked incomplete"
+    );
+
+    let mut value_scope = ScopeTypes::new();
+    value_scope.insert(Arc::from("val-good"), coherent_val.clone());
+    value_scope.insert(Arc::from("val-detached"), non_coherent_val.clone());
+    value_scope.mark_incomplete_impls(Arc::from("val-detached"));
+    assert!(
+      expr_has_complete_impls(&sym("val-good"), &coherent_val, &value_scope),
+      "coherent nominal StructValue binding must have complete static impls"
+    );
+    assert!(
+      !expr_has_complete_impls(&sym("val-detached"), &non_coherent_val, &value_scope),
+      "non-coherent StructValue binding marked incomplete must stay incomplete"
+    );
   }
 }

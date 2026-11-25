@@ -1312,6 +1312,7 @@ fn emit_wasm_impl(
     }
   }
 
+  let non_coherent_nominal_defs = Arc::new(program::snapshot_non_coherent_nominal_defs());
   let dyn_base_fn_idx = num_imports + runtime_fn_count + fn_defs.len() as u32;
   let env = WasmCompileEnv {
     function_value_dependencies: Rc::default(),
@@ -1324,6 +1325,7 @@ fn emit_wasm_impl(
     runtime_fn_index,
     tag_index,
     struct_layouts,
+    non_coherent_nominal_defs,
     string_pool,
     atom_globals,
     atom_is_scalar,
@@ -6088,6 +6090,8 @@ struct WasmCompileEnv {
   tag_index: HashMap<String, u32>,
   struct_layouts: StructLayouts,
   any_type_table: any_box::AnyTypeTable,
+  /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
+  non_coherent_nominal_defs: Arc<HashSet<String>>,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -6509,6 +6513,8 @@ struct WasmGenCtx {
   struct_layouts: StructLayouts,
   /// Whole-program canonical `TypeId` table (`1..=N`, `0` = never-boxed).
   any_type_table: any_box::AnyTypeTable,
+  /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
+  non_coherent_nominal_defs: Arc<HashSet<String>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -6616,6 +6622,7 @@ impl WasmGenCtx {
       tag_index: env.tag_index,
       struct_layouts: env.struct_layouts,
       any_type_table: env.any_type_table,
+      non_coherent_nominal_defs: env.non_coherent_nominal_defs,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -8084,7 +8091,13 @@ fn infer_wasm_evidence_in_scope(
         }
         Calcit::Method(name, MethodKind::Invoke(_)) => {
           let receiver = infer_wasm_evidence_in_scope(ctx, items.get(1)?, local_types, closures, visiting)?;
-          let callable = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns).ok()??;
+          let callable = resolve_runtime_method_callable(
+            &receiver.annotation,
+            has_effective_exact_impls(ctx, &receiver),
+            name,
+            &ctx.source_ns,
+          )
+          .ok()??;
           let mut direct = vec![callable];
           direct.extend(items.iter().skip(1).cloned());
           infer_wasm_evidence_in_scope(ctx, &Calcit::from(direct), local_types, closures, visiting)
@@ -9865,8 +9878,8 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   } else {
     None
   };
-  // A nominal data contract alone does not identify its attached impls.
-  // Preserve the actual argument's identity even when its data shape matches.
+  // A nominal data contract alone does not identify its attached impls for non-coherent types.
+  // Preserve the actual argument's identity only when needed.
   let method_argument_types = if (definition.method_sensitive || definition.trait_sensitive)
     && definition.fixed_arity
     && !ctx.specialization_stack.iter().any(|active| active == qualified)
@@ -9874,8 +9887,12 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     && trait_argument_types.is_none()
   {
     resolve_static_specialization_types(ctx, &definition, args).filter(|actuals| {
-      actuals.iter().any(|actual| {
-        actual.exact_impls && (actual.annotation.resolve_to_enum().is_some() || actual.annotation.resolve_to_struct().is_some())
+      actuals.iter().zip(definition.arg_types.iter()).any(|(actual, expected)| {
+        actual.exact_impls
+          && (actual.annotation.resolve_to_enum().is_some() || actual.annotation.resolve_to_struct().is_some())
+          && !(!expected.contains_type_var()
+            && is_statically_coherent_nominal(ctx, &actual.annotation)
+            && is_statically_coherent_nominal(ctx, expected))
       })
     })
   } else {
@@ -10777,7 +10794,11 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
       }
       continue;
     }
+    let both_coherent_same_nominal = is_statically_coherent_nominal(ctx, &expected.annotation)
+      && is_statically_coherent_nominal(ctx, &actual.annotation)
+      && nominal_type_def_ref(&expected.annotation) == nominal_type_def_ref(&actual.annotation);
     let same_impls = !expected.exact_impls
+      || both_coherent_same_nominal
       || (actual.exact_impls
         && match (expected.annotation.resolve_to_enum(), actual.annotation.resolve_to_enum()) {
           (Some(expected), Some(actual)) => expected.impls == actual.impls,
@@ -10833,6 +10854,41 @@ fn validate_recur_evidence(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<
   Ok(assignments)
 }
 
+fn nominal_type_def_ref(ty: &CalcitTypeAnnotation) -> Option<String> {
+  let expanded = expand_wasm_value_type(&Arc::new(ty.clone()));
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::StructDef(def) => def.definition_ref.as_deref().map(str::to_owned),
+    CalcitTypeAnnotation::EnumDef(def) => def.definition_ref().map(|r| r.as_ref().to_owned()),
+    CalcitTypeAnnotation::Struct(def, _) | CalcitTypeAnnotation::StructValue(def) => def.definition_ref.as_deref().map(str::to_owned),
+    CalcitTypeAnnotation::Enum(def, _) | CalcitTypeAnnotation::EnumValue(def) => def.definition_ref().map(|r| r.as_ref().to_owned()),
+    CalcitTypeAnnotation::TypeRef(_, _) => {
+      if let Some((def, path)) = expanded.resolve_to_struct_with_ref() {
+        def
+          .definition_ref
+          .as_deref()
+          .map(str::to_owned)
+          .or_else(|| path.map(|(ns, def)| format!("{ns}/{def}")))
+      } else if let Some((def, path)) = expanded.resolve_to_enum_with_ref() {
+        def
+          .definition_ref()
+          .map(|r| r.as_ref().to_owned())
+          .or_else(|| path.map(|(ns, def)| format!("{ns}/{def}")))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+fn is_statically_coherent_nominal(ctx: &WasmGenCtx, ty: &CalcitTypeAnnotation) -> bool {
+  nominal_type_def_ref(ty).is_some_and(|def_ref| !ctx.non_coherent_nominal_defs.contains(&def_ref))
+}
+
+fn has_effective_exact_impls(ctx: &WasmGenCtx, ev: &WasmTypeEvidence) -> bool {
+  ev.exact_impls || is_statically_coherent_nominal(ctx, &ev.annotation)
+}
+
 fn is_nominal_value_annotation(annotation: &CalcitTypeAnnotation) -> bool {
   annotation.resolve_to_enum().is_some() || annotation.resolve_to_struct().is_some()
 }
@@ -10853,8 +10909,9 @@ fn emit_selected_recur_loop(
     ctx.instructions.truncate(start);
     let selectors: Vec<Option<ImplSelector>> = alternatives
       .iter()
-      .map(|identities| {
-        (identities.len() > 1).then(|| ImplSelector {
+      .zip(&effective_types)
+      .map(|(identities, effective)| {
+        (!is_statically_coherent_nominal(ctx, &effective.annotation) && identities.len() > 1).then(|| ImplSelector {
           local: ctx.alloc_local_typed(ValType::I32),
           alternatives: identities.clone(),
         })
@@ -11292,7 +11349,10 @@ fn emit_inline_iife(
     .filter(|types| {
       types.len() == params.len()
         && types.iter().any(|evidence| {
-          (evidence.exact_impls && is_nominal_value_annotation(&evidence.annotation)) || evidence.scalar_origin.is_some()
+          (evidence.exact_impls
+            && is_nominal_value_annotation(&evidence.annotation)
+            && !is_statically_coherent_nominal(ctx, &evidence.annotation))
+            || evidence.scalar_origin.is_some()
         })
     });
   if uses_recur && selected_types.is_none() {
@@ -12063,8 +12123,13 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     Calcit::Method(name, kind) => match kind {
       MethodKind::Invoke(_) => {
         if let Some(receiver) = args_list.first().and_then(|arg| infer_wasm_value_evidence(ctx, arg))
-          && let Some(callable) = resolve_runtime_method_callable(&receiver.annotation, receiver.exact_impls, name, &ctx.source_ns)
-            .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?
+          && let Some(callable) = resolve_runtime_method_callable(
+            &receiver.annotation,
+            has_effective_exact_impls(ctx, &receiver),
+            name,
+            &ctx.source_ns,
+          )
+          .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?
         {
           return emit_resolved_method_call(ctx, callable, &args_list);
         }
@@ -12916,7 +12981,7 @@ fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
     || receiver_type.resolve_to_struct().is_some()
     || matches!(receiver_type.as_ref(), CalcitTypeAnnotation::AnonymousEnum)
     || matches!(receiver_type.as_ref(), CalcitTypeAnnotation::Custom(value) if matches!(value.as_ref(), Calcit::Tag(tag) if tag.ref_str() == "struct"));
-  if nominal && !receiver.exact_impls {
+  if nominal && !receiver.exact_impls && !is_statically_coherent_nominal(ctx, receiver_type.as_ref()) {
     return Err(
       "E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires the receiver's actual implementation identity, not only a data contract".into(),
     );
@@ -16314,6 +16379,15 @@ fn impl_alternatives(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Vec<WasmTypeEvid
       }
     }
   }
+  if alternatives.len() > 1
+    && let Some(first_ref) = alternatives.first().and_then(|first| nominal_type_def_ref(&first.annotation))
+    && !ctx.non_coherent_nominal_defs.contains(&first_ref)
+    && alternatives
+      .iter()
+      .all(|alt| nominal_type_def_ref(&alt.annotation).as_deref() == Some(first_ref.as_str()))
+  {
+    return None;
+  }
   (alternatives.len() > 1 && alternatives.len() <= MAX_IMPL_ALTERNATIVES).then_some(alternatives)
 }
 
@@ -17330,6 +17404,10 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Arc::new(std::collections::HashSet::from([
+        String::from("tests.wasm/LoopProbe"),
+        String::from("tests.wasm/LimitProbe"),
+      ])),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(1, env.clone());
@@ -17493,6 +17571,111 @@ mod tests {
   }
 
   #[test]
+  fn coherent_nominal_recur_bypasses_impl_selector_and_variant_cap() {
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      dyn_traits: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      fn_signatures: HashMap::new(),
+      has_boxed_json_scalars: true,
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      atom_is_scalar: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+      world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
+      any_type_table: Default::default(),
+    };
+    let count = super::MAX_IMPL_ALTERNATIVES + 3;
+    let mut ctx = WasmGenCtx::new((count * 2 - 1) as u32, env);
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("tests.wasm"),
+      at_def: Arc::from("coherent-limit"),
+    });
+    let local = |name: &str, type_info: Arc<CalcitTypeAnnotation>| {
+      Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from(name),
+        info: info.clone(),
+        location: None,
+        type_info,
+      })
+    };
+    let choices = (0..count)
+      .map(|index| {
+        if index > 0 {
+          let condition = format!("choose{index}");
+          ctx.locals.insert(condition.clone(), (count + index - 1) as u32);
+          ctx
+            .local_types
+            .insert(condition, WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Bool)));
+        }
+        let name = format!("choice{index}");
+        let mut prototype = CalcitStructDef::from_fields(EdnTag::new("CoherentProbe"), vec![]);
+        prototype.definition_ref = Some(Arc::from("tests.wasm/CoherentProbe"));
+        prototype.impls.push(Arc::new(CalcitImpl {
+          name: EdnTag::new(format!("CoherentProbeImpl{index}")),
+          origin: None,
+          fields: Arc::new(vec![EdnTag::new("flag?")]),
+          values: Arc::new(vec![Calcit::Proc(CalcitProc::BoolQuestion)]),
+        }));
+        let annotation = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(prototype)));
+        ctx.locals.insert(name.clone(), index as u32);
+        ctx.local_types.insert(
+          name.clone(),
+          WasmTypeEvidence {
+            exact_impls: true,
+            ..WasmTypeEvidence::contract(annotation.clone())
+          },
+        );
+        local(&name, annotation)
+      })
+      .collect::<Vec<_>>();
+
+    let body = choices
+      .iter()
+      .enumerate()
+      .skip(1)
+      .rev()
+      .fold(choices[0].clone(), |tail, (index, choice)| {
+        Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+          local(&format!("choose{index}"), Arc::new(CalcitTypeAnnotation::Bool)),
+          Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), choice.clone()]),
+          tail,
+        ])
+      });
+
+    assert!(
+      super::impl_alternatives(&ctx, &choices[0]).is_none() && super::impl_alternatives(&ctx, &body).is_none(),
+      "statically coherent nominal types must not synthesize ImplSelector alternatives"
+    );
+
+    let locals_before = ctx.next_local;
+    super::emit_inline_iife(&mut ctx, &["receiver".to_owned()], &[body], &choices[..1], None, &[])
+      .expect("coherent nominal recur loop must bypass MAX_IMPL_ALTERNATIVES cap");
+    assert_eq!(
+      ctx.next_local,
+      locals_before + count as u32,
+      "only the receiver param and recur arg temps should be allocated, with zero ImplSelector locals"
+    );
+    assert!(
+      !ctx.instructions.iter().any(|ins| matches!(ins, Instruction::BrTable(..))),
+      "coherent nominal loop must not emit an ImplSelector br_table dispatch"
+    );
+  }
+
+  #[test]
   fn callee_identity_preserves_namespaces_and_specialized_arguments() {
     let mut fn_index = HashMap::from([
       ("tests.alpha/helper".to_string(), 4),
@@ -17520,6 +17703,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -17749,6 +17933,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -17858,6 +18043,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -17945,6 +18131,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -18052,6 +18239,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -20407,6 +20595,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        non_coherent_nominal_defs: Default::default(),
         any_type_table: Default::default(),
       },
     );
@@ -20453,6 +20642,7 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
+        non_coherent_nominal_defs: Default::default(),
         any_type_table: Default::default(),
       },
     );
@@ -20764,6 +20954,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let local_x = |type_info: Arc<CalcitTypeAnnotation>| {
@@ -20978,6 +21169,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -21118,6 +21310,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
 
@@ -21247,6 +21440,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
@@ -21378,6 +21572,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
@@ -21473,6 +21668,7 @@ mod tests {
           target: WasmTarget::Core,
           boundary: WasmBoundary::Native,
           world: WasiWorld::Command,
+          non_coherent_nominal_defs: Default::default(),
           any_type_table: Default::default(),
         };
         let info = Arc::new(CalcitSymbolInfo {
@@ -21656,6 +21852,7 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
+      non_coherent_nominal_defs: Arc::new(std::collections::HashSet::from([String::from("tests.wasm/ProbeBox")])),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(3, env.clone());

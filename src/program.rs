@@ -228,6 +228,44 @@ static PROGRAM_COMPILED_DATA_STATE: LazyLock<RwLock<ProgramCompiledData>> = Lazy
 /// raw code information before program running
 pub static PROGRAM_CODE_DATA: LazyLock<ProgramCodeLock> = LazyLock::new(ProgramCodeLock::default);
 
+/// Generation-scoped cache of nominal `ns/def` keys observed with dynamic/local
+/// `impl-traits` decoration across source loading and preprocessing.
+static NON_COHERENT_NOMINAL_STATE: LazyLock<RwLock<(u64, HashSet<String>)>> = LazyLock::new(|| RwLock::new((u64::MAX, HashSet::new())));
+
+fn ensure_non_coherent_nominal_state() {
+  let current_gen = PROGRAM_CODE_DATA.generation();
+  if NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").0 == current_gen {
+    return;
+  }
+  let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  let gen_while_locked = PROGRAM_CODE_DATA.generation();
+  let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
+  let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
+  if state.0 != gen_while_locked {
+    *state = (gen_while_locked, collected);
+  }
+}
+
+pub(crate) fn is_non_coherent_nominal_def(def_ref: &str) -> bool {
+  ensure_non_coherent_nominal_state();
+  NON_COHERENT_NOMINAL_STATE
+    .read()
+    .expect("read non-coherent nominal defs")
+    .1
+    .contains(def_ref)
+}
+
+pub(crate) fn record_non_coherent_nominal_def(def_ref: &str) {
+  ensure_non_coherent_nominal_state();
+  let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
+  state.1.insert(def_ref.to_owned());
+}
+
+pub(crate) fn snapshot_non_coherent_nominal_defs() -> HashSet<String> {
+  ensure_non_coherent_nominal_state();
+  NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").1.clone()
+}
+
 /// The lock around [`ProgramCodeData`]. Every write access bumps a generation
 /// counter, so derived facts about the source (such as whether `calcit.core`
 /// is the bundled one) can be cached until the next write.

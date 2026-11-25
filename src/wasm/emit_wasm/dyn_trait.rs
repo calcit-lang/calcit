@@ -160,14 +160,26 @@ impl DynTraitRegistry {
     self.vtables_by_trait[trait_id as usize].len()
   }
 
-  fn intern_vtable(&mut self, trait_id: u32, concrete_key: String, concrete_type: Arc<CalcitTypeAnnotation>, file_ns: String) -> u32 {
+  fn intern_vtable(
+    &mut self,
+    trait_id: u32,
+    concrete_key: String,
+    concrete_type: Arc<CalcitTypeAnnotation>,
+    file_ns: String,
+    coherent: bool,
+  ) -> u32 {
     let trait_idx = trait_id as usize;
-    if let Some(existing_ids) = self.vtable_ids_by_trait_and_type[trait_idx].get(&concrete_key)
-      && let Some(&vtable_id) = existing_ids
+    if let Some(existing_ids) = self.vtable_ids_by_trait_and_type[trait_idx].get(&concrete_key) {
+      if coherent {
+        if let Some(&vtable_id) = existing_ids.first() {
+          return vtable_id;
+        }
+      } else if let Some(&vtable_id) = existing_ids
         .iter()
         .find(|&&id| same_vtable_impl_identity(&self.vtables_by_trait[trait_idx][id as usize].concrete_type, &concrete_type))
-    {
-      return vtable_id;
+      {
+        return vtable_id;
+      }
     }
     let vtable_id = self.vtables_by_trait[trait_idx].len() as u32;
     self.vtables_by_trait[trait_idx].push(DynVtableEntry { concrete_type, file_ns });
@@ -370,10 +382,11 @@ pub(super) fn emit_dyn_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 
   let is_heap = dyn_payload_is_heap(&concrete_ty);
   let scalar_kind = dyn_payload_scalar_kind(&concrete_ty);
+  let coherent = super::is_statically_coherent_nominal(ctx, &concrete_ty);
   let (trait_id, vtable_id) = {
     let mut reg = ctx.dyn_traits.borrow_mut();
     let trait_id = reg.intern_trait(&trait_def);
-    let vtable_id = reg.intern_vtable(trait_id, type_key, concrete_ty, file_ns);
+    let vtable_id = reg.intern_vtable(trait_id, type_key, concrete_ty, file_ns, coherent);
     (trait_id, vtable_id)
   };
   if trait_id > DYN_TRAIT_ID_MASK {
@@ -764,6 +777,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: StructLayouts::default(),
+      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
@@ -812,9 +826,9 @@ mod tests {
 
     let mut registry = DynTraitRegistry::new(0);
     let trait_id = registry.intern_trait(&trait_def);
-    let v0 = registry.intern_vtable(trait_id, key.clone(), left_ty, String::from("app.main"));
-    let v0_again = registry.intern_vtable(trait_id, key.clone(), left_ty_same, String::from("app.main"));
-    let v1 = registry.intern_vtable(trait_id, key, right_ty, String::from("app.main"));
+    let v0 = registry.intern_vtable(trait_id, key.clone(), left_ty.clone(), String::from("app.main"), false);
+    let v0_again = registry.intern_vtable(trait_id, key.clone(), left_ty_same, String::from("app.main"), false);
+    let v1 = registry.intern_vtable(trait_id, key.clone(), right_ty.clone(), String::from("app.main"), false);
 
     assert_eq!(v0, 0);
     assert_eq!(v0_again, 0, "matching attached impls must reuse the vtable ID");
@@ -822,6 +836,13 @@ mod tests {
       v1, 1,
       "different attached impls on the same struct definition must receive distinct vtable IDs"
     );
+
+    let mut coherent_registry = DynTraitRegistry::new(0);
+    let c_trait_id = coherent_registry.intern_trait(&trait_def);
+    let c0 = coherent_registry.intern_vtable(c_trait_id, key.clone(), left_ty, String::from("app.main"), true);
+    let c1 = coherent_registry.intern_vtable(c_trait_id, key, right_ty, String::from("app.main"), true);
+    assert_eq!(c0, 0);
+    assert_eq!(c1, 0, "statically coherent types must deduplicate directly by concrete_key");
   }
 
   #[test]
@@ -842,6 +863,7 @@ mod tests {
         String::from("struct:app.main/Missing"),
         Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(struct_without_impl))),
         String::from("app.main"),
+        true,
       );
       reg.ensure_dispatch_trampoline(&missing_trait, &missing_trait, "op", 1);
     }

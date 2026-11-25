@@ -2541,3 +2541,88 @@ fn list_source_def_names_returns_sorted_definition_names() {
   );
   assert!(list_source_def_names("tests.missing-defs").is_empty());
 }
+
+#[test]
+fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coherent_forms() {
+  let _guard = lock_program_test_state();
+
+  // Plain defstruct without (:impls ...) is coherent, so two top-level defimpls for (P, Labeled) fail.
+  let mut same_ns_dup = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+    ],
+    &[],
+  );
+  let err = impl_attach::attach_source_impls(&mut same_ns_dup).expect_err("duplicate top-level defimpl must fail");
+  assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
+
+  // Duplicate across the type namespace and trait namespace also fails on a coherent nominal type.
+  let mut cross_ns_dup = impl_attach_program(
+    "defstruct P (:name String)",
+    &[("P-Labeled-1", "defimpl P t/Labeled (.label f)")],
+    &[],
+  );
+  cross_ns_dup.insert(
+    Arc::from("app.t"),
+    impl_attach_file(
+      "app.t",
+      &[("m", "app.m")],
+      &[
+        ("Labeled", "deftrait Labeled (.label (Fn Self (-> String)))"),
+        ("P-Labeled-2", "defimpl m/P Labeled (.label g)"),
+      ],
+    ),
+  );
+  let err = impl_attach::attach_source_impls(&mut cross_ns_dup).expect_err("cross-ns duplicate top-level defimpl must fail");
+  assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
+
+  // Every runtime/local impl attachment primitive marks the target nominal definition non-coherent.
+  for (marker_expr, expect_non_coherent) in [
+    ("def LocalType $ defstruct P (:name String)", false),
+    ("def LocalEnum $ defenum P (:none)", false),
+    ("def p-v $ impl-traits (%{} P :name |a) P-Labeled", true),
+    ("def p-v $ &struct:impl-traits (%{} P :name |a) P-Labeled", true),
+    ("def p-v $ &enum:impl-traits (%:: P :none) P-Labeled", true),
+    ("def p-d $ &struct-def:impl-traits P P-Labeled", true),
+    ("def p-d $ &enum-def:impl-traits P P-Labeled", true),
+    ("defn helper (x) (hint-fn $ Fn P (-> Any)) (&struct:impl-traits x P-Labeled)", true),
+    ("defn helper (x) (assert-type x P) (&struct:impl-traits x P-Labeled)", true),
+  ] {
+    let program = impl_attach_program(
+      "defstruct P (:name String)",
+      &[
+        ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+        ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+        ("UseP", marker_expr),
+      ],
+      &[],
+    );
+    let non_coherent = impl_attach::collect_non_coherent_nominal_defs(&program);
+    assert_eq!(
+      non_coherent.contains("app.m/P"),
+      expect_non_coherent,
+      "unexpected coherence detection for `{marker_expr}`: {non_coherent:?}"
+    );
+    if expect_non_coherent {
+      let mut detached = program;
+      impl_attach::attach_source_impls(&mut detached).expect("non-coherent nominal types preserve detached defimpls");
+    }
+  }
+
+  // Hand-written top-level `def P (impl-traits (defstruct P ...) ...)` outside calcit.core also marks P non-coherent.
+  let mut hand_wrapped = impl_attach_program(
+    "impl-traits (defstruct P (:name String)) P-Labeled",
+    &[
+      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+    ],
+    &[],
+  );
+  assert!(
+    impl_attach::collect_non_coherent_nominal_defs(&hand_wrapped).contains("app.m/P"),
+    "hand-written top-level impl-traits wrapper must mark nominal def non-coherent"
+  );
+  impl_attach::attach_source_impls(&mut hand_wrapped).expect("hand-wrapped non-coherent def preserves detached defimpls");
+}

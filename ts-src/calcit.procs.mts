@@ -810,17 +810,6 @@ export let _$n_enum_$o_params = function (x: CalcitEnumValue) {
   return new CalcitSliceList(x.extra);
 };
 
-export let _$n_enum_$o_with_impls = function (x: CalcitEnumValue, y: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("&enum:with-impls takes 2 arguments");
-  if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:with-impls expects an enum value");
-  const impl = coerce_impl(y, "&enum:with-impls");
-  let proto = x.enumPrototype;
-  if (proto == null) {
-    proto = new CalcitEnumDef(new CalcitStructValue(newTag("_"), [], [], new CalcitStructDef(newTag("_"), [], [])));
-  }
-  return new CalcitEnumValue(x.tag, x.extra, proto.withImpls(impl));
-};
-
 export let _$n_enum_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
   if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
   if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:impl-traits expects an enum value");
