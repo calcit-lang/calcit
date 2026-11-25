@@ -702,3 +702,83 @@ fn wasm_any_box_rejects_cross_namespace_nested_colliding_union() {
     "expected E_WASM_NIL_TYPE_EVIDENCE:\n{text}"
   );
 }
+
+#[test]
+fn any_downcast_resolves_lexical_local_structs_and_shadowing() {
+  let dir = TestDirectory::create();
+  let snapshot = dir.snapshot();
+  let extra = r#"
+        'make-global-counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-global-counter ()
+            any:box $ Counter :n 9
+          :examples $ []
+          :schema $ quote $ Fn (-> Any)
+"#;
+  let mut source = base_snapshot(extra);
+  source = source.replace(
+    "'main! $ %{} 'CodeEntry (:doc |)\n          :code $ quote $ defn main! () 0\n          :examples $ []\n          :schema $ quote $ Fn (-> Number)",
+    r#"'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                LocalBox $ defstruct LocalBox (:v Number)
+                Counter $ defstruct LocalCounterShadow (:label String)
+                local-box $ LocalBox :v 41
+                shadow-val $ Counter :label |hi
+                boxed-local $ any:box local-box
+                boxed-list $ any:box $ [] local-box
+                boxed-shadow $ any:box shadow-val
+                boxed-global $ make-global-counter
+              assert= 41 $ match (any:downcast boxed-local LocalBox)
+                (:some item) (:v item)
+                (:none) 0
+              assert= 41 $ match (any:downcast boxed-list (:: List LocalBox))
+                (:some items)
+                  match (first items)
+                    (:some item) (:v item)
+                    (:none) 0
+                (:none) 0
+              assert= |hi $ match (any:downcast boxed-shadow Counter)
+                (:some item) (:label item)
+                (:none) |miss
+              assert= |miss $ match (any:downcast boxed-global Counter)
+                (:some item) (:label item)
+                (:none) |miss
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)"#,
+  );
+  fs::write(&snapshot, source).expect("write snapshot");
+
+  let check = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(check.status.success(), "check-only failed:\n{}", combined_output(&check));
+
+  let native = run_calcit(&snapshot, &[]);
+  assert!(native.status.success(), "native failed:\n{}", combined_output(&native));
+
+  let js_emit_dir = dir.path.join("js-out");
+  let js = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .env("CALCIT_PROOF_AUDIT", "0")
+    .args(["--tips-level", "none", "--emit-path"])
+    .arg(&js_emit_dir)
+    .arg(&snapshot)
+    .arg("js")
+    .output()
+    .expect("emit js");
+  assert!(js.status.success(), "js emit failed:\n{}", combined_output(&js));
+  #[cfg(unix)]
+  {
+    let manifest_node_modules = Path::new(env!("CARGO_MANIFEST_DIR")).join("node_modules");
+    std::os::unix::fs::symlink(&manifest_node_modules, dir.path.join("node_modules")).expect("symlink node_modules");
+    let node_out = Command::new("node")
+      .current_dir(&dir.path)
+      .args([
+        "--input-type=module",
+        "-e",
+        "import * as app from './js-out/any-test.main.mjs'; if (app.main_$x_() !== 0) process.exit(1);",
+      ])
+      .output()
+      .expect("run node");
+    assert!(node_out.status.success(), "node failed:\n{}", combined_output(&node_out));
+  }
+}

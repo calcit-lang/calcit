@@ -2835,6 +2835,35 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
   })
 }
 
+/// Resolve a parsed type form in the active lexical scope, preferring local
+/// `StructDef` / `EnumDef` bindings over same-named global definitions.
+pub(super) fn resolve_type_form_in_scope(
+  raw_form: &Calcit,
+  parsed_form: &Calcit,
+  lexical_generics: &[Arc<str>],
+  scope_types: &ScopeTypes,
+) -> Arc<CalcitTypeAnnotation> {
+  let local_nominal_type = match raw_form {
+    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
+      scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
+        CalcitTypeAnnotation::StructDef(struct_def)
+        | CalcitTypeAnnotation::Struct(struct_def, _)
+        | CalcitTypeAnnotation::StructValue(struct_def) => {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
+        }
+        CalcitTypeAnnotation::EnumDef(enum_def)
+        | CalcitTypeAnnotation::Enum(enum_def, _)
+        | CalcitTypeAnnotation::EnumValue(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
+        _ => None,
+      })
+    }
+    _ => None,
+  };
+  let parsed =
+    local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(parsed_form, lexical_generics));
+  resolve_local_type_refs_for_body(parsed, scope_types)
+}
+
 /// Resolve a qualified source-backed trait reference when an expression-level
 /// type assertion carries it outside a function schema. Structs and enums have
 /// global `TypeRef` resolvers; traits need the same source lookup so JS
@@ -19126,25 +19155,9 @@ fn preprocess_assert_type_with_obligation(
     _ => qualify_assert_type_form(type_form, ctx.file_ns, ctx.scope_types),
   };
 
-  let local_nominal_type = match type_form {
-    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
-      ctx.scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
-        CalcitTypeAnnotation::StructDef(struct_def) => {
-          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
-        }
-        CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
-        _ => None,
-      })
-    }
-    _ => None,
-  };
-
   let asserted_target = target_form;
-  let asserted_type = local_nominal_type.unwrap_or_else(|| {
-    let lexical_generics = ctx.scope_types.generic_names();
-    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
-  });
-  let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
+  let lexical_generics = ctx.scope_types.generic_names();
+  let asserted_type = resolve_type_form_in_scope(type_form, &asserted_type_form, &lexical_generics, ctx.scope_types);
   let assertion_location = args
     .get(1)
     .and_then(|form| form.get_location())
@@ -19939,7 +19952,7 @@ pub fn preprocess_any_downcast(
     let desugared = desugar_decoder_type_form(head.as_ref(), args, ctx)?;
     qualify_assert_type_form(&desugared, ctx.file_ns, ctx.scope_types)
   };
-  let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&type_form, &[]);
+  let target = resolve_type_form_in_scope(&type_form, &type_form, &[], ctx.scope_types);
   target.validate_applied_type_args().map_err(|error| {
     let code = if error.starts_with("type alias ") {
       unknown_type_names::TYPE_ALIAS_ARITY_ERROR

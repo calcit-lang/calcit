@@ -2456,12 +2456,13 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Syntax(CalcitSyntax::AnyDowncast, _) => xs.get(2).map(|form| {
           let lowered = xs.get(3).and_then(calcit::CompiledAnyTypeId::from_calcit_handle).is_some();
           let target = if lowered {
-            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[])
+            super::resolve_type_form_in_scope(form, form, &[], scope_types)
           } else {
             let desugared = crate::calcit::type_expr::desugar_quoted_form(form)
               .or_else(|| crate::calcit::type_expr::desugar_bare_form(form))
               .and_then(Result::ok);
-            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(desugared.as_ref().unwrap_or(form), &[])
+            let parsed_form = desugared.as_ref().unwrap_or(form);
+            super::resolve_type_form_in_scope(parsed_form, parsed_form, &[], scope_types)
           };
           let normalized = CalcitTypeAnnotation::normalize_any_downcast_target(&target);
           Arc::new(CalcitTypeAnnotation::TypeRef(
