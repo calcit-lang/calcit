@@ -556,8 +556,8 @@ fn table_adapters_bridge_native_signature_functions_via_call_indirect() {
   let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
   let parsed = parse_wasm_module(&bytes);
   assert!(
-    parsed.functions.values().any(|f| f.has_call_indirect),
-    "module must emit CallIndirect instructions exercising native-signature table adapters"
+    !parsed.functions.values().any(|f| f.has_call_indirect),
+    "native-signature closure dispatch must use BrTable trampolines without CallIndirect instructions"
   );
 
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);

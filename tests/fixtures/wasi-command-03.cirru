@@ -35,6 +35,15 @@
               println |Capabilities-ok
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
+        'main-dynamic-unsupported! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-dynamic-unsupported! ()
+            let
+                action $ if
+                  empty? $ get-args
+                  , main-unsupported! reload!
+              action
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
         'main-file! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-file! ()
             assert= "|你好" $ result:unwrap-or (read-workspace-file |workspace/valid.txt) |missing

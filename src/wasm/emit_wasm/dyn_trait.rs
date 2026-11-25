@@ -47,7 +47,7 @@ fn dyn_payload_scalar_kind(ty: &Arc<CalcitTypeAnnotation>) -> u32 {
   }
 }
 
-fn dyn_payload_is_heap(ty: &Arc<CalcitTypeAnnotation>) -> bool {
+pub(super) fn dyn_payload_is_heap(ty: &Arc<CalcitTypeAnnotation>) -> bool {
   let expanded = expand_wasm_value_type(ty);
   match expanded.as_ref() {
     CalcitTypeAnnotation::Nullable(inner, _) => dyn_payload_is_heap(inner),
@@ -58,11 +58,10 @@ fn dyn_payload_is_heap(ty: &Arc<CalcitTypeAnnotation>) -> bool {
     | CalcitTypeAnnotation::Nil
     | CalcitTypeAnnotation::Unit
     | CalcitTypeAnnotation::Never
-    | CalcitTypeAnnotation::Fn(_)
-    | CalcitTypeAnnotation::DynFn
     | CalcitTypeAnnotation::Symbol
     | CalcitTypeAnnotation::StructDef(_)
     | CalcitTypeAnnotation::EnumDef(_) => false,
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
     CalcitTypeAnnotation::TypeRef(_, _) => expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some(),
     _ => true,
   }
@@ -98,12 +97,13 @@ enum DynTrampolineSpec {
 /// Compile-time registry of reachable `(Dyn Trait)` traits, concrete vtables, and dispatch trampolines.
 #[derive(Clone, Default)]
 pub(super) struct DynTraitRegistry {
-  dyn_base_fn_idx: u32,
+  next_dyn_fn_idx: Rc<RefCell<u32>>,
   traits: Vec<Arc<CalcitTrait>>,
   trait_id_by_key: HashMap<String, u32>,
   vtables_by_trait: Vec<Vec<DynVtableEntry>>,
   vtable_ids_by_trait_and_type: Vec<HashMap<String, Vec<u32>>>,
   trampolines: Vec<DynTrampolineSpec>,
+  pub(super) trampoline_fn_indices: Vec<u32>,
   dispatch_slot_by_key: HashMap<DynDispatchKey, u32>,
   to_str_slot: Option<u32>,
 }
@@ -130,11 +130,23 @@ fn same_vtable_impl_identity(left: &Arc<CalcitTypeAnnotation>, right: &Arc<Calci
 }
 
 impl DynTraitRegistry {
+  #[cfg(test)]
   pub(super) fn new(dyn_base_fn_idx: u32) -> Self {
+    Self::new_shared(Rc::new(RefCell::new(dyn_base_fn_idx)))
+  }
+
+  pub(super) fn new_shared(next_dyn_fn_idx: Rc<RefCell<u32>>) -> Self {
     Self {
-      dyn_base_fn_idx,
+      next_dyn_fn_idx,
       ..Self::default()
     }
+  }
+
+  fn alloc_fn_idx(&self) -> u32 {
+    let mut next = self.next_dyn_fn_idx.borrow_mut();
+    let idx = *next;
+    *next += 1;
+    idx
   }
 
   fn intern_trait(&mut self, trait_def: &Arc<CalcitTrait>) -> u32 {
@@ -206,9 +218,10 @@ impl DynTraitRegistry {
       arity,
     };
     if let Some(&slot) = self.dispatch_slot_by_key.get(&key) {
-      return self.dyn_base_fn_idx + slot;
+      return self.trampoline_fn_indices[slot as usize];
     }
     let slot = self.trampolines.len() as u32;
+    let fn_idx = self.alloc_fn_idx();
     self.trampolines.push(DynTrampolineSpec::Dispatch {
       boxed_trait_id,
       boxed_trait: boxed_trait.clone(),
@@ -216,18 +229,21 @@ impl DynTraitRegistry {
       method_name: method_name.to_owned(),
       arity,
     });
+    self.trampoline_fn_indices.push(fn_idx);
     self.dispatch_slot_by_key.insert(key, slot);
-    self.dyn_base_fn_idx + slot
+    fn_idx
   }
 
   pub(super) fn ensure_to_str_trampoline(&mut self) -> u32 {
     if let Some(slot) = self.to_str_slot {
-      return self.dyn_base_fn_idx + slot;
+      return self.trampoline_fn_indices[slot as usize];
     }
     let slot = self.trampolines.len() as u32;
+    let fn_idx = self.alloc_fn_idx();
     self.trampolines.push(DynTrampolineSpec::ToStr);
+    self.trampoline_fn_indices.push(fn_idx);
     self.to_str_slot = Some(slot);
-    self.dyn_base_fn_idx + slot
+    fn_idx
   }
 }
 
@@ -656,96 +672,104 @@ fn compile_to_str_trampoline(env: &WasmCompileEnv) -> Result<(CompiledFn, usize)
   ))
 }
 
-type CompiledTrampolineSlot = Option<Result<CompiledFn, (String, String, u32)>>;
+pub(super) type CompiledTrampolineSlot = Option<Result<CompiledFn, (String, String, u32)>>;
 
-/// Compiles all reachable `(Dyn Trait)` `BrTable` trampolines to a fixed point and
-/// appends them in deterministic slot order to `compiled_fns`.
-pub(super) fn compile_dyn_trampolines(
+/// Runs one pass of `(Dyn Trait)` `BrTable` trampoline compilation, returning whether any
+/// slot was newly compiled or recompiled due to newly discovered vtables/traits.
+pub(super) fn compile_dyn_trampolines_step(
   env: &WasmCompileEnv,
-  compiled_fns: &mut Vec<CompiledFn>,
-  unsupported_dependencies: &mut HashMap<u32, (String, String)>,
-) -> Result<(), String> {
-  let base_fn_idx = env.dyn_traits.borrow().dyn_base_fn_idx;
-  let mut compiled_slots: Vec<CompiledTrampolineSlot> = Vec::new();
-  let mut compiled_counts: Vec<usize> = Vec::new();
+  compiled_slots: &mut Vec<CompiledTrampolineSlot>,
+  compiled_counts: &mut Vec<usize>,
+) -> bool {
+  let (specs, fn_indices) = {
+    let reg = env.dyn_traits.borrow();
+    (reg.trampolines.clone(), reg.trampoline_fn_indices.clone())
+  };
+  if compiled_slots.len() < specs.len() {
+    compiled_slots.resize_with(specs.len(), || None);
+    compiled_counts.resize(specs.len(), 0);
+  }
 
-  loop {
-    let specs = env.dyn_traits.borrow().trampolines.clone();
-    if compiled_slots.len() < specs.len() {
-      compiled_slots.resize_with(specs.len(), || None);
-      compiled_counts.resize(specs.len(), 0);
+  let mut changed = false;
+  for (slot, spec) in specs.iter().enumerate() {
+    let current_count = match spec {
+      DynTrampolineSpec::Dispatch { boxed_trait_id, .. } => env.dyn_traits.borrow().vtables_by_trait[*boxed_trait_id as usize].len(),
+      DynTrampolineSpec::ToStr => env.dyn_traits.borrow().traits.len(),
+    };
+    if compiled_slots[slot].is_some() && compiled_counts[slot] == current_count {
+      continue;
     }
-
-    let mut changed = false;
-    for (slot, spec) in specs.iter().enumerate() {
-      let current_count = match spec {
-        DynTrampolineSpec::Dispatch { boxed_trait_id, .. } => env.dyn_traits.borrow().vtables_by_trait[*boxed_trait_id as usize].len(),
-        DynTrampolineSpec::ToStr => env.dyn_traits.borrow().traits.len(),
-      };
-      if compiled_slots[slot].is_some() && compiled_counts[slot] == current_count {
-        continue;
-      }
-      changed = true;
-      let trampoline_fn_idx = base_fn_idx + slot as u32;
-      let compiled = match spec {
-        DynTrampolineSpec::Dispatch {
-          boxed_trait_id,
+    changed = true;
+    let trampoline_fn_idx = fn_indices[slot];
+    let compiled = match spec {
+      DynTrampolineSpec::Dispatch {
+        boxed_trait_id,
+        boxed_trait,
+        target_trait,
+        method_name,
+        arity,
+      } => {
+        let label = format!("__dyn_dispatch/{}/{}:{}", boxed_trait.name, target_trait.name, method_name);
+        match compile_dispatch_trampoline(
+          env,
+          trampoline_fn_idx,
+          *boxed_trait_id,
           boxed_trait,
           target_trait,
           method_name,
-          arity,
-        } => {
-          let label = format!("__dyn_dispatch/{}/{}:{}", boxed_trait.name, target_trait.name, method_name);
-          match compile_dispatch_trampoline(
-            env,
-            trampoline_fn_idx,
-            *boxed_trait_id,
-            boxed_trait,
-            target_trait,
-            method_name,
-            *arity,
-          ) {
-            Ok((func, count)) => {
-              compiled_counts[slot] = count;
-              Ok(func)
-            }
-            Err(err) => {
-              compiled_counts[slot] = current_count;
-              Err((label, err, *arity))
-            }
-          }
-        }
-        DynTrampolineSpec::ToStr => match compile_to_str_trampoline(env) {
+          *arity,
+        ) {
           Ok((func, count)) => {
             compiled_counts[slot] = count;
             Ok(func)
           }
           Err(err) => {
             compiled_counts[slot] = current_count;
-            Err((String::from("__dyn_trait_to_str"), err, 1))
+            Err((label, err, *arity))
           }
-        },
-      };
-      compiled_slots[slot] = Some(compiled);
-    }
-
-    if !changed && compiled_slots.len() == env.dyn_traits.borrow().trampolines.len() {
-      break;
-    }
+        }
+      }
+      DynTrampolineSpec::ToStr => match compile_to_str_trampoline(env) {
+        Ok((func, count)) => {
+          compiled_counts[slot] = count;
+          Ok(func)
+        }
+        Err(err) => {
+          compiled_counts[slot] = current_count;
+          Err((String::from("__dyn_trait_to_str"), err, 1))
+        }
+      },
+    };
+    compiled_slots[slot] = Some(compiled);
   }
 
+  changed || compiled_slots.len() != env.dyn_traits.borrow().trampolines.len()
+}
+
+/// Finalizes compiled `(Dyn Trait)` trampolines into their assigned `compiled_fns` slots.
+pub(super) fn finalize_dyn_trampolines(
+  env: &WasmCompileEnv,
+  compiled_slots: Vec<CompiledTrampolineSlot>,
+  dyn_base_fn_idx: u32,
+  dynamic_fns: &mut [Option<CompiledFn>],
+  unsupported_dependencies: &mut HashMap<u32, (String, String)>,
+) {
+  let reg = env.dyn_traits.borrow();
   for (slot, entry) in compiled_slots.into_iter().enumerate() {
-    let fn_idx = base_fn_idx + slot as u32;
+    let fn_idx = reg.trampoline_fn_indices[slot];
+    let target_slot = (fn_idx - dyn_base_fn_idx) as usize;
     match entry.expect("trampoline slot must be compiled") {
-      Ok(func) => compiled_fns.push(func),
+      Ok(func) => {
+        dynamic_fns[target_slot] = Some(func);
+      }
       Err((label, err, arity)) => {
         unsupported_dependencies.insert(fn_idx, (label, err));
-        let params = if arity == 1 && matches!(env.dyn_traits.borrow().trampolines[slot], DynTrampolineSpec::ToStr) {
+        let params = if arity == 1 && matches!(reg.trampolines[slot], DynTrampolineSpec::ToStr) {
           vec![ValType::I32]
         } else {
           vec![ValType::F64; arity as usize]
         };
-        compiled_fns.push(CompiledFn {
+        dynamic_fns[target_slot] = Some(CompiledFn {
           export_name: None,
           params,
           results: vec![ValType::F64],
@@ -755,7 +779,36 @@ pub(super) fn compile_dyn_trampolines(
       }
     }
   }
+}
 
+/// Compiles all reachable `(Dyn Trait)` `BrTable` trampolines to a fixed point and
+/// appends them in deterministic slot order to `compiled_fns`.
+#[cfg(test)]
+pub(super) fn compile_dyn_trampolines(
+  env: &WasmCompileEnv,
+  compiled_fns: &mut Vec<CompiledFn>,
+  unsupported_dependencies: &mut HashMap<u32, (String, String)>,
+) -> Result<(), String> {
+  let mut compiled_slots: Vec<CompiledTrampolineSlot> = Vec::new();
+  let mut compiled_counts: Vec<usize> = Vec::new();
+
+  while compile_dyn_trampolines_step(env, &mut compiled_slots, &mut compiled_counts) {}
+
+  let end_fn_idx = *env.dyn_traits.borrow().next_dyn_fn_idx.borrow();
+  let base_fn_idx = env
+    .dyn_traits
+    .borrow()
+    .trampoline_fn_indices
+    .iter()
+    .copied()
+    .min()
+    .unwrap_or(end_fn_idx);
+  let total = (end_fn_idx - base_fn_idx) as usize;
+  let mut dynamic_fns = vec![None; total];
+  finalize_dyn_trampolines(env, compiled_slots, base_fn_idx, &mut dynamic_fns, unsupported_dependencies);
+  for func in dynamic_fns {
+    compiled_fns.push(func.expect("every allocated dynamic trampoline must be compiled"));
+  }
   Ok(())
 }
 
@@ -784,7 +837,7 @@ mod tests {
       atom_is_scalar: HashMap::new(),
       value_imports: HashMap::new(),
       static_fn_defs: HashMap::new(),
-      fn_table_index: HashMap::new(),
+      closures: Default::default(),
       host_imports: HashMap::new(),
       target,
       boundary,

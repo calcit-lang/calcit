@@ -311,7 +311,7 @@
 | `E_WASM_BOUNDARY_DYNAMIC` | `src/runner/preprocess/mod.rs` |
 | `E_WASM_CALL_SPECIALIZATION` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_CAPABILITY` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/http_proxy.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
-| `E_WASM_CLOSURE_SPECIALIZATION` | `src/wasm/emit_wasm.rs` |
+| `E_WASM_CLOSURE_SPECIALIZATION` | `src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_DEPTH` | `src/wasm/emit_wasm/edn.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
 | `E_WASM_EDN_ENUM` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_ENUM_SHAPE` | `src/wasm/emit_wasm/edn.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
@@ -326,14 +326,14 @@
 | `E_WASM_EDN_TAG` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_TOKEN_LIMIT` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_TYPE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn.rs` |
-| `E_WASM_NIL_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/any_box.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/methods.rs` |
+| `E_WASM_NIL_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/any_box.rs`<br>`src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/methods.rs` |
 | `E_WASM_SET_ELEMENT_KIND` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/lists.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/sets.rs` |
 | `E_WASM_STRUCT_IDENTITY` | `src/wasm/emit_wasm/structs.rs` |
 | `E_WASM_TAG_CONVERSION` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_TARGET` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_TRAIT_CALL` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/dyn_trait.rs` |
 | `E_WASM_TRAIT_RESOLUTION` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/dyn_trait.rs` |
-| `E_WASM_TRAIT_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/dyn_trait.rs` |
+| `E_WASM_TRAIT_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/dyn_trait.rs` |
 | `E_WASM_UNSUPPORTED_FFI_RESOURCE` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_UNSUPPORTED_JS_FFI` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_UNSUPPORTED_TRY` | `src/wasm/emit_wasm.rs` |

@@ -38,8 +38,8 @@ try {
   // #2351: replay the previously erased unsupported call too. Exclusion
   // is not evidence of rejection, so inspect actual outcomes on every backend.
   const boundaryCases = [
-    ["calcit.core/hint-fn#typed-callable-to-open-storage", ["native", "js"],
-      null, /E_WASM_CLOSURE_SPECIALIZATION/],
+    ["calcit.core/hint-fn#typed-callable-to-open-storage", ["native", "js", "wasm", "wasi"],
+      null, null],
   ];
   const boundaryBackends = process.env.WASMTIME_CLI ? ["native", "js", "wasm", "wasi"] : ["native", "js", "wasm"];
   const boundaryReport = join(fixture, "predicate-boundaries.json");

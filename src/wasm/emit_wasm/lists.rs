@@ -2037,7 +2037,7 @@ mod sort_tests {
         atom_is_scalar: HashMap::new(),
         value_imports: HashMap::new(),
         static_fn_defs: HashMap::new(),
-        fn_table_index: HashMap::new(),
+        closures: Default::default(),
         host_imports: HashMap::new(),
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
