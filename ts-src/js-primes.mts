@@ -60,6 +60,7 @@ enum PseudoTypeIndex {
   string,
   ref,
   enum_value,
+  buffer,
   recur,
   list,
   set,
@@ -87,6 +88,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (t === "string") return PseudoTypeIndex.string;
   if (x instanceof CalcitRef) return PseudoTypeIndex.ref;
   if (x instanceof CalcitEnumValue) return PseudoTypeIndex.enum_value;
+  if (x instanceof Uint8Array) return PseudoTypeIndex.buffer;
   if (x instanceof CalcitRecur) return PseudoTypeIndex.recur;
   if (x instanceof CalcitList || x instanceof CalcitSliceList) return PseudoTypeIndex.list;
   if (x instanceof CalcitSet) return PseudoTypeIndex.set;
@@ -243,6 +245,15 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         const tagOrder = _$n_compare(left.tag, right.tag);
         if (tagOrder !== 0) return tagOrder;
         return compareSequences(left.extra, right.extra);
+      }
+      case PseudoTypeIndex.buffer: {
+        const left = a as Uint8Array;
+        const right = b as Uint8Array;
+        const n = Math.min(left.length, right.length);
+        for (let i = 0; i < n; i++) {
+          if (left[i] !== right[i]) return left[i] < right[i] ? -1 : 1;
+        }
+        return rawCompare(left.length, right.length);
       }
       case PseudoTypeIndex.union_def: {
         // Native order: name, then member type forms.

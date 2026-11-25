@@ -3,10 +3,15 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::calcit::{
-  Calcit, CalcitTypeAnnotation, NullableOrigin, SchemaKind, resolve_type_slot, with_type_annotation_warning_context,
+  Calcit, CalcitTypeAnnotation, NullableOrigin, SchemaKind, resolve_type_slot, type_annotation::ASYNC_INVOCATION_FEATURE,
+  with_type_annotation_warning_context,
 };
 
 const MAX_TYPE_ID_DEPTH: usize = 128;
+
+fn type_key_is_scalar(type_key: &str) -> bool {
+  matches!(type_key, "nil" | "unit" | "bool" | "number" | "tag") || type_key.starts_with("numeric:")
+}
 
 /// Compile-time metadata handle attached by preprocessing to lowered `any:box`
 /// and `any:downcast` forms. Cannot be constructed from user Cirru source.
@@ -14,13 +19,24 @@ const MAX_TYPE_ID_DEPTH: usize = 128;
 pub struct CompiledAnyTypeId {
   pub type_key: Arc<str>,
   pub type_hash: u64,
+  pub is_scalar_payload: bool,
 }
 
 impl CompiledAnyTypeId {
   pub fn new(type_key: impl Into<Arc<str>>) -> Self {
     let type_key: Arc<str> = type_key.into();
     let type_hash = canonical_type_hash(&type_key);
-    Self { type_key, type_hash }
+    let is_scalar_payload = type_key_is_scalar(&type_key);
+    Self {
+      type_key,
+      type_hash,
+      is_scalar_payload,
+    }
+  }
+
+  pub fn with_scalar_payload(mut self, is_scalar_payload: bool) -> Self {
+    self.is_scalar_payload = is_scalar_payload;
+    self
   }
 
   pub fn into_calcit_handle(self) -> Calcit {
@@ -81,11 +97,90 @@ pub fn canonical_type_key(ty: &CalcitTypeAnnotation, default_ns: Option<&str>) -
   let run = || {
     ty.validate_applied_type_args().map_err(CanonicalTypeIdError::open_type)?;
     let mut visiting = HashSet::new();
-    canonical_type_key_inner(ty, &mut visiting, 0)
+    let mut visited_aliases = Vec::new();
+    canonical_type_key_inner(ty, &mut visiting, &mut visited_aliases, 0)
   };
   match default_ns {
     Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-id"), run),
     None => run(),
+  }
+}
+
+/// Whether values of `ty` are guaranteed to have scalar `f64` runtime payloads
+/// in WASM (no heap pointers, including all-scalar `defunion` types).
+pub fn is_scalar_payload_type(ty: &CalcitTypeAnnotation, default_ns: Option<&str>) -> bool {
+  let run = || {
+    let mut visiting = HashSet::new();
+    let mut visited_aliases = Vec::new();
+    is_scalar_payload_inner(ty, &mut visiting, &mut visited_aliases, 0)
+  };
+  match default_ns {
+    Some(ns) => with_type_annotation_warning_context(format!("{ns}/any-scalar"), run),
+    None => run(),
+  }
+}
+
+fn is_scalar_payload_inner(
+  ty: &CalcitTypeAnnotation,
+  visiting: &mut HashSet<String>,
+  visited_aliases: &mut Vec<CalcitTypeAnnotation>,
+  depth: usize,
+) -> bool {
+  if depth >= MAX_TYPE_ID_DEPTH {
+    return false;
+  }
+  match ty {
+    CalcitTypeAnnotation::Nil
+    | CalcitTypeAnnotation::Unit
+    | CalcitTypeAnnotation::Bool
+    | CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::Tag => true,
+    CalcitTypeAnnotation::TypeSlot(slot_name) => {
+      let visit_key = format!("slot:{slot_name}");
+      if !visiting.insert(visit_key.clone()) {
+        return false;
+      }
+      let result =
+        resolve_type_slot(slot_name).is_some_and(|bound| is_scalar_payload_inner(bound.as_ref(), visiting, visited_aliases, depth + 1));
+      visiting.remove(&visit_key);
+      result
+    }
+    CalcitTypeAnnotation::TypeRef(..) => {
+      if let Some(union_def) = ty.resolve_to_union() {
+        let union_key = union_def
+          .definition_ref()
+          .map(|r| format!("union:{}", r.trim_start_matches('\'')))
+          .unwrap_or_else(|| format!("union:{}", union_def.name.ref_str()));
+        if !visiting.insert(union_key.clone()) {
+          return true;
+        }
+        let result = union_def
+          .members()
+          .iter()
+          .all(|member| is_scalar_payload_inner(member.as_ref(), visiting, visited_aliases, depth + 1));
+        visiting.remove(&union_key);
+        return result;
+      }
+      if ty.resolve_to_struct_with_ref().is_some()
+        || ty.resolve_to_enum_with_ref().is_some()
+        || ty.resolve_to_source_trait_with_ref().is_some()
+        || ty.resolve_to_external_object_trait_with_ref().is_some()
+      {
+        return false;
+      }
+      if let Some(aliased) = ty.expand_single_type_alias() {
+        if visited_aliases.contains(ty) {
+          return false;
+        }
+        visited_aliases.push(ty.clone());
+        let result = is_scalar_payload_inner(aliased.as_ref(), visiting, visited_aliases, depth + 1);
+        visited_aliases.pop();
+        return result;
+      }
+      false
+    }
+    _ => false,
   }
 }
 
@@ -105,6 +200,7 @@ fn canonical_nominal_args(
   expected_arity: usize,
   args: &[std::sync::Arc<CalcitTypeAnnotation>],
   visiting: &mut HashSet<String>,
+  visited_aliases: &mut Vec<CalcitTypeAnnotation>,
   depth: usize,
 ) -> Result<String, CanonicalTypeIdError> {
   if args.len() != expected_arity {
@@ -115,7 +211,7 @@ fn canonical_nominal_args(
   }
   let mut encoded_args = Vec::with_capacity(args.len());
   for arg in args {
-    encoded_args.push(canonical_type_key_inner(arg.as_ref(), visiting, depth + 1)?);
+    encoded_args.push(canonical_type_key_inner(arg.as_ref(), visiting, visited_aliases, depth + 1)?);
   }
   Ok(format!("{kind}:{name}[{}]", encoded_args.join(",")))
 }
@@ -123,6 +219,7 @@ fn canonical_nominal_args(
 fn canonical_type_key_inner(
   ty: &CalcitTypeAnnotation,
   visiting: &mut HashSet<String>,
+  visited_aliases: &mut Vec<CalcitTypeAnnotation>,
   depth: usize,
 ) -> Result<String, CanonicalTypeIdError> {
   if depth >= MAX_TYPE_ID_DEPTH {
@@ -153,31 +250,31 @@ fn canonical_type_key_inner(
     CalcitTypeAnnotation::Any => Ok(String::from("any")),
 
     CalcitTypeAnnotation::List(elem) => {
-      let inner = canonical_type_key_inner(elem.as_ref(), visiting, depth + 1)?;
+      let inner = canonical_type_key_inner(elem.as_ref(), visiting, visited_aliases, depth + 1)?;
       Ok(format!("list<{inner}>"))
     }
     CalcitTypeAnnotation::Set(elem) => {
-      let inner = canonical_type_key_inner(elem.as_ref(), visiting, depth + 1)?;
+      let inner = canonical_type_key_inner(elem.as_ref(), visiting, visited_aliases, depth + 1)?;
       Ok(format!("set<{inner}>"))
     }
     CalcitTypeAnnotation::Ref(inner) => {
-      let inner_key = canonical_type_key_inner(inner.as_ref(), visiting, depth + 1)?;
+      let inner_key = canonical_type_key_inner(inner.as_ref(), visiting, visited_aliases, depth + 1)?;
       Ok(format!("ref<{inner_key}>"))
     }
     CalcitTypeAnnotation::Tuple(items) => {
       let mut parts = Vec::with_capacity(items.len());
       for item in items.iter() {
-        parts.push(canonical_type_key_inner(item.as_ref(), visiting, depth + 1)?);
+        parts.push(canonical_type_key_inner(item.as_ref(), visiting, visited_aliases, depth + 1)?);
       }
       Ok(format!("tuple<{}>", parts.join(",")))
     }
     CalcitTypeAnnotation::Map(k, v) => {
-      let k_key = canonical_type_key_inner(k.as_ref(), visiting, depth + 1)?;
-      let v_key = canonical_type_key_inner(v.as_ref(), visiting, depth + 1)?;
+      let k_key = canonical_type_key_inner(k.as_ref(), visiting, visited_aliases, depth + 1)?;
+      let v_key = canonical_type_key_inner(v.as_ref(), visiting, visited_aliases, depth + 1)?;
       Ok(format!("map<{k_key},{v_key}>"))
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => {
-      let inner_key = canonical_type_key_inner(inner.as_ref(), visiting, depth + 1)?;
+      let inner_key = canonical_type_key_inner(inner.as_ref(), visiting, visited_aliases, depth + 1)?;
       Ok(format!("js-nullish<{inner_key}>"))
     }
     CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => Err(CanonicalTypeIdError::open_type(format!(
@@ -199,31 +296,61 @@ fn canonical_type_key_inner(
       }
       let mut params = Vec::with_capacity(sig.arg_types.len() + usize::from(sig.rest_type.is_some()));
       for arg in &sig.arg_types {
-        params.push(canonical_type_key_inner(arg.as_ref(), visiting, depth + 1)?);
+        params.push(canonical_type_key_inner(arg.as_ref(), visiting, visited_aliases, depth + 1)?);
       }
       if let Some(rest) = &sig.rest_type {
-        let rest_key = canonical_type_key_inner(rest.as_ref(), visiting, depth + 1)?;
+        let rest_key = canonical_type_key_inner(rest.as_ref(), visiting, visited_aliases, depth + 1)?;
         params.push(format!("...{rest_key}"));
       }
-      let ret_key = canonical_type_key_inner(sig.return_type.as_ref(), visiting, depth + 1)?;
-      Ok(format!("fn<({})->{ret_key}>", params.join(",")))
+      let ret_key = canonical_type_key_inner(sig.return_type.as_ref(), visiting, visited_aliases, depth + 1)?;
+      let mut features: Vec<&str> = sig
+        .features
+        .iter()
+        .map(|tag| tag.ref_str())
+        .filter(|name| *name != ASYNC_INVOCATION_FEATURE)
+        .collect();
+      features.sort_unstable();
+      features.dedup();
+      let async_suffix = if sig.is_async_invocation() { ":async" } else { "" };
+      let feature_suffix = if features.is_empty() {
+        String::new()
+      } else {
+        format!(":features[{}]", features.join(","))
+      };
+      Ok(format!("fn<({})->{ret_key}{async_suffix}{feature_suffix}>", params.join(",")))
     }
 
     CalcitTypeAnnotation::Struct(struct_def, args) => {
       let name = nominal_label(struct_def.definition_ref.as_deref(), None, struct_def.name.ref_str());
-      canonical_nominal_args("struct", &name, struct_def.generics.len(), args.as_slice(), visiting, depth)
+      canonical_nominal_args(
+        "struct",
+        &name,
+        struct_def.generics.len(),
+        args.as_slice(),
+        visiting,
+        visited_aliases,
+        depth,
+      )
     }
     CalcitTypeAnnotation::StructValue(struct_def) => {
       let name = nominal_label(struct_def.definition_ref.as_deref(), None, struct_def.name.ref_str());
-      canonical_nominal_args("struct", &name, struct_def.generics.len(), &[], visiting, depth)
+      canonical_nominal_args("struct", &name, struct_def.generics.len(), &[], visiting, visited_aliases, depth)
     }
     CalcitTypeAnnotation::Enum(enum_def, args) => {
       let name = nominal_label(enum_def.definition_ref().map(AsRef::as_ref), None, enum_def.name().ref_str());
-      canonical_nominal_args("enum", &name, enum_def.generics().len(), args.as_slice(), visiting, depth)
+      canonical_nominal_args(
+        "enum",
+        &name,
+        enum_def.generics().len(),
+        args.as_slice(),
+        visiting,
+        visited_aliases,
+        depth,
+      )
     }
     CalcitTypeAnnotation::EnumValue(enum_def) => {
       let name = nominal_label(enum_def.definition_ref().map(AsRef::as_ref), None, enum_def.name().ref_str());
-      canonical_nominal_args("enum", &name, enum_def.generics().len(), &[], visiting, depth)
+      canonical_nominal_args("enum", &name, enum_def.generics().len(), &[], visiting, visited_aliases, depth)
     }
 
     CalcitTypeAnnotation::TypeSlot(slot_name) => {
@@ -234,7 +361,7 @@ fn canonical_type_key_inner(
         )));
       }
       let result = match resolve_type_slot(slot_name) {
-        Some(bound) => canonical_type_key_inner(bound.as_ref(), visiting, depth + 1),
+        Some(bound) => canonical_type_key_inner(bound.as_ref(), visiting, visited_aliases, depth + 1),
         None => Err(CanonicalTypeIdError::open_type(format!(
           "unresolved type slot `'{slot_name}` is open and cannot be used with `Any`"
         ))),
@@ -246,7 +373,15 @@ fn canonical_type_key_inner(
     CalcitTypeAnnotation::TypeRef(raw_name, args) => {
       if let Some((struct_def, ref_pair)) = ty.resolve_to_struct_with_ref() {
         let name = nominal_label(struct_def.definition_ref.as_deref(), ref_pair.as_ref(), struct_def.name.ref_str());
-        return canonical_nominal_args("struct", &name, struct_def.generics.len(), args.as_slice(), visiting, depth);
+        return canonical_nominal_args(
+          "struct",
+          &name,
+          struct_def.generics.len(),
+          args.as_slice(),
+          visiting,
+          visited_aliases,
+          depth,
+        );
       }
       if let Some((enum_def, ref_pair)) = ty.resolve_to_enum_with_ref() {
         let name = nominal_label(
@@ -254,7 +389,15 @@ fn canonical_type_key_inner(
           ref_pair.as_ref(),
           enum_def.name().ref_str(),
         );
-        return canonical_nominal_args("enum", &name, enum_def.generics().len(), args.as_slice(), visiting, depth);
+        return canonical_nominal_args(
+          "enum",
+          &name,
+          enum_def.generics().len(),
+          args.as_slice(),
+          visiting,
+          visited_aliases,
+          depth,
+        );
       }
       if let Some(union_def) = ty.resolve_to_union() {
         let name = union_def
@@ -267,14 +410,14 @@ fn canonical_type_key_inner(
         return Ok(format!("external:{ns}/{def}"));
       }
       if let Some(aliased) = ty.expand_single_type_alias() {
-        let visit_key = format!("alias:{raw_name}[{}]", args.len());
-        if !visiting.insert(visit_key.clone()) {
+        if visited_aliases.contains(ty) {
           return Err(CanonicalTypeIdError::open_type(format!(
             "cyclic type alias `{raw_name}` cannot yield a canonical `Any` TypeId"
           )));
         }
-        let result = canonical_type_key_inner(aliased.as_ref(), visiting, depth + 1);
-        visiting.remove(&visit_key);
+        visited_aliases.push(ty.clone());
+        let result = canonical_type_key_inner(aliased.as_ref(), visiting, visited_aliases, depth + 1);
+        visited_aliases.pop();
         return result;
       }
       if let Some((trait_def, (ns, def))) = ty.resolve_to_source_trait_with_ref() {
@@ -442,5 +585,43 @@ mod tests {
       let err = canonical_type_key(&case, None).expect_err(&format!("expected E_ANY_OPEN_TYPE for {case}"));
       assert_eq!(err.code, "E_ANY_OPEN_TYPE", "unexpected code for {case}: {err}");
     }
+  }
+
+  #[test]
+  fn fn_type_key_distinguishes_async_and_sorted_effect_features() {
+    let base = match CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::Number),
+    ) {
+      CalcitTypeAnnotation::Fn(sig) => sig.as_ref().clone(),
+      other => panic!("expected Fn, got {other}"),
+    };
+
+    let sync_pure = CalcitTypeAnnotation::Fn(Arc::new(base.clone()));
+    let async_pure = CalcitTypeAnnotation::Fn(Arc::new(base.with_async_invocation()));
+    let mut io_state_a_sig = base.clone();
+    io_state_a_sig.features = Arc::new([EdnTag::new("io"), EdnTag::new("state")].into_iter().collect());
+    let io_state_a = CalcitTypeAnnotation::Fn(Arc::new(io_state_a_sig));
+    let mut io_state_b_sig = base.clone();
+    io_state_b_sig.features = Arc::new([EdnTag::new("state"), EdnTag::new("io")].into_iter().collect());
+    let io_state_b = CalcitTypeAnnotation::Fn(Arc::new(io_state_b_sig));
+    let mut io_only_sig = base;
+    io_only_sig.features = Arc::new([EdnTag::new("io")].into_iter().collect());
+    let io_only = CalcitTypeAnnotation::Fn(Arc::new(io_only_sig));
+
+    let k_sync = canonical_type_key(&sync_pure, None).unwrap();
+    let k_async = canonical_type_key(&async_pure, None).unwrap();
+    let k_io_state_a = canonical_type_key(&io_state_a, None).unwrap();
+    let k_io_state_b = canonical_type_key(&io_state_b, None).unwrap();
+    let k_io_only = canonical_type_key(&io_only, None).unwrap();
+
+    assert_eq!(k_sync, "fn<(number)->number>");
+    assert_eq!(k_async, "fn<(number)->number:async>");
+    assert_eq!(k_io_state_a, "fn<(number)->number:features[io,state]>");
+    assert_eq!(k_io_state_a, k_io_state_b);
+    assert_eq!(k_io_only, "fn<(number)->number:features[io]>");
+    assert_ne!(k_sync, k_async);
+    assert_ne!(k_sync, k_io_only);
+    assert_ne!(k_io_only, k_io_state_a);
   }
 }

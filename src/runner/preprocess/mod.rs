@@ -19872,7 +19872,10 @@ pub fn preprocess_any_box(
       value_form.get_location().or_else(|| value_arg.get_location()),
     )
   })?;
-  let handle = calcit::CompiledAnyTypeId::new(type_key).into_calcit_handle();
+  let is_scalar = calcit::is_scalar_payload_type(&actual_type, Some(ctx.file_ns));
+  let handle = calcit::CompiledAnyTypeId::new(type_key)
+    .with_scalar_payload(is_scalar)
+    .into_calcit_handle();
   Ok(Calcit::from(vec![
     Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
     value_form,

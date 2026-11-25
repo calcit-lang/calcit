@@ -104,15 +104,27 @@ pub(super) fn emit_any_box(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
       type_id.type_key
     ));
   }
-  let flags = if type_key_is_scalar_payload(type_id.type_key.as_ref()) {
-    0
-  } else {
-    1
-  };
+  let is_scalar = type_id.is_scalar_payload || type_key_is_scalar_payload(type_id.type_key.as_ref());
+  let flags = if is_scalar { 0 } else { 1 };
 
   emit_expr(ctx, value_expr)?;
   let val_local = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(val_local));
+  if ctx.has_boxed_json_scalars && !super::expr_is_guaranteed_unboxed_scalar(ctx, value_expr) {
+    match type_id.type_key.as_ref() {
+      "bool" => super::emit_unbox_scalar_if_tag(ctx, val_local, "bool", false),
+      "nil" => super::emit_unbox_scalar_if_tag(ctx, val_local, "nil", true),
+      k if k == "number" || k.starts_with("numeric:") => {
+        super::emit_unbox_scalar_if_tag(ctx, val_local, "number", false);
+      }
+      _ if is_scalar => {
+        super::emit_unbox_scalar_if_tag(ctx, val_local, "bool", false);
+        super::emit_unbox_scalar_if_tag(ctx, val_local, "nil", true);
+        super::emit_unbox_scalar_if_tag(ctx, val_local, "number", false);
+      }
+      _ => {}
+    }
+  }
 
   let ptr = ctx.alloc_local_typed(ValType::I32);
   heap::emit_bump_alloc(ctx, 16, ptr, "any-box");

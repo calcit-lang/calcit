@@ -259,14 +259,38 @@ fn any_prevents_implicit_widening_and_rejects_type_args_or_static_eq() {
     let dir = TestDirectory::create();
     let snapshot = dir.snapshot();
     let mut text = base_snapshot("");
-    text = text.replace("defn main! () 0", "defn main! () (assert-traits (any:box 42) Eq)");
+    text = text.replace("defn main! () 0", "defn main! () (do (assert-traits (any:box 42) Eq) 0)");
     fs::write(&snapshot, &text).expect("write snapshot");
-    let out = run_calcit(&snapshot, &[]);
+    let check = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
     assert!(
-      !out.status.success(),
-      "runtime assert-traits Eq on Any must fail:\n{}",
-      combined_output(&out)
+      check.status.success(),
+      "runtime assert-traits check-only should succeed:\n{}",
+      combined_output(&check)
     );
+    let out = run_calcit(&snapshot, &[]);
+    let out_text = combined_output(&out);
+    assert!(
+      !out.status.success() && out_text.contains("does not nominally implement"),
+      "runtime assert-traits Eq on Any must fail with trait message:\n{out_text}"
+    );
+  }
+  {
+    let dir = TestDirectory::create();
+    let snapshot = dir.snapshot();
+    let extra = r#"
+        'LoopAlias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype LoopAlias (:generics T) (LoopAlias T)
+          :examples $ []
+        'bad-cycle $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bad-cycle (b) (any:downcast b (LoopAlias Number))
+          :examples $ []
+          :schema $ quote $ Fn Any (-> Dynamic)
+"#;
+    fs::write(&snapshot, base_snapshot(extra)).expect("write snapshot");
+    let out = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+    let text = combined_output(&out);
+    assert!(!out.status.success(), "cyclic deftype alias must fail:\n{text}");
+    assert!(text.contains("E_ANY_OPEN_TYPE"), "{text}");
   }
 
   // 3. Applied (Any Number) and wrong generic deftype / struct arity are rejected
@@ -317,6 +341,9 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
   let dir = TestDirectory::create();
   let snapshot = dir.snapshot();
   let extra = r#"
+        'Id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Id (:generics T) T
+          :examples $ []
         'run-checks! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn run-checks! ()
             let
@@ -327,6 +354,11 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
                 b-xs $ any:box xs
                 u $ assert-type |leaf TokenUnion
                 b-u $ any:box u
+                b-id $ any:box 42
+                buf1 $ any:box (&buffer 1 2)
+                buf2 $ any:box (&buffer 1 3)
+                buf1-eq $ any:box (&buffer 1 2)
+                buf-set $ #{} buf1 buf2 buf1-eq
               match (any:downcast b-c CounterAlias)
                 (:some got) $ do
                   assert= c got
@@ -338,6 +370,16 @@ fn any_box_handles_structs_aliases_and_unions_on_native_and_js() {
               match (any:downcast b-xs (List Number))
                 (:some got) (assert= ([] 1 2) got)
                 (:none) (raise |expected-alias-list-hit)
+              match (any:downcast b-id (Id (Id Number)))
+                (:some got) (assert= 42 got)
+                (:none) (raise |expected-nested-id-hit)
+              match (any:downcast b-id Number)
+                (:some got) (assert= 42 got)
+                (:none) (raise |expected-nested-id-as-number-hit)
+              assert= 2 (count buf-set)
+              assert= true (&= buf1 buf1-eq)
+              assert= false (&= buf1 buf2)
+              assert= true (not= (&compare buf1 buf2) 0)
               match (any:downcast b-u TokenUnion)
                 (:some got)
                   match got
@@ -415,6 +457,13 @@ fn any_box_handles_structs_aliases_and_unions_on_wasm() {
         'TokenUnionAlias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype TokenUnionAlias any-test.main/TokenUnion
           :examples $ []
+        'ScalarUnion $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defunion ScalarUnion Number Tag
+          :examples $ []
+          :schema $ quote UnionDef
+        'Id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype Id (:generics T) T
+          :examples $ []
         'check-counter! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export check-counter! ()
             let
@@ -473,7 +522,29 @@ fn any_box_handles_structs_aliases_and_unions_on_wasm() {
                 tag-ok $ match (any:downcast b-tag Tag)
                   (:some t) (&= t :ok)
                   (:none) false
-              if (and num-ok tag-ok) 1 0
+                json-bools $ assert-type (json-parse "|[false,true]") (List Bool)
+                json-bool-ok $ match (first json-bools)
+                  (:some jb)
+                    let
+                        b-json-false $ any:box jb
+                        b-lit-false $ any:box false
+                      and (&= b-json-false b-lit-false) (&= (&hash b-json-false) (&hash b-lit-false))
+                  (:none) false
+                scalar-u $ assert-type 262152 ScalarUnion
+                b-su $ any:box scalar-u
+                scalar-u-ok $ and
+                  &= b-su (any:box (assert-type 262152 ScalarUnion))
+                  not (&= b-su (any:box 262152))
+                  match (any:downcast b-su ScalarUnion)
+                    (:some got)
+                      match got
+                        (Number _) true
+                        (Tag _) false
+                    (:none) false
+                nested-id-ok $ match (any:downcast (any:box 42) (Id (Id Number)))
+                  (:some n) (&= n 42)
+                  (:none) false
+              if (and num-ok tag-ok json-bool-ok scalar-u-ok nested-id-ok) 1 0
           :examples $ []
           :schema $ quote $ Fn (-> Number)
 "#;
