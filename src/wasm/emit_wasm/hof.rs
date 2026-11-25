@@ -622,10 +622,6 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   expect_arity(4, args, "foldr-shortcut")?;
 
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
-  // Resolve callee
-  let fn_call_kind = resolve_callee_kind(ctx, &args[3], 0, 0) // temp indices; real ones allocated below
-    .map_err(|e| format!("foldr-shortcut: {e}"))?;
-
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, list_ptr);
 
@@ -642,6 +638,9 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
   let elem = ctx.alloc_local();
   let enum_ptr = ctx.alloc_local_typed(ValType::I32);
+
+  // Resolve callback after source, accumulator, and default values are evaluated.
+  let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem).map_err(|e| format!("foldr-shortcut: {e}"))?;
 
   ctx.begin_block();
   ctx.begin_loop();
@@ -901,10 +900,12 @@ fn resolve_hof_callee(ctx: &mut WasmGenCtx, callee: &Calcit, expected_arity: u32
   {
     return Ok(FoldlCallKind::Proc(CalcitProc::NilQuestion));
   }
-  if let Some(closure) = resolve_inline_closure(ctx, callee)
-    && !closure.body.iter().any(check_uses_recur)
-  {
-    return Ok(FoldlCallKind::Inline(closure));
+  if let Some(closure) = resolve_inline_closure(ctx, callee) {
+    if !closure.body.iter().any(check_uses_recur) && !super::closure::inline_closure_requires_materialization(&closure) {
+      return Ok(FoldlCallKind::Inline(closure));
+    }
+    let local_idx = super::closure::emit_materialize_inline_closure(ctx, &closure, Some(callee))?;
+    return Ok(FoldlCallKind::Dynamic(local_idx));
   }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee, expected_arity) {
     return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));

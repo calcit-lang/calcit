@@ -3230,7 +3230,7 @@ fn core_wasm_closures_promote_and_compact_mixed_captures_across_defref() {
     %{} 'FileEntry
       :defs $ {}
         '*saved $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defref *saved (fn (x) (assert-type x Number) x)
+          :code $ quote $ defref *saved add-one
           :examples $ []
           :schema $ quote $ Ref $ Fn Number (-> Number)
         '*churn $ %{} 'CodeEntry (:doc |)

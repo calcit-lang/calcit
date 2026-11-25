@@ -742,9 +742,69 @@ if (wasmLog[0] === "42") {
 
 // --- Lambda-lifted closures & zero-capture singletons ---
 check("test-closure-lifted-suite()", 1, e["test-closure-lifted-suite"]);
-// Also verify WebAssembly module emits zero CallIndirect instructions and zero funcref tables
-if (WebAssembly.Module.exports(mod).some((item) => item.kind === "table")) {
-  console.log("  unexpected exported table in WASM module  FAIL");
+// Also verify WebAssembly module emits zero CallIndirect/funcref table imports/definitions/exports
+function inspectWasmTables(bytes) {
+  let offset = 8; // skip magic + version
+  const readVarUint = () => {
+    let result = 0;
+    let shift = 0;
+    while (offset < bytes.length) {
+      const byte = bytes[offset++];
+      result |= (byte & 0x7f) << shift;
+      if ((byte & 0x80) === 0) return result;
+      shift += 7;
+    }
+    throw new Error("unexpected EOF reading LEB128");
+  };
+  let tableCount = 0;
+  let tableImportCount = 0;
+  while (offset < bytes.length) {
+    const id = bytes[offset++];
+    const size = readVarUint();
+    const end = offset + size;
+    if (id === 2) {
+      // Import section: count, then (module, field, kind, ...)
+      const count = readVarUint();
+      for (let i = 0; i < count; i++) {
+        const modLen = readVarUint();
+        offset += modLen;
+        const fieldLen = readVarUint();
+        offset += fieldLen;
+        const kind = bytes[offset++];
+        if (kind === 0x00) {
+          readVarUint(); // typeidx
+        } else if (kind === 0x01) {
+          tableImportCount++;
+          offset++; // elemtype
+          const flags = readVarUint();
+          readVarUint();
+          if (flags & 0x01) readVarUint();
+        } else if (kind === 0x02) {
+          const flags = readVarUint();
+          readVarUint();
+          if (flags & 0x01) readVarUint();
+        } else if (kind === 0x03) {
+          offset += 2; // valtype + mut
+        }
+      }
+    } else if (id === 4) {
+      // Table section
+      tableCount += readVarUint();
+    }
+    offset = end;
+  }
+  return { tableCount, tableImportCount };
+}
+const wasmTableStats = inspectWasmTables(wasm);
+if (
+  wasmTableStats.tableCount > 0 ||
+  wasmTableStats.tableImportCount > 0 ||
+  WebAssembly.Module.exports(mod).some((item) => item.kind === "table") ||
+  WebAssembly.Module.imports(mod).some((item) => item.kind === "table")
+) {
+  console.log(
+    `  unexpected table in WASM module (defined=${wasmTableStats.tableCount}, imported=${wasmTableStats.tableImportCount})  FAIL`,
+  );
   fail++;
 }
 

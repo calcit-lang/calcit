@@ -311,7 +311,7 @@
 | `E_WASM_BOUNDARY_DYNAMIC` | `src/runner/preprocess/mod.rs` |
 | `E_WASM_CALL_SPECIALIZATION` | `src/wasm/emit_wasm.rs` |
 | `E_WASM_CAPABILITY` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/http_proxy.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
-| `E_WASM_CLOSURE_SPECIALIZATION` | `src/wasm/emit_wasm/closure.rs` |
+| `E_WASM_CLOSURE_SPECIALIZATION` | `src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_DEPTH` | `src/wasm/emit_wasm/edn.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |
 | `E_WASM_EDN_ENUM` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_ENUM_SHAPE` | `src/wasm/emit_wasm/edn.rs`<br>`src/wasm/emit_wasm/edn_parse.rs` |

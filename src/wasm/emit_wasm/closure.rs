@@ -16,7 +16,11 @@ impl ClosureParamShape {
   }
 
   pub(super) fn accepts(&self, count: usize) -> bool {
-    count >= self.required && (self.rest || count <= self.positional())
+    if self.rest {
+      count >= self.positional()
+    } else {
+      count >= self.required && count <= self.positional()
+    }
   }
 }
 
@@ -74,6 +78,8 @@ pub(super) struct ClosureRegistry {
   pub(super) entries: Vec<ClosureEntry>,
   pub(super) static_by_qualified: HashMap<String, u32>,
   pub(super) static_ptrs: HashMap<String, u32>,
+  pub(super) atom_initial_fn_targets: HashMap<String, String>,
+  pub(super) atom_uninitialized_closures: HashMap<String, String>,
   static_fallbacks: HashMap<String, u32>,
   lifted_by_key: HashMap<String, (u32, u32)>,
   trampoline_fn_by_arity: HashMap<u32, u32>,
@@ -98,7 +104,7 @@ impl ClosureRegistry {
   /// Registers all pre-allocated static singletons in deterministic `0..S` ID order.
   pub(super) fn register_static_singletons(
     &mut self,
-    singletons: &[StaticClosureSingleton],
+    build: &StaticClosureBuildResult,
     fn_index: &HashMap<String, u32>,
     fn_arity: &HashMap<String, u32>,
     fn_has_rest: &HashMap<String, u32>,
@@ -110,7 +116,7 @@ impl ClosureRegistry {
       def_args_by_qualified.insert(format!("{ns}/{name}"), args);
     }
 
-    for singleton in singletons {
+    for singleton in &build.singletons {
       // Keep slot numbering aligned even if the symbol did not map to a compiled function.
       let fn_idx = fn_index.get(&singleton.qualified).copied().unwrap_or(u32::MAX);
       let arity = fn_arity.get(&singleton.qualified).copied().unwrap_or(0);
@@ -137,6 +143,8 @@ impl ClosureRegistry {
         has_rest_fn,
       }));
     }
+    self.atom_initial_fn_targets.clone_from(&build.atom_initial_fn_targets);
+    self.atom_uninitialized_closures.clone_from(&build.atom_uninitialized_closures);
   }
 
   /// Ensures a `__closure_call_<arity>` `BrTable` trampoline exists and returns its WASM function index.
@@ -434,7 +442,10 @@ fn collect_free_vars(
 
 fn is_inline_hof_head(head: &Calcit) -> bool {
   if let Calcit::Proc(proc) = head {
-    return matches!(proc, CalcitProc::NativeListFoldl | CalcitProc::NativeListFoldlShortcut);
+    return matches!(
+      proc,
+      CalcitProc::NativeListFoldl | CalcitProc::NativeListFoldlShortcut | CalcitProc::Foldl | CalcitProc::FoldrShortcut
+    );
   }
   let name = match head {
     Calcit::Import(imp) if imp.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => imp.def.as_ref(),
@@ -466,8 +477,11 @@ fn is_inline_hof_head(head: &Calcit) -> bool {
       | "foldl"
       | "foldl-compare"
       | "foldl-shortcut"
+      | "foldr-shortcut"
       | "&list:foldl"
       | "&list:foldl-compare"
+      | "&list:foldl-shortcut"
+      | "&list:foldr-shortcut"
       | "map-kv"
       | "filter-map-kv"
       | "update"
@@ -494,14 +508,116 @@ fn inline_lambda_uses_recur(expr: &Calcit) -> bool {
   }
 }
 
-fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, treat_top_fn_as_inline: bool) -> bool {
+fn inline_lambda_is_self_recursive(expr: &Calcit) -> bool {
+  let Calcit::List(items) = expr else {
+    return false;
+  };
+  if !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return false;
+  }
+  let Some(name) = (match items.get(1) {
+    Some(Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. })) => Some(sym.as_ref()),
+    _ => None,
+  }) else {
+    return false;
+  };
+  items.iter().skip(3).any(|e| exprs_reference_name(std::slice::from_ref(e), name))
+}
+
+/// Returns true if `exprs` contain an unshadowed reference to `name`.
+pub(super) fn exprs_reference_name(exprs: &[Calcit], name: &str) -> bool {
+  fn visit(expr: &Calcit, name: &str) -> bool {
+    if is_var_ref(expr, name) {
+      return true;
+    }
+    match expr {
+      Calcit::List(xs) if !xs.is_empty() => match &xs[0] {
+        Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _) => false,
+        Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+          if let Some(first_arg) = xs.get(1)
+            && let Calcit::List(pair_or_list) = first_arg
+          {
+            let is_single_pair =
+              pair_or_list.len() == 2 && matches!(pair_or_list.first(), Some(Calcit::Local(_) | Calcit::Symbol { .. }));
+            if is_single_pair {
+              if pair_or_list.get(1).is_some_and(|val| visit(val, name)) {
+                return true;
+              }
+              if binding_names_in_let_pair(first_arg).as_deref() == Some(name) {
+                return false;
+              }
+            } else {
+              let mut shadowed = false;
+              for pair in pair_or_list.iter() {
+                if let Calcit::List(p) = pair
+                  && p.len() == 2
+                  && visit(&p[1], name)
+                {
+                  return true;
+                }
+                if binding_names_in_let_pair(pair).as_deref() == Some(name) {
+                  shadowed = true;
+                  break;
+                }
+              }
+              if shadowed {
+                return false;
+              }
+            }
+          }
+          xs.iter().skip(2).any(|e| visit(e, name))
+        }
+        Calcit::Syntax(CalcitSyntax::Defn, _) => {
+          let mut shadowed = matches!(
+            xs.get(1),
+            Some(Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. })) if sym.as_ref() == name
+          );
+          if let Some(Calcit::List(params)) = xs.get(2) {
+            for p in params.iter() {
+              if let Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) = p
+                && sym.as_ref() == name
+              {
+                shadowed = true;
+              }
+            }
+          }
+          !shadowed && xs.iter().skip(3).any(|e| visit(e, name))
+        }
+        _ => xs.iter().any(|item| visit(item, name)),
+      },
+      Calcit::Fn { info, .. } => !fn_param_names(&info.args).iter().any(|p| p == name) && info.body.iter().any(|e| visit(e, name)),
+      _ => false,
+    }
+  }
+  exprs.iter().any(|e| visit(e, name))
+}
+
+/// Returns true if an `InlineClosure` cannot remain unmaterialized because its body calls its own `self_name`.
+pub(super) fn inline_closure_requires_materialization(closure: &InlineClosure) -> bool {
+  closure
+    .self_name
+    .as_deref()
+    .is_some_and(|sname| exprs_reference_name(&closure.body, sname))
+}
+
+/// Cache key `(scope_ptr, index, binding_name)` for memoizing lexical escape queries
+/// over immutable `Calcit` AST nodes/slices during one escape check.
+type EscapeMemo = HashMap<(usize, usize, String), bool>;
+
+fn visit_closure_escape_expr(
+  expr: &Calcit,
+  name: &str,
+  in_lifted_lambda: bool,
+  treat_top_fn_as_inline: bool,
+  memo: &mut EscapeMemo,
+) -> bool {
   if is_var_ref(expr, name) {
     return true;
   }
   match expr {
     Calcit::List(xs) if !xs.is_empty() => match &xs[0] {
       Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
-        let rest_body: Vec<Calcit> = xs.iter().skip(2).cloned().collect();
+        let expr_ptr = expr as *const Calcit as usize;
         if let Some(first_arg) = xs.get(1)
           && let Calcit::List(pair_or_list) = first_arg
         {
@@ -510,10 +626,16 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
           if is_single_pair {
             if let Some(val) = pair_or_list.get(1) {
               let rhs_stays_inline = is_inline_lambda_expr(val)
-                && binding_names_in_let_pair(first_arg)
-                  .as_deref()
-                  .is_some_and(|lhs| !closure_name_may_escape(lhs, &rest_body));
-              if visit_closure_escape_expr(val, name, in_lifted_lambda, rhs_stays_inline) {
+                && binding_names_in_let_pair(first_arg).as_deref().is_some_and(|lhs| {
+                  let key = (expr_ptr, 0usize, lhs.to_owned());
+                  if let Some(&cached) = memo.get(&key) {
+                    return !cached;
+                  }
+                  let escapes = xs.iter().skip(2).any(|e| visit_closure_escape_expr(e, lhs, false, false, memo));
+                  memo.insert(key, escapes);
+                  !escapes
+                });
+              if visit_closure_escape_expr(val, name, in_lifted_lambda, rhs_stays_inline, memo) {
                 return true;
               }
             }
@@ -521,17 +643,26 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
               return false;
             }
           } else {
-            let pairs_vec = pair_or_list.to_vec();
             let mut shadowed = false;
-            for (idx, pair) in pairs_vec.iter().enumerate() {
+            let pair_count = pair_or_list.len();
+            for idx in 0..pair_count {
+              let Some(pair) = pair_or_list.get(idx) else {
+                continue;
+              };
               if let Calcit::List(p) = pair
                 && p.len() == 2
               {
                 let rhs_stays_inline = is_inline_lambda_expr(&p[1])
-                  && binding_names_in_let_pair(pair)
-                    .as_deref()
-                    .is_some_and(|lhs| !let_pairs_may_escape(lhs, &pairs_vec[idx + 1..], &rest_body));
-                if visit_closure_escape_expr(&p[1], name, in_lifted_lambda, rhs_stays_inline) {
+                  && binding_names_in_let_pair(pair).as_deref().is_some_and(|lhs| {
+                    let key = (expr_ptr, idx, lhs.to_owned());
+                    if let Some(&cached) = memo.get(&key) {
+                      return !cached;
+                    }
+                    let escapes = core_let_suffix_may_escape(lhs, pair_or_list, idx + 1, xs, memo);
+                    memo.insert(key, escapes);
+                    !escapes
+                  });
+                if visit_closure_escape_expr(&p[1], name, in_lifted_lambda, rhs_stays_inline, memo) {
                   return true;
                 }
               }
@@ -545,9 +676,9 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
             }
           }
         }
-        rest_body
-          .iter()
-          .any(|e| visit_closure_escape_expr(e, name, in_lifted_lambda, false))
+        xs.iter()
+          .skip(2)
+          .any(|e| visit_closure_escape_expr(e, name, in_lifted_lambda, false, memo))
       }
       Calcit::Syntax(CalcitSyntax::Defn, _) => {
         let mut shadowed = matches!(
@@ -567,12 +698,14 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
           return false;
         }
         let body_in_lifted = if treat_top_fn_as_inline { in_lifted_lambda } else { true };
-        xs.iter().skip(3).any(|e| visit_closure_escape_expr(e, name, body_in_lifted, false))
+        xs.iter()
+          .skip(3)
+          .any(|e| visit_closure_escape_expr(e, name, body_in_lifted, false, memo))
       }
       Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _) => false,
       Calcit::Syntax(CalcitSyntax::Match, _) => {
         if let Some(subject) = xs.get(1)
-          && visit_closure_escape_expr(subject, name, in_lifted_lambda, false)
+          && visit_closure_escape_expr(subject, name, in_lifted_lambda, false, memo)
         {
           return true;
         }
@@ -593,10 +726,10 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
             } else {
               false
             };
-            if !shadowed && visit_closure_escape_expr(&pair[1], name, in_lifted_lambda, false) {
+            if !shadowed && visit_closure_escape_expr(&pair[1], name, in_lifted_lambda, false, memo) {
               return true;
             }
-          } else if visit_closure_escape_expr(branch, name, in_lifted_lambda, false) {
+          } else if visit_closure_escape_expr(branch, name, in_lifted_lambda, false, memo) {
             return true;
           }
         }
@@ -608,19 +741,20 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
             || xs
               .iter()
               .skip(1)
-              .any(|arg| visit_closure_escape_expr(arg, name, in_lifted_lambda, false));
+              .any(|arg| visit_closure_escape_expr(arg, name, in_lifted_lambda, false, memo));
         }
         if !in_lifted_lambda && is_inline_hof_head(&xs[0]) {
           return xs.iter().skip(1).any(|arg| {
             if is_var_ref(arg, name) {
               false
             } else {
-              let arg_inline = is_inline_lambda_expr(arg) && !inline_lambda_uses_recur(arg);
-              visit_closure_escape_expr(arg, name, in_lifted_lambda, arg_inline)
+              let arg_inline = is_inline_lambda_expr(arg) && !inline_lambda_uses_recur(arg) && !inline_lambda_is_self_recursive(arg);
+              visit_closure_escape_expr(arg, name, in_lifted_lambda, arg_inline, memo)
             }
           });
         }
-        xs.iter().any(|item| visit_closure_escape_expr(item, name, in_lifted_lambda, false))
+        xs.iter()
+          .any(|item| visit_closure_escape_expr(item, name, in_lifted_lambda, false, memo))
       }
     },
     Calcit::Fn { info, .. } => {
@@ -628,29 +762,73 @@ fn visit_closure_escape_expr(expr: &Calcit, name: &str, in_lifted_lambda: bool, 
         return false;
       }
       let body_in_lifted = if treat_top_fn_as_inline { in_lifted_lambda } else { true };
-      info.body.iter().any(|e| visit_closure_escape_expr(e, name, body_in_lifted, false))
+      info
+        .body
+        .iter()
+        .any(|e| visit_closure_escape_expr(e, name, body_in_lifted, false, memo))
     }
     _ => false,
   }
 }
 
-/// Returns true if a `let`-bound inline closure named `name` may escape direct call/HOF-callback
-/// positions in `exprs` and therefore must be materialized into a heap closure pointer once at binding.
-pub(super) fn closure_name_may_escape(name: &str, exprs: &[Calcit]) -> bool {
-  exprs.iter().any(|e| visit_closure_escape_expr(e, name, false, false))
+fn core_let_suffix_may_escape(
+  name: &str,
+  pair_or_list: &crate::wasm::host::calcit::CalcitList,
+  start_idx: usize,
+  core_let_list: &crate::wasm::host::calcit::CalcitList,
+  memo: &mut EscapeMemo,
+) -> bool {
+  let scope_ptr = pair_or_list as *const crate::wasm::host::calcit::CalcitList as usize;
+  let pair_count = pair_or_list.len();
+  for idx in start_idx..pair_count {
+    let Some(pair) = pair_or_list.get(idx) else {
+      continue;
+    };
+    if let Calcit::List(p) = pair
+      && p.len() == 2
+    {
+      let rhs_stays_inline = is_inline_lambda_expr(&p[1])
+        && binding_names_in_let_pair(pair).as_deref().is_some_and(|lhs| {
+          let key = (scope_ptr, idx, lhs.to_owned());
+          if let Some(&cached) = memo.get(&key) {
+            return !cached;
+          }
+          let escapes = core_let_suffix_may_escape(lhs, pair_or_list, idx + 1, core_let_list, memo);
+          memo.insert(key, escapes);
+          !escapes
+        });
+      if visit_closure_escape_expr(&p[1], name, false, rhs_stays_inline, memo) {
+        return true;
+      }
+      if is_var_ref(&p[0], name) {
+        return false;
+      }
+    }
+  }
+  core_let_list
+    .iter()
+    .skip(2)
+    .any(|e| visit_closure_escape_expr(e, name, false, false, memo))
 }
 
-/// Checks if `let` pairs + trailing body may let `name` escape after its binding.
-pub(super) fn let_pairs_may_escape(name: &str, remaining_pairs: &[Calcit], body: &[Calcit]) -> bool {
+fn let_pairs_may_escape_with_memo(name: &str, remaining_pairs: &[Calcit], body: &[Calcit], memo: &mut EscapeMemo) -> bool {
+  let pairs_ptr = remaining_pairs.as_ptr() as usize;
   for (idx, pair) in remaining_pairs.iter().enumerate() {
     if let Calcit::List(xs) = pair
       && xs.len() == 2
     {
       let rhs_stays_inline = is_inline_lambda_expr(&xs[1])
-        && binding_names_in_let_pair(pair)
-          .as_deref()
-          .is_some_and(|lhs| !let_pairs_may_escape(lhs, &remaining_pairs[idx + 1..], body));
-      if visit_closure_escape_expr(&xs[1], name, false, rhs_stays_inline) {
+        && binding_names_in_let_pair(pair).as_deref().is_some_and(|lhs| {
+          let next = &remaining_pairs[idx + 1..];
+          let key = (pairs_ptr, idx, lhs.to_owned());
+          if let Some(&cached) = memo.get(&key) {
+            return !cached;
+          }
+          let escapes = let_pairs_may_escape_with_memo(lhs, next, body, memo);
+          memo.insert(key, escapes);
+          !escapes
+        });
+      if visit_closure_escape_expr(&xs[1], name, false, rhs_stays_inline, memo) {
         return true;
       }
       if is_var_ref(&xs[0], name) {
@@ -658,7 +836,20 @@ pub(super) fn let_pairs_may_escape(name: &str, remaining_pairs: &[Calcit], body:
       }
     }
   }
-  closure_name_may_escape(name, body)
+  body.iter().any(|e| visit_closure_escape_expr(e, name, false, false, memo))
+}
+
+/// Returns true if a `let`-bound inline closure named `name` may escape direct call/HOF-callback
+/// positions in `exprs` and therefore must be materialized into a heap closure pointer once at binding.
+pub(super) fn closure_name_may_escape(name: &str, exprs: &[Calcit]) -> bool {
+  let mut memo = EscapeMemo::new();
+  exprs.iter().any(|e| visit_closure_escape_expr(e, name, false, false, &mut memo))
+}
+
+/// Checks if `let` pairs + trailing body may let `name` escape after its binding.
+pub(super) fn let_pairs_may_escape(name: &str, remaining_pairs: &[Calcit], body: &[Calcit]) -> bool {
+  let mut memo = EscapeMemo::new();
+  let_pairs_may_escape_with_memo(name, remaining_pairs, body, &mut memo)
 }
 
 fn capture_specs_from_scope(
@@ -700,23 +891,37 @@ fn build_lifted_dedup_key(
   source_ns: &str,
   self_name: Option<&str>,
   shape: &ClosureParamShape,
+  arg_types: &[Arc<CalcitTypeAnnotation>],
   body: &[Calcit],
   captures: &[CaptureSpec],
 ) -> String {
   let body_str = body.iter().map(|e| format!("{e:?}")).collect::<Vec<_>>().join(";");
+  let arg_str = arg_types.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join(",");
   let cap_str = captures
     .iter()
     .map(|c| {
-      let ty_key = c
-        .evidence
-        .as_ref()
-        .map_or_else(|| String::from("_"), |ev| ev.annotation.to_brief_string());
-      format!("{}:{}:{ty_key}", c.name, usize::from(c.is_heap))
+      let ev_key = c.evidence.as_ref().map_or_else(
+        || String::from("_"),
+        |ev| {
+          let origin = ev.scalar_origin.as_ref().map_or_else(|| String::from("_"), |t| t.to_brief_string());
+          let codec = ev.codec_hint.as_ref().map_or_else(|| String::from("_"), |h| format!("{h:?}"));
+          let members = ev.set_member_types.as_ref().map_or_else(
+            || String::from("_"),
+            |ms| ms.iter().map(|t| t.to_brief_string()).collect::<Vec<_>>().join("+"),
+          );
+          format!(
+            "{}:{origin}:{}:{codec}:[{members}]",
+            ev.annotation.to_brief_string(),
+            usize::from(ev.exact_impls)
+          )
+        },
+      );
+      format!("{}:{}:{ev_key}", c.name, usize::from(c.is_heap))
     })
     .collect::<Vec<_>>()
     .join(",");
   format!(
-    "{source_ns}|{}|{}|{}|{}|[{body_str}]|[{cap_str}]",
+    "{source_ns}|{}|{}|{}|{}|[{arg_str}]|[{body_str}]|[{cap_str}]",
     self_name.unwrap_or(""),
     shape.params.join(","),
     shape.required,
@@ -775,7 +980,7 @@ fn emit_lift_and_alloc_closure(
     cap_f64_locals.push(val_local);
   }
 
-  let dedup_key = build_lifted_dedup_key(&ctx.source_ns, self_name.as_deref(), &shape, &body, &captures);
+  let dedup_key = build_lifted_dedup_key(&ctx.source_ns, self_name.as_deref(), &shape, &arg_types, &body, &captures);
   let source_ns = ctx.source_ns.clone();
   let (closure_id, body_fn_idx) = ctx
     .closures
@@ -838,8 +1043,8 @@ fn emit_zero_env_heap_closure(ctx: &mut WasmGenCtx, closure_id: u32) {
   ctx.ptr_to_f64(ptr);
 }
 
-/// Emits the closure pointer (`f64`) for a top-level compiled function (`defn` / `import`).
-pub(super) fn emit_static_closure_value(ctx: &mut WasmGenCtx, qualified: &str, short_name: &str) -> Result<(), String> {
+/// Validates that a top-level function value does not require generic `nil?` or trait specialization.
+pub(super) fn validate_static_closure_target(ctx: &WasmGenCtx, qualified: &str, short_name: &str) -> Result<(), String> {
   if function_requires_nil_specialization(ctx, qualified, short_name) {
     return Err(format!(
       "E_WASM_NIL_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
@@ -850,6 +1055,12 @@ pub(super) fn emit_static_closure_value(ctx: &mut WasmGenCtx, qualified: &str, s
       "E_WASM_TRAIT_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
     ));
   }
+  Ok(())
+}
+
+/// Emits the closure pointer (`f64`) for a top-level compiled function (`defn` / `import`).
+pub(super) fn emit_static_closure_value(ctx: &mut WasmGenCtx, qualified: &str, short_name: &str) -> Result<(), String> {
+  validate_static_closure_target(ctx, qualified, short_name)?;
   let target_key = if ctx.fn_index.contains_key(qualified) {
     qualified
   } else {
@@ -1502,5 +1713,117 @@ pub(super) fn finalize_closures(
         }
       }
     });
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::wasm::host::calcit::{CalcitSymbolInfo, CalcitTypeAnnotation};
+
+  #[test]
+  fn rest_shape_accepts_requires_all_positional_params() {
+    let shape = ClosureParamShape {
+      params: vec!["a".into(), "b".into(), "xs".into()],
+      required: 1,
+      rest: true,
+      option_types: Vec::new(),
+    };
+    assert!(!shape.accepts(0));
+    assert!(!shape.accepts(1));
+    assert!(shape.accepts(2));
+    assert!(shape.accepts(4));
+  }
+
+  #[test]
+  fn lifted_dedup_key_distinguishes_scalar_origin_and_arg_types() {
+    let shape = ClosureParamShape {
+      params: vec!["y".into()],
+      required: 1,
+      rest: false,
+      option_types: Vec::new(),
+    };
+    let mut num_ev = WasmTypeEvidence::contract(DYNAMIC_TYPE.clone());
+    num_ev.scalar_origin = Some(Arc::new(CalcitTypeAnnotation::Number));
+    let mut bool_ev = WasmTypeEvidence::contract(DYNAMIC_TYPE.clone());
+    bool_ev.scalar_origin = Some(Arc::new(CalcitTypeAnnotation::Bool));
+    let cap_num = vec![CaptureSpec {
+      name: "x".into(),
+      is_heap: false,
+      evidence: Some(num_ev),
+    }];
+    let cap_bool = vec![CaptureSpec {
+      name: "x".into(),
+      is_heap: false,
+      evidence: Some(bool_ev),
+    }];
+    let k1 = build_lifted_dedup_key("app.main", None, &shape, &[], &[], &cap_num);
+    let k2 = build_lifted_dedup_key("app.main", None, &shape, &[], &[], &cap_bool);
+    assert_ne!(k1, k2);
+  }
+
+  #[test]
+  fn escape_analysis_scales_linearly_over_long_let_chain() {
+    use crate::wasm::host::calcit::CalcitList;
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("app.main"),
+      at_def: Arc::from("chain"),
+    });
+    let ns_ref: Arc<str> = Arc::from("app.main");
+    let mk_sym = |s: &str| Calcit::Symbol {
+      sym: Arc::from(s),
+      info: info.clone(),
+      location: None,
+    };
+    let mut expr = Calcit::Number(1.0);
+    for i in (0..32).rev() {
+      let name = format!("f{i}");
+      let lam = Calcit::List(Arc::new(CalcitList::from(
+        &[
+          Calcit::Syntax(CalcitSyntax::Defn, ns_ref.clone()),
+          mk_sym(&name),
+          Calcit::List(Arc::new(CalcitList::from(&[mk_sym("x")][..]))),
+          Calcit::Number(i as f64),
+        ][..],
+      )));
+      let pair = Calcit::List(Arc::new(CalcitList::from(&[mk_sym(&name), lam][..])));
+      expr = Calcit::List(Arc::new(CalcitList::from(
+        &[Calcit::Syntax(CalcitSyntax::CoreLet, ns_ref.clone()), pair, expr][..],
+      )));
+    }
+    assert!(!closure_name_may_escape("target", &[expr]));
+  }
+
+  #[test]
+  fn inline_hof_foldr_shortcut_keeps_called_callback_unmaterialized() {
+    use crate::wasm::host::calcit::CalcitList;
+    let info = Arc::new(CalcitSymbolInfo {
+      at_ns: Arc::from("calcit.core"),
+      at_def: Arc::from("&list:find-last-index"),
+    });
+    let mk_sym = |s: &str| Calcit::Symbol {
+      sym: Arc::from(s),
+      info: info.clone(),
+      location: None,
+    };
+    let inner_call = Calcit::List(Arc::new(CalcitList::from(&[mk_sym("f"), mk_sym("x")][..])));
+    let inner_fn = Calcit::List(Arc::new(CalcitList::from(
+      &[
+        Calcit::Syntax(CalcitSyntax::Defn, Arc::from("calcit.core")),
+        mk_sym("cb"),
+        Calcit::List(Arc::new(CalcitList::from(&[mk_sym("idx"), mk_sym("x")][..]))),
+        inner_call,
+      ][..],
+    )));
+    let expr = Calcit::List(Arc::new(CalcitList::from(
+      &[
+        Calcit::Proc(CalcitProc::FoldrShortcut),
+        mk_sym("xs"),
+        Calcit::Number(0.0),
+        Calcit::Number(-1.0),
+        inner_fn,
+      ][..],
+    )));
+    assert!(!closure_name_may_escape("f", &[expr]));
   }
 }

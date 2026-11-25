@@ -6501,7 +6501,7 @@ type FunctionValueDependencies = Rc<RefCell<HashMap<u32, HashSet<u32>>>>;
 
 enum InlineArgument {
   Value(u32),
-  Closure(Arc<InlineClosure>),
+  Closure(Arc<InlineClosure>, Option<u32>),
 }
 
 /// Context for WASM code generation within a single function.
@@ -7049,7 +7049,10 @@ fn bind_inline_closure_args(
       .into_iter()
       .map(|(arg, _)| match arg {
         InlineArgument::Value(local) => Ok(local),
-        InlineArgument::Closure(c) => closure::emit_materialize_inline_closure(ctx, &c, None),
+        InlineArgument::Closure(c, materialized) => match materialized {
+          Some(local) => Ok(local),
+          None => closure::emit_materialize_inline_closure(ctx, &c, None),
+        },
       })
       .collect::<Result<Vec<_>, String>>()?;
     let list = emit_list_from_locals(ctx, &items);
@@ -7076,10 +7079,18 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
           ctx.local_types.remove(param);
         }
       }
-      InlineArgument::Closure(value) => {
-        ctx.locals.remove(param);
+      InlineArgument::Closure(value, materialized) => {
+        if let Some(local) = materialized {
+          ctx.locals.insert(param.clone(), local);
+        } else {
+          ctx.locals.remove(param);
+        }
         ctx.local_types.remove(param);
-        ctx.lambda_locals.insert(param.clone(), value);
+        if closure::inline_closure_requires_materialization(&value) {
+          ctx.lambda_locals.remove(param);
+        } else {
+          ctx.lambda_locals.insert(param.clone(), value);
+        }
       }
     }
   }
@@ -7401,9 +7412,20 @@ fn emit_inline_closure_call(
   }
 
   let mut bound = Vec::with_capacity(args.len());
-  for arg in args {
+  for (index, arg) in args.iter().enumerate() {
     if let Some(arg_closure) = resolve_inline_closure(ctx, arg) {
-      bound.push((InlineArgument::Closure(arg_closure), None));
+      let needs_materialization = index < closure.positional()
+        && closure.params.get(index).is_some_and(|param| {
+          closure::closure_name_may_escape(param, &closure.body) || closure::inline_closure_requires_materialization(&arg_closure)
+        });
+      if needs_materialization {
+        let local = closure::emit_materialize_inline_closure(ctx, &arg_closure, Some(arg))?;
+        let mut materialized = (*arg_closure).clone();
+        materialized.materialized_local = Some(local);
+        bound.push((InlineArgument::Closure(Arc::new(materialized), Some(local)), None));
+      } else {
+        bound.push((InlineArgument::Closure(arg_closure, None), None));
+      }
     } else {
       let annotation = infer_wasm_value_evidence(ctx, arg);
       let function_value = resolve_known_function_value(ctx, arg);
@@ -10052,14 +10074,24 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     ));
   }
   let mut bindings = Vec::with_capacity(args.len());
-  for (arg, closure_arg) in args.iter().zip(closure_args) {
+  for (index, (arg, closure_arg)) in args.iter().zip(closure_args).enumerate() {
     if let Some((effects, tail)) = closure_arg {
       for effect in effects {
         emit_expr(ctx, effect)?;
         ctx.emit(Instruction::Drop);
       }
       let closure = resolve_inline_closure(ctx, tail).expect("validated inline closure");
-      bindings.push(InlineArgument::Closure(closure));
+      let param_name = &definition.params[index];
+      let needs_materialization =
+        closure::closure_name_may_escape(param_name, &definition.body) || closure::inline_closure_requires_materialization(&closure);
+      if needs_materialization {
+        let local = closure::emit_materialize_inline_closure(ctx, &closure, Some(tail))?;
+        let mut materialized = (*closure).clone();
+        materialized.materialized_local = Some(local);
+        bindings.push(InlineArgument::Closure(Arc::new(materialized), Some(local)));
+      } else {
+        bindings.push(InlineArgument::Closure(closure, None));
+      }
     } else {
       let function_value = (!uses_recur).then(|| resolve_known_function_value(ctx, arg)).flatten();
       let number_literal = (!uses_recur).then(|| resolve_known_number_literal(ctx, arg)).flatten();
@@ -10091,8 +10123,14 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
           ctx.local_types.insert(param.clone(), annotation.clone());
         }
       }
-      InlineArgument::Closure(closure) => {
-        ctx.lambda_locals.insert(param.clone(), closure);
+      InlineArgument::Closure(closure, materialized) => {
+        let self_recursive = closure::inline_closure_requires_materialization(&closure);
+        if !self_recursive {
+          ctx.lambda_locals.insert(param.clone(), closure);
+        }
+        if let Some(local) = materialized {
+          ctx.locals.insert(param.clone(), local);
+        }
       }
     }
   }
@@ -11482,6 +11520,23 @@ fn emit_inline_iife(
   Ok(())
 }
 
+/// Loads a global `defref` slot, rejecting uninitialized closure initializers and recording any
+/// static function target for reachability/specialization validation.
+fn emit_atom_global_load(ctx: &mut WasmGenCtx, qualified: &str, global_idx: u32) -> Result<(), String> {
+  let err_opt = ctx.closures.borrow().atom_uninitialized_closures.get(qualified).cloned();
+  if let Some(err) = err_opt {
+    return Err(err);
+  }
+  let fn_target = ctx.closures.borrow().atom_initial_fn_targets.get(qualified).cloned();
+  if let Some(target_fn) = fn_target {
+    let short_name = target_fn.rsplit_once('/').map_or(target_fn.as_str(), |(_, n)| n);
+    closure::validate_static_closure_target(ctx, &target_fn, short_name)?;
+    ctx.record_function_value(&target_fn);
+  }
+  ctx.emit(Instruction::GlobalGet(global_idx));
+  Ok(())
+}
+
 /// Emit instructions for a single Calcit expression.
 fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
   match expr {
@@ -11547,11 +11602,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       } else if name == "do" && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && !ctx.fn_index.contains_key(&qualified) {
         ctx.emit(f64_const(0.0));
       } else if let Some(&global_idx) = ctx.atom_globals.get(&qualified) {
-        ctx.emit(Instruction::GlobalGet(global_idx));
-      } else if ctx.fn_index.contains_key(&qualified) || ctx.fn_index.contains_key(name) {
+        emit_atom_global_load(ctx, &qualified, global_idx)?;
+      } else if ctx.fn_index.contains_key(&qualified) {
         closure::emit_static_closure_value(ctx, &qualified, name)?;
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
         emit_expr(ctx, &value_expr).map_err(|reason| format!("{reason} (symbol value `{qualified}`)"))?;
+      } else if ctx.fn_index.contains_key(name) {
+        closure::emit_static_closure_value(ctx, &qualified, name)?;
       } else {
         return Err(format!("unsupported WASM expression: {expr}"));
       }
@@ -11572,7 +11629,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       // Check if this is a reference to a known WASM global (defref)
       let qualified = format!("{}/{}", import.ns, import.def);
       if let Some(&global_idx) = ctx.atom_globals.get(&qualified) {
-        ctx.emit(Instruction::GlobalGet(global_idx));
+        emit_atom_global_load(ctx, &qualified, global_idx)?;
       } else if import.def.as_ref() == "{}" {
         // `{}` used as a bare expression — evaluates to an empty map.
         emit_map_new(ctx, &[])?;
@@ -11589,11 +11646,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .get(&key)
           .ok_or_else(|| format!("unknown enum definition tag in WASM: {}", enum_def.name()))?;
         ctx.emit(f64_const(id as f64));
-      } else if ctx.fn_index.contains_key(&qualified) || ctx.fn_index.contains_key(import.def.as_ref()) {
+      } else if ctx.fn_index.contains_key(&qualified) {
         closure::emit_static_closure_value(ctx, &qualified, import.def.as_ref())?;
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
         // Imported top-level def value (e.g. a string constant). Inline its expression.
         emit_expr(ctx, &value_expr).map_err(|reason| format!("{reason} (imported value `{qualified}`)"))?;
+      } else if ctx.fn_index.contains_key(import.def.as_ref()) {
+        closure::emit_static_closure_value(ctx, &qualified, import.def.as_ref())?;
       } else {
         return Err(format!("unsupported value import in WASM: {qualified}"));
       }
@@ -11714,7 +11773,6 @@ fn emit_expr_as_repr(ctx: &mut WasmGenCtx, expr: &Calcit, dst_repr: NativeValRep
         && resolve_struct_ref(expr).is_err()
         && resolve_enum_ref(expr).is_err()
         && !ctx.fn_index.contains_key(&qualified)
-        && !ctx.fn_index.contains_key(import.def.as_ref())
         && let Some(value_expr) = ctx.value_imports.get(&qualified).cloned()
       {
         return emit_expr_as_repr(ctx, &value_expr, dst_repr).map_err(|reason| format!("{reason} (imported value `{qualified}`)"));
@@ -12282,7 +12340,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         return emit_proc_call(ctx, &proc, &args_list);
       }
       if !ctx.fn_index.contains_key(&qualified)
-        && !ctx.fn_index.contains_key(import.def.as_ref())
         && (ctx.value_imports.contains_key(&qualified) || ctx.atom_globals.contains_key(&qualified))
       {
         return closure::emit_closure_call_expr(ctx, |ctx| emit_expr(ctx, head), &args_list);
@@ -12420,7 +12477,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         _ => {}
       }
       // Check if this symbol refers to an inline lambda, local closure, or self-recursive closure in scope.
-      if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
+      if let Some(closure) = ctx.lambda_locals.get(name).cloned()
+        && !closure::inline_closure_requires_materialization(&closure)
+      {
         return emit_inline_closure_call(ctx, &closure, &args_list, None);
       }
       if let Some(&local_idx) = ctx.locals.get(name) {
@@ -12562,7 +12621,11 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         }
       }
     }
-    Calcit::List(_) if resolve_inline_closure(ctx, head).is_some() => {
+    Calcit::List(_)
+      if resolve_inline_closure(ctx, head)
+        .as_ref()
+        .is_some_and(|c| !closure::inline_closure_requires_materialization(c)) =>
+    {
       let closure = resolve_inline_closure(ctx, head).expect("checked inline closure head");
       emit_inline_closure_call(ctx, &closure, &args_list, None)
     }
@@ -12570,7 +12633,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     Calcit::Local(local) => {
       let local_name = local.sym.as_ref().to_string();
       // If this local is an inline lambda, inline the call directly.
-      if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned() {
+      if let Some(closure) = ctx.lambda_locals.get(&local_name).cloned()
+        && !closure::inline_closure_requires_materialization(&closure)
+      {
         return emit_inline_closure_call(ctx, &closure, &args_list, None);
       }
       if let Some(&local_idx) = ctx.locals.get(&local_name) {
@@ -12698,8 +12763,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         if runtime_spreads.is_empty() {
           return closure::emit_closure_call_expr(ctx, |ctx| closure::emit_fn_value(ctx, info, head), &expanded);
         }
-        ctx.emit(Instruction::Unreachable);
-        return Ok(());
+        return Err("unsupported runtime spread call on anonymous function in WASM".into());
       };
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
       reject_nil_specialized_spread_call(ctx, &qualified, def_ref.def_name.as_ref())?;
@@ -16622,11 +16686,16 @@ fn emit_scoped_let(
     let number_literal = resolve_known_number_literal(ctx, value);
     // Resolve/evaluate the RHS against the outer scope before binding its name.
     if let Some(closure) = resolve_inline_closure(ctx, value) {
-      if may_escape {
+      let self_recursive = closure::inline_closure_requires_materialization(&closure);
+      if may_escape || self_recursive {
         let local = closure::emit_materialize_inline_closure(ctx, &closure, Some(value))?;
-        let mut materialized = (*closure).clone();
-        materialized.materialized_local = Some(local);
-        ctx.lambda_locals.insert(name.to_owned(), Arc::new(materialized));
+        if self_recursive {
+          ctx.lambda_locals.remove(name);
+        } else {
+          let mut materialized = (*closure).clone();
+          materialized.materialized_local = Some(local);
+          ctx.lambda_locals.insert(name.to_owned(), Arc::new(materialized));
+        }
         ctx.locals.insert(name.to_owned(), local);
       } else {
         ctx.lambda_locals.insert(name.to_owned(), closure);

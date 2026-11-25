@@ -1146,6 +1146,14 @@ pub(super) struct StaticClosureSingleton {
   pub(super) static_ptr: u32,
 }
 
+/// Static closure singleton metadata plus `defref` initializer target tracking.
+#[derive(Clone, Debug, Default)]
+pub(super) struct StaticClosureBuildResult {
+  pub(super) singletons: Vec<StaticClosureSingleton>,
+  pub(super) atom_initial_fn_targets: HashMap<String, String>,
+  pub(super) atom_uninitialized_closures: HashMap<String, String>,
+}
+
 /// Scans reachable expressions for first-class top-level function references and appends a
 /// 24-byte `[HEAP_MAGIC][closure_tag][id:i32][env_count=0:i32][heap_mask=0:i64]` singleton
 /// to `data_segment` for each one before `WasmMemoryLayout::compute`.
@@ -1161,10 +1169,11 @@ pub(super) fn build_static_closure_singletons(
   data_segment: &mut Vec<u8>,
   heap_start: &mut i32,
   atom_initial_values: &mut [f64],
-) -> Vec<StaticClosureSingleton> {
+) -> StaticClosureBuildResult {
   let mut known_fns: HashSet<String> = HashSet::new();
   let mut short_counts: HashMap<String, usize> = HashMap::new();
   let mut short_to_qualified: HashMap<String, String> = HashMap::new();
+  let atom_names: HashSet<String> = defref_defs.iter().map(|(q, _)| q.clone()).collect();
 
   for (ns, name, _, _) in fn_defs {
     let qualified = format!("{ns}/{name}");
@@ -1194,30 +1203,30 @@ pub(super) fn build_static_closure_singletons(
   short_to_qualified.retain(|k, _| short_counts.get(k).copied() == Some(1));
 
   let mut used: BTreeSet<String> = BTreeSet::new();
-  fn resolve_candidate(expr: &Calcit, known_fns: &HashSet<String>, short_to_qualified: &HashMap<String, String>) -> Option<String> {
+  fn resolve_candidate(
+    expr: &Calcit,
+    known_fns: &HashSet<String>,
+    short_to_qualified: &HashMap<String, String>,
+    value_imports: &HashMap<String, Calcit>,
+    atom_names: &HashSet<String>,
+  ) -> Option<String> {
     match expr {
       Calcit::Import(imp) => {
         let q = format!("{}/{}", imp.ns, imp.def);
-        if known_fns.contains(&q) {
-          Some(q)
-        } else {
-          short_to_qualified.get(imp.def.as_ref()).cloned()
-        }
+        known_fns.contains(&q).then_some(q)
       }
       Calcit::Fn { info, .. } => info.def_ref.as_ref().and_then(|d| {
         let q = format!("{}/{}", d.def_ns, d.def_name);
-        if known_fns.contains(&q) {
-          Some(q)
-        } else {
-          short_to_qualified.get(d.def_name.as_ref()).cloned()
-        }
+        known_fns.contains(&q).then_some(q)
       }),
       Calcit::Symbol { sym, info, .. } => {
         let q = format!("{}/{}", info.at_ns, sym);
         if known_fns.contains(&q) {
           Some(q)
-        } else {
+        } else if !value_imports.contains_key(&q) && !atom_names.contains(&q) {
           short_to_qualified.get(sym.as_ref()).cloned()
+        } else {
+          None
         }
       }
       _ => None,
@@ -1229,9 +1238,11 @@ pub(super) fn build_static_closure_singletons(
     in_call_head: bool,
     known_fns: &HashSet<String>,
     short_to_qualified: &HashMap<String, String>,
+    value_imports: &HashMap<String, Calcit>,
+    atom_names: &HashSet<String>,
     used: &mut BTreeSet<String>,
   ) {
-    if !in_call_head && let Some(q) = resolve_candidate(expr, known_fns, short_to_qualified) {
+    if !in_call_head && let Some(q) = resolve_candidate(expr, known_fns, short_to_qualified, value_imports, atom_names) {
       used.insert(q);
     }
     match expr {
@@ -1240,14 +1251,22 @@ pub(super) fn build_static_closure_singletons(
           return;
         }
         let head_is_direct = matches!(xs.first(), Some(Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Fn { .. }));
-        scan_expr(&xs[0], head_is_direct, known_fns, short_to_qualified, used);
+        scan_expr(
+          &xs[0],
+          head_is_direct,
+          known_fns,
+          short_to_qualified,
+          value_imports,
+          atom_names,
+          used,
+        );
         for item in xs.iter().skip(1) {
-          scan_expr(item, false, known_fns, short_to_qualified, used);
+          scan_expr(item, false, known_fns, short_to_qualified, value_imports, atom_names, used);
         }
       }
       Calcit::Fn { info, .. } => {
         for b in info.body.iter() {
-          scan_expr(b, false, known_fns, short_to_qualified, used);
+          scan_expr(b, false, known_fns, short_to_qualified, value_imports, atom_names, used);
         }
       }
       _ => {}
@@ -1256,19 +1275,19 @@ pub(super) fn build_static_closure_singletons(
 
   for (_, _, _, body) in fn_defs {
     for expr in body {
-      scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+      scan_expr(expr, false, &known_fns, &short_to_qualified, value_imports, &atom_names, &mut used);
     }
   }
   for expr in value_imports.values() {
-    scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+    scan_expr(expr, false, &known_fns, &short_to_qualified, value_imports, &atom_names, &mut used);
   }
   for (_, init_opt) in defref_defs {
     if let Some(expr) = init_opt {
-      scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+      scan_expr(expr, false, &known_fns, &short_to_qualified, value_imports, &atom_names, &mut used);
     }
   }
   for expr in extra_reachable_exprs {
-    scan_expr(expr, false, &known_fns, &short_to_qualified, &mut used);
+    scan_expr(expr, false, &known_fns, &short_to_qualified, value_imports, &atom_names, &mut used);
   }
 
   let closure_tag_id = *tag_index.get("closure").expect("closure type tag must exist");
@@ -1290,24 +1309,95 @@ pub(super) fn build_static_closure_singletons(
     });
   }
 
-  for (idx, (_, init_opt)) in defref_defs.iter().enumerate() {
-    let mut current = init_opt.as_ref();
-    while let Some(Calcit::List(items)) = current
+  fn unwrap_assert_type(mut expr: Option<&Calcit>) -> Option<&Calcit> {
+    while let Some(Calcit::List(items)) = expr
       && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
       && items.len() >= 2
     {
-      current = Some(&items[1]);
+      expr = Some(&items[1]);
     }
-    if let Some(expr) = current
-      && let Some(q) = resolve_candidate(expr, &known_fns, &short_to_qualified)
-      && let Some(&ptr) = ptr_by_qualified.get(&q)
-    {
-      atom_initial_values[idx] = ptr as f64;
+    expr
+  }
+
+  enum DefrefClosureInit {
+    ResolvedFn(String),
+    NonStaticClosure(String),
+    NotClosure,
+  }
+
+  fn resolve_defref_closure_init(
+    expr: Option<&Calcit>,
+    known_fns: &HashSet<String>,
+    short_to_qualified: &HashMap<String, String>,
+    value_imports: &HashMap<String, Calcit>,
+    atom_names: &HashSet<String>,
+  ) -> DefrefClosureInit {
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut current = unwrap_assert_type(expr);
+    loop {
+      let Some(node) = current else {
+        return DefrefClosureInit::NotClosure;
+      };
+      if let Some(q) = resolve_candidate(node, known_fns, short_to_qualified, value_imports, atom_names) {
+        return DefrefClosureInit::ResolvedFn(q);
+      }
+      let alias_key = match node {
+        Calcit::Import(imp) => Some(format!("{}/{}", imp.ns, imp.def)),
+        Calcit::Symbol { sym, info, .. } => Some(format!("{}/{}", info.at_ns, sym)),
+        _ => None,
+      };
+      if let Some(key) = alias_key
+        && let Some(target_expr) = value_imports.get(&key)
+      {
+        if !visited.insert(key.clone()) {
+          return DefrefClosureInit::NonStaticClosure(format!("cyclic static alias `{key}`"));
+        }
+        current = unwrap_assert_type(Some(target_expr));
+        continue;
+      }
+      return match node {
+        Calcit::Fn { .. } => DefrefClosureInit::NonStaticClosure(String::from("anonymous `fn` closure literal")),
+        Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
+          DefrefClosureInit::NonStaticClosure(String::from("local `defn` closure literal"))
+        }
+        _ => DefrefClosureInit::NotClosure,
+      };
+    }
+  }
+
+  let mut atom_initial_fn_targets: HashMap<String, String> = HashMap::new();
+  let mut atom_uninitialized_closures: HashMap<String, String> = HashMap::new();
+  for (idx, (atom_qualified, init_opt)) in defref_defs.iter().enumerate() {
+    match resolve_defref_closure_init(init_opt.as_ref(), &known_fns, &short_to_qualified, value_imports, &atom_names) {
+      DefrefClosureInit::ResolvedFn(q) => {
+        if let Some(&ptr) = ptr_by_qualified.get(&q) {
+          atom_initial_values[idx] = ptr as f64;
+          atom_initial_fn_targets.insert(atom_qualified.clone(), q);
+        } else {
+          atom_uninitialized_closures.insert(
+            atom_qualified.clone(),
+            format!("E_WASM_CLOSURE_SPECIALIZATION: defref `{atom_qualified}` references unallocated closure target `{q}`"),
+          );
+        }
+      }
+      DefrefClosureInit::NonStaticClosure(reason) => {
+        atom_uninitialized_closures.insert(
+          atom_qualified.clone(),
+          format!(
+            "E_WASM_CLOSURE_SPECIALIZATION: defref `{atom_qualified}` cannot statically initialize {reason}; initialize with a top-level `defn` or update via `reset!`"
+          ),
+        );
+      }
+      DefrefClosureInit::NotClosure => {}
     }
   }
 
   debug_assert_eq!(*heap_start % 8, 0);
-  singletons
+  StaticClosureBuildResult {
+    singletons,
+    atom_initial_fn_targets,
+    atom_uninitialized_closures,
+  }
 }
 
 /// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only

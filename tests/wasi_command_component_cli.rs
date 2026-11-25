@@ -1089,3 +1089,218 @@ fn wasi_command_runs_lifted_closures_composition_and_nested_recur_without_call_i
     assert_eq!(String::from_utf8_lossy(&run.stdout), "T:14:110:60:(&fn):true\n");
   }
 }
+
+#[test]
+fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
+  let dir = tempfile::tempdir().expect("create tempdir");
+  let snapshot = dir.path().join("calcit.cirru");
+  let out = dir.path().join("out");
+  fs::create_dir_all(&out).expect("create out dir");
+
+  fs::write(
+    &snapshot,
+    r#"{} (:package |closure-edges)
+  :about "|Closure edge cases: escaping callback identical?, recursive local HOF callback, qualified value call, defref alias & dependency rejection."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'closure-edges.main/main!) (:mode :native) (:reload-fn 'closure-edges.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'closure-edges.helper
+      %{} 'FileEntry
+        :defs $ {}
+          'inc1 $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn inc1 (x) (+ x 1)
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+          'cb $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ def cb $ fn (x) (+ x 10)
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+        :ns $ %{} 'NsEntry (:doc |)
+          :code $ quote $ ns closure-edges.helper
+    'closure-edges.other
+      %{} 'FileEntry
+        :defs $ {}
+          'cb $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn cb (x) (+ x 999)
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+        :ns $ %{} 'NsEntry (:doc |)
+          :code $ quote $ ns closure-edges.other
+    'closure-edges.main
+      %{} 'FileEntry
+        :defs $ {}
+          'saved-alias $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ def saved-alias helper/inc1
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+          '*alias-cb $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defref *alias-cb saved-alias
+            :examples $ []
+            :schema $ quote $ Ref $ Fn Number (-> Number)
+          'touch-other $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn touch-other (x) (other/cb x)
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+          'probe-id $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn probe-id (f)
+              and (= (f 5) 15) (identical? f f)
+            :examples $ []
+            :schema $ quote $ Fn (Fn Number (-> Number)) (-> Bool)
+          'main! $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn main! ()
+              let
+                  bias 10
+                  same? $ probe-id $ fn (x)
+                    hint-fn $ Fn Number (-> Number)
+                    + x bias
+                  countdown $ defn countdown (n)
+                    hint-fn $ Fn Number (-> Number)
+                    if (&<= n 0) 0 (countdown (- n 1))
+                  d1 $ countdown 3
+                  h1 $ &list:nth (map ([] 2 3) countdown) 1
+                  q1 $ helper/cb 5
+                  a1 $ @*alias-cb 41
+                println $ str same? |: d1 |: h1 |: q1 |: a1
+                , &unit
+            :examples $ []
+            :schema $ quote $ Fn (-> Unit) (:features :io)
+          'reload! $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn reload! () &unit
+            :examples $ []
+            :schema $ quote $ Fn (-> Unit)
+        :ns $ %{} 'NsEntry (:doc |)
+          :code $ quote $ ns closure-edges.main
+            :require
+              closure-edges.helper :as helper
+              closure-edges.other :as other
+"#,
+  )
+  .expect("write closure edges snapshot");
+
+  let compile = calcit(&[snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"], &out);
+  assert!(compile.status.success(), "{}", String::from_utf8_lossy(&compile.stderr));
+  if let Some(cli) = std::env::var_os("WASMTIME_CLI") {
+    let run = Command::new(cli)
+      .args([
+        "run",
+        "-S",
+        "p3",
+        "-W",
+        "component-model-more-async-builtins=y",
+        "-W",
+        "component-model-async-stackful=y",
+      ])
+      .arg(out.join("program.wasm"))
+      .output()
+      .expect("run WASI closure edge cases component");
+    assert_eq!(run.status.code(), Some(0), "{}", String::from_utf8_lossy(&run.stderr));
+    assert_eq!(String::from_utf8_lossy(&run.stdout), "true:0:0:15:42\n");
+  }
+
+  // Unsupported target initialized into defref must be rejected in WASI Component.
+  let bad_snapshot = dir.path().join("bad-defref.cirru");
+  let bad_out = dir.path().join("bad-out");
+  fs::create_dir_all(&bad_out).expect("create bad out");
+  fs::write(
+    &bad_snapshot,
+    r#"{} (:package |bad-defref)
+  :about "|Verify WASI Component rejects reachable defref initialized with an unsupported function."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'bad-defref.main/main!) (:mode :native) (:reload-fn 'bad-defref.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {}
+    'bad-defref.helper
+      %{} 'FileEntry
+        :defs $ {}
+          'bad-fn $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn bad-fn (x) (deref (ref x))
+            :examples $ []
+            :schema $ quote $ Fn Number (-> Number)
+        :ns $ %{} 'NsEntry (:doc |)
+          :code $ quote $ ns bad-defref.helper
+    'bad-defref.main
+      %{} 'FileEntry
+        :defs $ {}
+          '*bad-cb $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defref *bad-cb bad-defref.helper/bad-fn
+            :examples $ []
+            :schema $ quote $ Ref $ Fn Number (-> Number)
+          'main! $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn main! ()
+              let ((f @*bad-cb)) (println (f 1))
+              , &unit
+            :examples $ []
+            :schema $ quote $ Fn (-> Unit) (:features :io)
+          'reload! $ %{} 'CodeEntry (:doc |)
+            :code $ quote $ defn reload! () &unit
+            :examples $ []
+            :schema $ quote $ Fn (-> Unit)
+        :ns $ %{} 'NsEntry (:doc |)
+          :code $ quote $ ns bad-defref.main
+            :require
+              bad-defref.helper :refer $ bad-fn
+"#,
+  )
+  .expect("write bad defref snapshot");
+  let bad_compile = calcit(
+    &[bad_snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    &bad_out,
+  );
+  assert!(!bad_compile.status.success(), "defref to unsupported fn must fail");
+  let bad_stderr = String::from_utf8_lossy(&bad_compile.stderr);
+  assert!(
+    bad_stderr.contains("E_WASI_COMMAND_DEPENDENCY"),
+    "expected E_WASI_COMMAND_DEPENDENCY for bad defref target, got: {bad_stderr}"
+  );
+
+  // Anonymous closure literal in defref must fail cleanly rather than leaving 0.0.
+  let anon_snapshot = dir.path().join("anon-defref.cirru");
+  let anon_out = dir.path().join("anon-out");
+  fs::create_dir_all(&anon_out).expect("create anon out");
+  fs::write(
+    &anon_snapshot,
+    r#"{} (:package |anon-defref)
+  :about "|Verify anonymous closure in defref rejects cleanly instead of leaving null callable."
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'anon-defref.main/main!) (:mode :native) (:reload-fn 'anon-defref.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'anon-defref.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*anon-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *anon-cb (fn (x) (hint-fn $ Fn Number (-> Number)) x)
+          :examples $ []
+          :schema $ quote $ Ref $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let ((f @*anon-cb)) (println (f 1))
+            , &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit) (:features :io)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ quote $ Fn (-> Unit)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns anon-defref.main
+"#,
+  )
+  .expect("write anon defref snapshot");
+  let anon_compile = calcit(
+    &[anon_snapshot.to_str().expect("utf8 path"), "wasi", "--boundary", "component"],
+    &anon_out,
+  );
+  assert!(!anon_compile.status.success(), "anonymous closure in defref must fail");
+  let anon_stderr = String::from_utf8_lossy(&anon_compile.stderr);
+  assert!(
+    anon_stderr.contains("E_WASM_CLOSURE_SPECIALIZATION"),
+    "expected E_WASM_CLOSURE_SPECIALIZATION for anon defref, got: {anon_stderr}"
+  );
+}
