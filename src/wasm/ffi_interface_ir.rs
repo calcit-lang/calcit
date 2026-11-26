@@ -3530,4 +3530,62 @@ mod tests {
     );
     assert!(!FFI_INTERFACE_IR_SCHEMA.contains("\"const\": \"named\""));
   }
+
+  #[test]
+  fn nominal_impls_clauses_do_not_leak_as_fields_or_variants_in_ir_v4() {
+    let regex_ref = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Regex"), Arc::new(vec![])));
+    let status_ref = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("test.ffi/Status"), Arc::new(vec![])));
+    let report = export_snapshot(
+      &snapshot(vec![
+        (
+          "Regex",
+          data_entry("defstruct Regex (:handle FfiResource) (:impls RegexTrait ExtraTrait)"),
+        ),
+        ("Status", data_entry("defenum Status (:ok String) (:err String) (:impls ShowTrait)")),
+        (
+          "compile-regex",
+          function_entry(
+            vec![Arc::new(CalcitTypeAnnotation::String)],
+            regex_ref,
+            native_metadata("compile_regex"),
+          ),
+        ),
+        (
+          "check-status",
+          function_entry(
+            vec![status_ref],
+            Arc::new(CalcitTypeAnnotation::Bool),
+            native_metadata("check_status"),
+          ),
+        ),
+      ]),
+      None,
+    )
+    .expect("export nominal types carrying (:impls ...) clauses");
+
+    assert_eq!(report.summary.supported, 2);
+    assert_eq!(report.summary.unsupported, 0);
+    assert!(report.diagnostics.is_empty(), "unexpected diagnostics: {:?}", report.diagnostics);
+    assert!(report.interface.declarations.iter().any(|decl| matches!(
+      decl,
+      FfiTypeDeclarationIr::Struct { id, fields, .. }
+        if id == "test.ffi/Regex"
+          && matches!(
+            fields.as_slice(),
+            [FfiStructFieldIr { name, type_ir: FfiTypeIr::FfiResource }] if name == "handle"
+          )
+    )));
+    assert!(report.interface.declarations.iter().any(|decl| matches!(
+      decl,
+      FfiTypeDeclarationIr::Enum { id, variants, .. }
+        if id == "test.ffi/Status"
+          && matches!(
+            variants.as_slice(),
+            [
+              FfiEnumVariantIr { name: t0, payload: p0 },
+              FfiEnumVariantIr { name: t1, payload: p1 },
+            ] if t0 == "err" && p0.len() == 1 && t1 == "ok" && p1.len() == 1
+          )
+    )));
+  }
 }

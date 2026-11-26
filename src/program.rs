@@ -232,38 +232,42 @@ pub static PROGRAM_CODE_DATA: LazyLock<ProgramCodeLock> = LazyLock::new(ProgramC
 /// `impl-traits` decoration across source loading and preprocessing.
 static NON_COHERENT_NOMINAL_STATE: LazyLock<RwLock<(u64, HashSet<String>)>> = LazyLock::new(|| RwLock::new((u64::MAX, HashSet::new())));
 
-fn ensure_non_coherent_nominal_state() {
-  let current_gen = PROGRAM_CODE_DATA.generation();
-  if NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").0 == current_gen {
-    return;
-  }
+fn with_synced_non_coherent_nominal_state_read<R>(reader: impl FnOnce(&HashSet<String>) -> R) -> R {
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
   let gen_while_locked = PROGRAM_CODE_DATA.generation();
+  {
+    let state = NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs");
+    if state.0 == gen_while_locked {
+      return reader(&state.1);
+    }
+  }
   let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
   let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
-  if state.0 != gen_while_locked {
+  // Keep `source` read lock held across installation and consumption so no writer
+  // can advance `PROGRAM_CODE_DATA` generation or publish a stale snapshot.
+  if state.0 == u64::MAX || state.0 < gen_while_locked {
     *state = (gen_while_locked, collected);
   }
+  reader(&state.1)
 }
 
 pub(crate) fn is_non_coherent_nominal_def(def_ref: &str) -> bool {
-  ensure_non_coherent_nominal_state();
-  NON_COHERENT_NOMINAL_STATE
-    .read()
-    .expect("read non-coherent nominal defs")
-    .1
-    .contains(def_ref)
+  with_synced_non_coherent_nominal_state_read(|defs| defs.contains(def_ref))
 }
 
 pub(crate) fn record_non_coherent_nominal_def(def_ref: &str) {
-  ensure_non_coherent_nominal_state();
+  let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  let gen_while_locked = PROGRAM_CODE_DATA.generation();
   let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
+  if state.0 == u64::MAX || state.0 < gen_while_locked {
+    let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
+    *state = (gen_while_locked, collected);
+  }
   state.1.insert(def_ref.to_owned());
 }
 
 pub(crate) fn snapshot_non_coherent_nominal_defs() -> HashSet<String> {
-  ensure_non_coherent_nominal_state();
-  NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").1.clone()
+  with_synced_non_coherent_nominal_state_read(|defs| defs.clone())
 }
 
 /// The lock around [`ProgramCodeData`]. Every write access bumps a generation
@@ -323,6 +327,7 @@ pub(crate) struct ProgramTestStateGuard {
   runtime_data: ProgramRuntimeData,
   compiled_data: ProgramCompiledData,
   code_data: ProgramCodeData,
+  non_coherent_nominal_state: Option<HashSet<String>>,
   def_id_index: ProgramDefIdIndex,
   feature_policy: HashMap<String, snapshot::FeaturePolicy>,
   target: Option<snapshot::SnapshotTarget>,
@@ -334,7 +339,16 @@ impl Drop for ProgramTestStateGuard {
     invalidate_field_write_shapes();
     *PROGRAM_RUNTIME_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.runtime_data);
     *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.compiled_data);
-    *PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.code_data);
+    {
+      let mut code_guard = PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner());
+      *code_guard = std::mem::take(&mut self.code_data);
+      let restored_gen = PROGRAM_CODE_DATA.generation();
+      let restored_non_coherent = self.non_coherent_nominal_state.take();
+      *NON_COHERENT_NOMINAL_STATE.write().unwrap_or_else(|error| error.into_inner()) = match restored_non_coherent {
+        Some(defs) => (restored_gen, defs),
+        None => (u64::MAX, HashSet::new()),
+      };
+    }
     {
       // Preprocessed code embeds def ids. A value built while this guard was
       // held can outlive it, so a rolled-back id must never name another def.
@@ -351,6 +365,14 @@ impl Drop for ProgramTestStateGuard {
 #[cfg(test)]
 pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
   let lock = PROGRAM_TEST_STATE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+  let code_guard = PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner());
+  let code_gen = PROGRAM_CODE_DATA.generation();
+  let code_data = code_guard.clone();
+  let non_coherent_nominal_state = {
+    let cache = NON_COHERENT_NOMINAL_STATE.read().unwrap_or_else(|error| error.into_inner());
+    (cache.0 == code_gen).then(|| cache.1.clone())
+  };
+  drop(code_guard);
   ProgramTestStateGuard {
     _lock: lock,
     runtime_data: PROGRAM_RUNTIME_DATA_STATE.read().unwrap_or_else(|error| error.into_inner()).clone(),
@@ -358,7 +380,8 @@ pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
       .read()
       .unwrap_or_else(|error| error.into_inner())
       .clone(),
-    code_data: PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    code_data,
+    non_coherent_nominal_state,
     def_id_index: PROGRAM_DEF_ID_INDEX.read().unwrap_or_else(|error| error.into_inner()).clone(),
     feature_policy: ACTIVE_FEATURE_POLICY.read().unwrap_or_else(|error| error.into_inner()).clone(),
     target: *ACTIVE_TARGET.read().unwrap_or_else(|error| error.into_inner()),

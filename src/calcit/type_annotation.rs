@@ -8300,6 +8300,10 @@ pub(crate) fn dedup_generic_names(generics: &mut Vec<Arc<str>>) {
   generics.retain(|name| seen.insert(name.clone()));
 }
 
+fn is_impls_clause(items: &CalcitList) -> bool {
+  matches!(items.first(), Some(Calcit::Tag(tag)) if tag.ref_str() == "impls")
+}
+
 fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
   let forms = normalized_data_definition_forms(items);
   let name_form = forms.get(1)?;
@@ -8318,6 +8322,9 @@ fn parse_defstruct_code(items: &CalcitList) -> Option<CalcitStructDef> {
     // Source fields are `(:field type default?)`; macro-expanded ones carry a
     // leading `[]` head: `([] :field type default?)`.
     let offset = usize::from(pair.first().is_some_and(is_list_literal_head));
+    if offset == 0 && is_impls_clause(pair) {
+      continue;
+    }
     let (field_name_form, field_type_form, default_form) = match pair.len() - offset {
       2 => (pair.get(offset)?, pair.get(offset + 1)?, None),
       3 => (pair.get(offset)?, pair.get(offset + 1)?, pair.get(offset + 2)),
@@ -8373,6 +8380,9 @@ fn parse_defenum_code(items: &CalcitList) -> Option<CalcitEnumDef> {
     let Calcit::List(variant) = item else {
       return None;
     };
+    if is_impls_clause(variant) {
+      continue;
+    }
     let tag_form = variant.first()?;
     let tag = parse_type_name(tag_form)?;
     let payloads: Vec<Calcit> = variant.iter().skip(1).map(|v| v.to_owned()).collect();

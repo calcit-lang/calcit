@@ -7629,6 +7629,7 @@ mod tests {
 
   #[test]
   fn pending_imported_nominal_definition_is_not_marked_complete() {
+    let _program_state = crate::program::lock_program_test_state();
     let widget_def = Arc::new(CalcitStructDef::from_fields(EdnTag::from("PendingWidget"), vec![EdnTag::from("n")]));
     let import_expr = Calcit::Import(CalcitImport {
       ns: Arc::from("tests.pending-nominal"),
@@ -7683,6 +7684,7 @@ mod tests {
 
   #[test]
   fn core_let_preserves_incompleteness_for_divergent_struct_def_if_join() {
+    let _program_state = crate::program::lock_program_test_state();
     let parent_trait = Arc::new(
       CalcitTrait::new(
         EdnTag::from("Parent"),
@@ -7764,6 +7766,7 @@ mod tests {
 
   #[test]
   fn scoped_enum_def_symbol_resolves_struct_prototype_and_preserves_completeness() {
+    let _program_state = crate::program::lock_program_test_state();
     let mut choice_schema = CalcitStructDef::from_fields(EdnTag::from("Choice"), vec![EdnTag::from("item")]);
     choice_schema.definition_ref = Some(Arc::from("tests.shadow-enum/Choice"));
     let scoped_enum = Arc::new(

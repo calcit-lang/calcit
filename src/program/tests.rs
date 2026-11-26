@@ -2880,6 +2880,7 @@ fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
 
 #[test]
 fn impl_attach_scan_under_program_write_lock_handles_typeref_fn_schemas_without_deadlock() {
+  let _guard = lock_program_test_state();
   // Reproduces the `apply_code_changes` / `extract_program_data` lock order where
   // `PROGRAM_CODE_DATA.write()` is held across `stage_source_impls` while a definition
   // carries a `TypeRef` schema (value schema or `deftype` fn-schema alias).
