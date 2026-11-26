@@ -25,7 +25,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::calcit::{self, Calcit, CalcitImport, CalcitList, CalcitProc, CalcitSyntax, CalcitTypeAnnotation};
+use crate::calcit::{self, Calcit, CalcitFnTypeAnnotation, CalcitImport, CalcitList, CalcitProc, CalcitSyntax, CalcitTypeAnnotation};
 
 use super::{ImportRule, ProgramCodeData, ProgramFileData};
 
@@ -85,6 +85,77 @@ fn resolve_in(program: &ProgramCodeData, ns: &str, file: &ProgramFileData, name:
       .is_some_and(|core| core.defs.contains_key(name))
       .then(|| (Arc::from(calcit::CORE_NS), Arc::from(name))),
   }
+}
+
+/// Resolve `annotation` to a callable `Fn` signature using only `program`,
+/// avoiding global `PROGRAM_CODE_DATA` read locks when callers already hold write locks.
+fn resolve_fn_annotation_in_program<'a>(
+  program: &'a ProgramCodeData,
+  ns: &str,
+  file: &'a ProgramFileData,
+  annotation: &CalcitTypeAnnotation,
+) -> Option<(Arc<str>, &'a ProgramFileData, Arc<CalcitFnTypeAnnotation>)> {
+  const MAX_DEPTH: usize = 32;
+
+  fn resolve<'a>(
+    program: &'a ProgramCodeData,
+    ns: Arc<str>,
+    file: &'a ProgramFileData,
+    annotation: &CalcitTypeAnnotation,
+    visited: &mut HashSet<DefKey>,
+    depth: usize,
+  ) -> Option<(Arc<str>, &'a ProgramFileData, Arc<CalcitFnTypeAnnotation>)> {
+    if depth >= MAX_DEPTH {
+      return None;
+    }
+    match annotation {
+      CalcitTypeAnnotation::Fn(fn_annot) => Some((ns, file, fn_annot.clone())),
+      CalcitTypeAnnotation::Nullable(inner, calcit::NullableOrigin::Inferred) => resolve(program, ns, file, inner, visited, depth + 1),
+      CalcitTypeAnnotation::TypeRef(name, args) => {
+        let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+        let target_key = resolve_in(program, &ns, file, stripped)?;
+        if !visited.insert(target_key.clone()) {
+          return None;
+        }
+        let target_file = program.get(&target_key.0)?;
+        let entry = target_file.defs.get(&target_key.1)?;
+        let result = if let Some(alias) = calcit::type_alias_from_code(&entry.code) {
+          let expanded = alias.expand_unqualified(args);
+          resolve(program, target_key.0.clone(), target_file, &expanded, visited, depth + 1)
+        } else if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+          let (resolved_ns, resolved_file, signature) =
+            resolve(program, target_key.0.clone(), target_file, &entry.schema, visited, depth + 1)?;
+          if args.is_empty() {
+            Some((resolved_ns, resolved_file, signature))
+          } else if signature.generics.len() == args.len() {
+            let bindings: calcit::TypeBindings = signature.generics.iter().cloned().zip(args.iter().cloned()).collect();
+            let specialized = CalcitTypeAnnotation::Fn(signature).substitute_type_vars(&bindings);
+            match specialized.as_ref() {
+              CalcitTypeAnnotation::Fn(specialized) => {
+                let mut specialized = specialized.as_ref().clone();
+                specialized.generics = Arc::new(vec![]);
+                specialized.where_bounds = Arc::new(vec![]);
+                Some((resolved_ns, resolved_file, Arc::new(specialized)))
+              }
+              _ => None,
+            }
+          } else {
+            None
+          }
+        } else {
+          None
+        };
+        visited.remove(&target_key);
+        result
+      }
+      CalcitTypeAnnotation::TypeSlot(name) => {
+        calcit::resolve_type_slot(name).and_then(|bound| resolve(program, ns, file, &bound, visited, depth + 1))
+      }
+      _ => None,
+    }
+  }
+
+  resolve(program, Arc::from(ns), file, annotation, &mut HashSet::new(), 0)
 }
 
 /// The `defstruct`/`defenum` form of a definition: the code itself, or the
@@ -564,9 +635,11 @@ fn bind_fn_param_nominals(
         local_bindings.insert(param.clone(), vec![key]);
       }
     }
-  } else if let Some(fn_ann) = schema.and_then(|ann| ann.resolve_to_fn()) {
+  } else if let Some((resolved_ns, resolved_file, fn_ann)) =
+    schema.and_then(|ann| resolve_fn_annotation_in_program(scan.program, scan.ns, scan.file, ann))
+  {
     for (param, arg_ty) in param_names.iter().zip(fn_ann.arg_types.iter()) {
-      if let Some(key) = nominal_key_from_annotation(scan.program, scan.ns, scan.file, arg_ty.as_ref(), scan.written) {
+      if let Some(key) = nominal_key_from_annotation(scan.program, &resolved_ns, resolved_file, arg_ty.as_ref(), scan.written) {
         local_bindings.insert(param.clone(), vec![key]);
       }
     }
@@ -658,9 +731,10 @@ fn resolve_call_return_nominal_targets(
       file: target_file,
       written: scan.written,
     };
-    if let Some(fn_ann) = entry.schema.resolve_to_fn()
+    if let Some((resolved_ns, resolved_file, fn_ann)) =
+      resolve_fn_annotation_in_program(scan.program, &callee_key.0, target_file, &entry.schema)
       && let Some(key) =
-        nominal_key_from_annotation(scan.program, &callee_key.0, target_file, fn_ann.return_type.as_ref(), scan.written)
+        nominal_key_from_annotation(scan.program, &resolved_ns, resolved_file, fn_ann.return_type.as_ref(), scan.written)
     {
       return Some(vec![key]);
     }
