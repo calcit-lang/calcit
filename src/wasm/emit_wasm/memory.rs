@@ -2996,7 +2996,7 @@ pub(super) fn build_rt_relocate_scratch_refs_fn(
         Instruction::I32GtU,
         Instruction::I32Or,
         Instruction::If(BlockType::Empty),
-        Instruction::Br(2),
+        Instruction::Unreachable,
         Instruction::End,
         Instruction::I32Const(desc_table_base),
         Instruction::LocalGet(packed),

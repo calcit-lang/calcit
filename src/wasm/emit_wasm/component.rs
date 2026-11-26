@@ -1525,6 +1525,13 @@ pub(super) fn build_component_struct_lift_fn(
         instructions.extend([
           Instruction::LocalGet(source_addr),
           Instruction::I32Load8U(mem_arg_byte(0)),
+          Instruction::LocalTee(niche_val),
+          Instruction::I32Const(1),
+          Instruction::I32GtU,
+          Instruction::If(BlockType::Empty),
+          Instruction::Unreachable,
+          Instruction::End,
+          Instruction::LocalGet(niche_val),
           Instruction::I32Eqz,
           Instruction::If(BlockType::Empty),
           Instruction::LocalGet(struct_ptr),

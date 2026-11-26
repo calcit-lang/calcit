@@ -4343,12 +4343,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 2,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: memory_layout.clone(),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -4587,12 +4584,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 1,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout,
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
