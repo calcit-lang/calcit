@@ -3,7 +3,7 @@
   :migrations $ []
     {} (:family |methods) (:issue |#2950)
       :reason "|&list:includes?_compares_elements_with_=,_so_element_type_T_must_satisfy_Eq"
-      :version |0.48.0
+      :version |0.46.0
       :after $ {}
         :failure "|判断元素，不判断位置"
         :name |.includes?
@@ -27,7 +27,7 @@
           :generics $ [] 'T
     {} (:family |definitions) (:issue |#2942)
       :reason "|distinct-values_deduplicates_Map_values_using_a_Set,_so_value_type_V_must_satisfy_Eq_and_Hash"
-      :version |0.47.0
+      :version |0.46.0
       :after $ {} (:declaration nil)
         :failure "|返回去重_Set，不承诺顺序，不保留重复值"
         :name 'calcit.core/distinct-values
@@ -47,7 +47,7 @@
           :return $ :: 'Set 'V
     {} (:family |methods) (:issue |#2942)
       :reason "|distinct-values_deduplicates_Map_values_using_a_Set,_so_value_type_V_must_satisfy_Eq_and_Hash"
-      :version |0.47.0
+      :version |0.46.0
       :after $ {}
         :failure "|返回去重_Set_Number，不保留重复值"
         :name |.distinct-values
