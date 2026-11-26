@@ -14857,11 +14857,25 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     propagate_scope_widening(ctx.scope_types, &true_scope_types, &narrowing.when_true, None);
   }
 
+  let preserve_condition = |cond_form: Calcit, branch: Calcit| {
+    if in_case_body_verification() || matches!(cond_form, Calcit::Bool(_)) {
+      branch
+    } else {
+      // Preserve runtime evaluation and failure behavior of non-literal conditions
+      // when pruning an unreachable branch outside `:cases` verification (#2944).
+      generated_call(vec![
+        Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(head_ns)),
+        Calcit::from(CalcitList::default()),
+        cond_form,
+        branch,
+      ])
+    }
+  };
   if prune_false {
-    return Ok(true_form.expect("live true branch was preprocessed"));
+    return Ok(preserve_condition(cond_form, true_form.expect("live true branch was preprocessed")));
   }
   if prune_true {
-    return Ok(false_form.unwrap_or(Calcit::Unit));
+    return Ok(preserve_condition(cond_form, false_form.unwrap_or(Calcit::Unit)));
   }
 
   let true_form = true_form.expect("live true branch was preprocessed");
@@ -31894,7 +31908,8 @@ mod tests {
       Ok(out)
     };
 
-    // Stale `list?` branch on a known Map is pruned, leaving only the `map?` branch.
+    // Stale `list?` branch on a known Map is pruned while keeping the condition evaluated
+    // via `CoreLet`, leaving only the `map?` branch as the result expression.
     let pruned = run_if(
       core_pred(CalcitProc::ListQuestion, x_local.clone()),
       list_nth_x.clone(),
@@ -31906,9 +31921,13 @@ mod tests {
       .expect("inner map? check succeeds"),
     )
     .expect("unreachable list? branch on known Map must be pruned");
+    let Calcit::List(let_items) = &pruned else {
+      panic!("expected CoreLet sequencing condition before reachable branch, got: {pruned:?}");
+    };
     assert!(
-      matches!(&pruned, Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeMapContains)))),
-      "expected pruned result to collapse to reachable map branch, got: {pruned:?}"
+      matches!(let_items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)))
+        && matches!(let_items.get(3), Some(Calcit::List(tail)) if matches!(tail.first(), Some(Calcit::Proc(CalcitProc::NativeMapContains)))),
+      "expected pruned result to sequence condition and reachable map branch, got: {pruned:?}"
     );
 
     // A type error in the reachable branch is still diagnosed.

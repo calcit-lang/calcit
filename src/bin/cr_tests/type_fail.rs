@@ -9245,6 +9245,24 @@ defn main! ()
     drop(_non_strict);
     assert_eq!(eval_res, Calcit::Unit);
 
+    // Pruning an impossible branch must still evaluate a non-literal condition so runtime
+    // errors in the condition itself are preserved.
+    let failing_cond_app = r#"
+ns app.main
+defn open-map ()
+  hint-fn $ Fn (-> Dynamic)
+  {} (:a 1)
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  if (let ((_ (&list:nth (open-map) 0))) true) :reached :never
+  , &unit
+"#;
+    let _non_strict = StrictTypesReset::disabled();
+    let failing_cond_entries = load_snippet_entries(failing_cond_app);
+    calcit::run_program(failing_cond_entries.init_ns, failing_cond_entries.init_def, &[])
+      .expect_err("pruned branch must preserve runtime failure inside condition");
+    drop(_non_strict);
+
     let reachable_error_app = r#"
 ns app.main
 defn main! ()
