@@ -184,11 +184,15 @@ fn impl_reference(code: &Calcit, impl_ns: &str, impl_def: &str, type_ns: &str) -
 }
 
 /// The `defimpl` of `type_key` for `trait_key`, looked up only in the
-/// namespaces of the type and of the trait.
+/// namespaces of the type, the trait reference, and the trait's resolved origin.
 fn find_impl(program: &ProgramCodeData, type_key: &DefKey, trait_key: &DefKey) -> Vec<DefKey> {
+  let trait_origin = resolve_trait_origin(program, trait_key);
   let mut namespaces = vec![&type_key.0];
   if trait_key.0 != type_key.0 {
     namespaces.push(&trait_key.0);
+  }
+  if trait_origin.0 != type_key.0 && trait_origin.0 != trait_key.0 {
+    namespaces.push(&trait_origin.0);
   }
   let mut found = vec![];
   for ns in namespaces {
@@ -200,13 +204,47 @@ fn find_impl(program: &ProgramCodeData, type_key: &DefKey, trait_key: &DefKey) -
         continue;
       };
       if resolve_in(program, ns, file, type_name).as_ref() == Some(type_key)
-        && resolve_in(program, ns, file, trait_name).as_ref() == Some(trait_key)
+        && resolve_in(program, ns, file, trait_name)
+          .map(|key| resolve_trait_origin(program, &key))
+          .as_ref()
+          == Some(&trait_origin)
       {
         found.push((ns.to_owned(), def.to_owned()));
       }
     }
   }
   found
+}
+
+fn peel_trait_alias_target_form(code: &Calcit) -> Option<&Calcit> {
+  let mut current = code;
+  loop {
+    match current {
+      Calcit::Thunk(thunk) => current = thunk.get_code(),
+      Calcit::List(items)
+        if items.len() == 2
+          && (matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+            || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote")
+            || matches!(
+              items.first(),
+              Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "quote"
+            )) =>
+      {
+        current = items.get(1)?;
+      }
+      Calcit::List(items)
+        if items.len() == 3
+          && (items.first().and_then(symbol_name) == Some("def")
+            || matches!(
+              items.first(),
+              Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "def"
+            )) =>
+      {
+        return items.get(2);
+      }
+      other => return Some(other),
+    }
+  }
 }
 
 /// Follow simple top-level alias definitions (`def Alias Target`) to the underlying nominal trait key.
@@ -216,11 +254,9 @@ fn resolve_trait_origin(program: &ProgramCodeData, start: &DefKey) -> DefKey {
   while let Some(file) = program.get(&current.0)
     && let Some(entry) = file.defs.get(&current.1)
   {
-    let target_form = match &entry.code {
-      Calcit::List(items) if items.len() == 3 && items.first().and_then(symbol_name) == Some("def") => items.get(2),
-      other => Some(other),
+    let Some(target) = peel_trait_alias_target_form(&entry.code) else {
+      break;
     };
-    let Some(target) = target_form else { break };
     let next = match target {
       Calcit::Symbol { sym, .. } => resolve_in(program, &current.0, file, sym.as_ref()),
       Calcit::Import(import) => Some((import.ns.clone(), import.def.clone())),
@@ -234,6 +270,13 @@ fn resolve_trait_origin(program: &ProgramCodeData, start: &DefKey) -> DefKey {
     current = next_key;
   }
   current
+}
+
+/// Resolve a trait `(ns, def)` through any top-level `def Alias Target` chain
+/// against the live program code table.
+pub(crate) fn resolve_trait_origin_in_program(ns: &str, def: &str) -> DefKey {
+  let program = super::PROGRAM_CODE_DATA.read().expect("read program code");
+  resolve_trait_origin(&program, &(Arc::from(ns), Arc::from(def)))
 }
 
 /// Follow simple top-level alias definitions (`def Alias Target`) to the underlying nominal definition key.
@@ -742,6 +785,24 @@ fn expr_nominal_targets_inner(
         }
         return out;
       }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _)) || is_core_symbol_or_import(program, ns, file, head, "match") {
+        let mut out = Vec::new();
+        for branch in items.iter().skip(2) {
+          if let Calcit::List(pair) = branch
+            && pair.len() == 2
+            && let Some(body) = pair.get(1)
+          {
+            let mut scoped = local_bindings.clone();
+            if let Some(pattern) = pair.first() {
+              for name in match_pattern_bound_names(pattern) {
+                scoped.insert(name, Vec::new());
+              }
+            }
+            push_unique_keys(&mut out, expr_nominal_targets_inner(scan, body, &scoped, cache));
+          }
+        }
+        return out;
+      }
       if is_core_symbol_or_import(program, ns, file, head, "do") {
         return items
           .iter()
@@ -816,6 +877,26 @@ fn expr_nominal_targets_inner(
   }
 }
 
+fn match_pattern_bound_names(pattern: &Calcit) -> Vec<Arc<str>> {
+  let Calcit::List(items) = pattern else {
+    return Vec::new();
+  };
+  let is_quote = matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+    || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote");
+  if is_quote {
+    return Vec::new();
+  }
+  items
+    .iter()
+    .skip(1)
+    .filter_map(|item| match item {
+      Calcit::Symbol { sym, .. } if sym.as_ref() != "_" => Some(sym.clone()),
+      Calcit::Local(local) if local.sym.as_ref() != "_" => Some(local.sym.clone()),
+      _ => None,
+    })
+    .collect()
+}
+
 fn expr_param_sources(
   scan: NonCoherentScanCtx<'_>,
   expr: &Calcit,
@@ -838,6 +919,26 @@ fn expr_param_sources(
         let mut out = HashSet::new();
         for branch in [items.get(2), items.get(3)].into_iter().flatten() {
           out.extend(expr_param_sources(scan, branch, var_to_params));
+        }
+        return out;
+      }
+      if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _))
+        || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "match")
+      {
+        let mut out = HashSet::new();
+        for branch in items.iter().skip(2) {
+          if let Calcit::List(pair) = branch
+            && pair.len() == 2
+            && let Some(body) = pair.get(1)
+          {
+            let mut scoped = var_to_params.clone();
+            if let Some(pattern) = pair.first() {
+              for name in match_pattern_bound_names(pattern) {
+                scoped.insert(name, HashSet::new());
+              }
+            }
+            out.extend(expr_param_sources(scan, body, &scoped));
+          }
         }
         return out;
       }
@@ -1044,6 +1145,31 @@ fn collect_expr_param_sinks(
     }
     return;
   }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "match")
+  {
+    if let Some(scrutinee) = items.get(1) {
+      collect_expr_param_sinks(scan, scrutinee, var_to_params, fn_sinks, local_fn_sinks, out);
+    }
+    for branch in items.iter().skip(2) {
+      if let Calcit::List(pair) = branch
+        && pair.len() == 2
+        && let Some(body) = pair.get(1)
+      {
+        let mut scoped_vars = var_to_params.clone();
+        let mut scoped_fns = local_fn_sinks.clone();
+        if let Some(pattern) = pair.first() {
+          for name in match_pattern_bound_names(pattern) {
+            scoped_vars.insert(name.clone(), HashSet::new());
+            scoped_fns.insert(name, HashSet::new());
+          }
+        }
+        collect_expr_param_sinks(scan, body, &scoped_vars, fn_sinks, &scoped_fns, out);
+      } else {
+        collect_expr_param_sinks(scan, branch, var_to_params, fn_sinks, local_fn_sinks, out);
+      }
+    }
+    return;
+  }
   for item in items.iter() {
     collect_expr_param_sinks(scan, item, var_to_params, fn_sinks, local_fn_sinks, out);
   }
@@ -1211,6 +1337,31 @@ fn walk_expr_for_non_coherent(
     bind_fn_param_nominals(scan, params, None, &body, &mut scoped);
     for item in &body {
       walk_expr_for_non_coherent(scan, item, &scoped, &scoped_fns, None, state);
+    }
+    return;
+  }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "match")
+  {
+    if let Some(scrutinee) = items.get(1) {
+      walk_expr_for_non_coherent(scan, scrutinee, local_bindings, local_fn_sinks, None, state);
+    }
+    for branch in items.iter().skip(2) {
+      if let Calcit::List(pair) = branch
+        && pair.len() == 2
+        && let Some(body) = pair.get(1)
+      {
+        let mut scoped = local_bindings.clone();
+        let mut scoped_fns = local_fn_sinks.clone();
+        if let Some(pattern) = pair.first() {
+          for name in match_pattern_bound_names(pattern) {
+            scoped.insert(name.clone(), Vec::new());
+            scoped_fns.insert(name, HashSet::new());
+          }
+        }
+        walk_expr_for_non_coherent(scan, body, &scoped, &scoped_fns, None, state);
+      } else {
+        walk_expr_for_non_coherent(scan, branch, local_bindings, local_fn_sinks, None, state);
+      }
     }
     return;
   }

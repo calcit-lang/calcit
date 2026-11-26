@@ -10,16 +10,6 @@
   :files $ {}
     'test-traits.dyn $ %{} 'FileEntry
       :defs $ {}
-        'BaseAlert $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait BaseAlert
-            .kind $ Fn Self (-> String)
-          :examples $ []
-          :schema $ quote Trait
-        'AlertPlugin $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait AlertPlugin (requires BaseAlert)
-            .alert $ Fn Self Number (-> String)
-          :examples $ []
-          :schema $ quote Trait
         'Alert01 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Alert01 (:msg String) (:impls BaseAlert AlertPlugin calcit.core/Show)
           :examples $ []
@@ -27,22 +17,23 @@
         'Alert01Base $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert01 BaseAlert
             .kind $ fn (s)
-              hint-fn $ Fn Alert01 (-> String)
+              hint-fn $ Fn Alert01 $ -> String
               , |base-01
           :examples $ []
           :schema $ quote Impl
         'Alert01Impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert01 AlertPlugin
             .alert $ fn (s n)
-              hint-fn $ Fn Alert01 Number (-> String)
-              &str:concat (:msg s) (&str:concat |: (to-string n))
+              hint-fn $ Fn Alert01 Number $ -> String
+              &str:concat (:msg s)
+                &str:concat |: $ to-string n
           :examples $ []
           :schema $ quote Impl
         'Alert01Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert01 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert01 (-> String)
-              &str:concat |S1: (:msg s)
+              hint-fn $ Fn Alert01 $ -> String
+              &str:concat |S1: $ :msg s
           :examples $ []
           :schema $ quote Impl
         'Alert02 $ %{} 'CodeEntry (:doc |)
@@ -52,22 +43,22 @@
         'Alert02Base $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert02 BaseAlert
             .kind $ fn (s)
-              hint-fn $ Fn Alert02 (-> String)
+              hint-fn $ Fn Alert02 $ -> String
               , |base-02
           :examples $ []
           :schema $ quote Impl
         'Alert02Impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert02 AlertPlugin
             .alert $ fn (s n)
-              hint-fn $ Fn Alert02 Number (-> String)
-              to-string (&+ (:code s) n)
+              hint-fn $ Fn Alert02 Number $ -> String
+              to-string $ &+ (:code s) n
           :examples $ []
           :schema $ quote Impl
         'Alert02Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert02 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert02 (-> String)
-              &str:concat |S2: (to-string (:code s))
+              hint-fn $ Fn Alert02 $ -> String
+              &str:concat |S2: $ to-string $ :code s
           :examples $ []
           :schema $ quote Impl
         'Alert03 $ %{} 'CodeEntry (:doc |)
@@ -77,7 +68,7 @@
         'Alert03Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert03 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert03 (-> String)
+              hint-fn $ Fn Alert03 $ -> String
               if (:flag s) |S3:on |S3:off
           :examples $ []
           :schema $ quote Impl
@@ -88,8 +79,8 @@
         'Alert04Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert04 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert04 (-> String)
-              &str:concat |S4: (to-string (:v s))
+              hint-fn $ Fn Alert04 $ -> String
+              &str:concat |S4: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert05 $ %{} 'CodeEntry (:doc |)
@@ -99,8 +90,8 @@
         'Alert05Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert05 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert05 (-> String)
-              &str:concat |S5: (to-string (:v s))
+              hint-fn $ Fn Alert05 $ -> String
+              &str:concat |S5: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert06 $ %{} 'CodeEntry (:doc |)
@@ -110,8 +101,8 @@
         'Alert06Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert06 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert06 (-> String)
-              &str:concat |S6: (to-string (:v s))
+              hint-fn $ Fn Alert06 $ -> String
+              &str:concat |S6: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert07 $ %{} 'CodeEntry (:doc |)
@@ -121,8 +112,8 @@
         'Alert07Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert07 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert07 (-> String)
-              &str:concat |S7: (to-string (:v s))
+              hint-fn $ Fn Alert07 $ -> String
+              &str:concat |S7: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert08 $ %{} 'CodeEntry (:doc |)
@@ -132,8 +123,8 @@
         'Alert08Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert08 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert08 (-> String)
-              &str:concat |S8: (to-string (:v s))
+              hint-fn $ Fn Alert08 $ -> String
+              &str:concat |S8: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert09 $ %{} 'CodeEntry (:doc |)
@@ -143,8 +134,8 @@
         'Alert09Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert09 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert09 (-> String)
-              &str:concat |S9: (to-string (:v s))
+              hint-fn $ Fn Alert09 $ -> String
+              &str:concat |S9: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
         'Alert10 $ %{} 'CodeEntry (:doc |)
@@ -154,15 +145,20 @@
         'Alert10Show $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Alert10 calcit.core/Show
             .show $ fn (s)
-              hint-fn $ Fn Alert10 (-> String)
-              &str:concat |S10: (to-string (:v s))
+              hint-fn $ Fn Alert10 $ -> String
+              &str:concat |S10: $ to-string $ :v s
           :examples $ []
           :schema $ quote Impl
-        'read-base-kind $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn read-base-kind (x)
-            .kind x
+        'AlertPlugin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AlertPlugin (requires BaseAlert)
+            .alert $ Fn Self Number $ -> String
           :examples $ []
-          :schema $ quote $ Fn T (-> String) (:generics T) (:where $ T test-traits.dyn/BaseAlert)
+          :schema $ quote Trait
+        'BaseAlert $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait BaseAlert
+            .kind $ Fn Self $ -> String
+          :examples $ []
+          :schema $ quote Trait
         'dyn-plugin-suite $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dyn-plugin-suite ()
             let
@@ -178,28 +174,41 @@
                     dyn:box (Alert08 :v 8) calcit.core/Show
                     dyn:box (Alert09 :v 9) calcit.core/Show
                     dyn:box (Alert10 :v 10) calcit.core/Show
-                  List (Dyn calcit.core/Show)
+                  List $ Dyn calcit.core/Show
                 rendered $ map shows $ fn (item) (.show item)
                 plugins $ assert-type
                   {}
                     :first $ dyn:box (Alert01 :msg |warn) AlertPlugin
                     :second $ dyn:box (Alert02 :code 30) AlertPlugin
-                  Map Tag (Dyn AlertPlugin)
-                first-plugin $ .unwrap-or (.get plugins :first) (dyn:box (Alert01 :msg |fallback) AlertPlugin)
-                second-plugin $ .unwrap-or (.get plugins :second) (dyn:box (Alert01 :msg |fallback) AlertPlugin)
-              assert= ([] |S1:hi |S2:2 |S3:on |S4:4 |S5:5 |S6:6 |S7:7 |S8:8 |S9:9 |S10:10) rendered
+                  Map Tag $ Dyn AlertPlugin
+                first-plugin $ .unwrap-or (.get plugins :first)
+                  dyn:box (Alert01 :msg |fallback) AlertPlugin
+                second-plugin $ .unwrap-or (.get plugins :second)
+                  dyn:box (Alert01 :msg |fallback) AlertPlugin
+              assert=
+                [] |S1:hi |S2:2 |S3:on |S4:4 |S5:5 |S6:6 |S7:7 |S8:8 |S9:9 |S10:10
+                , rendered
               assert= |base-01 $ .kind first-plugin
               assert= |base-02 $ read-base-kind second-plugin
               assert= |warn:5 $ .alert first-plugin 5
               assert= |35 $ .alert second-plugin 5
-              assert= true $ &= (dyn:box (Alert01 :msg |hi) calcit.core/Show) (&list:nth shows 0)
-              assert= false $ &= (dyn:box (Alert01 :msg |no) calcit.core/Show) (&list:nth shows 0)
+              assert= true $ &=
+                dyn:box (Alert01 :msg |hi) calcit.core/Show
+                &list:nth shows 0
+              assert= false $ &=
+                dyn:box (Alert01 :msg |no) calcit.core/Show
+                &list:nth shows 0
               , 1
           :examples $ []
           :schema $ quote $ Fn (-> Number)
           :tests $ [] $ %{} 'TestEntry (:name |dyn-trait-ten-types-map-and-transitive-requires)
             :code $ quote $ assert= 1 (test-traits.dyn/dyn-plugin-suite)
             :tags $ #{} :struct-origin-portable :unit
+        'read-base-kind $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-base-kind (x) (.kind x)
+          :examples $ []
+          :schema $ quote $ Fn T (-> String) (:generics T)
+            :where $ T BaseAlert
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.dyn
     'test-traits.external $ %{} 'FileEntry
@@ -1713,6 +1722,25 @@
               :code $ quote $ assert= false
                 recur-swap-contains? (explicit-trait-true 1) (explicit-trait-false 1) 1
               :tags $ #{} :recur-impl-changing :trait
+            %{} 'TestEntry (:name |contains-field-and-index-bounds)
+              :code $ quote $ let
+                  p $ Person0 :name |Ada
+                  e $ Demo0 :demo 1
+                  has-field? $ fn (v k)
+                    hint-fn $ Fn T Tag (-> Bool) (:generics T)
+                      :where $ T ContainsField
+                    .contains-field? v k
+                  has-index? $ fn (v idx)
+                    hint-fn $ Fn T Number (-> Bool) (:generics T)
+                      :where $ T ContainsIndex
+                    .contains-index? v idx
+                assert-traits p Countable Contains ContainsField
+                assert-traits e Countable Contains ContainsIndex
+                assert= true $ has-field? p :name
+                assert= false $ has-field? p :missing
+                assert= true $ has-index? e 0
+                assert= false $ has-index? e 9
+              :tags $ #{} :trait :unit
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2

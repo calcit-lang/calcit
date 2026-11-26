@@ -8087,6 +8087,10 @@ defn main! ()
         "MixedDebug rejected by distinct Eq Hash",
         "ns app.main\ndefunion MixedDebug String (Ref Number)\ndefn bad (m)\n  hint-fn $ Fn MixedDebug (-> (List MixedDebug))\n  distinct ([] m)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
       ),
+      (
+        "User-defined binary Eq rejected on union",
+        "ns app.main\ndeftrait Eq (.eq? $ Fn Self Self (-> Bool))\ndefunion OrderedScalar Number String\ndefn need-user-eq (x)\n  hint-fn $ Fn T (-> Bool) (:generics T) (:where $ T Eq)\n  , true\ndefn bad (v)\n  hint-fn $ Fn OrderedScalar (-> Bool)\n  need-user-eq v\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  , bad\n  , &unit",
+      ),
     ] {
       let (_res, warnings, _entries) = run_app(bad_code);
       assert!(
@@ -8291,6 +8295,138 @@ fn dyn_trait_object_safety_and_boxing_rejections() {
       "defn bad () (dyn:box 1 2)\ndefn main! () (do bad &unit)",
       "E_DYN_BOX_TYPE",
     );
+
+    // Nested `Never` inside concrete containers/enums (`[]`, `Result :ok |yes`) stays allowed in `dyn:box`,
+    // while top-level `Never` (`None` without expected type? No, `None` is Option<Never>, while `raise` / top-level Never is rejected).
+    {
+      let entries = load_snippet_entries(
+        "defn box-nested-never ()\n  let ((_a (dyn:box ([]) Countable)) (_b (dyn:box (Result :ok |yes) Countable)))\n    , &unit\ndefn main! () (box-nested-never)",
+      );
+      run_check_only(&entries).expect("dyn:box with nested Never in [] and Result should succeed");
+    }
+
+    // Nested open types rejected in dyn:box (Bug 3).
+    for (label, code) in [
+      (
+        "dyn:box DynFn lambda",
+        "defn bad () (dyn:box (fn (x) (+ x 1)) Debug)\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box AnonymousEnum",
+        "defn bad (x)\n  hint-fn $ Fn Enum (-> (Dyn Debug))\n  dyn:box x Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box polymorphic Fn",
+        "defn bad ()\n  let ((f (fn (x) (hint-fn $ Fn T (-> T) (:generics T)) x)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box Fn with Dynamic arg",
+        "defn bad ()\n  let ((f (fn (x) (hint-fn $ Fn Dynamic (-> Number)) 1)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box Fn with Dynamic return",
+        "defn bad ()\n  let ((f (fn (x) (hint-fn $ Fn Number (-> Dynamic)) x)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box Fn with Dynamic rest",
+        "defn bad ()\n  let ((f (fn (x & ys) (hint-fn $ Fn Number (& Dynamic) (-> Number)) x)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box open family AnyFn",
+        "defn bad (x)\n  hint-fn $ Fn AnyFn (-> (Dyn Debug))\n  dyn:box x Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box open family AnyStruct",
+        "defn bad (x)\n  hint-fn $ Fn AnyStruct (-> (Dyn Debug))\n  dyn:box x Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box open family AnyEnum",
+        "defn bad (x)\n  hint-fn $ Fn AnyEnum (-> (Dyn Debug))\n  dyn:box x Debug\ndefn main! () (do bad &unit)",
+      ),
+      (
+        "dyn:box Fn with deftype alias to Dynamic",
+        "deftype Open Dynamic\ndefn bad ()\n  let ((f (fn (x) (hint-fn $ Fn Open (-> Number)) 1)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
+    ] {
+      expect_error(label, code, "E_DYN_BOX_TYPE");
+    }
+
+    // Bound TypeSlot inside nested Fn in `dyn:box` resolves to concrete bound type,
+    // while cyclic/unbound TypeSlot is rejected.
+    {
+      let bound_code = "defstruct BoxedInput (:n Number)\ndef *op $ deftype-slot :op\ndefn f (x)\n  hint-fn $ Fn *op (-> Number)\n  , 1\ndefn main! ()\n  let ((_b (dyn:box f Debug)))\n    , &unit";
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(bound_code).expect("parse bound TypeSlot snippet"),
+      );
+      struct SlotResetGuard;
+      impl Drop for SlotResetGuard {
+        fn drop(&mut self) {
+          let _ = calcit::calcit::configure_entry_type_slots(&HashMap::new());
+        }
+      }
+      let entries = prepare_snapshot_entries(snap);
+      let _slot_guard = SlotResetGuard;
+      let slot_bindings = HashMap::from([(String::from("op"), String::from("app.main/BoxedInput"))]);
+      calcit::calcit::configure_entry_type_slots(&slot_bindings).expect("configure concrete slot");
+      run_check_only(&entries).expect("dyn:box over Fn with concretely bound TypeSlot should pass");
+    }
+
+    // Undefined `(Dyn NonExistent)` rejected in deftype / defstruct / defenum / deftrait (Bug 8),
+    // while unloaded external module namespaces remain deferred.
+    for (label, code) in [
+      (
+        "undefined Dyn in defstruct",
+        "defstruct Holder (:item (Dyn NonExistent))\ndefn main! () (do Holder &unit)",
+      ),
+      (
+        "undefined Dyn in defenum",
+        "defenum Choice (:c (Dyn NonExistent))\ndefn main! () (do Choice &unit)",
+      ),
+      (
+        "undefined Dyn in deftrait",
+        "deftrait BadTrait\n  .use-it $ Fn Self (Dyn NonExistent) (-> Unit)\ndefn main! () (do BadTrait &unit)",
+      ),
+    ] {
+      expect_error(label, code, "E_TRAIT_NOT_OBJECT_SAFE");
+    }
+    {
+      let entries = load_snippet_entries("deftype BadDynAlias (Dyn NonExistent)\ndefn main! () &unit");
+      let warnings = RefCell::new(vec![]);
+      let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "BadDynAlias", &warnings, &CallStackList::default())
+        .expect_err("standalone deftype BadDynAlias (Dyn NonExistent) must fail E_TRAIT_NOT_OBJECT_SAFE");
+      assert!(err.to_string().contains("E_TRAIT_NOT_OBJECT_SAFE"), "got: {err}");
+    }
+    {
+      let entries = load_snippet_entries("deftype DeferredDyn (Dyn unloaded.mod/SomeTrait)\ndefn main! () &unit");
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "DeferredDyn", &warnings, &CallStackList::default())
+        .expect("unloaded module Dyn ref in deftype must stay deferred");
+    }
+
+    // `any:downcast` inherits enclosing generic names (Bug 7) and rejects unresolved qualified Dyn (Bug 6).
+    {
+      let entries = load_snippet_entries(
+        "defn bad-downcast (b)\n  hint-fn $ Fn Any (-> T) (:generics T)\n  any:downcast b T\ndefn main! () (do bad-downcast &unit)",
+      );
+      let err = run_check_only(&entries).expect_err("generic T in any:downcast must fail E_ANY_OPEN_TYPE");
+      assert!(
+        err.contains("E_ANY_OPEN_TYPE") && err.contains("unbound type variable"),
+        "expected unbound type variable error for generic T in any:downcast, got: {err}"
+      );
+    }
+    {
+      let entries = load_snippet_entries(
+        "defn bad-dyn-downcast (b)\n  hint-fn $ Fn Any (-> Any)\n  any:downcast b (Dyn missing.ns/Missing)\ndefn main! () (do bad-dyn-downcast &unit)",
+      );
+      let err = run_check_only(&entries).expect_err("unresolved qualified Dyn in any:downcast must fail");
+      assert!(
+        err.contains("E_UNKNOWN_TYPE_NAME") || err.contains("E_ANY_OPEN_TYPE") || err.contains("E_TRAIT_NOT_OBJECT_SAFE"),
+        "expected type rejection for unresolved qualified Dyn in any:downcast, got: {err}"
+      );
+    }
   });
 }
 

@@ -45,7 +45,6 @@ pub fn is_js_syntax_procs(s: &str) -> bool {
       | "js-delete"
       | "exists?"
       | "extract-cirru-edn"
-      | "foldl"
       | "instance?"
       | "&js-object"
       | "js-array"
@@ -286,7 +285,6 @@ mod tests {
       "js-delete",
       "exists?",
       "extract-cirru-edn",
-      "foldl",
       "instance?",
       "&js-object",
       "js-array",
@@ -304,7 +302,7 @@ mod tests {
     ] {
       assert!(is_js_syntax_procs(name), "expected JS syntax/proc: {name}");
     }
-    for core in ["defn", "if", "let", "=", "not=", "identical?", "&list:includes?"] {
+    for core in ["defn", "if", "let", "foldl", "=", "not=", "identical?", "&list:includes?"] {
       assert!(!is_js_syntax_procs(core), "core name leaked into JS procs: {core}");
     }
   }

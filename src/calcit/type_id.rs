@@ -359,23 +359,37 @@ fn canonical_type_key_inner(
     }
     CalcitTypeAnnotation::DynTrait(trait_def) => {
       let raw_name = trait_def.name.ref_str();
+      let is_concrete_trait = trait_def.runtime_id.is_some() || !trait_def.methods.is_empty() || !trait_def.requires.is_empty();
+      let is_backed_trait = |ns: &str, def: &str| -> bool {
+        crate::runner::preprocess::lookup_source_backed_trait_def(ns, def).is_some()
+          || matches!(crate::program::lookup_runtime_ready(ns, def), Some(crate::calcit::Calcit::Trait(_)))
+      };
+
       if let Some(reference) = trait_def.definition_ref.as_deref() {
-        Ok(format!("dyn:{}", reference.trim_start_matches('\'')))
-      } else if let Some((_, (ns, def))) =
+        let normalized = reference.trim_start_matches('\'');
+        if let Some((ns, def)) = normalized.rsplit_once('/') {
+          let (origin_ns, origin_def) = crate::program::impl_attach::resolve_trait_origin_in_program(ns, def);
+          if is_backed_trait(&origin_ns, &origin_def) || is_concrete_trait {
+            return Ok(format!("dyn:{origin_ns}/{origin_def}"));
+          }
+          return Err(CanonicalTypeIdError::open_type(format!(
+            "unresolved `(Dyn {normalized})` trait cannot yield a canonical `Any` TypeId"
+          )));
+        }
+      }
+
+      if let Some((_, (ns, def))) =
         CalcitTypeAnnotation::TypeRef(Arc::from(raw_name), Arc::new(vec![])).resolve_to_source_trait_with_ref()
       {
-        Ok(format!("dyn:{ns}/{def}"))
-      } else if raw_name.contains('/') {
-        Ok(format!("dyn:{}", raw_name.trim_start_matches('\'')))
-      } else if let Some((ns, def)) = crate::calcit::type_annotation::current_type_annotation_namespace().and_then(|cur_ns| {
-        crate::program::resolve_type_name_in_ns(&cur_ns, raw_name.trim_start_matches('\'')).filter(|(target_ns, target_def)| {
-          CalcitTypeAnnotation::TypeRef(Arc::from(format!("{target_ns}/{target_def}")), Arc::new(vec![]))
-            .resolve_to_source_trait_with_ref()
-            .is_some()
-        })
-      }) {
-        Ok(format!("dyn:{ns}/{def}"))
-      } else if trait_def.runtime_id.is_some() || !trait_def.methods.is_empty() {
+        let (origin_ns, origin_def) = crate::program::impl_attach::resolve_trait_origin_in_program(&ns, &def);
+        Ok(format!("dyn:{origin_ns}/{origin_def}"))
+      } else if let Some((origin_ns, origin_def)) = crate::calcit::type_annotation::current_type_annotation_namespace()
+        .and_then(|cur_ns| crate::program::resolve_type_name_in_ns(&cur_ns, raw_name.trim_start_matches('\'')))
+        .map(|(ns, def)| crate::program::impl_attach::resolve_trait_origin_in_program(&ns, &def))
+        .filter(|(origin_ns, origin_def)| is_backed_trait(origin_ns, origin_def))
+      {
+        Ok(format!("dyn:{origin_ns}/{origin_def}"))
+      } else if is_concrete_trait {
         Ok(format!("dyn:{}", raw_name.trim_start_matches('\'')))
       } else {
         Err(CanonicalTypeIdError::open_type(format!(
@@ -622,8 +636,67 @@ mod tests {
 
   #[test]
   fn dyn_trait_type_keys_preserve_trait_origin_and_reject_unresolved_refs() {
+    use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
+    use std::collections::HashMap;
+
+    let _guard = lock_program_test_state();
+    struct RestoreProgramData(HashMap<Arc<str>, ProgramFileData>);
+    impl Drop for RestoreProgramData {
+      fn drop(&mut self) {
+        *PROGRAM_CODE_DATA.write().expect("restore program code") = std::mem::take(&mut self.0);
+      }
+    }
+    let prev = PROGRAM_CODE_DATA.read().expect("snapshot program code").clone();
+    let _restore = RestoreProgramData(prev);
+    let parse_entry = |ns: &str, def: &str, src: &str| {
+      let node = cirru_parser::parse(src).expect("parse").remove(0);
+      let code = crate::data::cirru::code_to_calcit(&node, ns, def, vec![]).expect("calcit");
+      (
+        Arc::from(def),
+        ProgramDefEntry {
+          tags: Default::default(),
+          code,
+          schema: crate::calcit::DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      )
+    };
+    {
+      let mut program = PROGRAM_CODE_DATA.write().expect("seed program code");
+      program.insert(
+        Arc::from("calcit.core"),
+        ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::from([parse_entry("calcit.core", "Show", "deftrait Show (.show (Fn Self (-> String)))")]),
+        },
+      );
+      program.insert(
+        Arc::from("app.traits"),
+        ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::from([parse_entry(
+            "app.traits",
+            "AlertPlugin",
+            "deftrait AlertPlugin (.emit (Fn Self (-> String)))",
+          )]),
+        },
+      );
+      program.insert(
+        Arc::from("app.main"),
+        ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::from([parse_entry("app.main", "AlertAlias", "def AlertAlias app.traits/AlertPlugin")]),
+        },
+      );
+    }
+
     let show_ref = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference("calcit.core/Show")));
     assert_eq!(canonical_type_key(&show_ref, None).unwrap(), "dyn:calcit.core/Show");
+
+    let alias_ref = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference("app.main/AlertAlias")));
+    assert_eq!(canonical_type_key(&alias_ref, None).unwrap(), "dyn:app.traits/AlertPlugin");
 
     let emit_sig = Arc::new(CalcitTypeAnnotation::from_function_parts(
       vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self")))],
@@ -640,8 +713,10 @@ mod tests {
       "list<dyn:app.traits/AlertPlugin>"
     );
 
-    let unresolved_dyn = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference("MissingTrait")));
-    let err = canonical_type_key(&unresolved_dyn, None).expect_err("unresolved Dyn trait must reject with E_ANY_OPEN_TYPE");
-    assert_eq!(err.code, "E_ANY_OPEN_TYPE");
+    for missing in ["MissingTrait", "missing.ns/Missing", "calcit.core/Missing"] {
+      let unresolved_dyn = CalcitTypeAnnotation::DynTrait(Arc::new(CalcitTrait::new_reference(missing)));
+      let err = canonical_type_key(&unresolved_dyn, None).expect_err("unresolved Dyn trait must reject with E_ANY_OPEN_TYPE");
+      assert_eq!(err.code, "E_ANY_OPEN_TYPE", "{missing}: {err}");
+    }
   }
 }

@@ -418,6 +418,19 @@ pub(super) fn specialize_core_callback_expected_types(
   Some(carry_callback_slot_features(expected_types, specialized))
 }
 
+/// Arity for core functions whose receiver-specialized callback contracts
+/// can be refreshed after earlier arguments are preprocessed.
+pub(super) fn core_callback_refresh_arity(fn_info: &CalcitFn) -> Option<usize> {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS {
+    return None;
+  }
+  match fn_info.name.as_ref() {
+    "fold" | "foldl" | "reduce" => Some(3),
+    "&list:sort-by" | "group-by" | "sort" => Some(2),
+    _ => None,
+  }
+}
+
 fn specialize_core_callback_expected_types_inner(
   fn_info: &CalcitFn,
   args: &CalcitList,
