@@ -2032,6 +2032,7 @@ mod sort_tests {
         runtime_fn_index: HashMap::new(),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),
+        enum_layouts: Default::default(),
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
         atom_is_scalar: HashMap::new(),

@@ -43,6 +43,64 @@ pub(super) enum StructFieldKind {
   Int64 = 10,
   UInt64 = 11,
   HeapPtrI32 = 12,
+  OptionHeapPtrI32 = 13,
+}
+
+fn is_option_enum_def(enum_def: &CalcitEnumDef) -> bool {
+  enum_def.definition_ref().is_some_and(|r| r.as_ref() == "calcit.core/Option")
+}
+
+fn is_non_null_heap_ptr_type(annotation: &Arc<CalcitTypeAnnotation>) -> bool {
+  let expanded = expand_wasm_value_type(annotation);
+  match expanded.as_ref() {
+    CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::List(_)
+    | CalcitTypeAnnotation::Tuple(_)
+    | CalcitTypeAnnotation::Set(_)
+    | CalcitTypeAnnotation::Map(_, _)
+    | CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::StructValue(_)
+    | CalcitTypeAnnotation::AnonymousEnum
+    | CalcitTypeAnnotation::Any
+    | CalcitTypeAnnotation::DynTrait(_)
+    | CalcitTypeAnnotation::Fn(_) => true,
+    CalcitTypeAnnotation::Enum(enum_def, _) | CalcitTypeAnnotation::EnumValue(enum_def) => !is_option_enum_def(enum_def),
+    CalcitTypeAnnotation::TypeRef(_, _) => {
+      if expanded.is_option_type() || expanded.resolve_to_union().is_some() {
+        return false;
+      }
+      if expanded.resolve_to_struct().is_some() {
+        return true;
+      }
+      expanded.resolve_to_enum().is_some_and(|enum_def| !is_option_enum_def(&enum_def))
+    }
+    _ => false,
+  }
+}
+
+/// Extract inner `T` when `annotation` is `Option<T>` eligible for null-pointer niche optimization.
+pub(super) fn option_niche_inner(annotation: &Arc<CalcitTypeAnnotation>) -> Option<Arc<CalcitTypeAnnotation>> {
+  let expanded = expand_wasm_value_type(annotation);
+  let inner = match expanded.as_ref() {
+    CalcitTypeAnnotation::TypeRef(name, args) if args.len() == 1 => {
+      let name = name.trim_start_matches('\'').trim_start_matches(':');
+      matches!(name, "Option" | "calcit.core/Option").then(|| args[0].clone())
+    }
+    CalcitTypeAnnotation::Enum(enum_def, args) if args.len() == 1 && is_option_enum_def(enum_def) => Some(args[0].clone()),
+    _ => None,
+  }?;
+  is_non_null_heap_ptr_type(&inner).then_some(inner)
+}
+
+pub(super) fn qualify_for_definition_ref(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  definition_ref: Option<&str>,
+) -> Arc<CalcitTypeAnnotation> {
+  match definition_ref.and_then(|r| r.rsplit_once('/')) {
+    Some((ns, _)) => crate::wasm::host::calcit::type_refs::qualify_namespace_type_refs(annotation.clone(), ns),
+    None => annotation.clone(),
+  }
 }
 
 impl StructFieldKind {
@@ -51,7 +109,7 @@ impl StructFieldKind {
       Self::UnitZero => 0,
       Self::BoolU8 | Self::Int8 | Self::UInt8 => 1,
       Self::Int16 | Self::UInt16 => 2,
-      Self::TagU32 | Self::Int32 | Self::UInt32 | Self::HeapPtrI32 => 4,
+      Self::TagU32 | Self::Int32 | Self::UInt32 | Self::HeapPtrI32 | Self::OptionHeapPtrI32 => 4,
       Self::BoxedF64 | Self::Int64 | Self::UInt64 => 8,
     }
   }
@@ -61,6 +119,9 @@ impl StructFieldKind {
   }
 
   pub(super) fn from_type_annotation(annotation: &Arc<CalcitTypeAnnotation>) -> Self {
+    if option_niche_inner(annotation).is_some() {
+      return Self::OptionHeapPtrI32;
+    }
     let expanded = expand_wasm_value_type(annotation);
     match expanded.as_ref() {
       CalcitTypeAnnotation::Bool => Self::BoolU8,
@@ -89,7 +150,9 @@ impl StructFieldKind {
       | CalcitTypeAnnotation::EnumValue(_)
       | CalcitTypeAnnotation::AnonymousEnum
       | CalcitTypeAnnotation::Any => Self::HeapPtrI32,
-      CalcitTypeAnnotation::TypeRef(_, _) if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() => {
+      CalcitTypeAnnotation::TypeRef(_, _)
+        if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() || expanded.is_option_type() =>
+      {
         Self::HeapPtrI32
       }
       _ => Self::BoxedF64,
@@ -112,6 +175,19 @@ impl StructFieldKind {
         CalcitNumericRefinement::UInt64 => Self::UInt64,
         CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::BoxedF64,
       },
+      ComponentAbiType::Option(inner)
+        if matches!(
+          inner.as_ref(),
+          ComponentAbiType::Buffer
+            | ComponentAbiType::String
+            | ComponentAbiType::List(_)
+            | ComponentAbiType::Result(_, _)
+            | ComponentAbiType::Struct(_)
+            | ComponentAbiType::Enum(_)
+        ) =>
+      {
+        Self::OptionHeapPtrI32
+      }
       ComponentAbiType::Buffer
       | ComponentAbiType::String
       | ComponentAbiType::List(_)
@@ -124,7 +200,7 @@ impl StructFieldKind {
 
   pub(super) fn native_repr(self) -> NativeValRepr {
     match self {
-      Self::BoxedF64 => NativeValRepr::F64,
+      Self::BoxedF64 | Self::OptionHeapPtrI32 => NativeValRepr::F64,
       Self::BoolU8 => NativeValRepr::BoolI32,
       Self::TagU32 => NativeValRepr::TagI32,
       Self::UnitZero => NativeValRepr::UnitI32,
@@ -247,48 +323,93 @@ impl StructLayouts {
   pub fn serialize_descriptor_table(&mut self, data_segment: &mut Vec<u8>, heap_start: &mut i32) {
     let max_id = self.ids.values().copied().max().unwrap_or(0);
     self.max_layout_id = max_id;
-    if max_id == 0 {
-      self.desc_table_base = 0;
-      while !data_segment.len().is_multiple_of(8) {
-        data_segment.push(0);
-      }
-      *heap_start = HEAP_BASE + data_segment.len() as i32;
-      return;
-    }
-    let mut entries = Vec::with_capacity(max_id as usize + 1);
-    entries.push((8u32, 0u32, 0u32));
-    for id in 1..=max_id {
-      let Some(layout) = self.layouts.get(&id) else {
-        entries.push((8, 0, 0));
-        continue;
-      };
-      if layout.fields.is_empty() {
-        entries.push((layout.payload_bytes, 0, 0));
-      } else {
-        while !data_segment.len().is_multiple_of(4) {
-          data_segment.push(0);
-        }
-        let meta_ptr = (HEAP_BASE + data_segment.len() as i32) as u32;
-        for field in &layout.fields {
-          let packed = u32::from(field.offset) | (u32::from(field.kind as u8) << STRUCT_FIELD_KIND_SHIFT);
-          data_segment.extend_from_slice(&packed.to_le_bytes());
-        }
-        entries.push((layout.payload_bytes, layout.fields.len() as u32, meta_ptr));
-      }
-    }
-    while !data_segment.len().is_multiple_of(4) {
-      data_segment.push(0);
-    }
-    self.desc_table_base = HEAP_BASE + data_segment.len() as i32;
-    for (payload_bytes, field_count, meta_ptr) in entries {
-      data_segment.extend_from_slice(&payload_bytes.to_le_bytes());
-      data_segment.extend_from_slice(&field_count.to_le_bytes());
-      data_segment.extend_from_slice(&meta_ptr.to_le_bytes());
-    }
+    self.desc_table_base = serialize_layout_descriptor_table(max_id, &self.layouts, data_segment, heap_start);
+  }
+}
+
+fn serialize_layout_descriptor_table(
+  max_id: u32,
+  layouts: &HashMap<u32, StructLayout>,
+  data_segment: &mut Vec<u8>,
+  heap_start: &mut i32,
+) -> i32 {
+  if max_id == 0 {
     while !data_segment.len().is_multiple_of(8) {
       data_segment.push(0);
     }
     *heap_start = HEAP_BASE + data_segment.len() as i32;
+    return 0;
+  }
+  let mut entries = Vec::with_capacity(max_id as usize + 1);
+  entries.push((8u32, 0u32, 0u32));
+  for id in 1..=max_id {
+    let Some(layout) = layouts.get(&id) else {
+      entries.push((8, 0, 0));
+      continue;
+    };
+    if layout.fields.is_empty() {
+      entries.push((layout.payload_bytes, 0, 0));
+    } else {
+      while !data_segment.len().is_multiple_of(4) {
+        data_segment.push(0);
+      }
+      let meta_ptr = (HEAP_BASE + data_segment.len() as i32) as u32;
+      for field in &layout.fields {
+        let packed = u32::from(field.offset) | (u32::from(field.kind as u8) << STRUCT_FIELD_KIND_SHIFT);
+        data_segment.extend_from_slice(&packed.to_le_bytes());
+      }
+      entries.push((layout.payload_bytes, layout.fields.len() as u32, meta_ptr));
+    }
+  }
+  while !data_segment.len().is_multiple_of(4) {
+    data_segment.push(0);
+  }
+  let desc_table_base = HEAP_BASE + data_segment.len() as i32;
+  for (payload_bytes, field_count, meta_ptr) in entries {
+    data_segment.extend_from_slice(&payload_bytes.to_le_bytes());
+    data_segment.extend_from_slice(&field_count.to_le_bytes());
+    data_segment.extend_from_slice(&meta_ptr.to_le_bytes());
+  }
+  while !data_segment.len().is_multiple_of(8) {
+    data_segment.push(0);
+  }
+  *heap_start = HEAP_BASE + data_segment.len() as i32;
+  desc_table_base
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct EnumVariantIdentity {
+  pub enum_identity: String,
+  pub variant_tag: String,
+  pub payload_count: usize,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct EnumLayouts {
+  pub ids: BTreeMap<EnumVariantIdentity, u32>,
+  pub layouts: HashMap<u32, StructLayout>,
+  pub desc_table_base: i32,
+  pub max_layout_id: u32,
+}
+
+impl EnumLayouts {
+  pub fn get_for_def(&self, enum_def: &CalcitEnumDef, variant_tag: &str, payload_count: usize) -> Option<(u16, &StructLayout)> {
+    let key = EnumVariantIdentity {
+      enum_identity: enum_identity_tag(enum_def),
+      variant_tag: variant_tag.to_owned(),
+      payload_count,
+    };
+    let &id = self.ids.get(&key)?;
+    let layout = self.layouts.get(&id)?;
+    u16::try_from(id).ok().map(|id_u16| (id_u16, layout))
+  }
+
+  /// Serialize static compact enum variant layout descriptors into the read-only
+  /// data segment, maintaining 8-byte heap alignment at end.
+  pub fn serialize_descriptor_table(&mut self, data_segment: &mut Vec<u8>, heap_start: &mut i32) {
+    let max_id = self.ids.values().copied().max().unwrap_or(0);
+    self.max_layout_id = max_id;
+    self.desc_table_base = serialize_layout_descriptor_table(max_id, &self.layouts, data_segment, heap_start);
   }
 }
 
@@ -322,7 +443,15 @@ pub(super) fn collect_struct_layouts(
 
   fn kinds_from_struct_def(definition: &CalcitStructDef) -> Vec<StructFieldKind> {
     if definition.field_types.len() == definition.fields.len() {
-      definition.field_types.iter().map(StructFieldKind::from_type_annotation).collect()
+      let def_ref = definition.definition_ref.as_deref();
+      definition
+        .field_types
+        .iter()
+        .map(|ty| {
+          let qualified = qualify_for_definition_ref(ty, def_ref);
+          StructFieldKind::from_type_annotation(&qualified)
+        })
+        .collect()
     } else {
       vec![StructFieldKind::BoxedF64; definition.fields.len()]
     }
@@ -462,12 +591,197 @@ pub(super) fn collect_struct_layouts(
   Ok(layouts)
 }
 
+pub(super) fn collect_enum_layouts(
+  program_data: &program::CompiledProgram,
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  extra_exprs: &[Calcit],
+  reachable_defs: Option<&HashSet<(String, String)>>,
+) -> Result<EnumLayouts, String> {
+  fn register_enum(enum_def: &CalcitEnumDef, variant_kinds: &mut BTreeMap<EnumVariantIdentity, Vec<StructFieldKind>>) {
+    if !enum_def.generics().is_empty() {
+      return;
+    }
+    let enum_identity = enum_identity_tag(enum_def);
+    let def_ref = enum_def.definition_ref().map(|r| r.as_ref());
+    for variant in enum_def.variants() {
+      let payloads = variant.payload_types();
+      if payloads.is_empty() || payloads.iter().any(|t| t.contains_type_var()) {
+        continue;
+      }
+      let kinds: Vec<StructFieldKind> = payloads
+        .iter()
+        .map(|ty| {
+          let qualified = qualify_for_definition_ref(ty, def_ref);
+          StructFieldKind::from_type_annotation(&qualified)
+        })
+        .collect();
+      let identity = EnumVariantIdentity {
+        enum_identity: enum_identity.clone(),
+        variant_tag: variant.tag.ref_str().to_owned(),
+        payload_count: payloads.len(),
+      };
+      match variant_kinds.get_mut(&identity) {
+        Some(existing) if existing.len() == kinds.len() => {
+          for (slot, candidate) in existing.iter_mut().zip(kinds) {
+            if *slot != candidate {
+              *slot = StructFieldKind::BoxedF64;
+            }
+          }
+        }
+        Some(_) => {}
+        None => {
+          variant_kinds.insert(identity, kinds);
+        }
+      }
+    }
+  }
+
+  fn visit(expression: &Calcit, variant_kinds: &mut BTreeMap<EnumVariantIdentity, Vec<StructFieldKind>>) {
+    if let Some(graph) = DataShapeGraph::from_calcit_handle(expression) {
+      for node in &graph.nodes {
+        if let DataShapeNode::Enum { nominal, .. } = node {
+          register_enum(nominal, variant_kinds);
+        }
+      }
+    }
+    match expression {
+      Calcit::EnumDef(enum_def) => register_enum(enum_def, variant_kinds),
+      Calcit::Import(_) => {
+        if let Ok(enum_def) = resolve_enum_ref(expression) {
+          register_enum(&enum_def, variant_kinds);
+        }
+      }
+      Calcit::List(items) => {
+        for item in items.iter() {
+          visit(item, variant_kinds);
+        }
+      }
+      Calcit::Fn { info, .. } => {
+        for item in &info.body {
+          visit(item, variant_kinds);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  let mut variant_kinds: BTreeMap<EnumVariantIdentity, Vec<StructFieldKind>> = BTreeMap::new();
+  for (_, _, _, body) in fn_defs {
+    for expression in body {
+      visit(expression, &mut variant_kinds);
+    }
+  }
+  for expression in extra_exprs {
+    visit(expression, &mut variant_kinds);
+  }
+  for ns in super::deterministic_namespace_order(program_data, None) {
+    let Some(file) = program_data.get(ns.as_str()) else {
+      continue;
+    };
+    for (name, compiled) in super::deterministic_definition_order(file) {
+      if let Some(reachable) = reachable_defs
+        && !reachable.contains(&(ns.clone(), name.to_string()))
+      {
+        continue;
+      }
+      if let Some(Calcit::EnumDef(enum_def)) = program::lookup_runtime_ready(&ns, name) {
+        register_enum(enum_def.as_ref(), &mut variant_kinds);
+      }
+      for expression in [&compiled.preprocessed_code, &compiled.codegen_form] {
+        visit(expression, &mut variant_kinds);
+        if let Some(Calcit::EnumDef(enum_def)) = crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(expression) {
+          register_enum(enum_def.as_ref(), &mut variant_kinds);
+        }
+      }
+    }
+  }
+
+  let mut layouts = EnumLayouts::default();
+  for (index, (identity, kinds)) in variant_kinds.into_iter().enumerate() {
+    let id = (index + 1) as u32;
+    if id > u32::from(u16::MAX) {
+      return Err("Compact Enum variant layout count exceeds u16::MAX".into());
+    }
+    let layout = StructLayout::compute(&kinds)?;
+    layouts.layouts.insert(id, layout);
+    layouts.ids.insert(identity, id);
+  }
+  Ok(layouts)
+}
+
 /// Store `[count:u32 @ 0][tag_or_layout:u32 @ 4]` into an 8-byte aligned heap object.
 pub(super) fn emit_store_compact_header(ctx: &mut WasmGenCtx, ptr_local: u32, count: u32, second: u32) {
   let packed = ((second as u64) << 32) | (count as u64);
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(Instruction::I64Const(packed as i64));
   ctx.emit(Instruction::I64Store(mem_arg_i64(0)));
+}
+
+/// Store `[count:u16 @ 0][layout_id:u16 @ 2][tag_id:u32 @ 4]` into an 8-byte aligned heap Enum.
+pub(super) fn emit_store_enum_header(ctx: &mut WasmGenCtx, ptr_local: u32, count: u16, layout_id: u16, tag_id: u32) {
+  let packed = ((tag_id as u64) << 32) | ((layout_id as u64) << 16) | (count as u64);
+  ctx.emit(Instruction::LocalGet(ptr_local));
+  ctx.emit(Instruction::I64Const(packed as i64));
+  ctx.emit(Instruction::I64Store(mem_arg_i64(0)));
+}
+
+/// Emit an Option<T> expression directly as a raw nullable `HeapPtrI32` (`0` = :none, non-zero = inner ptr).
+pub(super) fn emit_option_expr_to_niche_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
+  if let Some((ptr_local, _inner_ty)) = try_emit_direct_niche_option_i32(ctx, expr)? {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    return Ok(());
+  }
+  match expr {
+    Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == "calcit.core" && def.as_ref() == "None" => {
+      ctx.emit(Instruction::I32Const(0));
+      return Ok(());
+    }
+    Calcit::List(items) if !items.is_empty() => {
+      if let Calcit::Import(CalcitImport { ns, def, .. }) = &items[0]
+        && ns.as_ref() == "calcit.core"
+        && def.as_ref() == "Some"
+        && items.len() == 2
+      {
+        return emit_expr_as_repr(ctx, &items[1], NativeValRepr::HeapPtrI32);
+      }
+      if matches!(&items[0], Calcit::Proc(CalcitProc::NativeNamedEnumNew))
+        && items.len() >= 3
+        && let Ok(enum_def) = resolve_enum_ref(&items[1])
+        && is_option_enum_def(&enum_def)
+        && let Calcit::Tag(tag) = &items[2]
+      {
+        match (tag.ref_str(), items.len()) {
+          ("none", 3) => {
+            ctx.emit(Instruction::I32Const(0));
+            return Ok(());
+          }
+          ("some", 4) => {
+            return emit_expr_as_repr(ctx, &items[3], NativeValRepr::HeapPtrI32);
+          }
+          _ => {}
+        }
+      }
+      if matches!(&items[0], Calcit::Syntax(CalcitSyntax::If, _)) && (items.len() == 3 || items.len() == 4) {
+        emit_expr_as_repr(ctx, &items[1], NativeValRepr::BoolI32)?;
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+        ctx.block_depth += 1;
+        emit_option_expr_to_niche_i32(ctx, &items[2])?;
+        ctx.emit(Instruction::Else);
+        if items.len() == 4 {
+          emit_option_expr_to_niche_i32(ctx, &items[3])?;
+        } else {
+          ctx.emit(Instruction::I32Const(0));
+        }
+        ctx.block_depth -= 1;
+        ctx.emit(Instruction::End);
+        return Ok(());
+      }
+    }
+    _ => {}
+  }
+  emit_expr_as_repr(ctx, expr, NativeValRepr::HeapPtrI32)?;
+  ctx.call_rt("__rt_option_to_niche_ptr");
+  Ok(())
 }
 
 fn emit_store_struct_field_instr(ctx: &mut WasmGenCtx, field: StructFieldLayout) {
@@ -480,7 +794,11 @@ fn emit_store_struct_field_instr(ctx: &mut WasmGenCtx, field: StructFieldLayout)
     StructFieldKind::Int16 | StructFieldKind::UInt16 => {
       ctx.emit(Instruction::I32Store16(mem_arg_i16(offset)));
     }
-    StructFieldKind::TagU32 | StructFieldKind::Int32 | StructFieldKind::UInt32 | StructFieldKind::HeapPtrI32 => {
+    StructFieldKind::TagU32
+    | StructFieldKind::Int32
+    | StructFieldKind::UInt32
+    | StructFieldKind::HeapPtrI32
+    | StructFieldKind::OptionHeapPtrI32 => {
       ctx.emit(Instruction::I32Store(mem_arg_i32(offset)));
     }
     StructFieldKind::Int64 | StructFieldKind::UInt64 => {
@@ -499,6 +817,15 @@ pub(super) fn emit_store_struct_field_expr(
   if field.kind == StructFieldKind::UnitZero {
     emit_expr(ctx, value_expr)?;
     ctx.emit(Instruction::Drop);
+    return Ok(());
+  }
+  if field.kind == StructFieldKind::OptionHeapPtrI32 {
+    let val_local = ctx.alloc_local_typed(ValType::I32);
+    emit_option_expr_to_niche_i32(ctx, value_expr)?;
+    ctx.emit(Instruction::LocalSet(val_local));
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::LocalGet(val_local));
+    emit_store_struct_field_instr(ctx, field);
     return Ok(());
   }
   let repr = field.kind.native_repr();
@@ -521,6 +848,13 @@ pub(super) fn emit_store_struct_field_from_f64_local(
     return;
   }
   ctx.emit(Instruction::LocalGet(ptr_local));
+  if field.kind == StructFieldKind::OptionHeapPtrI32 {
+    ctx.emit(Instruction::LocalGet(value_f64_local));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.call_rt("__rt_option_to_niche_ptr");
+    emit_store_struct_field_instr(ctx, field);
+    return;
+  }
   ctx.emit(Instruction::LocalGet(value_f64_local));
   emit_unbox_f64_to_repr(ctx, field.kind.native_repr());
   emit_store_struct_field_instr(ctx, field);
@@ -538,6 +872,13 @@ pub(super) fn emit_load_struct_field_as_repr(ctx: &mut WasmGenCtx, ptr_local: u3
     }
     return;
   }
+  if field.kind == StructFieldKind::OptionHeapPtrI32 {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::I32Load(mem_arg_i32(offset)));
+    ctx.call_rt("__rt_option_from_niche_ptr");
+    emit_convert_repr(ctx, NativeValRepr::HeapPtrI32, dst_repr);
+    return;
+  }
   ctx.emit(Instruction::LocalGet(ptr_local));
   match field.kind {
     StructFieldKind::BoxedF64 => ctx.emit(Instruction::F64Load(mem_arg_f64(offset))),
@@ -549,7 +890,7 @@ pub(super) fn emit_load_struct_field_as_repr(ctx: &mut WasmGenCtx, ptr_local: u3
       ctx.emit(Instruction::I32Load(mem_arg_i32(offset)));
     }
     StructFieldKind::Int64 | StructFieldKind::UInt64 => ctx.emit(Instruction::I64Load(mem_arg_i64(offset))),
-    StructFieldKind::UnitZero => unreachable!(),
+    StructFieldKind::UnitZero | StructFieldKind::OptionHeapPtrI32 => unreachable!(),
   }
   emit_convert_repr(ctx, field.kind.native_repr(), dst_repr);
 }
@@ -1345,6 +1686,7 @@ pub(super) fn emit_enum_new_raw_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   };
 
   let payload = &args[1..];
+  let payload_u16 = u16::try_from(payload.len()).map_err(|_| ":: enum payload count exceeds u16::MAX".to_owned())?;
   let total_size = ((1 + payload.len()) * 8) as i32;
 
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
@@ -1352,11 +1694,11 @@ pub(super) fn emit_enum_new_raw_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 
   match static_tag_or_repr {
     Ok(tag_id) => {
-      emit_store_compact_header(ctx, ptr_local, payload.len() as u32, tag_id);
+      emit_store_enum_header(ctx, ptr_local, payload_u16, 0, tag_id);
     }
     Err(tag_repr) => {
       ctx.emit(Instruction::LocalGet(ptr_local));
-      ctx.emit(Instruction::I32Const(payload.len() as i32));
+      ctx.emit(Instruction::I32Const(i32::from(payload_u16)));
       ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
       let tag_local = ctx.alloc_local_typed(ValType::I32);
@@ -1389,29 +1731,49 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 
 /// Emit `%:: enum_class tag payload...` — enum variant constructor.
 ///
-/// Args: `[enum_class, tag, payload...]`. Compact layout is identical to `::`.
+/// Closed nominal enum variants with non-empty payloads receive a compact `layout_id >= 1`
+/// from `EnumLayouts`; generic/empty-payload variants use `layout_id == 0`.
 pub(super) fn emit_named_enum_new_raw_i32(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<u32, String> {
   if args.len() < 2 {
     return Err("%:: requires at least (enum_class tag) arguments".into());
   }
 
-  let tag_id = match &args[1] {
+  let (tag_str, tag_id) = match &args[1] {
     Calcit::Tag(t) => {
       let tag_str = t.to_string();
-      *ctx
+      let tag_id = *ctx
         .tag_index
         .get(&tag_str)
-        .ok_or_else(|| format!("unknown tag in enum constructor: {tag_str}"))?
+        .ok_or_else(|| format!("unknown tag in enum constructor: {tag_str}"))?;
+      (tag_str, tag_id)
     }
     other => return Err(format!("%:: expected tag as second arg, got: {other}")),
   };
 
   let payload = &args[2..];
-  let total_size = ((1 + payload.len()) * 8) as i32;
+  let payload_u16 = u16::try_from(payload.len()).map_err(|_| "%:: enum payload count exceeds u16::MAX".to_owned())?;
+  let compact = resolve_enum_ref(&args[0]).ok().and_then(|enum_def| {
+    ctx
+      .enum_layouts
+      .get_for_def(&enum_def, &tag_str, payload.len())
+      .map(|(id, layout)| (id, layout.clone()))
+  });
 
+  if let Some((layout_id, layout)) = compact {
+    let total_size = i32::try_from(layout.payload_bytes).map_err(|_| "Compact Enum layout exceeds i32 size".to_owned())?;
+    let ptr_local = ctx.alloc_local_typed(ValType::I32);
+    emit_bump_alloc(ctx, total_size, ptr_local, "enum");
+    emit_store_enum_header(ctx, ptr_local, payload_u16, layout_id, tag_id);
+    for (field, val) in layout.fields.iter().zip(payload) {
+      emit_store_struct_field_expr(ctx, ptr_local, *field, val)?;
+    }
+    return Ok(ptr_local);
+  }
+
+  let total_size = ((1 + payload.len()) * 8) as i32;
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, total_size, ptr_local, "enum");
-  emit_store_compact_header(ctx, ptr_local, payload.len() as u32, tag_id);
+  emit_store_enum_header(ctx, ptr_local, payload_u16, 0, tag_id);
 
   for (i, val) in payload.iter().enumerate() {
     let val_tmp = ctx.alloc_local();
@@ -1432,11 +1794,58 @@ pub(super) fn emit_named_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
+/// Load 0-based enum payload slot as boxed `f64`, handling both legacy (`layout_id == 0`)
+/// and compact (`layout_id >= 1`) enums.
+pub(super) fn emit_load_enum_payload_as_f64(ctx: &mut WasmGenCtx, enum_ptr: u32, payload_index: usize) {
+  if ctx.enum_layouts.max_layout_id > 0 {
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(Instruction::I32Const(payload_index as i32));
+    ctx.call_rt("__rt_enum_load_payload");
+  } else {
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + payload_index) * 8) as u64)));
+  }
+}
+
+/// Allocate a nominal enum variant from already-evaluated `f64` payload locals, using compact
+/// `EnumLayouts` when registered and falling back to `layout_id == 0` otherwise.
+pub(super) fn emit_alloc_nominal_enum_from_f64_locals(
+  ctx: &mut WasmGenCtx,
+  nominal: &CalcitEnumDef,
+  variant_tag: &str,
+  tag_id: u32,
+  values: &[u32],
+) -> Result<u32, String> {
+  let payload_u16 = u16::try_from(values.len()).map_err(|_| "Enum payload count exceeds u16::MAX".to_owned())?;
+  let enum_ptr = ctx.alloc_local_typed(ValType::I32);
+  if let Some((layout_id, layout)) = ctx
+    .enum_layouts
+    .get_for_def(nominal, variant_tag, values.len())
+    .map(|(id, l)| (id, l.clone()))
+  {
+    let total_size = i32::try_from(layout.payload_bytes).map_err(|_| "Compact Enum layout exceeds i32 size".to_owned())?;
+    emit_bump_alloc(ctx, total_size, enum_ptr, "enum");
+    emit_store_enum_header(ctx, enum_ptr, payload_u16, layout_id, tag_id);
+    for (field, value_local) in layout.fields.iter().zip(values) {
+      emit_store_struct_field_from_f64_local(ctx, enum_ptr, *field, *value_local);
+    }
+  } else {
+    emit_bump_alloc(ctx, ((1 + values.len()) * 8) as i32, enum_ptr, "enum");
+    emit_store_enum_header(ctx, enum_ptr, payload_u16, 0, tag_id);
+    for (payload_index, value) in values.iter().enumerate() {
+      ctx.emit(Instruction::LocalGet(enum_ptr));
+      ctx.emit(Instruction::LocalGet(*value));
+      ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + payload_index) * 8) as u64)));
+    }
+  }
+  Ok(enum_ptr)
+}
+
 /// Emit `&enum:nth enum_value idx` in the requested representation.
 ///
-/// Compact layout: `[count:u32 @ 0][tag:u32 @ 4][payload0:f64 @ 8]...`
+/// Header layout: `[count:u16 @ 0][layout_id:u16 @ 2][tag:u32 @ 4]`.
 /// `idx == 0` returns tag (`I32Load(4)`), `1 <= idx <= count` returns
-/// `payload[idx - 1]` (`F64Load(idx * 8)`), and out-of-range/invalid indices trap.
+/// `payload[idx - 1]`, and out-of-range/invalid indices trap.
 pub(super) fn emit_enum_nth_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_repr: NativeValRepr) -> Result<(), String> {
   expect_arity(2, args, "&enum:nth requires 2 args (enum_value, index)")?;
   if let Calcit::Number(n) = &args[1] {
@@ -1454,14 +1863,20 @@ pub(super) fn emit_enum_nth_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_r
         emit_convert_repr(ctx, NativeValRepr::TagI32, dst_repr);
       } else {
         ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+        ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
         ctx.emit(Instruction::I32Const(idx as i32));
         ctx.emit(Instruction::I32LtU);
         ctx.begin_block_if();
         ctx.emit(Instruction::Unreachable);
         ctx.emit(Instruction::End);
-        ctx.emit(Instruction::LocalGet(ptr));
-        ctx.emit(Instruction::F64Load(mem_arg_f64(byte_offset as u64)));
+        if ctx.enum_layouts.max_layout_id > 0 {
+          ctx.emit(Instruction::LocalGet(ptr));
+          ctx.emit(Instruction::I32Const((idx - 1) as i32));
+          ctx.call_rt("__rt_enum_load_payload");
+        } else {
+          ctx.emit(Instruction::LocalGet(ptr));
+          ctx.emit(Instruction::F64Load(mem_arg_f64(byte_offset as u64)));
+        }
         emit_unbox_f64_to_repr(ctx, dst_repr);
       }
     } else {
@@ -1486,7 +1901,7 @@ pub(super) fn emit_enum_nth_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_r
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalGet(idx_f64));
   ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::F64Le);
   ctx.emit(Instruction::I32And);
@@ -1507,12 +1922,20 @@ pub(super) fn emit_enum_nth_as_repr(ctx: &mut WasmGenCtx, args: &[Calcit], dst_r
   ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::LocalGet(idx_local));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  if ctx.enum_layouts.max_layout_id > 0 {
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::LocalGet(idx_local));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::I32Sub);
+    ctx.call_rt("__rt_enum_load_payload");
+  } else {
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::LocalGet(idx_local));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  }
   ctx.emit(Instruction::End);
   emit_unbox_f64_to_repr(ctx, dst_repr);
   Ok(())
@@ -1527,7 +1950,7 @@ pub(super) fn emit_enum_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   expect_arity(1, args, "&enum:count expects 1 arg")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64ConvertI32U);
@@ -1537,7 +1960,6 @@ pub(super) fn emit_enum_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
 pub(super) fn emit_enum_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "&enum:assoc expects 3 args")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_enum_count_i32(ctx, src);
   let idx = ctx.alloc_local_typed(ValType::I32);
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::I32TruncF64U);
@@ -1546,6 +1968,16 @@ pub(super) fn emit_enum_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   emit_expr(ctx, &args[2])?;
   ctx.emit(Instruction::LocalSet(val));
 
+  if ctx.enum_layouts.max_layout_id > 0 {
+    ctx.emit(Instruction::LocalGet(src));
+    ctx.emit(Instruction::LocalGet(idx));
+    ctx.emit(Instruction::LocalGet(val));
+    ctx.call_rt("__rt_enum_assoc");
+    ctx.emit(Instruction::F64ConvertI32U);
+    return Ok(());
+  }
+
+  let count = emit_load_enum_count_i32(ctx, src);
   let size = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Const(1));
@@ -1869,5 +2301,43 @@ mod tests {
     assert_eq!(padded_layouts.desc_table_base, 0);
     assert_eq!(padded_data.len(), 8);
     assert_eq!(padded_heap_start, HEAP_BASE + 8);
+  }
+
+  #[test]
+  fn option_niche_accepts_non_null_heap_ptrs_and_rejects_nested_and_scalars() {
+    let str_opt = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
+    ));
+    assert_eq!(StructFieldKind::from_type_annotation(&str_opt), StructFieldKind::OptionHeapPtrI32);
+
+    let nested_opt = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![str_opt]),
+    ));
+    assert_eq!(StructFieldKind::from_type_annotation(&nested_opt), StructFieldKind::HeapPtrI32);
+
+    for scalar in [
+      CalcitTypeAnnotation::Number,
+      CalcitTypeAnnotation::Bool,
+      CalcitTypeAnnotation::Tag,
+      CalcitTypeAnnotation::Unit,
+      CalcitTypeAnnotation::Dynamic,
+    ] {
+      let scalar_opt = Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![Arc::new(scalar)]),
+      ));
+      assert_eq!(StructFieldKind::from_type_annotation(&scalar_opt), StructFieldKind::HeapPtrI32);
+    }
+
+    let unresolved_opt = Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("calcit.core/Option"),
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("MaybeUnionOrUnknown"),
+        Arc::new(vec![]),
+      ))]),
+    ));
+    assert_eq!(StructFieldKind::from_type_annotation(&unresolved_opt), StructFieldKind::HeapPtrI32);
   }
 }

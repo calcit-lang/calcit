@@ -86,13 +86,14 @@ use runtime::{
 };
 #[allow(unused_imports)]
 use structs::{
-  StructFieldKind, StructFieldLayout, StructLayout, StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc,
-  emit_enum_count, emit_enum_definition, emit_enum_new, emit_enum_new_raw_i32, emit_enum_nth, emit_enum_nth_as_repr,
-  emit_load_struct_field_as_repr, emit_named_enum_new, emit_named_enum_new_raw_i32, emit_store_compact_header,
+  EnumLayouts, StructFieldKind, StructFieldLayout, StructLayout, StructLayouts, collect_enum_layouts, collect_struct_layouts,
+  component_struct_identity, emit_alloc_nominal_enum_from_f64_locals, emit_enum_assoc, emit_enum_count, emit_enum_definition,
+  emit_enum_new, emit_enum_new_raw_i32, emit_enum_nth, emit_enum_nth_as_repr, emit_load_enum_payload_as_f64,
+  emit_load_struct_field_as_repr, emit_named_enum_new, emit_named_enum_new_raw_i32, emit_store_compact_header, emit_store_enum_header,
   emit_store_struct_field_expr, emit_store_struct_field_from_f64_local, emit_struct_assoc_at, emit_struct_contains, emit_struct_count,
   emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new,
   emit_struct_new_raw_i32, emit_struct_nth, emit_struct_nth_as_repr, emit_struct_to_map, emit_struct_with_at, enum_identity_tag,
-  resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
+  option_niche_inner, qualify_for_definition_ref, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -785,6 +786,8 @@ fn emit_wasm_impl(
     Some(&reachable_defs),
   )?;
   struct_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
+  let mut enum_layouts = collect_enum_layouts(&program_data, &fn_defs, &reachable_extra_exprs, Some(&reachable_defs))?;
+  enum_layouts.serialize_descriptor_table(&mut string_data_segment, &mut heap_start);
   let any_type_table = any_box::collect_any_type_table(&fn_defs, &value_imports, &reachable_extra_exprs);
 
   let atom_count = atom_initial_values.len() as u32;
@@ -801,7 +804,7 @@ fn emit_wasm_impl(
     boundary,
     &tag_index,
     &atom_is_scalar_vec,
-    &struct_layouts,
+    (&struct_layouts, &enum_layouts),
   )?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
@@ -1042,6 +1045,15 @@ fn emit_wasm_impl(
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     let list_tag_id = *tag_index.get("list").expect("list tag must exist") as i32;
+    let enum_load_payload_index = *runtime_fn_index
+      .get("__rt_enum_load_payload")
+      .expect("__rt_enum_load_payload helper must exist");
+    let option_from_niche_ptr_index = *runtime_fn_index
+      .get("__rt_option_from_niche_ptr")
+      .expect("__rt_option_from_niche_ptr helper must exist");
+    let option_to_niche_ptr_index = *runtime_fn_index
+      .get("__rt_option_to_niche_ptr")
+      .expect("__rt_option_to_niche_ptr helper must exist");
     let enum_tag_id = *tag_index.get("enum").expect("enum tag must exist") as i32;
     for compound_type in component_types {
       let lift_index = num_imports + compiled_fns.len() as u32;
@@ -1054,6 +1066,10 @@ fn emit_wasm_impl(
             buffer_new_index,
             arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
+            enum_load_payload_index,
+            option_from_niche_ptr_index,
+            option_to_niche_ptr_index,
+            enum_layouts: &enum_layouts,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
@@ -1074,6 +1090,10 @@ fn emit_wasm_impl(
             buffer_new_index,
             arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
+            enum_load_payload_index,
+            option_from_niche_ptr_index,
+            option_to_niche_ptr_index,
+            enum_layouts: &enum_layouts,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
@@ -1105,6 +1125,10 @@ fn emit_wasm_impl(
             buffer_new_index,
             arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
+            enum_load_payload_index,
+            option_from_niche_ptr_index,
+            option_to_niche_ptr_index,
+            enum_layouts: &enum_layouts,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
@@ -1131,6 +1155,10 @@ fn emit_wasm_impl(
             buffer_new_index,
             arena_alloc_index: arena_alloc_idx,
             cabi_realloc_index,
+            enum_load_payload_index,
+            option_from_niche_ptr_index,
+            option_to_niche_ptr_index,
+            enum_layouts: &enum_layouts,
             list_codecs: &component_list_codecs,
             struct_codecs: &component_struct_codecs,
             variant_codecs: &component_variant_codecs,
@@ -1157,6 +1185,16 @@ fn emit_wasm_impl(
       buffer_new_index,
       arena_alloc_index: arena_alloc_idx,
       cabi_realloc_index,
+      enum_load_payload_index: *runtime_fn_index
+        .get("__rt_enum_load_payload")
+        .expect("__rt_enum_load_payload helper must exist"),
+      option_from_niche_ptr_index: *runtime_fn_index
+        .get("__rt_option_from_niche_ptr")
+        .expect("__rt_option_from_niche_ptr helper must exist"),
+      option_to_niche_ptr_index: *runtime_fn_index
+        .get("__rt_option_to_niche_ptr")
+        .expect("__rt_option_to_niche_ptr helper must exist"),
+      enum_layouts: &enum_layouts,
       list_codecs: &component_list_codecs,
       struct_codecs: &component_struct_codecs,
       variant_codecs: &component_variant_codecs,
@@ -1445,6 +1483,7 @@ fn emit_wasm_impl(
     runtime_fn_index,
     tag_index,
     struct_layouts,
+    enum_layouts,
     non_coherent_nominal_defs,
     string_pool,
     atom_globals,
@@ -1695,6 +1734,19 @@ fn emit_wasm_impl(
         buffer_new_index,
         arena_alloc_index: arena_alloc_idx,
         cabi_realloc_index,
+        enum_load_payload_index: *env
+          .runtime_fn_index
+          .get("__rt_enum_load_payload")
+          .expect("__rt_enum_load_payload helper must exist"),
+        option_from_niche_ptr_index: *env
+          .runtime_fn_index
+          .get("__rt_option_from_niche_ptr")
+          .expect("__rt_option_from_niche_ptr helper must exist"),
+        option_to_niche_ptr_index: *env
+          .runtime_fn_index
+          .get("__rt_option_to_niche_ptr")
+          .expect("__rt_option_to_niche_ptr helper must exist"),
+        enum_layouts: &env.enum_layouts,
         list_codecs: &component_list_codecs,
         struct_codecs: &component_struct_codecs,
         variant_codecs: &component_variant_codecs,
@@ -6224,6 +6276,7 @@ struct WasmCompileEnv {
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
   struct_layouts: StructLayouts,
+  enum_layouts: EnumLayouts,
   any_type_table: any_box::AnyTypeTable,
   /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
   non_coherent_nominal_defs: Arc<HashSet<String>>,
@@ -6649,6 +6702,8 @@ struct WasmGenCtx {
   tag_index: HashMap<String, u32>,
   /// Stable definition identities, display names, and field layouts.
   struct_layouts: StructLayouts,
+  /// Compact nominal Enum variant descriptors (`layout_id >= 1`).
+  enum_layouts: EnumLayouts,
   /// Whole-program canonical `TypeId` table (`1..=N`, `0` = never-boxed).
   any_type_table: any_box::AnyTypeTable,
   /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
@@ -6769,6 +6824,7 @@ impl WasmGenCtx {
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
       struct_layouts: env.struct_layouts,
+      enum_layouts: env.enum_layouts,
       any_type_table: env.any_type_table,
       non_coherent_nominal_defs: env.non_coherent_nominal_defs,
       block_depth: 0,
@@ -10029,7 +10085,187 @@ fn is_direct_nil_to_option_call_on_var(expr: &Calcit, var_name: &str) -> bool {
   }
 }
 
+fn try_emit_direct_niche_option_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<Option<(u32, Arc<CalcitTypeAnnotation>)>, String> {
+  let Calcit::List(items) = expr else {
+    return Ok(None);
+  };
+  let Some(head) = items.first() else {
+    return Ok(None);
+  };
+  if matches!(head, Calcit::Syntax(CalcitSyntax::AssertType, _)) && items.len() >= 2 {
+    return try_emit_direct_niche_option_i32(ctx, &items[1]);
+  }
+  let is_struct_nth = matches!(head, Calcit::Proc(CalcitProc::NativeStructNth))
+    || matches!(head, Calcit::Import(imp) if imp.ns.as_ref() == "calcit.core" && imp.def.as_ref() == "&struct:nth");
+  if is_struct_nth
+    && items.len() >= 3
+    && let Calcit::Number(n) = &items[2]
+    && n.is_finite()
+    && *n >= 0.0
+    && n.fract() == 0.0
+  {
+    let idx = *n as usize;
+    if let Some(struct_def) = infer_wasm_static_type(ctx, &items[1]).and_then(|ty| ty.resolve_to_struct())
+      && let Ok(layout_id) = ctx.struct_layouts.id(&struct_def)
+      && let Ok(layout) = ctx.struct_layouts.layout_by_id(layout_id).cloned()
+      && let Some(&field_layout) = layout.fields.get(idx)
+      && field_layout.kind == StructFieldKind::OptionHeapPtrI32
+      && let Some(field_ty) = struct_def.field_types.get(idx)
+      && let Some(inner_ty) = option_niche_inner(&qualify_for_definition_ref(field_ty, struct_def.definition_ref.as_deref()))
+    {
+      let ptr_local = emit_ptr_to_i32(ctx, &items[1])?;
+      let raw_opt = ctx.alloc_local_typed(ValType::I32);
+      ctx.emit(Instruction::LocalGet(ptr_local));
+      ctx.emit(Instruction::I32Load(mem_arg_i32(u64::from(field_layout.offset))));
+      ctx.emit(Instruction::LocalSet(raw_opt));
+      return Ok(Some((raw_opt, inner_ty)));
+    }
+  }
+
+  let is_enum_nth = matches!(head, Calcit::Proc(CalcitProc::NativeEnumNth))
+    || matches!(head, Calcit::Import(imp) if imp.ns.as_ref() == "calcit.core" && imp.def.as_ref() == "&enum:nth");
+  if is_enum_nth
+    && items.len() == 3
+    && let Calcit::Number(n) = &items[2]
+    && n.is_finite()
+    && *n >= 1.0
+    && n.fract() == 0.0
+    && *n <= f64::from(u16::MAX)
+  {
+    let idx = *n as usize;
+    let payload_idx = idx - 1;
+    if let Some(enum_def) = infer_wasm_static_type(ctx, &items[1]).and_then(|ty| ty.resolve_to_enum())
+      && enum_def.generics().is_empty()
+    {
+      let def_ref = enum_def.definition_ref().map(|r| r.as_ref());
+      let mut common: Option<(u16, Arc<CalcitTypeAnnotation>)> = None;
+      let mut all_match = false;
+      for variant in enum_def.variants() {
+        if variant.payload_types().len() <= payload_idx {
+          continue;
+        }
+        let Some((_, layout)) = ctx
+          .enum_layouts
+          .get_for_def(&enum_def, variant.tag.ref_str(), variant.payload_types().len())
+        else {
+          all_match = false;
+          break;
+        };
+        let field_layout = layout.fields[payload_idx];
+        if field_layout.kind != StructFieldKind::OptionHeapPtrI32 {
+          all_match = false;
+          break;
+        }
+        let qualified = qualify_for_definition_ref(&variant.payload_types()[payload_idx], def_ref);
+        let Some(inner_ty) = option_niche_inner(&qualified) else {
+          all_match = false;
+          break;
+        };
+        match &common {
+          None => {
+            common = Some((field_layout.offset, inner_ty));
+            all_match = true;
+          }
+          Some((prev_off, prev_ty)) if *prev_off == field_layout.offset && *prev_ty == inner_ty => {}
+          Some(_) => {
+            all_match = false;
+            break;
+          }
+        }
+      }
+      if all_match && let Some((offset, inner_ty)) = common {
+        let ptr_local = emit_ptr_to_i32(ctx, &items[1])?;
+        ctx.emit(Instruction::LocalGet(ptr_local));
+        ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
+        ctx.emit(Instruction::I32Const(idx as i32));
+        ctx.emit(Instruction::I32LtU);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+
+        let raw_opt = ctx.alloc_local_typed(ValType::I32);
+        ctx.emit(Instruction::LocalGet(ptr_local));
+        ctx.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+        ctx.emit(Instruction::LocalGet(ptr_local));
+        ctx.emit(Instruction::F64Load(mem_arg_f64((idx * 8) as u64)));
+        ctx.emit(Instruction::I32TruncF64U);
+        ctx.call_rt("__rt_option_to_niche_ptr");
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(ptr_local));
+        ctx.emit(Instruction::I32Load(mem_arg_i32(u64::from(offset))));
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalSet(raw_opt));
+        return Ok(Some((raw_opt, inner_ty)));
+      }
+    }
+  }
+
+  Ok(None)
+}
+
+fn try_emit_direct_niche_option_call(
+  ctx: &mut WasmGenCtx,
+  qualified: &str,
+  args: &[Calcit],
+  dst_repr: NativeValRepr,
+) -> Result<bool, String> {
+  match (qualified, args.len()) {
+    ("calcit.core/option:some?", 1) => {
+      if let Some((raw_opt, _)) = try_emit_direct_niche_option_i32(ctx, &args[0])? {
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        ctx.emit(Instruction::I32Const(0));
+        ctx.emit(Instruction::I32Ne);
+        emit_convert_repr(ctx, NativeValRepr::BoolI32, dst_repr);
+        return Ok(true);
+      }
+    }
+    ("calcit.core/option:none?", 1) => {
+      if let Some((raw_opt, _)) = try_emit_direct_niche_option_i32(ctx, &args[0])? {
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        ctx.emit(Instruction::I32Eqz);
+        emit_convert_repr(ctx, NativeValRepr::BoolI32, dst_repr);
+        return Ok(true);
+      }
+    }
+    ("calcit.core/option:unwrap", 1) => {
+      if let Some((raw_opt, _)) = try_emit_direct_niche_option_i32(ctx, &args[0])? {
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.begin_block_if();
+        ctx.emit(Instruction::Unreachable);
+        ctx.emit(Instruction::End);
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        emit_convert_repr(ctx, NativeValRepr::HeapPtrI32, dst_repr);
+        return Ok(true);
+      }
+    }
+    ("calcit.core/option:unwrap-or", 2) => {
+      if let Some((raw_opt, _)) = try_emit_direct_niche_option_i32(ctx, &args[0])? {
+        let fallback = ctx.alloc_local_typed(dst_repr.val_type());
+        emit_expr_as_repr(ctx, &args[1], dst_repr)?;
+        ctx.emit(Instruction::LocalSet(fallback));
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        ctx.emit(Instruction::I32Eqz);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(dst_repr.val_type())));
+        ctx.emit(Instruction::LocalGet(fallback));
+        ctx.emit(Instruction::Else);
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        emit_convert_repr(ctx, NativeValRepr::HeapPtrI32, dst_repr);
+        ctx.emit(Instruction::End);
+        return Ok(true);
+      }
+    }
+    _ => {}
+  }
+  Ok(false)
+}
+
 fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[Calcit]) -> Result<bool, String> {
+  if try_emit_direct_niche_option_call(ctx, qualified, args, NativeValRepr::F64)? {
+    return Ok(true);
+  }
   let Some(definition) = ctx.static_fn_defs.get(qualified).cloned() else {
     return Ok(false);
   };
@@ -12024,6 +12260,27 @@ fn emit_call_expr_as_repr(
     Calcit::Proc(CalcitProc::NativeEnumNth) if dst_repr != NativeValRepr::F64 => {
       return emit_enum_nth_as_repr(ctx, &args_list, dst_repr);
     }
+    Calcit::Method(name, MethodKind::Invoke(_))
+      if dst_repr != NativeValRepr::F64 && matches!(name.as_ref(), "some?" | "none?" | "unwrap" | "unwrap-or") =>
+    {
+      let qualified = format!("calcit.core/option:{name}");
+      if try_emit_direct_niche_option_call(ctx, &qualified, &args_list, dst_repr)? {
+        return Ok(());
+      }
+    }
+    Calcit::Import(import)
+      if dst_repr != NativeValRepr::F64
+        && import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
+        && matches!(
+          import.def.as_ref(),
+          "option:some?" | "option:none?" | "option:unwrap" | "option:unwrap-or"
+        ) =>
+    {
+      let qualified = format!("calcit.core/{}", import.def);
+      if try_emit_direct_niche_option_call(ctx, &qualified, &args_list, dst_repr)? {
+        return Ok(());
+      }
+    }
     Calcit::Import(import)
       if dst_repr != NativeValRepr::F64 && import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "do" =>
     {
@@ -13175,6 +13432,25 @@ fn emit_list_slice_from_i32_local(ctx: &mut WasmGenCtx, src_i32: u32, from_idx: 
 
 /// Both ordinary and explicit-origin dispatch use the actual selected callable.
 fn emit_resolved_method_call(ctx: &mut WasmGenCtx, callable: Calcit, args: &[Calcit]) -> Result<(), String> {
+  match &callable {
+    Calcit::Import(import) if import.ns.as_ref() == "calcit.core" => {
+      let qualified = format!("calcit.core/{}", import.def);
+      if try_emit_direct_niche_option_call(ctx, &qualified, args, NativeValRepr::F64)? {
+        return Ok(());
+      }
+    }
+    Calcit::Fn { info, .. } => {
+      if let Some(def_ref) = &info.def_ref
+        && def_ref.def_ns.as_ref() == "calcit.core"
+      {
+        let qualified = format!("calcit.core/{}", def_ref.def_name);
+        if try_emit_direct_niche_option_call(ctx, &qualified, args, NativeValRepr::F64)? {
+          return Ok(());
+        }
+      }
+    }
+    _ => {}
+  }
   if let Calcit::Fn { id, info } = &callable
     && info.scope.is_empty()
     && resolve_known_function_value(ctx, &callable).is_none()
@@ -16958,11 +17234,6 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return emit_destruct_list_match(ctx, &shape);
   }
 
-  // Evaluate the enum subject as an i32 pointer and read `[count:u32 @ 0][tag_id:u32 @ 4]`.
-  let enum_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count_local = emit_load_enum_count_i32(ctx, enum_ptr);
-  let tag_local = emit_load_enum_tag_i32(ctx, enum_ptr);
-
   // Collect branches: separate tag branches and wildcard
   let branches: Vec<&Calcit> = if args.len() == 3
     && matches!(&args[1], Calcit::EnumDef(_))
@@ -16997,6 +17268,106 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
       other => return Err(format!("unsupported match pattern: {other}")),
     }
   }
+
+  // Direct consumer fast path: match directly on an OptionHeapPtrI32 field/payload
+  // using `i32.eqz` / raw ptr unwrapping without materializing a heap Option.
+  let is_option_match = tag_branches.iter().all(|(pattern, _)| {
+    let Calcit::List(pat_xs) = pattern else {
+      return false;
+    };
+    matches!(
+      (pat_xs.first(), pat_xs.len()),
+      (Some(Calcit::Tag(t)), 1) if t.ref_str() == "none"
+    ) || matches!(
+      (pat_xs.first(), pat_xs.len()),
+      (Some(Calcit::Tag(t)), 2) if t.ref_str() == "some"
+    )
+  });
+  if is_option_match && let Some((raw_opt, inner_ty)) = try_emit_direct_niche_option_i32(ctx, &args[0])? {
+    let num_tag_branches = tag_branches.len();
+    if num_tag_branches == 0 {
+      if let Some(body) = wildcard_body {
+        emit_expr(ctx, body)?;
+      } else {
+        ctx.emit(f64_const(0.0));
+      }
+      return Ok(());
+    }
+    let after_subject_resets = ctx.reset_initialized_atoms.clone();
+    let mut joined_resets: Option<HashSet<String>> = None;
+    for (i, (pattern, body)) in tag_branches.iter().enumerate() {
+      let Calcit::List(pat_xs) = pattern else { unreachable!() };
+      let Calcit::Tag(t) = &pat_xs[0] else { unreachable!() };
+      let is_none = t.ref_str() == "none";
+      ctx.emit(Instruction::LocalGet(raw_opt));
+      if is_none {
+        ctx.emit(Instruction::I32Eqz);
+      } else {
+        ctx.emit(Instruction::I32Const(0));
+        ctx.emit(Instruction::I32Ne);
+      }
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.block_depth += 1;
+
+      let mut saved_binding: Option<(String, Option<WasmTypeEvidence>)> = None;
+      if !is_none {
+        let binding = &pat_xs[1];
+        let bind_name = match binding {
+          Calcit::Local(CalcitLocal { sym, .. }) => sym.to_string(),
+          Calcit::Symbol { sym, .. } => sym.to_string(),
+          other => return Err(format!("match binding expected symbol, got: {other}")),
+        };
+        let bound_ev = WasmTypeEvidence::contract(resolve_match_payload_type(binding, inner_ty.clone()));
+        let bind_repr = NativeValRepr::from_type_annotation(&bound_ev.annotation);
+        ctx.emit(Instruction::LocalGet(raw_opt));
+        emit_convert_repr(ctx, NativeValRepr::HeapPtrI32, bind_repr);
+        let idx = ctx.declare_local_with_repr(&bind_name, bind_repr);
+        saved_binding = Some((bind_name.clone(), ctx.local_types.get(&bind_name).cloned()));
+        ctx.local_types.insert(bind_name, bound_ev);
+        ctx.emit(Instruction::LocalSet(idx));
+      }
+
+      ctx.reset_initialized_atoms.clone_from(&after_subject_resets);
+      emit_expr(ctx, body)?;
+      match &mut joined_resets {
+        Some(acc) => acc.retain(|k| ctx.reset_initialized_atoms.contains(k)),
+        None => joined_resets = Some(ctx.reset_initialized_atoms.clone()),
+      }
+      if let Some((bind_name, prev_ev)) = saved_binding {
+        if let Some(ev) = prev_ev {
+          ctx.local_types.insert(bind_name, ev);
+        } else {
+          ctx.local_types.remove(&bind_name);
+        }
+      }
+
+      ctx.emit(Instruction::Else);
+      if i == num_tag_branches - 1 {
+        ctx.reset_initialized_atoms.clone_from(&after_subject_resets);
+        if let Some(wb) = wildcard_body {
+          emit_expr(ctx, wb)?;
+        } else {
+          ctx.emit(f64_const(0.0));
+        }
+        match &mut joined_resets {
+          Some(acc) => acc.retain(|k| ctx.reset_initialized_atoms.contains(k)),
+          None => joined_resets = Some(ctx.reset_initialized_atoms.clone()),
+        }
+      }
+    }
+    ctx.reset_initialized_atoms = joined_resets.unwrap_or(after_subject_resets);
+    for _ in 0..num_tag_branches {
+      ctx.block_depth -= 1;
+      ctx.emit(Instruction::End);
+    }
+    return Ok(());
+  }
+
+  // Evaluate the enum subject as an i32 pointer and read `[count:u16 @ 0][layout_id:u16 @ 2][tag_id:u32 @ 4]`.
+  let enum_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let count_local = emit_load_enum_count_i32(ctx, enum_ptr);
+  let tag_local = emit_load_enum_tag_i32(ctx, enum_ptr);
+  let layout_local = (ctx.enum_layouts.max_layout_id > 0).then(|| emit_load_enum_layout_id_i32(ctx, enum_ptr));
 
   // Generate nested if/else chain
   let num_tag_branches = tag_branches.len();
@@ -17059,6 +17430,12 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     ctx.block_depth += 1;
 
+    let known_enum_def = subject_ty.as_ref().and_then(|ty| ty.resolve_to_enum());
+    let compact_variant = known_enum_def
+      .as_ref()
+      .and_then(|def| ctx.enum_layouts.get_for_def(def, &tag_str, binding_count))
+      .map(|(id, l)| (id, l.clone()));
+
     // Bind payload variables from enum fields
     let mut saved_types: Vec<(String, Option<WasmTypeEvidence>)> = Vec::with_capacity(binding_count);
     for bind_idx in 0..binding_count {
@@ -17068,14 +17445,12 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("match binding expected symbol, got: {other}")),
       };
-      // Payload at offset (1 + bind_idx) * 8 after 8-byte compact enum header
-      let offset = ((1 + bind_idx) * 8) as u64;
       let bound_ev = if let Some((anon_tag, anon_payloads)) = &anon_enum
         && anon_tag == &tag_str
       {
         anon_payloads.get(bind_idx).cloned().flatten()
       } else if let Some(ty) = &subject_ty
-        && let Some(enum_def) = ty.resolve_to_enum()
+        && let Some(enum_def) = known_enum_def.as_ref()
         && let Some(variant) = enum_def.find_variant_by_name(&tag_str)
       {
         let type_args = match ty.as_ref() {
@@ -17095,9 +17470,20 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
       let bind_repr = bound_ev
         .as_ref()
         .map_or(NativeValRepr::F64, |ev| NativeValRepr::from_type_annotation(&ev.annotation));
-      ctx.emit(Instruction::LocalGet(enum_ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(offset)));
-      emit_unbox_f64_to_repr(ctx, bind_repr);
+      if let (Some(layout_id_local), Some((expected_layout_id, compact_layout))) = (layout_local, &compact_variant) {
+        ctx.emit(Instruction::LocalGet(layout_id_local));
+        ctx.emit(Instruction::I32Const(i32::from(*expected_layout_id)));
+        ctx.emit(Instruction::I32Eq);
+        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(bind_repr.val_type())));
+        emit_load_struct_field_as_repr(ctx, enum_ptr, compact_layout.fields[bind_idx], bind_repr);
+        ctx.emit(Instruction::Else);
+        emit_load_enum_payload_as_f64(ctx, enum_ptr, bind_idx);
+        emit_unbox_f64_to_repr(ctx, bind_repr);
+        ctx.emit(Instruction::End);
+      } else {
+        emit_load_enum_payload_as_f64(ctx, enum_ptr, bind_idx);
+        emit_unbox_f64_to_repr(ctx, bind_repr);
+      }
       let idx = ctx.declare_local_with_repr(&bind_name, bind_repr);
       saved_types.push((bind_name.clone(), ctx.local_types.get(&bind_name).cloned()));
       if let Some(ev) = bound_ev {
@@ -17661,6 +18047,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -17850,6 +18237,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -17960,6 +18348,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -18203,6 +18592,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -18313,6 +18703,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -18402,6 +18793,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("list".to_string(), 1)]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -18511,6 +18903,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("list".to_string(), 1)]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -18608,6 +19001,10 @@ mod tests {
         buffer_new_index: 11,
         arena_alloc_index: 40,
         cabi_realloc_index: 30,
+        enum_load_payload_index: 44,
+        option_from_niche_ptr_index: 45,
+        option_to_niche_ptr_index: 46,
+        enum_layouts: Box::leak(Box::new(super::EnumLayouts::default())),
         list_codecs,
         struct_codecs,
         variant_codecs,
@@ -19866,11 +20263,16 @@ mod tests {
     let struct_codecs = BTreeMap::new();
     let variant_codecs = BTreeMap::new();
     let drop_indices = BTreeMap::new();
+    let enum_layouts = super::EnumLayouts::default();
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
       arena_alloc_index: 40,
       cabi_realloc_index: 30,
+      enum_load_payload_index: 44,
+      option_from_niche_ptr_index: 45,
+      option_to_niche_ptr_index: 46,
+      enum_layouts: &enum_layouts,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
       variant_codecs: &variant_codecs,
@@ -19933,11 +20335,16 @@ mod tests {
     let struct_codecs = BTreeMap::new();
     let variant_codecs = BTreeMap::new();
     let drop_indices = BTreeMap::new();
+    let enum_layouts = super::EnumLayouts::default();
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
       arena_alloc_index: 40,
       cabi_realloc_index: 30,
+      enum_load_payload_index: 44,
+      option_from_niche_ptr_index: 45,
+      option_to_niche_ptr_index: 46,
+      enum_layouts: &enum_layouts,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
       variant_codecs: &variant_codecs,
@@ -20232,11 +20639,16 @@ mod tests {
       result: ComponentAbiType::Bool,
     };
     assert_eq!(component_import_signature(&import), (vec![ValType::I32], vec![ValType::I32]));
+    let enum_layouts = super::EnumLayouts::default();
     let codecs = ComponentValueCodecs {
       str_new_index: 10,
       buffer_new_index: 11,
       arena_alloc_index: 40,
       cabi_realloc_index: 12,
+      enum_load_payload_index: 44,
+      option_from_niche_ptr_index: 45,
+      option_to_niche_ptr_index: 46,
+      enum_layouts: &enum_layouts,
       list_codecs: &list_codecs,
       struct_codecs: &struct_codecs,
       variant_codecs: &variant_codecs,
@@ -20835,6 +21247,7 @@ mod tests {
         runtime_fn_index: HashMap::from([("__rt_copy_f64_slots".into(), 0)]),
         tag_index: HashMap::from([("list".into(), 1)]),
         struct_layouts: Default::default(),
+        enum_layouts: Default::default(),
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
         atom_is_scalar: HashMap::new(),
@@ -20914,6 +21327,7 @@ mod tests {
         runtime_fn_index: HashMap::new(),
         tag_index: HashMap::new(),
         struct_layouts: Default::default(),
+        enum_layouts: Default::default(),
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
         atom_is_scalar: HashMap::new(),
@@ -21227,6 +21641,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("nil".into(), 10), ("bool".into(), 11)]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -21442,6 +21857,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -21583,6 +21999,7 @@ mod tests {
         ("struct".to_owned(), 9),
       ]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -21713,6 +22130,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -21845,6 +22263,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),
@@ -21941,6 +22360,7 @@ mod tests {
           runtime_fn_index: HashMap::new(),
           tag_index: HashMap::new(),
           struct_layouts: Default::default(),
+          enum_layouts: Default::default(),
           string_pool: HashMap::new(),
           atom_globals: HashMap::new(),
           atom_is_scalar: HashMap::new(),
@@ -22125,6 +22545,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([(String::from("dyn-trait"), 10)]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),

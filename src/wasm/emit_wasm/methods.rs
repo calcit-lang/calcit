@@ -427,10 +427,17 @@ fn emit_heap_count_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
 }
 
-fn emit_compact_header_count_f64(ctx: &mut WasmGenCtx, receiver_local: u32) {
+fn emit_struct_header_count_f64(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.emit(Instruction::LocalGet(receiver_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::F64ConvertI32U);
+}
+
+fn emit_enum_header_count_f64(ctx: &mut WasmGenCtx, receiver_local: u32) {
+  ctx.emit(Instruction::LocalGet(receiver_local));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::F64ConvertI32U);
 }
 
@@ -493,12 +500,20 @@ fn emit_enum_nth_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_loc
   ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::Else);
-  ctx.emit(Instruction::LocalGet(ptr_local));
-  ctx.emit(Instruction::LocalGet(idx_local));
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Mul);
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  if ctx.enum_layouts.max_layout_id > 0 {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::LocalGet(idx_local));
+    ctx.emit(Instruction::I32Const(1));
+    ctx.emit(Instruction::I32Sub);
+    ctx.call_rt("__rt_enum_load_payload");
+  } else {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::LocalGet(idx_local));
+    ctx.emit(Instruction::I32Const(8));
+    ctx.emit(Instruction::I32Mul);
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  }
   ctx.emit(Instruction::End);
 }
 
@@ -793,7 +808,7 @@ fn emit_enum_contains_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, key_
     ctx.emit(f64_const(0.0));
     ctx.emit(Instruction::F64Ge);
     ctx.emit(Instruction::LocalGet(key_local));
-    emit_compact_header_count_f64(ctx, receiver_local);
+    emit_enum_header_count_f64(ctx, receiver_local);
     ctx.emit(f64_const(1.0));
     ctx.emit(Instruction::F64Add);
     ctx.emit(Instruction::F64Lt);
@@ -877,7 +892,15 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
       ctx.emit(Instruction::Select);
       return Ok(());
     }
-    Some("enum" | "struct") => {
+    Some("enum") => {
+      ctx.emit(Instruction::LocalGet(receiver_local));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
+      ctx.emit(Instruction::I32Eqz);
+      ctx.emit(Instruction::F64ConvertI32U);
+      return Ok(());
+    }
+    Some("struct") => {
       ctx.emit(Instruction::LocalGet(receiver_local));
       ctx.emit(Instruction::I32TruncF64U);
       ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
@@ -910,13 +933,13 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::Else);
 
-  for (tag, compact) in [
-    (list_tag, false),
-    (map_tag, false),
-    (set_tag, false),
-    (string_tag, false),
-    (enum_tag, true),
-    (struct_tag, true),
+  for (tag, is_enum, is_struct) in [
+    (list_tag, false, false),
+    (map_tag, false, false),
+    (set_tag, false, false),
+    (string_tag, false, false),
+    (enum_tag, true, false),
+    (struct_tag, false, true),
   ] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
@@ -924,8 +947,10 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     ctx.emit(f64_const(1.0));
     ctx.emit(f64_const(0.0));
-    if compact {
-      emit_compact_header_count_f64(ctx, receiver_local);
+    if is_enum {
+      emit_enum_header_count_f64(ctx, receiver_local);
+    } else if is_struct {
+      emit_struct_header_count_f64(ctx, receiver_local);
     } else {
       emit_heap_count_from_local(ctx, receiver_local);
     }
@@ -1239,11 +1264,21 @@ fn emit_list_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
 
 fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = super::emit_load_enum_count_i32(ctx, ptr_local);
   let idx_local = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(index_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(idx_local));
+
+  if ctx.enum_layouts.max_layout_id > 0 {
+    ctx.emit(Instruction::LocalGet(ptr_local));
+    ctx.emit(Instruction::LocalGet(idx_local));
+    ctx.emit(Instruction::LocalGet(val_local));
+    ctx.call_rt("__rt_enum_assoc");
+    ctx.emit(Instruction::F64ConvertI32U);
+    return;
+  }
+
+  let count_local = super::emit_load_enum_count_i32(ctx, ptr_local);
 
   let size = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(count_local));
@@ -1359,8 +1394,12 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
       emit_heap_count_from_local(ctx, receiver_local);
       return Ok(());
     }
-    Some("enum" | "struct") => {
-      emit_compact_header_count_f64(ctx, receiver_local);
+    Some("enum") => {
+      emit_enum_header_count_f64(ctx, receiver_local);
+      return Ok(());
+    }
+    Some("struct") => {
+      emit_struct_header_count_f64(ctx, receiver_local);
       return Ok(());
     }
     Some(_) => {
@@ -1388,20 +1427,22 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::Else);
 
-  for (tag, compact) in [
-    (list_tag, false),
-    (map_tag, false),
-    (set_tag, false),
-    (string_tag, false),
-    (enum_tag, true),
-    (struct_tag, true),
+  for (tag, is_enum, is_struct) in [
+    (list_tag, false, false),
+    (map_tag, false, false),
+    (set_tag, false, false),
+    (string_tag, false, false),
+    (enum_tag, true, false),
+    (struct_tag, false, true),
   ] {
     ctx.emit(Instruction::LocalGet(type_local));
     ctx.emit(f64_const(tag));
     ctx.emit(Instruction::F64Eq);
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-    if compact {
-      emit_compact_header_count_f64(ctx, receiver_local);
+    if is_enum {
+      emit_enum_header_count_f64(ctx, receiver_local);
+    } else if is_struct {
+      emit_struct_header_count_f64(ctx, receiver_local);
     } else {
       emit_heap_count_from_local(ctx, receiver_local);
     }

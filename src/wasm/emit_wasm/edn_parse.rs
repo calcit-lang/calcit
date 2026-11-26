@@ -1043,7 +1043,7 @@ fn emit_encode_map_option(
   ctx.emit(Instruction::LocalSet(ptr));
   let count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::LocalSet(count));
   let vtag = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
@@ -1173,7 +1173,7 @@ fn emit_decode_map_option(
     ctx.emit(Instruction::LocalSet(ptr));
     let count = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(ptr));
-    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
     ctx.emit(Instruction::LocalSet(count));
     let vtag = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(ptr));
@@ -1761,7 +1761,7 @@ fn emit_encode_map_struct(
     if matches!(graph.nodes.get(*child), Some(DataShapeNode::MapOption { .. })) {
       ctx.emit(Instruction::LocalGet(raw_val));
       ctx.emit(Instruction::I32TruncF64U);
-      ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+      ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
       ctx.emit(Instruction::I32Const(0));
       ctx.emit(Instruction::I32Ne);
       ctx.begin_block_if();
@@ -2110,7 +2110,7 @@ fn emit_decode_map_enum(
   ctx.emit(Instruction::LocalSet(ptr));
   let count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::LocalSet(count));
   let vtag = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr));
@@ -2142,8 +2142,7 @@ fn emit_decode_map_enum(
       ctx.emit(Instruction::LocalGet(valid));
       ctx.begin_block_if();
       let raw_p = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + pidx) * 8) as u64)));
+      emit_load_enum_payload_as_f64(ctx, ptr, pidx);
       ctx.emit(Instruction::LocalSet(raw_p));
       let p_ok = ctx.alloc_local_typed(ValType::I32);
       let p_err = ctx.alloc_local_typed(ValType::I32);
@@ -2186,14 +2185,7 @@ fn emit_decode_map_enum(
     ctx.emit(Instruction::LocalGet(input));
     ctx.emit(Instruction::LocalSet(decoded));
     ctx.emit(Instruction::Else);
-    let enum_ptr = ctx.alloc_local_typed(ValType::I32);
-    emit_bump_alloc(ctx, ((1 + payload_nodes.len()) * 8) as i32, enum_ptr, "enum");
-    emit_store_compact_header(ctx, enum_ptr, payload_nodes.len() as u32, expected_tag);
-    for (payload_index, value) in values.iter().enumerate() {
-      ctx.emit(Instruction::LocalGet(enum_ptr));
-      ctx.emit(Instruction::LocalGet(*value));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + payload_index) * 8) as u64)));
-    }
+    let enum_ptr = emit_alloc_nominal_enum_from_f64_locals(ctx, nominal, variant.ref_str(), expected_tag, &values)?;
     ctx.emit(Instruction::LocalGet(enum_ptr));
     ctx.emit(Instruction::F64ConvertI32U);
     ctx.emit(Instruction::LocalSet(decoded));
@@ -2646,14 +2638,7 @@ fn emit_parse_scalar_enum(
         variant
       )
     })?;
-    let enum_ptr = ctx.alloc_local_typed(ValType::I32);
-    emit_bump_alloc(ctx, ((1 + payload_nodes.len()) * 8) as i32, enum_ptr, "enum");
-    emit_store_compact_header(ctx, enum_ptr, payload_nodes.len() as u32, tag_id);
-    for (payload_index, value) in values.iter().enumerate() {
-      ctx.emit(Instruction::LocalGet(enum_ptr));
-      ctx.emit(Instruction::LocalGet(*value));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + payload_index) * 8) as u64)));
-    }
+    let enum_ptr = emit_alloc_nominal_enum_from_f64_locals(ctx, nominal, variant.ref_str(), tag_id, &values)?;
     ctx.emit(Instruction::LocalGet(enum_ptr));
     ctx.emit(Instruction::F64ConvertI32U);
     ctx.emit(Instruction::LocalSet(parsed));
@@ -4026,6 +4011,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::from([("nil".to_owned(), 0)]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),

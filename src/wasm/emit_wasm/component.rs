@@ -26,6 +26,10 @@ pub(super) struct ComponentValueCodecs<'a> {
   pub buffer_new_index: u32,
   pub arena_alloc_index: u32,
   pub cabi_realloc_index: u32,
+  pub enum_load_payload_index: u32,
+  pub option_from_niche_ptr_index: u32,
+  pub option_to_niche_ptr_index: u32,
+  pub enum_layouts: &'a EnumLayouts,
   pub list_codecs: &'a BTreeMap<ComponentAbiType, ComponentListCodec>,
   pub struct_codecs: &'a BTreeMap<ComponentAbiType, ComponentStructCodec>,
   pub variant_codecs: &'a BTreeMap<ComponentAbiType, ComponentVariantCodec>,
@@ -1309,6 +1313,7 @@ pub(super) fn push_store_f64_into_compact_struct_field(instructions: &mut Vec<In
     }
     StructFieldKind::Int64 => instructions.extend([Instruction::I64TruncF64S, Instruction::I64Store(mem_arg_i64(offset))]),
     StructFieldKind::UInt64 => instructions.extend([Instruction::I64TruncF64U, Instruction::I64Store(mem_arg_i64(offset))]),
+    StructFieldKind::OptionHeapPtrI32 => unreachable!("OptionHeapPtrI32 requires niche helper in Component codecs"),
   }
 }
 
@@ -1337,7 +1342,9 @@ pub(super) fn push_load_compact_struct_field_f64(
     StructFieldKind::Int32 => instructions.extend([Instruction::I32Load(mem_arg_i32(offset)), Instruction::F64ConvertI32S]),
     StructFieldKind::Int64 => instructions.extend([Instruction::I64Load(mem_arg_i64(offset)), Instruction::F64ConvertI64S]),
     StructFieldKind::UInt64 => instructions.extend([Instruction::I64Load(mem_arg_i64(offset)), Instruction::F64ConvertI64U]),
-    StructFieldKind::UnitZero => unreachable!(),
+    StructFieldKind::UnitZero | StructFieldKind::OptionHeapPtrI32 => {
+      unreachable!("UnitZero / OptionHeapPtrI32 handled before load")
+    }
   }
 }
 
@@ -1469,6 +1476,7 @@ pub(super) fn build_component_struct_lift_fn(
   let struct_ptr = 2;
   let source_addr = 3;
   let bool_value = 4;
+  let niche_val = 5;
   let mut instructions = Vec::new();
   push_checked_alignment(&mut instructions, 0, layout.alignment);
   push_checked_memory_region_const(&mut instructions, 0, i64::from(layout.size));
@@ -1501,8 +1509,45 @@ pub(super) fn build_component_struct_lift_fn(
       Instruction::I32Const(field_offset),
       Instruction::I32Add,
       Instruction::LocalSet(source_addr),
-      Instruction::LocalGet(struct_ptr),
     ]);
+    if compact_field.kind == StructFieldKind::OptionHeapPtrI32 {
+      if let ComponentAbiType::Option(inner) = field_type {
+        let payload_offset = component_variant_payload_offset(field_type);
+        instructions.extend([
+          Instruction::LocalGet(source_addr),
+          Instruction::I32Load8U(mem_arg_byte(0)),
+          Instruction::I32Eqz,
+          Instruction::If(BlockType::Empty),
+          Instruction::LocalGet(struct_ptr),
+          Instruction::I32Const(0),
+          Instruction::I32Store(mem_arg_i32(u64::from(compact_field.offset))),
+          Instruction::Else,
+          Instruction::LocalGet(source_addr),
+          Instruction::I32Const(payload_offset),
+          Instruction::I32Add,
+          Instruction::LocalSet(source_addr),
+        ]);
+        push_lift_element(&mut instructions, inner, source_addr, bool_value, codecs);
+        instructions.extend([
+          Instruction::I32TruncF64U,
+          Instruction::LocalSet(niche_val),
+          Instruction::LocalGet(struct_ptr),
+          Instruction::LocalGet(niche_val),
+          Instruction::I32Store(mem_arg_i32(u64::from(compact_field.offset))),
+          Instruction::End,
+        ]);
+      } else {
+        instructions.push(Instruction::LocalGet(struct_ptr));
+        push_lift_element(&mut instructions, field_type, source_addr, bool_value, codecs);
+        instructions.extend([
+          Instruction::I32TruncF64U,
+          Instruction::Call(codecs.option_to_niche_ptr_index),
+          Instruction::I32Store(mem_arg_i32(u64::from(compact_field.offset))),
+        ]);
+      }
+      continue;
+    }
+    instructions.push(Instruction::LocalGet(struct_ptr));
     push_lift_element(&mut instructions, field_type, source_addr, bool_value, codecs);
     push_store_f64_into_compact_struct_field(&mut instructions, compact_field);
   }
@@ -1511,7 +1556,7 @@ pub(super) fn build_component_struct_lift_fn(
     export_name: None,
     params: vec![ValType::I32],
     results: vec![ValType::F64],
-    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32],
+    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::I32, ValType::I32],
     instructions,
   }
 }
@@ -1528,6 +1573,7 @@ pub(super) fn build_component_struct_lower_fn(
   let (layout, offsets) = component_struct_layout(record);
   let logical_size = i64::from(struct_layout.payload_bytes);
   let struct_ptr = 2;
+  let raw_opt = 3;
   let destination_addr = 4;
   let value = 5;
   let canonical_bool = 6;
@@ -1565,6 +1611,52 @@ pub(super) fn build_component_struct_lower_fn(
   for (index, ((_, field_type), field_offset)) in record.fields.iter().zip(offsets).enumerate() {
     let compact_field = struct_layout.fields[index];
     if matches!(field_type, ComponentAbiType::Unit) {
+      continue;
+    }
+    if compact_field.kind == StructFieldKind::OptionHeapPtrI32 {
+      if let ComponentAbiType::Option(inner) = field_type {
+        let payload_offset = component_variant_payload_offset(field_type);
+        instructions.extend([
+          Instruction::LocalGet(1),
+          Instruction::I32Const(field_offset),
+          Instruction::I32Add,
+          Instruction::LocalSet(destination_addr),
+          Instruction::LocalGet(struct_ptr),
+          Instruction::I32Load(mem_arg_i32(u64::from(compact_field.offset))),
+          Instruction::LocalTee(raw_opt),
+          Instruction::I32Eqz,
+          Instruction::If(BlockType::Empty),
+          Instruction::LocalGet(destination_addr),
+          Instruction::I32Const(0),
+          Instruction::I32Store8(mem_arg_byte(0)),
+          Instruction::Else,
+          Instruction::LocalGet(destination_addr),
+          Instruction::I32Const(1),
+          Instruction::I32Store8(mem_arg_byte(0)),
+          Instruction::LocalGet(raw_opt),
+          Instruction::F64ConvertI32U,
+          Instruction::LocalSet(value),
+          Instruction::LocalGet(destination_addr),
+          Instruction::I32Const(payload_offset),
+          Instruction::I32Add,
+          Instruction::LocalSet(destination_addr),
+        ]);
+        push_lower_field_from_f64_local(&mut instructions, inner, destination_addr, value, canonical_bool, codecs);
+        instructions.push(Instruction::End);
+        continue;
+      }
+      instructions.extend([
+        Instruction::LocalGet(struct_ptr),
+        Instruction::I32Load(mem_arg_i32(u64::from(compact_field.offset))),
+        Instruction::Call(codecs.option_from_niche_ptr_index),
+        Instruction::F64ConvertI32U,
+        Instruction::LocalSet(value),
+        Instruction::LocalGet(1),
+        Instruction::I32Const(field_offset),
+        Instruction::I32Add,
+        Instruction::LocalSet(destination_addr),
+      ]);
+      push_lower_field_from_f64_local(&mut instructions, field_type, destination_addr, value, canonical_bool, codecs);
       continue;
     }
     push_load_compact_struct_field_f64(&mut instructions, struct_ptr, compact_field);
@@ -1828,7 +1920,7 @@ pub(super) fn build_component_variant_lift_fn(
 fn push_validate_internal_variant_count(instructions: &mut Vec<Instruction<'static>>, enum_ptr: u32, expected: usize) {
   instructions.extend([
     Instruction::LocalGet(enum_ptr),
-    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::I32Load16U(mem_arg_i16(0)),
     Instruction::I32Const(expected as i32),
     Instruction::I32Ne,
     Instruction::If(BlockType::Empty),
@@ -2036,6 +2128,8 @@ pub(super) fn build_component_enum_lower_fn(
   let value = 5;
   let canonical_bool = 6;
   let matched = 7;
+  let layout_id = 8;
+  let byte_len_i64 = 9;
   let mut instructions = vec![
     Instruction::LocalGet(0),
     Instruction::I32TruncF64U,
@@ -2060,7 +2154,35 @@ pub(super) fn build_component_enum_lower_fn(
       Instruction::If(BlockType::Empty),
     ]);
     push_validate_internal_variant_count(&mut instructions, enum_ptr, variant.payload.len());
-    push_checked_memory_region_const(&mut instructions, enum_ptr, ((variant.payload.len() + 1) * 8) as i64);
+    if codecs.enum_layouts.max_layout_id == 0 || variant.payload.is_empty() {
+      push_checked_memory_region_const(&mut instructions, enum_ptr, ((variant.payload.len() + 1) * 8) as i64);
+    } else {
+      instructions.extend([
+        Instruction::LocalGet(enum_ptr),
+        Instruction::I32Load16U(mem_arg_i16(2)),
+        Instruction::LocalTee(layout_id),
+        Instruction::I32Eqz,
+        Instruction::If(BlockType::Result(ValType::I64)),
+        Instruction::I64Const(((variant.payload.len() + 1) * 8) as i64),
+        Instruction::Else,
+        Instruction::LocalGet(layout_id),
+        Instruction::I32Const(codecs.enum_layouts.max_layout_id as i32),
+        Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::Unreachable,
+        Instruction::End,
+        Instruction::I32Const(codecs.enum_layouts.desc_table_base),
+        Instruction::LocalGet(layout_id),
+        Instruction::I32Const(12),
+        Instruction::I32Mul,
+        Instruction::I32Add,
+        Instruction::I32Load(mem_arg_i32(0)),
+        Instruction::I64ExtendI32U,
+        Instruction::End,
+        Instruction::LocalSet(byte_len_i64),
+      ]);
+      push_checked_memory_region(&mut instructions, enum_ptr, byte_len_i64);
+    }
     instructions.extend([Instruction::I32Const(1), Instruction::LocalSet(matched), Instruction::LocalGet(1)]);
     instructions.push(Instruction::I32Const(variant_index as i32));
     instructions.push(match discriminant_size {
@@ -2071,16 +2193,35 @@ pub(super) fn build_component_enum_lower_fn(
     });
     for (payload_index, (payload_type, field_offset)) in variant.payload.iter().zip(offsets).enumerate() {
       instructions.extend([
-        Instruction::LocalGet(enum_ptr),
-        Instruction::I32Const(((payload_index + 1) * 8) as i32),
-        Instruction::I32Add,
-        Instruction::LocalSet(src_addr),
         Instruction::LocalGet(1),
         Instruction::I32Const(payload_offset + field_offset),
         Instruction::I32Add,
         Instruction::LocalSet(dst_addr),
       ]);
-      push_lower_element(&mut instructions, payload_type, src_addr, dst_addr, value, canonical_bool, codecs);
+      if codecs.enum_layouts.max_layout_id > 0 {
+        instructions.extend([
+          Instruction::LocalGet(layout_id),
+          Instruction::I32Eqz,
+          Instruction::If(BlockType::Result(ValType::F64)),
+          Instruction::LocalGet(enum_ptr),
+          Instruction::F64Load(mem_arg_f64(((payload_index + 1) * 8) as u64)),
+          Instruction::Else,
+          Instruction::LocalGet(enum_ptr),
+          Instruction::I32Const(payload_index as i32),
+          Instruction::Call(codecs.enum_load_payload_index),
+          Instruction::End,
+          Instruction::LocalSet(value),
+        ]);
+        push_lower_field_from_f64_local(&mut instructions, payload_type, dst_addr, value, canonical_bool, codecs);
+      } else {
+        instructions.extend([
+          Instruction::LocalGet(enum_ptr),
+          Instruction::I32Const(((payload_index + 1) * 8) as i32),
+          Instruction::I32Add,
+          Instruction::LocalSet(src_addr),
+        ]);
+        push_lower_element(&mut instructions, payload_type, src_addr, dst_addr, value, canonical_bool, codecs);
+      }
     }
     instructions.push(Instruction::End);
   }
@@ -2095,7 +2236,16 @@ pub(super) fn build_component_enum_lower_fn(
     export_name: None,
     params: vec![ValType::F64, ValType::I32],
     results: vec![],
-    locals: vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64, ValType::I32, ValType::I32],
+    locals: vec![
+      ValType::I32,
+      ValType::I32,
+      ValType::I32,
+      ValType::F64,
+      ValType::I32,
+      ValType::I32,
+      ValType::I32,
+      ValType::I64,
+    ],
     instructions,
   }
 }

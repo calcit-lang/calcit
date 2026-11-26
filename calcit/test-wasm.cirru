@@ -68,12 +68,22 @@
           :code $ quote $ defimpl CoherentStage StageScore (.stage-score coherent-stage:score)
           :examples $ []
           :schema $ quote Impl
+        'CompactPacket $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum CompactPacket (:Empty)
+            :Pair Bool Int32 (Option String) UInt8
+          :examples $ []
+          :schema $ quote EnumDef
         'MeasuredHolder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MeasuredHolder (:point MeasuredPoint)
           :examples $ []
           :schema $ quote StructDef
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct MeasuredPoint (:value Number) (:impls PointScore)
+          :examples $ []
+          :schema $ quote StructDef
+        'NicheLink $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NicheLink (:label String)
+            :next $ Option test-wasm.main/NicheLink
           :examples $ []
           :schema $ quote StructDef
         'NominalPayload $ %{} 'CodeEntry (:doc |)
@@ -587,6 +597,58 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-coherent-point-across-containers)
             :code $ quote $ assert= 75 (test-coherent-point-containers 10)
             :tags $ #{} :core :trait :wasm
+        'test-compact-enum-and-option-niche $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-compact-enum-and-option-niche ()
+            let
+                n0 $ NicheLink :label |tail :next None
+                n1 $ NicheLink :label |head :next $ Some n0
+                n2 $ NicheLink :label |copy :next $ :next n1
+                p1 $ %:: CompactPacket :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
+                p2 $ %:: CompactPacket :Pair true (assert-type 42 Int32)
+                  Some $ &str:concat |o |k
+                  assert-type 7 UInt8
+                p-empty $ %:: CompactPacket :Empty
+                niche-ok $ and
+                    :next n0
+                    , .none?
+                  (:next n1) .some?
+                  =
+                    :label $
+                      :next n1
+                      , .unwrap
+                    , |tail
+                  =
+                    :label $
+                      :next n0
+                      , .unwrap-or n1
+                    , |head
+                  match (:next n2)
+                    (:some child)
+                      = (:label child) |tail
+                    (:none) false
+                  not $ identical? None None
+                  = (:next n0) (:next n0)
+                enum-ok $ and (= p1 p2)
+                  = (&hash p1) (&hash p2)
+                  not= p1 p-empty
+                  = (&enum:count p1) 5
+                  =
+                    assert-type (&enum:nth p1 0) Tag
+                    , :Pair
+                  (assert-type (&enum:nth p1 3) (Option String))
+                    , .some?
+                  match p1
+                    (:Pair flag num opt small)
+                      and flag (= num 42)
+                        = opt $ Some |ok
+                        = small 7
+                    _ false
+              if (and niche-ok enum-ok) 1 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+          :tests $ [] $ %{} 'TestEntry (:name |compact-enum-and-option-niche)
+            :code $ quote $ assert= 1 (test-compact-enum-and-option-niche)
+            :tags $ #{} :unit :wasm
         'test-compare $ %{} 'CodeEntry (:doc "|comparison chain")
           :code $ quote $ defwasm-export test-compare (a b)
             if (&< a b) -1 $ if (&> a b) 1 0

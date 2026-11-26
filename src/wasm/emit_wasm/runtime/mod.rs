@@ -568,7 +568,7 @@ pub(super) fn build_runtime_fns(
   boundary: WasmBoundary,
   tag_index: &HashMap<String, u32>,
   atom_is_scalar: &[bool],
-  struct_layouts: &StructLayouts,
+  (struct_layouts, enum_layouts): (&StructLayouts, &EnumLayouts),
 ) -> Result<RuntimeFns, String> {
   let require_tag = |name: &str| *tag_index.get(name).unwrap_or_else(|| panic!("{name} tag must exist")) as i32;
   let map_tag = require_tag("map");
@@ -582,6 +582,8 @@ pub(super) fn build_runtime_fns(
   let nil_tag = require_tag("nil");
   let bool_tag = require_tag("bool");
   let number_tag = require_tag("number");
+  let none_tag = require_tag("none");
+  let some_tag = require_tag("some");
   let mut fn_index = HashMap::new();
   let (mut fns, _) = number_format::load_number_functions(base_index, global_layout.number_stack)?;
   let number_format_fn_count = fns.len() as u32;
@@ -710,9 +712,10 @@ pub(super) fn build_runtime_fns(
     };
 
     fns[promote_map_node_slot] = build_rt_promote_map_node_fn(memory_layout, pers, &promote_fns);
-    fns[promote_value_slot] = build_rt_promote_value_fn(memory_layout, pers, &promote_fns, &promote_tags, struct_layouts);
+    fns[promote_value_slot] = build_rt_promote_value_fn(memory_layout, pers, &promote_fns, &promote_tags, struct_layouts, enum_layouts);
     fns[relocate_map_node_slot] = build_rt_relocate_scratch_map_node_fn(memory_layout, pers, &relocate_fns);
-    fns[relocate_refs_slot] = build_rt_relocate_scratch_refs_fn(memory_layout, pers, &relocate_fns, &promote_tags, struct_layouts);
+    fns[relocate_refs_slot] =
+      build_rt_relocate_scratch_refs_fn(memory_layout, pers, &relocate_fns, &promote_tags, struct_layouts, enum_layouts);
 
     let commit_defref_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_commit_defref"), commit_defref_idx);
@@ -1155,15 +1158,36 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_str_split"), str_split_idx);
   fns.push(build_rt_str_split(string_tag, list_tag, str_find_from_idx, utf8_char_len_idx));
 
-  // struct field codecs: __rt_struct_load_field(ptr, offset, kind) -> f64,
-  // __rt_struct_store_field(ptr, offset, kind, val) -> ()
+  // Option niche & compact struct/enum field codecs
+  let option_from_niche_ptr_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_option_from_niche_ptr"), option_from_niche_ptr_idx);
+  fns.push(build_rt_option_from_niche_ptr(arena_alloc_idx, enum_tag, none_tag, some_tag));
+
   let struct_load_field_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_struct_load_field"), struct_load_field_idx);
-  fns.push(build_rt_struct_load_field());
+  fns.push(build_rt_struct_load_field(option_from_niche_ptr_idx));
+
+  let enum_load_payload_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_enum_load_payload"), enum_load_payload_idx);
+  fns.push(build_rt_enum_load_payload(enum_layouts, struct_load_field_idx));
+
+  let option_to_niche_ptr_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_option_to_niche_ptr"), option_to_niche_ptr_idx);
+  fns.push(build_rt_option_to_niche_ptr(none_tag, enum_load_payload_idx));
 
   let struct_store_field_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_struct_store_field"), struct_store_field_idx);
-  fns.push(build_rt_struct_store_field(is_heap_ptr_idx, bool_tag));
+  fns.push(build_rt_struct_store_field(is_heap_ptr_idx, bool_tag, option_to_niche_ptr_idx));
+
+  let enum_assoc_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_enum_assoc"), enum_assoc_idx);
+  fns.push(build_rt_enum_assoc(
+    enum_layouts,
+    arena_alloc_idx,
+    enum_tag,
+    enum_load_payload_idx,
+    struct_store_field_idx,
+  ));
 
   // value-equal: __rt_value_equal(a: f64, b: f64) → i32 (1=equal, 0=not)
   // Deep equality for strings, buffers, containers, and nominal payloads.
@@ -1181,6 +1205,8 @@ pub(super) fn build_runtime_fns(
     number: number_tag,
     any_box: *tag_index.get("any-box").expect("any-box tag must exist") as i32,
     closure: *tag_index.get("closure").expect("closure tag must exist") as i32,
+    none_tag,
+    some_tag,
   };
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
@@ -1195,8 +1221,10 @@ pub(super) fn build_runtime_fns(
       set_equal_idx,
       is_heap_ptr_idx,
       struct_load_field_idx,
+      enum_load_payload_idx,
     ),
     struct_layouts,
+    enum_layouts,
   ));
 
   // Map values can contain nested Options and Enums, so use the same deep comparator.
@@ -1222,6 +1250,7 @@ pub(super) fn build_runtime_fns(
       struct_load_field_idx,
     ),
     struct_layouts,
+    enum_layouts,
   );
   fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
 
@@ -1432,7 +1461,56 @@ pub(super) fn build_rt_hash_f64() -> CompiledFn {
 /// Hash the same recursive value structure that participates in equality.
 /// The numeric hash is backend-local; equal values must share a hash.
 /// Runtime helper: load a compact Struct field from `(ptr, offset, kind)` and return as `f64`.
-pub(super) fn build_rt_struct_load_field() -> CompiledFn {
+/// Materialize a fresh nominal `Option` enum in Scratch Arena from a nullable niche `i32` ptr.
+/// Every escaping read allocates a distinct object so `identical? None None == false` holds.
+pub(super) fn build_rt_option_from_niche_ptr(arena_alloc_idx: u32, enum_tag: i32, none_tag: i32, some_tag: i32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  let raw_base = b.alloc_i32();
+  let ptr = b.alloc_i32();
+  // param 0: nullable raw heap ptr (i32)
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::Call(arena_alloc_idx));
+  b.emit(Instruction::LocalTee(raw_base));
+  b.emit(Instruction::I32Const(HEAP_MAGIC));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(raw_base));
+  b.emit(Instruction::I32Const(enum_tag));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(raw_base));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(ptr));
+  b.emit(Instruction::I64Const(((none_tag as u64) << 32) as i64));
+  b.emit(Instruction::I64Store(mem_arg_i64(0)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(24));
+  b.emit(Instruction::Call(arena_alloc_idx));
+  b.emit(Instruction::LocalTee(raw_base));
+  b.emit(Instruction::I32Const(HEAP_MAGIC));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(raw_base));
+  b.emit(Instruction::I32Const(enum_tag));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(raw_base));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(ptr));
+  b.emit(Instruction::I64Const((((some_tag as u64) << 32) | 1) as i64));
+  b.emit(Instruction::I64Store(mem_arg_i64(0)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::F64Store(mem_arg_f64(8)));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::I32], vec![ValType::I32])
+}
+
+pub(super) fn build_rt_struct_load_field(option_from_niche_ptr_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(3);
   let addr = b.alloc_i32();
   // params: 0 = ptr (i32), 1 = offset (i32), 2 = kind (i32)
@@ -1512,12 +1590,113 @@ pub(super) fn build_rt_struct_load_field() -> CompiledFn {
     &[StructFieldKind::UInt64 as i32],
     &[Instruction::I64Load(mem_arg_i64(0)), Instruction::F64ConvertI64U],
   );
+  emit_case(
+    &mut b,
+    &[StructFieldKind::OptionHeapPtrI32 as i32],
+    &[
+      Instruction::I32Load(mem_arg_i32(0)),
+      Instruction::Call(option_from_niche_ptr_idx),
+      Instruction::F64ConvertI32U,
+    ],
+  );
   b.emit(Instruction::Unreachable);
   b.finish(vec![ValType::I32, ValType::I32, ValType::I32], vec![ValType::F64])
 }
 
+/// Runtime helper: load payload slot `payload_idx` (0-based) from any Enum (`layout_id == 0` or `>= 1`).
+pub(super) fn build_rt_enum_load_payload(enum_layouts: &EnumLayouts, struct_load_field_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  // params: 0 = ptr (i32), 1 = payload_idx (i32)
+  if enum_layouts.max_layout_id == 0 {
+    b.emit(Instruction::LocalGet(0));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(1));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    return b.finish(vec![ValType::I32, ValType::I32], vec![ValType::F64]);
+  }
+  let layout_id = b.alloc_i32();
+  let desc_ptr = b.alloc_i32();
+  let packed = b.alloc_i32();
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+  b.emit(Instruction::LocalTee(layout_id));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(layout_id));
+  b.emit(Instruction::I32Const(enum_layouts.max_layout_id as i32));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::I32Const(enum_layouts.desc_table_base));
+  b.emit(Instruction::LocalGet(layout_id));
+  b.emit(Instruction::I32Const(12));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalTee(desc_ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32LeU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(desc_ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(8)));
+  let meta_ptr = b.alloc_i32();
+  b.emit(Instruction::LocalSet(meta_ptr));
+  structs::push_load_struct_field_meta(&mut b.instructions, meta_ptr, 1);
+  b.emit(Instruction::LocalSet(packed));
+  b.emit(Instruction::LocalGet(0));
+  structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+  structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+  b.emit(Instruction::Call(struct_load_field_idx));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::F64])
+}
+
+/// Runtime helper: unbox an `Option` heap enum pointer (`i32`) into a nullable niche `i32` (`0` = :none).
+pub(super) fn build_rt_option_to_niche_ptr(none_tag: i32, enum_load_payload_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  // param 0: opt_ptr (i32)
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::I32Const(none_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Call(enum_load_payload_idx));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::I32], vec![ValType::I32])
+}
+
 /// Runtime helper: store `val: f64` into a compact Struct field at `(ptr, offset, kind)`.
-pub(super) fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32) -> CompiledFn {
+pub(super) fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32, option_to_niche_ptr_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4);
   let addr = b.alloc_i32();
   let boxed_ptr = b.alloc_i32();
@@ -1641,8 +1820,185 @@ pub(super) fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32) -
     &[Instruction::I64TruncF64U],
     Instruction::I64Store(mem_arg_i64(0)),
   );
+  emit_case(
+    &mut b,
+    &[StructFieldKind::OptionHeapPtrI32 as i32],
+    &[Instruction::I32TruncF64U, Instruction::Call(option_to_niche_ptr_idx)],
+    Instruction::I32Store(mem_arg_i32(0)),
+  );
   b.emit(Instruction::Unreachable);
   b.finish(vec![ValType::I32, ValType::I32, ValType::I32, ValType::F64], vec![])
+}
+
+/// Runtime helper: `&enum:assoc(src, idx, val) -> dst:i32` supporting both `layout_id == 0` and compact enums.
+pub(super) fn build_rt_enum_assoc(
+  enum_layouts: &EnumLayouts,
+  arena_alloc_idx: u32,
+  enum_tag: i32,
+  enum_load_payload_idx: u32,
+  struct_store_field_idx: u32,
+) -> CompiledFn {
+  // params: 0 = src (i32), 1 = idx (i32), 2 = val (f64)
+  let mut b = RuntimeFnBuilder::new(3);
+  let count = b.alloc_i32();
+  let layout_id = b.alloc_i32();
+  let size = b.alloc_i32();
+  let raw_base = b.alloc_i32();
+  let dst = b.alloc_i32();
+  let desc_ptr = b.alloc_i32();
+  let meta_ptr = b.alloc_i32();
+  let packed = b.alloc_i32();
+  let k = b.alloc_i32();
+
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::Unreachable);
+  b.emit(Instruction::End);
+
+  let emit_alloc_enum = |b: &mut RuntimeFnBuilder, body_bytes_local: u32| {
+    b.emit(Instruction::LocalGet(body_bytes_local));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::Call(arena_alloc_idx));
+    b.emit(Instruction::LocalTee(raw_base));
+    b.emit(Instruction::I32Const(HEAP_MAGIC));
+    b.emit(Instruction::I32Store(mem_arg_i32(0)));
+    b.emit(Instruction::LocalGet(raw_base));
+    b.emit(Instruction::I32Const(enum_tag));
+    b.emit(Instruction::I32Store(mem_arg_i32(4)));
+    b.emit(Instruction::LocalGet(raw_base));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(dst));
+  };
+
+  if enum_layouts.max_layout_id > 0 {
+    b.emit(Instruction::LocalGet(0));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+    b.emit(Instruction::LocalTee(layout_id));
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(1));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(BlockType::Empty));
+    // Tag replacement unpacks to layout_id == 0 so new variant tag never aliases old variant's packed layout.
+    b.emit(Instruction::LocalGet(count));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::LocalSet(size));
+    emit_alloc_enum(&mut b, size);
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::LocalGet(count));
+    b.emit(Instruction::I32Store(mem_arg_i32(0))); // count @ 0, layout_id = 0 @ 2
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::LocalGet(2));
+    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::I32Store(mem_arg_i32(4)));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(k));
+    b.emit(Instruction::Block(BlockType::Empty));
+    b.emit(Instruction::Loop(BlockType::Empty));
+    b.emit(Instruction::LocalGet(k));
+    b.emit(Instruction::LocalGet(count));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1));
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(k));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(0));
+    b.emit(Instruction::LocalGet(k));
+    b.emit(Instruction::Call(enum_load_payload_idx));
+    b.emit(Instruction::F64Store(mem_arg_f64(0)));
+    b.emit(Instruction::LocalGet(k));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(k));
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::Return);
+    b.emit(Instruction::End);
+
+    // Payload update preserves compact layout_id >= 1.
+    b.emit(Instruction::LocalGet(layout_id));
+    b.emit(Instruction::I32Const(enum_layouts.max_layout_id as i32));
+    b.emit(Instruction::I32GtU);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::Unreachable);
+    b.emit(Instruction::End);
+    b.emit(Instruction::I32Const(enum_layouts.desc_table_base));
+    b.emit(Instruction::LocalGet(layout_id));
+    b.emit(Instruction::I32Const(12));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalTee(desc_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
+    b.emit(Instruction::LocalSet(size));
+    emit_alloc_enum(&mut b, size);
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::LocalGet(0));
+    b.emit(Instruction::LocalGet(size));
+    b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+    b.emit(Instruction::LocalGet(desc_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(8)));
+    b.emit(Instruction::LocalSet(meta_ptr));
+    b.emit(Instruction::LocalGet(1));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Sub);
+    b.emit(Instruction::LocalSet(k));
+    structs::push_load_struct_field_meta(&mut b.instructions, meta_ptr, k);
+    b.emit(Instruction::LocalSet(packed));
+    b.emit(Instruction::LocalGet(dst));
+    structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+    structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+    b.emit(Instruction::LocalGet(2));
+    b.emit(Instruction::Call(struct_store_field_idx));
+    b.emit(Instruction::LocalGet(dst));
+    b.emit(Instruction::Return);
+    b.emit(Instruction::End);
+  }
+
+  // Legacy layout_id == 0 copy & update.
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalSet(size));
+  emit_alloc_enum(&mut b, size);
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(size));
+  b.emit(Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 });
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(dst));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(2));
+  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(dst));
+  b.finish(vec![ValType::I32, ValType::I32, ValType::F64], vec![ValType::I32])
 }
 
 #[derive(Clone, Copy)]
@@ -1660,12 +2016,72 @@ pub(super) struct ValueRuntimeTags {
   pub(super) number: i32,
   pub(super) any_box: i32,
   pub(super) closure: i32,
+  pub(super) none_tag: i32,
+  pub(super) some_tag: i32,
+}
+
+fn push_hash_compact_field(
+  b: &mut RuntimeFnBuilder,
+  (ptr, packed, field_kind, field_val, raw_opt, item_hash): (u32, u32, u32, u32, u32, u32),
+  (enum_tag, none_tag, some_tag): (i32, i32, i32),
+  (scalar_hash_idx, self_idx, struct_load_field_idx): (u32, u32, u32),
+) {
+  b.emit(Instruction::LocalGet(field_kind));
+  b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(ptr));
+  structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalTee(raw_opt));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(enum_tag));
+  b.emit(f64_const(f64::from(none_tag)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(enum_tag));
+  b.emit(f64_const(f64::from(some_tag)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(raw_opt));
+  b.emit(Instruction::F64ConvertI32U);
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr));
+  structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+  b.emit(Instruction::LocalGet(field_kind));
+  b.emit(Instruction::Call(struct_load_field_idx));
+  b.emit(Instruction::LocalSet(field_val));
+  b.emit(Instruction::LocalGet(field_kind));
+  b.emit(Instruction::I32Const(StructFieldKind::BoxedF64 as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(field_kind));
+  b.emit(Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(field_val));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(field_val));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalSet(item_hash));
 }
 
 pub(super) fn build_rt_value_hash(
   tags: ValueRuntimeTags,
   (scalar_hash_idx, self_idx, map_linearize_idx, is_heap_ptr_idx, struct_load_field_idx): (u32, u32, u32, u32, u32),
   struct_layouts: &StructLayouts,
+  enum_layouts: &EnumLayouts,
 ) -> CompiledFn {
   let ValueRuntimeTags {
     string: string_tag,
@@ -1681,6 +2097,8 @@ pub(super) fn build_rt_value_hash(
     number: number_tag,
     any_box: any_box_tag,
     closure: closure_tag,
+    none_tag,
+    some_tag,
   } = tags;
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
@@ -1695,6 +2113,7 @@ pub(super) fn build_rt_value_hash(
   let packed = b.alloc_i32();
   let field_kind = b.alloc_i32();
   let field_val = b.alloc_f64();
+  let raw_opt = b.alloc_i32();
 
   // Check range and active regions before converting: negative numbers, NaN, infinities,
   // and numbers colliding with inactive semi-space addresses are treated as scalars.
@@ -1937,27 +2356,12 @@ pub(super) fn build_rt_value_hash(
     b.emit(Instruction::LocalSet(packed));
     structs::push_extract_struct_field_kind(&mut b.instructions, packed);
     b.emit(Instruction::LocalSet(field_kind));
-    b.emit(Instruction::LocalGet(ptr));
-    structs::push_extract_struct_field_offset(&mut b.instructions, packed);
-    b.emit(Instruction::LocalGet(field_kind));
-    b.emit(Instruction::Call(struct_load_field_idx));
-    b.emit(Instruction::LocalSet(field_val));
-    // Compact scalar fields hold non-heap values; hash via scalar_hash without probing the heap table.
-    b.emit(Instruction::LocalGet(field_kind));
-    b.emit(Instruction::I32Const(StructFieldKind::BoxedF64 as i32));
-    b.emit(Instruction::I32Eq);
-    b.emit(Instruction::LocalGet(field_kind));
-    b.emit(Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32));
-    b.emit(Instruction::I32Eq);
-    b.emit(Instruction::I32Or);
-    b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-    b.emit(Instruction::LocalGet(field_val));
-    b.emit(Instruction::Call(self_idx));
-    b.emit(Instruction::Else);
-    b.emit(Instruction::LocalGet(field_val));
-    b.emit(Instruction::Call(scalar_hash_idx));
-    b.emit(Instruction::End);
-    b.emit(Instruction::LocalSet(item_hash));
+    push_hash_compact_field(
+      &mut b,
+      (ptr, packed, field_kind, field_val, raw_opt, item_hash),
+      (enum_tag, none_tag, some_tag),
+      (scalar_hash_idx, self_idx, struct_load_field_idx),
+    );
     b.emit(Instruction::LocalGet(hash));
     b.emit(Instruction::I32Const(0x0100_0193));
     b.emit(Instruction::I32Mul);
@@ -2000,7 +2404,7 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   b.emit(Instruction::LocalSet(count));
   b.emit(Instruction::LocalGet(hash));
   b.emit(Instruction::LocalGet(ptr));
@@ -2009,6 +2413,63 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::LocalSet(hash));
+  if enum_layouts.max_layout_id > 0 {
+    b.emit(Instruction::LocalGet(ptr));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+    b.emit(Instruction::LocalTee(layout_id));
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::LocalGet(layout_id));
+    b.emit(Instruction::I32Const(enum_layouts.max_layout_id as i32));
+    b.emit(Instruction::I32GtU);
+    b.emit(Instruction::If(BlockType::Empty));
+    b.emit(Instruction::Unreachable);
+    b.emit(Instruction::End);
+    b.emit(Instruction::I32Const(enum_layouts.desc_table_base));
+    b.emit(Instruction::LocalGet(layout_id));
+    b.emit(Instruction::I32Const(12));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalTee(desc_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(4)));
+    b.emit(Instruction::LocalSet(count));
+    b.emit(Instruction::LocalGet(desc_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(8)));
+    b.emit(Instruction::LocalSet(meta_ptr));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Block(BlockType::Empty));
+    b.emit(Instruction::Loop(BlockType::Empty));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalGet(count));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1));
+    structs::push_load_struct_field_meta(&mut b.instructions, meta_ptr, i);
+    b.emit(Instruction::LocalSet(packed));
+    structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+    b.emit(Instruction::LocalSet(field_kind));
+    push_hash_compact_field(
+      &mut b,
+      (ptr, packed, field_kind, field_val, raw_opt, item_hash),
+      (enum_tag, none_tag, some_tag),
+      (scalar_hash_idx, self_idx, struct_load_field_idx),
+    );
+    b.emit(Instruction::LocalGet(hash));
+    b.emit(Instruction::I32Const(0x0100_0193));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::LocalGet(item_hash));
+    b.emit(Instruction::I32Xor);
+    b.emit(Instruction::LocalSet(hash));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(hash));
+    b.emit(Instruction::Return);
+    b.emit(Instruction::End);
+  }
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
@@ -2104,8 +2565,17 @@ pub(super) fn build_rt_value_hash(
 /// - Other heap objects: pointer (f64) equality.
 fn build_rt_value_equal(
   tags: ValueRuntimeTags,
-  (str_compare_idx, self_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx, struct_load_field_idx): (u32, u32, u32, u32, u32, u32),
+  (str_compare_idx, self_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx, struct_load_field_idx, enum_load_payload_idx): (
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+    u32,
+  ),
   struct_layouts: &StructLayouts,
+  enum_layouts: &EnumLayouts,
 ) -> CompiledFn {
   let ValueRuntimeTags {
     string: string_tag,
@@ -2121,6 +2591,8 @@ fn build_rt_value_equal(
     number: number_tag,
     any_box: any_box_tag,
     closure: closure_tag,
+    none_tag,
+    some_tag,
   } = tags;
   // params: 0 = a (f64), 1 = b (f64)
   let mut b = RuntimeFnBuilder::new(2);
@@ -2138,6 +2610,15 @@ fn build_rt_value_equal(
   let meta_ptr = b.alloc_i32();
   let packed = b.alloc_i32();
   let field_kind = b.alloc_i32();
+  let layout_a = b.alloc_i32();
+  let layout_b = b.alloc_i32();
+  let meta_a = b.alloc_i32();
+  let meta_b = b.alloc_i32();
+  let kind_a = b.alloc_i32();
+  let kind_b = b.alloc_i32();
+  let raw_a = b.alloc_i32();
+  let raw_b = b.alloc_i32();
+  let box_ptr = b.alloc_i32();
 
   // Fast path: scalar value equality (NaN equals NaN, `-0` equals `0`)
   b.emit(Instruction::LocalGet(0));
@@ -2289,12 +2770,12 @@ fn build_rt_value_equal(
   b.emit(Instruction::I32Const(enum_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
-  // Compact Enum layout: `[count:u32 @ 0][tag_id:u32 @ 4][payload0:f64 @ 8]...`
+  // Enum header: `[count:u16 @ 0][layout_id:u16 @ 2][tag_id:u32 @ 4]`
   b.emit(Instruction::LocalGet(ptr_a));
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   b.emit(Instruction::LocalSet(cnt));
   b.emit(Instruction::LocalGet(ptr_b));
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   b.emit(Instruction::LocalGet(cnt));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::LocalGet(ptr_a));
@@ -2304,51 +2785,293 @@ fn build_rt_value_equal(
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::I32And);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::LocalSet(result));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(cnt));
-  b.emit(Instruction::I32GeU);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(ptr_a));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::LocalSet(elem_a));
-  b.emit(Instruction::LocalGet(ptr_b));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::LocalSet(elem_b));
-  b.emit(Instruction::LocalGet(elem_a));
-  b.emit(Instruction::LocalGet(elem_b));
-  b.emit(Instruction::Call(self_idx));
-  b.emit(Instruction::I32Eqz);
-  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(result));
-  b.emit(Instruction::Br(2));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End); // loop
-  b.emit(Instruction::End); // block
-  b.emit(Instruction::LocalGet(result));
+  let push_cmp_niche_vs_niche = |b: &mut RuntimeFnBuilder, a_raw: u32, b_raw: u32| {
+    b.emit(Instruction::LocalGet(a_raw));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::LocalGet(b_raw));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::I32Or);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(a_raw));
+    b.emit(Instruction::LocalGet(b_raw));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(a_raw));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalGet(b_raw));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::End);
+  };
+  let push_cmp_niche_vs_boxed = |b: &mut RuntimeFnBuilder, opt_raw: u32, boxed_f64: u32| {
+    b.emit(Instruction::LocalGet(boxed_f64));
+    b.emit(Instruction::Call(is_heap_ptr_idx));
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(boxed_f64));
+    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::LocalTee(box_ptr));
+    b.emit(Instruction::I32Const(4));
+    b.emit(Instruction::I32Sub);
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
+    b.emit(Instruction::I32Const(enum_tag));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(opt_raw));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(4)));
+    b.emit(Instruction::I32Const(none_tag));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(0)));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Load(mem_arg_i32(4)));
+    b.emit(Instruction::I32Const(some_tag));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(opt_raw));
+    b.emit(Instruction::F64ConvertI32U);
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::F64Load(mem_arg_f64(8)));
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(box_ptr));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::Call(enum_load_payload_idx));
+    b.emit(Instruction::End);
+    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Else);
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::Else);
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::Else);
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::End);
+  };
+  let emit_legacy_enum_loop = |b: &mut RuntimeFnBuilder| {
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalGet(cnt));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1));
+    b.emit(Instruction::LocalGet(ptr_a));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::LocalSet(elem_a));
+    b.emit(Instruction::LocalGet(ptr_b));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(8));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::LocalSet(elem_b));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::Br(2));
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End); // loop
+    b.emit(Instruction::End); // block
+    b.emit(Instruction::LocalGet(result));
+  };
+
+  if enum_layouts.max_layout_id == 0 {
+    emit_legacy_enum_loop(&mut b);
+  } else {
+    b.emit(Instruction::LocalGet(ptr_a));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+    b.emit(Instruction::LocalTee(layout_a));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::LocalGet(ptr_b));
+    b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+    b.emit(Instruction::LocalTee(layout_b));
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    emit_legacy_enum_loop(&mut b);
+    b.emit(Instruction::Else);
+    // Validate layout ids before looping.
+    b.emit(Instruction::LocalGet(layout_a));
+    b.emit(Instruction::I32Const(enum_layouts.max_layout_id as i32));
+    b.emit(Instruction::I32GtU);
+    b.emit(Instruction::LocalGet(layout_b));
+    b.emit(Instruction::I32Const(enum_layouts.max_layout_id as i32));
+    b.emit(Instruction::I32GtU);
+    b.emit(Instruction::I32Or);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::Else);
+    let load_enum_meta_ptr = |b: &mut RuntimeFnBuilder, layout_local: u32, meta_local: u32| {
+      b.emit(Instruction::I32Const(0));
+      b.emit(Instruction::LocalSet(meta_local));
+      b.emit(Instruction::LocalGet(layout_local));
+      b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+      b.emit(Instruction::I32Const(enum_layouts.desc_table_base));
+      b.emit(Instruction::LocalGet(layout_local));
+      b.emit(Instruction::I32Const(12));
+      b.emit(Instruction::I32Mul);
+      b.emit(Instruction::I32Add);
+      b.emit(Instruction::I32Load(mem_arg_i32(8)));
+      b.emit(Instruction::LocalSet(meta_local));
+      b.emit(Instruction::End);
+    };
+    load_enum_meta_ptr(&mut b, layout_a, meta_a);
+    load_enum_meta_ptr(&mut b, layout_b, meta_b);
+    let load_enum_side =
+      |b: &mut RuntimeFnBuilder, ptr_local: u32, layout_local: u32, meta_local: u32, kind_out: u32, raw_out: u32, fval_out: u32| {
+        b.emit(Instruction::LocalGet(layout_local));
+        b.emit(Instruction::I32Eqz);
+        b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+        b.emit(Instruction::I32Const(StructFieldKind::BoxedF64 as i32));
+        b.emit(Instruction::LocalSet(kind_out));
+        b.emit(Instruction::LocalGet(ptr_local));
+        b.emit(Instruction::I32Const(8));
+        b.emit(Instruction::I32Add);
+        b.emit(Instruction::LocalGet(i));
+        b.emit(Instruction::I32Const(8));
+        b.emit(Instruction::I32Mul);
+        b.emit(Instruction::I32Add);
+        b.emit(Instruction::F64Load(mem_arg_f64(0)));
+        b.emit(Instruction::LocalSet(fval_out));
+        b.emit(Instruction::Else);
+        structs::push_load_struct_field_meta(&mut b.instructions, meta_local, i);
+        b.emit(Instruction::LocalSet(packed));
+        structs::push_extract_struct_field_kind(&mut b.instructions, packed);
+        b.emit(Instruction::LocalTee(kind_out));
+        b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+        b.emit(Instruction::I32Eq);
+        b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+        b.emit(Instruction::LocalGet(ptr_local));
+        structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+        b.emit(Instruction::I32Add);
+        b.emit(Instruction::I32Load(mem_arg_i32(0)));
+        b.emit(Instruction::LocalSet(raw_out));
+        b.emit(Instruction::Else);
+        b.emit(Instruction::LocalGet(ptr_local));
+        structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+        b.emit(Instruction::LocalGet(kind_out));
+        b.emit(Instruction::Call(struct_load_field_idx));
+        b.emit(Instruction::LocalSet(fval_out));
+        b.emit(Instruction::End);
+        b.emit(Instruction::End);
+      };
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalGet(cnt));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1));
+    load_enum_side(&mut b, ptr_a, layout_a, meta_a, kind_a, raw_a, elem_a);
+    load_enum_side(&mut b, ptr_b, layout_b, meta_b, kind_b, raw_b, elem_b);
+
+    b.emit(Instruction::LocalGet(kind_a));
+    b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(kind_b));
+    b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    push_cmp_niche_vs_niche(&mut b, raw_a, raw_b);
+    b.emit(Instruction::Else);
+    push_cmp_niche_vs_boxed(&mut b, raw_a, elem_b);
+    b.emit(Instruction::End);
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(kind_b));
+    b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    push_cmp_niche_vs_boxed(&mut b, raw_b, elem_a);
+    b.emit(Instruction::Else);
+    for (idx, k) in [kind_a, kind_b].into_iter().enumerate() {
+      b.emit(Instruction::LocalGet(k));
+      b.emit(Instruction::I32Const(StructFieldKind::BoxedF64 as i32));
+      b.emit(Instruction::I32Eq);
+      b.emit(Instruction::LocalGet(k));
+      b.emit(Instruction::I32Const(StructFieldKind::HeapPtrI32 as i32));
+      b.emit(Instruction::I32Eq);
+      b.emit(Instruction::I32Or);
+      if idx > 0 {
+        b.emit(Instruction::I32Or);
+      }
+    }
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Eq);
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::LocalGet(elem_a));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::LocalGet(elem_b));
+    b.emit(Instruction::F64Ne);
+    b.emit(Instruction::I32And);
+    b.emit(Instruction::I32Or);
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+
+    b.emit(Instruction::I32Eqz);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(result));
+    b.emit(Instruction::Br(2));
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(result));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+  }
   b.emit(Instruction::Else);
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::End); // enum count and variant match
@@ -2399,7 +3122,22 @@ fn build_rt_value_equal(
     structs::push_load_struct_field_meta(&mut b.instructions, meta_ptr, i);
     b.emit(Instruction::LocalSet(packed));
     structs::push_extract_struct_field_kind(&mut b.instructions, packed);
-    b.emit(Instruction::LocalSet(field_kind));
+    b.emit(Instruction::LocalTee(field_kind));
+    b.emit(Instruction::I32Const(StructFieldKind::OptionHeapPtrI32 as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(ptr_a));
+    structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
+    b.emit(Instruction::LocalSet(raw_a));
+    b.emit(Instruction::LocalGet(ptr_b));
+    structs::push_extract_struct_field_offset(&mut b.instructions, packed);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
+    b.emit(Instruction::LocalSet(raw_b));
+    push_cmp_niche_vs_niche(&mut b, raw_a, raw_b);
+    b.emit(Instruction::Else);
     b.emit(Instruction::LocalGet(ptr_a));
     structs::push_extract_struct_field_offset(&mut b.instructions, packed);
     b.emit(Instruction::LocalGet(field_kind));
@@ -2434,6 +3172,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::F64Ne);
     b.emit(Instruction::I32And);
     b.emit(Instruction::I32Or);
+    b.emit(Instruction::End);
     b.emit(Instruction::End);
     b.emit(Instruction::I32Eqz);
     b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
@@ -2630,6 +3369,8 @@ mod tests {
       number: 11,
       any_box: 12,
       closure: 13,
+      none_tag: 14,
+      some_tag: 15,
     };
     let is_heap_ptr_stub = CompiledFn {
       export_name: None,
@@ -2654,7 +3395,7 @@ mod tests {
       locals: vec![],
       instructions: vec![Instruction::Unreachable],
     };
-    let mut value_equal = build_rt_value_equal(tags, (2, 5, 6, 7, 0, 4), &StructLayouts::default());
+    let mut value_equal = build_rt_value_equal(tags, (2, 5, 6, 7, 0, 4, 4), &StructLayouts::default(), &EnumLayouts::default());
     value_equal.export_name = Some("value_equal".into());
     let stub_container_eq = CompiledFn {
       export_name: None,
@@ -2663,7 +3404,7 @@ mod tests {
       locals: vec![],
       instructions: vec![Instruction::Unreachable],
     };
-    let mut value_hash = build_rt_value_hash(tags, (1, 8, 3, 0, 4), &StructLayouts::default());
+    let mut value_hash = build_rt_value_hash(tags, (1, 8, 3, 0, 4), &StructLayouts::default(), &EnumLayouts::default());
     value_hash.export_name = Some("value_hash".into());
 
     let bytes = build_wasm_module(

@@ -299,8 +299,7 @@ fn emit_edn_enum_variants(
       ctx.emit(Instruction::LocalGet(with_space));
       ctx.emit(Instruction::LocalSet(result));
       let payload = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + index) * 8) as u64)));
+      emit_load_enum_payload_as_f64(ctx, ptr, index);
       ctx.emit(Instruction::LocalSet(payload));
       let formatted = emit_edn_value(ctx, payload, payload_type, depth + 1, true)?;
       let with_payload = concat_string_locals(ctx, result, formatted);
@@ -1721,8 +1720,7 @@ fn emit_json_enum_variants(
         ctx.emit(Instruction::LocalSet(result));
       }
       let payload = ctx.alloc_local();
-      ctx.emit(Instruction::LocalGet(ptr));
-      ctx.emit(Instruction::F64Load(mem_arg_f64(((1 + index) * 8) as u64)));
+      emit_load_enum_payload_as_f64(ctx, ptr, index);
       ctx.emit(Instruction::LocalSet(payload));
       let formatted = emit_json_value(ctx, payload, payload_type, depth + 1, pretty, op_name)?;
       let with_payload = concat_string_locals(ctx, result, formatted);
@@ -2325,6 +2323,7 @@ mod tests {
         ("some".to_owned(), 4),
       ]),
       struct_layouts: Default::default(),
+      enum_layouts: Default::default(),
       string_pool,
       atom_globals: HashMap::new(),
       atom_is_scalar: HashMap::new(),

@@ -190,9 +190,10 @@ pub(super) fn emit_core_enum_raw_i32(ctx: &mut WasmGenCtx, tag_name: &str, paylo
     .get(tag_name)
     .ok_or_else(|| format!("Core enum tag missing from WASM tag index: {tag_name}"))?;
   let payload_count = payload_locals.len();
+  let payload_u16 = u16::try_from(payload_count).map_err(|_| "Enum payload count exceeds u16 range")?;
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, ((1 + payload_count) * 8) as i32, ptr_local, "enum");
-  emit_store_compact_header(ctx, ptr_local, payload_count as u32, tag_id);
+  emit_store_enum_header(ctx, ptr_local, payload_u16, 0, tag_id);
 
   for (idx, payload) in payload_locals.iter().enumerate() {
     ctx.emit(Instruction::LocalGet(ptr_local));
@@ -241,16 +242,25 @@ pub(super) fn emit_ptr_to_i32(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32
   Ok(local)
 }
 
-/// Load the compact header payload count (`u32 @ 0`) from an Enum/Struct pointer.
+/// Load the compact header payload count (`u16 @ 0`) from an Enum pointer.
 pub(super) fn emit_load_enum_count_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
   let count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_i32));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(0)));
   ctx.emit(Instruction::LocalSet(count));
   count
 }
 
-/// Load the compact header tag/layout id (`u32 @ 4`) from an Enum/Struct pointer.
+/// Load the compact enum layout id (`u16 @ 2`) from an Enum pointer.
+pub(super) fn emit_load_enum_layout_id_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+  let layout_id = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+  ctx.emit(Instruction::LocalSet(layout_id));
+  layout_id
+}
+
+/// Load the compact header tag id (`u32 @ 4`) from an Enum/Struct pointer.
 pub(super) fn emit_load_enum_tag_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
   let tag = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_i32));

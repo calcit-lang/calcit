@@ -830,6 +830,7 @@ mod tests {
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
       struct_layouts: StructLayouts::default(),
+      enum_layouts: EnumLayouts::default(),
       non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
       string_pool: HashMap::new(),

@@ -1935,8 +1935,16 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::I32Or);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(resp_body_ptr));
+  b.emit(Instruction::I32Load16U(mem_arg_i16(2)));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(resp_body_ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(resp_body_ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(8)));
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalTee(payload_obj_ptr));
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Add);
