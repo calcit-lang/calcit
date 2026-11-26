@@ -2828,4 +2828,27 @@ fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
     !impl_attach::collect_non_coherent_nominal_defs(&match_shadowed).contains("app.m/P"),
     "pattern-bound local P in match must not mark top-level P non-coherent"
   );
+
+  // Nested `match` inside pattern-bound branch must keep outer pattern shadowing in both walker and param sink collector.
+  let nested_match_shadowed = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      (
+        "UseNestedShadowMatch",
+        "defn use-nested-shadow (opt) (match opt ((:some P) (impl-traits (match true (true P) (_ P)) P-Labeled-1)) ((:none) 0))",
+      ),
+      (
+        "decorate-shadow",
+        "defn decorate-shadow (x opt) (match opt ((:some x) (impl-traits (match true (true x) (_ x)) P-Labeled-1)) ((:none) 0))",
+      ),
+      ("CallDecorateShadow", "def v $ decorate-shadow (%{} P :name |a) (Some 1)"),
+    ],
+    &[],
+  );
+  assert!(
+    !impl_attach::collect_non_coherent_nominal_defs(&nested_match_shadowed).contains("app.m/P"),
+    "nested match inside shadowing match branch must not leak outer param or top-level P"
+  );
 }

@@ -6171,6 +6171,7 @@ impl CalcitTypeAnnotation {
       return true;
     }
     if trait_def.method_types.is_empty()
+      && trait_def.requires.is_empty()
       && let Some((resolved, _)) = Self::TypeRef(
         Arc::from(trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str())),
         Arc::new(vec![]),
@@ -12670,6 +12671,14 @@ mod tests {
     assert!(
       !DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &user_eq),
       "non-core Eq trait taking non-receiver Self must be rejected on unions"
+    );
+    let requires_only_compare = CalcitTrait::new(EdnTag::new("ChildCompare"), vec![], vec![])
+      .with_definition_ref("app.main", "ChildCompare")
+      .with_requires(vec![Arc::new(compare_trait)])
+      .expect("requires Compare");
+    assert!(
+      !DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &requires_only_compare),
+      "requires-only trait inheriting binary Compare must be rejected on unions"
     );
 
     // Active union cycle assumption short-circuits instead of recursing forever.

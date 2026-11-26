@@ -1145,6 +1145,31 @@ fn collect_expr_param_sinks(
     }
     return;
   }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "match")
+  {
+    if let Some(scrutinee) = items.get(1) {
+      collect_expr_param_sinks(scan, scrutinee, var_to_params, fn_sinks, local_fn_sinks, out);
+    }
+    for branch in items.iter().skip(2) {
+      if let Calcit::List(pair) = branch
+        && pair.len() == 2
+        && let Some(body) = pair.get(1)
+      {
+        let mut scoped_vars = var_to_params.clone();
+        let mut scoped_fns = local_fn_sinks.clone();
+        if let Some(pattern) = pair.first() {
+          for name in match_pattern_bound_names(pattern) {
+            scoped_vars.insert(name.clone(), HashSet::new());
+            scoped_fns.remove(&name);
+          }
+        }
+        collect_expr_param_sinks(scan, body, &scoped_vars, fn_sinks, &scoped_fns, out);
+      } else {
+        collect_expr_param_sinks(scan, branch, var_to_params, fn_sinks, local_fn_sinks, out);
+      }
+    }
+    return;
+  }
   for item in items.iter() {
     collect_expr_param_sinks(scan, item, var_to_params, fn_sinks, local_fn_sinks, out);
   }
@@ -1312,6 +1337,31 @@ fn walk_expr_for_non_coherent(
     bind_fn_param_nominals(scan, params, None, &body, &mut scoped);
     for item in &body {
       walk_expr_for_non_coherent(scan, item, &scoped, &scoped_fns, None, state);
+    }
+    return;
+  }
+  if matches!(head, Calcit::Syntax(CalcitSyntax::Match, _)) || is_core_symbol_or_import(scan.program, scan.ns, scan.file, head, "match")
+  {
+    if let Some(scrutinee) = items.get(1) {
+      walk_expr_for_non_coherent(scan, scrutinee, local_bindings, local_fn_sinks, None, state);
+    }
+    for branch in items.iter().skip(2) {
+      if let Calcit::List(pair) = branch
+        && pair.len() == 2
+        && let Some(body) = pair.get(1)
+      {
+        let mut scoped = local_bindings.clone();
+        let mut scoped_fns = local_fn_sinks.clone();
+        if let Some(pattern) = pair.first() {
+          for name in match_pattern_bound_names(pattern) {
+            scoped.insert(name.clone(), Vec::new());
+            scoped_fns.remove(&name);
+          }
+        }
+        walk_expr_for_non_coherent(scan, body, &scoped, &scoped_fns, None, state);
+      } else {
+        walk_expr_for_non_coherent(scan, branch, local_bindings, local_fn_sinks, None, state);
+      }
     }
     return;
   }

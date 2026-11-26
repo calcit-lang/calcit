@@ -8343,8 +8343,35 @@ fn dyn_trait_object_safety_and_boxing_rejections() {
         "dyn:box open family AnyEnum",
         "defn bad (x)\n  hint-fn $ Fn AnyEnum (-> (Dyn Debug))\n  dyn:box x Debug\ndefn main! () (do bad &unit)",
       ),
+      (
+        "dyn:box Fn with deftype alias to Dynamic",
+        "deftype Open Dynamic\ndefn bad ()\n  let ((f (fn (x) (hint-fn $ Fn Open (-> Number)) 1)))\n    dyn:box f Debug\ndefn main! () (do bad &unit)",
+      ),
     ] {
       expect_error(label, code, "E_DYN_BOX_TYPE");
+    }
+
+    // Bound TypeSlot inside nested Fn in `dyn:box` resolves to concrete bound type,
+    // while cyclic/unbound TypeSlot is rejected.
+    {
+      let bound_code = "defstruct BoxedInput (:n Number)\ndef *op $ deftype-slot :op\ndefn f (x)\n  hint-fn $ Fn *op (-> Number)\n  , 1\ndefn main! ()\n  let ((_b (dyn:box f Debug)))\n    , &unit";
+      builtins::effects::init_effects_states();
+      let mut snap = snapshot::Snapshot::default();
+      snap.files.insert(
+        "app.main".to_owned(),
+        snapshot::create_file_from_snippet(bound_code).expect("parse bound TypeSlot snippet"),
+      );
+      struct SlotResetGuard;
+      impl Drop for SlotResetGuard {
+        fn drop(&mut self) {
+          let _ = calcit::calcit::configure_entry_type_slots(&HashMap::new());
+        }
+      }
+      let entries = prepare_snapshot_entries(snap);
+      let _slot_guard = SlotResetGuard;
+      let slot_bindings = HashMap::from([(String::from("op"), String::from("app.main/BoxedInput"))]);
+      calcit::calcit::configure_entry_type_slots(&slot_bindings).expect("configure concrete slot");
+      run_check_only(&entries).expect("dyn:box over Fn with concretely bound TypeSlot should pass");
     }
 
     // Undefined `(Dyn NonExistent)` rejected in deftype / defstruct / defenum / deftrait (Bug 8),
