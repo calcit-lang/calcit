@@ -2722,3 +2722,110 @@ fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coh
   let err = impl_attach::attach_source_impls(&mut unused_helper).expect_err("unrelated P must still reject duplicate defimpl");
   assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 }
+
+#[test]
+fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
+  let _guard = lock_program_test_state();
+
+  // `(:impls LabeledAlias)` in `app.m` finds `defimpl m/P Labeled` in origin `app.t`.
+  let mut alias_in_impls = impl_attach_program(
+    "defstruct P (:name String) (:impls LabeledAlias)",
+    &[("LabeledAlias", "def LabeledAlias t/Labeled")],
+    &[],
+  );
+  alias_in_impls.insert(
+    Arc::from("app.t"),
+    impl_attach_file(
+      "app.t",
+      &[("m", "app.m")],
+      &[
+        ("Labeled", "deftrait Labeled (.label (Fn Self (-> String)))"),
+        ("P-Labeled", "defimpl m/P Labeled (.label f)"),
+      ],
+    ),
+  );
+  impl_attach::attach_source_impls(&mut alias_in_impls).expect("impls trait alias must match origin defimpl in trait ns");
+  assert!(alias_in_impls["app.m"].defs["P"].code.to_string().ends_with("'app.t/P-Labeled)"));
+
+  // `(:impls t/Labeled)` finds `defimpl P LabeledAlias` when alias is in type ns.
+  let mut alias_in_defimpl = impl_attach_program(
+    LISTED_TYPE,
+    &[
+      ("LabeledAlias", "def LabeledAlias t/Labeled"),
+      ("P-Labeled", "defimpl P LabeledAlias (.label f)"),
+    ],
+    &[],
+  );
+  impl_attach::attach_source_impls(&mut alias_in_defimpl).expect("defimpl using trait alias must match origin (:impls ...)");
+  assert!(alias_in_defimpl["app.m"].defs["P"].code.to_string().ends_with("'P-Labeled)"));
+
+  // Duplicate impl mixing origin and alias is rejected.
+  let mut dup_alias_and_origin = impl_attach_program(
+    LISTED_TYPE,
+    &[
+      ("LabeledAlias", "def LabeledAlias t/Labeled"),
+      ("P-Labeled-1", "defimpl P LabeledAlias (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+    ],
+    &[],
+  );
+  let dup_err = impl_attach::attach_source_impls(&mut dup_alias_and_origin).expect_err("duplicate impl via alias must fail");
+  assert!(dup_err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{dup_err}");
+
+  // `(impl-traits (match ...) ...)` marks branch nominal targets non-coherent.
+  let mut match_branch_attach = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      (
+        "UseMatch",
+        "defn use-match (flag) (impl-traits (match flag (true (%{} P :name |a)) (_ (%{} P :name |b))) P-Labeled-1)",
+      ),
+    ],
+    &[],
+  );
+  assert!(
+    impl_attach::collect_non_coherent_nominal_defs(&match_branch_attach).contains("app.m/P"),
+    "match branch returning nominal struct inside impl-traits must mark P non-coherent"
+  );
+  impl_attach::attach_source_impls(&mut match_branch_attach).expect("match-attached non-coherent type preserves detached defimpls");
+
+  // `(impl-traits (match flag (true x) (_ ...)) ...)` propagates parameter sink through match.
+  let mut match_param_sink = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      (
+        "decorate",
+        "defn decorate (flag x fallback) (impl-traits (match flag (true x) (_ fallback)) P-Labeled-1)",
+      ),
+      ("UseDecorate", "def v $ decorate true (%{} P :name |a) 0"),
+    ],
+    &[],
+  );
+  assert!(
+    impl_attach::collect_non_coherent_nominal_defs(&match_param_sink).contains("app.m/P"),
+    "match returning parameter inside impl-traits must propagate param sink to caller nominal type"
+  );
+  impl_attach::attach_source_impls(&mut match_param_sink).expect("match param sink keeps detached defimpls");
+
+  // Pattern-bound local `P` inside `match` must not leak to top-level `P`.
+  let match_shadowed = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      (
+        "UseShadowMatch",
+        "defn use-shadow (opt) (impl-traits (match opt ((:some P) P) ((:none) 0)) P-Labeled-1)",
+      ),
+    ],
+    &[],
+  );
+  assert!(
+    !impl_attach::collect_non_coherent_nominal_defs(&match_shadowed).contains("app.m/P"),
+    "pattern-bound local P in match must not mark top-level P non-coherent"
+  );
+}

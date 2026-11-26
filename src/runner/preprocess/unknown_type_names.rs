@@ -14,6 +14,8 @@ pub(crate) const UNKNOWN_TYPE_NAME_ERROR: &str = "E_UNKNOWN_TYPE_NAME";
 /// Built-in type names that are not definitions, offered as candidates.
 const BUILTIN_TYPE_NAMES: &[&str] = &[
   "Dynamic",
+  "Any",
+  "Dyn",
   "Nil",
   "Unit",
   "Bool",
@@ -30,9 +32,12 @@ const BUILTIN_TYPE_NAMES: &[&str] = &[
   "Tuple",
   "Ref",
   "Buffer",
+  "BufList",
   "CirruQuote",
+  "Method",
   "JsObject",
   "JsNullish",
+  "FfiResource",
   "Variadic",
   "Struct",
   "StructDef",
@@ -289,7 +294,7 @@ pub(super) fn reject_unknown_type_names(
 
 #[cfg(test)]
 mod tests {
-  use super::edit_distance;
+  use super::{BUILTIN_TYPE_NAMES, edit_distance, suggest_type_names};
 
   #[test]
   fn edit_distance_counts_a_swap_as_one() {
@@ -298,5 +303,24 @@ mod tests {
     assert_eq!(edit_distance("Task", "Task"), 0);
     assert_eq!(edit_distance("Tsk", "Task"), 1);
     assert_eq!(edit_distance("Pt", "Vec3"), 4);
+  }
+
+  #[test]
+  fn builtin_type_names_cover_new_builtin_types_for_suggestions() {
+    for expected in ["Any", "Dyn", "BufList", "FfiResource", "Method"] {
+      assert!(BUILTIN_TYPE_NAMES.contains(&expected), "missing {expected} in BUILTIN_TYPE_NAMES");
+    }
+    let _guard = crate::program::lock_program_test_state();
+    assert!(
+      suggest_type_names("tests.unknown", "BufLst")
+        .iter()
+        .any(|s| s.as_ref() == "BufList")
+    );
+    assert!(
+      suggest_type_names("tests.unknown", "FfiResoucre")
+        .iter()
+        .any(|s| s.as_ref() == "FfiResource")
+    );
+    assert!(suggest_type_names("tests.unknown", "Methd").iter().any(|s| s.as_ref() == "Method"));
   }
 }

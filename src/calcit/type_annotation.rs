@@ -5938,7 +5938,7 @@ impl CalcitTypeAnnotation {
     result
   }
 
-  fn core_impl_list_symbol(&self) -> Option<&'static str> {
+  pub(crate) fn core_impl_list_symbol(&self) -> Option<&'static str> {
     match self {
       Self::List(_) | Self::Tuple(_) => Some("&core-list-impls"),
       Self::String => Some("&core-string-impls"),
@@ -6094,10 +6094,10 @@ impl CalcitTypeAnnotation {
   /// changing whether an otherwise identical core call emits a warning.
   fn builtin_core_trait_names(&self) -> &'static [&'static str] {
     if matches!(self, Self::StructValue(_) | Self::Struct(_, _)) {
-      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains", "ContainsField"];
     }
     if matches!(self, Self::AnonymousEnum | Self::EnumValue(_) | Self::Enum(_, _)) {
-      return &["Debug", "Eq", "Hash", "Countable", "Contains"];
+      return &["Debug", "Eq", "Hash", "Countable", "Contains", "ContainsIndex"];
     }
     match self.core_impl_list_symbol() {
       Some("&core-list-impls") => &[
@@ -6170,8 +6170,15 @@ impl CalcitTypeAnnotation {
     if mentions_self_in_extra_params {
       return true;
     }
-    if trait_def.method_types.is_empty() && matches!(trait_def.name.ref_str(), "Compare" | "Add" | "Multiply") {
-      return true;
+    if trait_def.method_types.is_empty()
+      && let Some((resolved, _)) = Self::TypeRef(
+        Arc::from(trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str())),
+        Arc::new(vec![]),
+      )
+      .resolve_to_source_trait_with_ref()
+      && (!resolved.method_types.is_empty() || !resolved.requires.is_empty())
+    {
+      return Self::trait_takes_non_receiver_self(resolved.as_ref(), depth - 1);
     }
     trait_def
       .requires
@@ -6183,10 +6190,18 @@ impl CalcitTypeAnnotation {
     // Binary traits whose method signature accepts another `Self` operand
     // (e.g. `Compare .compare`, `Add .add`) cannot safely dispatch across
     // distinct runtime variants (`String` vs `Number`, or different structs).
-    // Keep `Eq` allowed because core collections (`distinct`, `frequencies`,
-    // `group-by`, `index-of`) compare union variants structurally without
-    // calling a variant-specific `.eq?` method across mismatched operands.
-    if expected_trait.name.ref_str() != "Eq" && Self::trait_takes_non_receiver_self(expected_trait, 64) {
+    // Keep `calcit.core/Eq` allowed because core collections (`distinct`,
+    // `frequencies`, `group-by`, `index-of`) compare union variants structurally
+    // without calling a variant-specific `.eq?` method across mismatched operands.
+    let is_core_eq = expected_trait.definition_ref.as_deref() == Some("calcit.core/Eq")
+      || (expected_trait.definition_ref.is_none()
+        && expected_trait.runtime_id.is_none()
+        && expected_trait.method_types.is_empty()
+        && expected_trait.name.ref_str() == "Eq"
+        && Self::TypeRef(Arc::from("Eq"), Arc::new(vec![]))
+          .resolve_to_source_trait_with_ref()
+          .is_some_and(|(_, (ns, def))| ns.as_ref() == CORE_NS && def.as_ref() == "Eq"));
+    if !is_core_eq && Self::trait_takes_non_receiver_self(expected_trait, 64) {
       return false;
     }
     let Ok(members) = union_def.checked_members() else {
@@ -9296,6 +9311,25 @@ mod tests {
     let missing = CalcitTypeAnnotation::TypeRef(Arc::from("tests.nominal-capability/Missing"), Arc::new(vec![]));
     assert!(!missing.is_compatible_with(&capability));
     assert!(!missing.is_proven_for(&capability));
+
+    // Builtin core trait metadata includes ContainsField for structs and ContainsIndex for enums.
+    let contains_field = CalcitTrait::new_reference("calcit.core/ContainsField");
+    let contains_index = CalcitTrait::new_reference("calcit.core/ContainsIndex");
+    assert!(instance.satisfies_trait_bound(&contains_field));
+    assert!(!instance.satisfies_trait_bound(&contains_index));
+    assert!(CalcitTypeAnnotation::AnonymousEnum.satisfies_trait_bound(&contains_index));
+    assert!(!CalcitTypeAnnotation::AnonymousEnum.satisfies_trait_bound(&contains_field));
+
+    // Bound TypeSlot delegates `core_impl_list_symbol` to its bound type.
+    let slot_ann = CalcitTypeAnnotation::TypeSlot(Arc::from(":slot-list"));
+    assert_eq!(slot_ann.core_impl_list_symbol(), None);
+    let prev_slots = entry_type_slots();
+    install_entry_type_slots(HashMap::from([(
+      Arc::from(":slot-list"),
+      Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
+    )]));
+    assert_eq!(slot_ann.core_impl_list_symbol(), Some("&core-list-impls"));
+    install_entry_type_slots(prev_slots);
   }
 
   #[test]
@@ -12528,7 +12562,18 @@ mod tests {
     let debug_trait = make_core_trait("Debug");
     let eq_trait = make_core_trait("Eq");
     let hash_trait = make_core_trait("Hash");
-    let compare_trait = make_core_trait("Compare");
+    let compare_trait = CalcitTrait::new(
+      EdnTag::new("Compare"),
+      vec![EdnTag::new("compare")],
+      vec![Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self"))),
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self"))),
+        ],
+        Arc::new(CalcitTypeAnnotation::Number),
+      ))],
+    )
+    .with_definition_ref(CORE_NS, "Compare");
 
     let mixed_debug_union = CalcitUnionDef::new(
       EdnTag::new("MixedDebug"),
@@ -12607,6 +12652,25 @@ mod tests {
     assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &eq_trait));
     assert!(DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &hash_trait));
     assert!(!DYNAMIC_TYPE.union_satisfies_trait_bound(&hashable_with_buffer, &compare_trait));
+
+    // Only `calcit.core/Eq` gets the structural union exemption; a user-defined
+    // binary `Eq` trait in another namespace must be rejected on unions.
+    let user_eq = CalcitTrait::new(
+      EdnTag::new("Eq"),
+      vec![EdnTag::new("eq?")],
+      vec![Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self"))),
+          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Self"))),
+        ],
+        Arc::new(CalcitTypeAnnotation::Bool),
+      ))],
+    )
+    .with_definition_ref("app.main", "Eq");
+    assert!(
+      !DYNAMIC_TYPE.union_satisfies_trait_bound(&ordered_union, &user_eq),
+      "non-core Eq trait taking non-receiver Self must be rejected on unions"
+    );
 
     // Active union cycle assumption short-circuits instead of recursing forever.
     let cycle_union = CalcitUnionDef::new(

@@ -7564,9 +7564,7 @@ fn preprocess_known_function_call(
     // types during its own preprocessing.
     let can_refresh_checked_contract =
       checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
-    let can_refresh_core_types = info.def_ns.as_ref() == calcit::CORE_NS
-      && ((args.len() == 3 && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce"))
-        || (args.len() == 2 && matches!(info.name.as_ref(), "&list:sort-by" | "group-by" | "sort")));
+    let can_refresh_core_types = type_checking::core_callback_refresh_arity(&info) == Some(args.len());
     let callee_cases_schema = match program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
       CalcitTypeAnnotation::Fn(fn_annot) if !fn_annot.cases.is_empty() => Some(fn_annot.clone()),
       _ => None,
@@ -13736,10 +13734,6 @@ fn get_impls_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Calc
     return Some(impls);
   }
 
-  if let CalcitTypeAnnotation::Struct(struct_def, _) = type_value {
-    return Some(struct_def.impls.to_owned());
-  }
-
   if let Some(enum_def) = type_value.resolve_to_enum() {
     // Prepend core enum impls; user impls come after and win (last_wins=true)
     let mut impls = resolve_core_impls("&core-enum-impls").unwrap_or_default();
@@ -13763,10 +13757,6 @@ fn get_impls_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Calc
 
   if let CalcitTypeAnnotation::Custom(value) = type_value {
     match value.as_ref() {
-      // Descriptors have no attached instance impl table. This is a known
-      // empty set, not missing evidence that permits dynamic dispatch.
-      Calcit::Trait(_) => return Some(vec![]),
-      Calcit::Tag(tag) if tag.ref_str() == "trait" => return Some(vec![]),
       Calcit::Import(import) => {
         return match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
           Some(value) => collect_impls_from_value(&value),
@@ -14163,47 +14153,9 @@ fn collect_trait_method_names(traits: &[Arc<CalcitTrait>]) -> Vec<String> {
   names
 }
 
+#[inline]
 fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
-  match type_value {
-    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Symbol => {
-      Some("&core-text-scalar-impls")
-    }
-    CalcitTypeAnnotation::Unit => Some("&core-scalar-impls"),
-    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Tuple(_) => Some("&core-list-impls"),
-    CalcitTypeAnnotation::String => Some("&core-string-impls"),
-    CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
-    CalcitTypeAnnotation::Set(_) => Some("&core-set-impls"),
-    CalcitTypeAnnotation::Ref(_) => Some("&core-ref-impls"),
-    CalcitTypeAnnotation::Buffer => Some("&core-buffer-impls"),
-    CalcitTypeAnnotation::BufList => Some("&core-buf-list-impls"),
-    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("&core-number-impls"),
-    CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::Fn(_) => Some("&core-fn-impls"),
-    CalcitTypeAnnotation::CirruQuote => Some("&core-cirru-quote-impls"),
-    CalcitTypeAnnotation::Any => Some("&core-any-box-impls"),
-    CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) | CalcitTypeAnnotation::Method => Some("&core-def-impls"),
-    CalcitTypeAnnotation::Custom(value)
-      if matches!(value.as_ref(), Calcit::UnionDef(_) | Calcit::Trait(_) | Calcit::Impl(_))
-        || matches!(
-          value.as_ref(),
-          Calcit::Tag(tag) if matches!(tag.ref_str(), "struct-def" | "enum-def" | "union-def" | "trait" | "impl")
-        ) =>
-    {
-      Some("&core-def-impls")
-    }
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Inferred) => core_impl_list_symbol_from_type_annotation(inner.as_ref()),
-    // A `deftype` or non-constructor schema alias such as `Coord` for `List Number`
-    // dispatches through the core impls of the target it names (#2590), while
-    // nominal struct/enum/union references remain instance types rather than constructors.
-    CalcitTypeAnnotation::TypeRef(..) => {
-      let expanded = CalcitTypeAnnotation::expand_value_type_aliases(&Arc::new(type_value.clone()));
-      if matches!(expanded.as_ref(), CalcitTypeAnnotation::TypeRef(..)) {
-        None
-      } else {
-        core_impl_list_symbol_from_type_annotation(expanded.as_ref())
-      }
-    }
-    _ => None,
-  }
+  type_value.core_impl_list_symbol()
 }
 
 /// Read-only method metadata resolved with the same precedence rules as static
@@ -20245,7 +20197,8 @@ pub fn preprocess_any_downcast(
     let desugared = desugar_decoder_type_form(head.as_ref(), args, ctx)?;
     qualify_assert_type_form(&desugared, ctx.file_ns, ctx.scope_types)
   };
-  let target = resolve_type_form_in_scope(&type_form, &type_form, &[], ctx.scope_types);
+  let lexical_generics = ctx.scope_types.generic_names();
+  let target = resolve_type_form_in_scope(&type_form, &type_form, &lexical_generics, ctx.scope_types);
   target.validate_applied_type_args().map_err(|error| {
     let code = if error.starts_with("type alias ") {
       unknown_type_names::TYPE_ALIAS_ARITY_ERROR

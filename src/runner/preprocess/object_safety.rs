@@ -213,31 +213,40 @@ pub(crate) fn resolve_dyn_trait_definition(
   }
 
   if let Some((ns, def)) = program::resolve_type_name_in_ns(file_ns, raw_name) {
-    if let Some(resolved) = super::lookup_source_backed_trait_def(&ns, &def) {
-      return Ok(Some(Arc::new(resolved.with_definition_ref(&ns, &def))));
+    let (origin_ns, origin_def) = program::impl_attach::resolve_trait_origin_in_program(&ns, &def);
+    if let Some(resolved) = super::lookup_source_backed_trait_def(&origin_ns, &origin_def) {
+      return Ok(Some(Arc::new(resolved.with_definition_ref(&origin_ns, &origin_def))));
     }
-    if let Some(Calcit::Trait(runtime_trait)) = super::resolve_program_value_for_preprocess(&ns, &def, None) {
+    if let Some(Calcit::Trait(runtime_trait)) = super::resolve_program_value_for_preprocess(&origin_ns, &origin_def, None) {
       let resolved = if runtime_trait.definition_ref.is_some() {
         runtime_trait
       } else {
-        Arc::new((*runtime_trait).clone().with_definition_ref(&ns, &def))
+        Arc::new((*runtime_trait).clone().with_definition_ref(&origin_ns, &origin_def))
       };
       return Ok(Some(resolved));
     }
-    if !program::has_ns_code(&ns) && super::unknown_type_names::imports_unloaded_ns(file_ns, raw_name, &ns) {
+    if !program::has_ns_code(&origin_ns)
+      && (super::unknown_type_names::imports_unloaded_ns(file_ns, raw_name, &origin_ns) || (origin_ns != ns && origin_ns.contains('.')))
+    {
       return Ok(None);
+    }
+    if program::has_def_code(&origin_ns, &origin_def) {
+      return Err(format!(
+        "`(Dyn {raw_name})` requires an object-safe trait, but `{origin_ns}/{origin_def}` is not a trait definition"
+      ));
     }
     if program::has_def_code(&ns, &def) {
       return Err(format!(
         "`(Dyn {raw_name})` requires an object-safe trait, but `{ns}/{def}` is not a trait definition"
       ));
     }
+    return Err(format!("`(Dyn {raw_name})` refers to unknown trait `{origin_ns}/{origin_def}`"));
   }
 
   if trait_def.runtime_id.is_some() || !trait_def.methods.is_empty() || !trait_def.requires.is_empty() {
     return Ok(Some(Arc::new(trait_def.clone())));
   }
-  Ok(None)
+  Err(format!("`(Dyn {raw_name})` refers to unknown trait `{raw_name}` in `{file_ns}`"))
 }
 
 /// Reject any `(Dyn ...)` type annotation in `annotation` whose target is not
@@ -599,6 +608,8 @@ fn dyn_box_nested_open_type_reason(annotation: &CalcitTypeAnnotation) -> Option<
     CalcitTypeAnnotation::TypeSlot(_) => Some("unbound type slot"),
     CalcitTypeAnnotation::Custom(_) => Some("untyped custom type"),
     CalcitTypeAnnotation::Nullable(_, _) => Some("nullable type"),
+    CalcitTypeAnnotation::DynFn => Some("open `DynFn` function type"),
+    CalcitTypeAnnotation::AnonymousEnum => Some("open anonymous `Enum` type"),
     CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => Some("bare trait constraint"),
     CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::FfiResource => match annotation.host_target() {
       Some(crate::ffi_boundary::HostTarget::Js) => Some("opaque `JsObject` host value"),
@@ -608,12 +619,32 @@ fn dyn_box_nested_open_type_reason(annotation: &CalcitTypeAnnotation) -> Option<
     CalcitTypeAnnotation::Macro(_) | CalcitTypeAnnotation::Syntax(_) => Some("compile-time macro/syntax value"),
     CalcitTypeAnnotation::Variadic(_) => Some("variadic parameter constraint"),
     CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_) => Some("type definition value"),
+    CalcitTypeAnnotation::Fn(sig) => {
+      if sig.fn_kind != crate::calcit::SchemaKind::Fn {
+        return Some("compile-time macro/syntax value");
+      }
+      if !sig.generics.is_empty() || !sig.cases.is_empty() {
+        return Some("polymorphic or multi-case function type");
+      }
+      sig
+        .arg_types
+        .iter()
+        .find_map(|arg| dyn_box_nested_open_type_reason(arg))
+        .or_else(|| sig.rest_type.as_deref().and_then(dyn_box_nested_open_type_reason))
+        .or_else(|| dyn_box_nested_open_type_reason(&sig.return_type))
+    }
     CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) | CalcitTypeAnnotation::Ref(inner) => {
       dyn_box_nested_open_type_reason(inner)
     }
     CalcitTypeAnnotation::Map(k, v) => dyn_box_nested_open_type_reason(k).or_else(|| dyn_box_nested_open_type_reason(v)),
     CalcitTypeAnnotation::Tuple(items) => items.iter().find_map(|item| dyn_box_nested_open_type_reason(item)),
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => {
+    CalcitTypeAnnotation::TypeRef(name, args) => {
+      if CalcitTypeAnnotation::open_family_type(name).is_some() {
+        return Some("open family type");
+      }
+      args.iter().find_map(|arg| dyn_box_nested_open_type_reason(arg))
+    }
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
       args.iter().find_map(|arg| dyn_box_nested_open_type_reason(arg))
     }
     _ => None,

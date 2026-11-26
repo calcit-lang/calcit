@@ -262,6 +262,19 @@ where
 /// retaining only `Router` is ambiguous and prevents required-field lowering.
 /// Source migrations also use this resolver before treating a short nominal name as core.
 pub fn qualify_namespace_type_refs(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
+  let qualify_unresolved_trait = |trait_def: Arc<CalcitTrait>| -> Arc<CalcitTrait> {
+    if trait_def.runtime_id.is_none()
+      && trait_def.methods.is_empty()
+      && trait_def.requires.is_empty()
+      && super::type_annotation::family_of_bound_trait(&trait_def).is_none()
+    {
+      let raw_name = trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str());
+      if let Some((ns, def)) = program::resolve_type_name_in_ns(declaring_ns, raw_name) {
+        return Arc::new(trait_def.as_ref().clone().with_definition_ref(&ns, &def));
+      }
+    }
+    trait_def
+  };
   map_all_type_references(
     annotation,
     &|name, resolved_args| {
@@ -271,15 +284,7 @@ pub fn qualify_namespace_type_refs(annotation: Arc<CalcitTypeAnnotation>, declar
       };
       Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
     },
-    &|trait_def| trait_def,
-    &|trait_def| {
-      if trait_def.runtime_id.is_none() && trait_def.methods.is_empty() && trait_def.requires.is_empty() {
-        let raw_name = trait_def.definition_ref.as_deref().unwrap_or_else(|| trait_def.name.ref_str());
-        if let Some((ns, def)) = program::resolve_type_name_in_ns(declaring_ns, raw_name) {
-          return Arc::new(trait_def.as_ref().clone().with_definition_ref(&ns, &def));
-        }
-      }
-      trait_def
-    },
+    &qualify_unresolved_trait,
+    &qualify_unresolved_trait,
   )
 }
