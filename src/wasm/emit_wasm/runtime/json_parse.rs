@@ -1296,7 +1296,12 @@ fn build_rt_json_parse_at_impl(
   } else {
     ContainerSlotKind::DynamicBoxed
   };
-  let obj_kv_kind = ContainerSlotKind::pack_kv(ContainerSlotKind::ExactHeapPtr, obj_val_kind);
+  let obj_key_kind = if json_value.is_some() {
+    ContainerSlotKind::ExactHeapPtr
+  } else {
+    ContainerSlotKind::PureScalar
+  };
+  let obj_kv_kind = ContainerSlotKind::pack_kv(obj_key_kind, obj_val_kind);
   b.emit(Instruction::LocalGet(obj_buf));
   b.emit(Instruction::LocalGet(pair_cnt));
   b.emit(Instruction::I32Store(mem_arg_i32(0)));

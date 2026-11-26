@@ -2898,3 +2898,243 @@ fn typed_container_slot_kinds_and_propagation_headers() {
   let s_ptr = call_ptr(&mut store, "sample-string");
   assert_eq!(read_f64(&store, s_ptr), 5.0);
 }
+
+#[test]
+fn typed_container_safety_guards_json_keys_map_widening_and_encode_kinds() {
+  let dir = TestDirectory::create("wasm-typed-container-guards");
+  let snapshot = r#"
+{} (:package |typed-guards)
+  :about "|Regression checks for typed container non-heap probes, map key widening, json-parse tag keys, struct-to-map scalar fields, and encoded option lists"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'typed-guards.main/main!) (:mode :native) (:reload-fn 'typed-guards.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'typed-guards.main
+    %{} 'FileEntry
+      :defs $ {}
+        'NumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumBox (:n Number)
+          :examples $ []
+          :schema $ quote StructDef
+        'DynBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct DynBox (:d Dynamic)
+          :examples $ []
+          :schema $ quote StructDef
+        '*persisted-boxed-bools $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-boxed-bools $ assert-type ([] ) (List Bool)
+          :examples $ []
+          :schema $ quote $ Ref (List Bool)
+        '*persisted-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-str |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'as-dyn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn as-dyn (x) , x
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'parsed-json-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export parsed-json-map ()
+            let
+                parsed $ json-parse "|{\"a\":1}"
+              &buf-list:push (&buf-list:new) parsed
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'promote-boxed-json-bool-hof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export promote-boxed-json-bool-hof ()
+            let
+                raw $ json-parse "|[true,false]"
+                typed-xs $ assert-type raw (List Bool)
+                mapped $ map typed-xs (fn (x) x)
+                direct $ [] (&list:nth typed-xs 0)
+              reset! *persisted-boxed-bools mapped
+              and (&= (&list:nth @*persisted-boxed-bools 0) true) (&= (&list:nth direct 0) true)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'pump-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-churn (n)
+            reset! *persisted-str (&str:pad-right (&str:concat |c- (to-string n)) 32768 |Z)
+            &str:count @*persisted-str
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-persisted-boxed-bools $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-persisted-boxed-bools ()
+            let
+                xs @*persisted-boxed-bools
+              and (&= (&list:nth xs 0) true) (&= (&list:nth xs 1) false)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'probe-str-map-non-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export probe-str-map-non-heap ()
+            let
+                sm $ &{} |a 1 |b 2
+                dyn-sm $ as-dyn sm
+                dm $ &{} -1 1 |a 2
+                dyn-dm $ as-dyn dm
+                has-false $ &map:contains? dyn-sm false
+                got-false $ &map:get dyn-sm false
+                dissoc-neg $ &map:dissoc dyn-sm -1
+                dissoc-false $ &map:dissoc dyn-sm false
+                eq-ab $ &= dyn-dm dyn-sm
+                eq-ba $ &= dyn-sm dyn-dm
+                set-s $ #{} |a |b
+                dyn-set $ as-dyn set-s
+                has-neg-in-set $ &set:includes? dyn-set -1
+              and
+                not has-false
+                got-false .none?
+                &= dissoc-neg dyn-sm
+                &= dissoc-false dyn-sm
+                not eq-ab
+                not eq-ba
+                not has-neg-in-set
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        '*live-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *live-a |seed-a
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*live-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *live-b |seed-b
+          :examples $ []
+          :schema $ quote $ Ref String
+        'alloc-live-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-live-a ()
+            reset! *live-a (&str:concat |x |y)
+            , @*live-a
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'alloc-live-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-live-b ()
+            reset! *live-b (&str:concat |x |y)
+            , @*live-b
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'map-widening-aliasing-check $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export map-widening-aliasing-check (ptr-a ptr-b)
+            let
+                base-map $ &{} (&+ ptr-a 0) 77
+                dyn-map $ as-dyn base-map
+                widened $ &map:assoc dyn-map |extra 99
+                kept $ match (&map:get (as-dyn widened) (&+ ptr-a 0))
+                  (:some v) v
+                  (:none) 0
+                a $ [] (&+ ptr-a 0)
+                c $ [] (&+ ptr-b 0)
+              and
+                &= @*live-a @*live-b
+                &= kept 77
+                not (&= a c)
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Bool)
+        'struct-to-map-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export struct-to-map-num () (&buf-list:push (&buf-list:new) (&struct:to-map (NumBox :n 42)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'struct-to-map-dyn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export struct-to-map-dyn () (&buf-list:push (&buf-list:new) (&struct:to-map (DynBox :d (assert-type 42 Dynamic))))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'encode-opt-num-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export encode-opt-num-list ()
+            let
+                xs $ assert-type ([] (Some 1) None) (List (Option Number))
+              &buf-list:push (&buf-list:new) (encode-map-as xs (List (Option Number)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns typed-guards.main (:require)
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let read_u32 = |store: &Store<StoreLimits>, addr: usize| -> u32 {
+    let mut buf = [0u8; 4];
+    memory.read(store, addr, &mut buf).expect("memory read u32");
+    u32::from_le_bytes(buf)
+  };
+  let read_f64 = |store: &Store<StoreLimits>, addr: usize| -> f64 {
+    let mut buf = [0u8; 8];
+    memory.read(store, addr, &mut buf).expect("memory read f64");
+    f64::from_le_bytes(buf)
+  };
+  let call_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    instance
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .expect(name)
+      .call(&mut *store, ())
+      .expect(name) as usize
+  };
+  let call_boxed_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    let buf_ptr = call_ptr(store, name);
+    read_f64(store, buf_ptr + 16) as usize
+  };
+
+  // json-parse produces PureScalar Tag keys (1) and DynamicBoxed values (0) => kv_kind = 1
+  let json_map_ptr = call_boxed_ptr(&mut store, "parsed-json-map");
+  assert_eq!(
+    read_u32(&store, json_map_ptr + 4),
+    1,
+    "json-parse kv_kind must be PureScalar/DynamicBoxed (1)"
+  );
+
+  // Non-heap probes against ExactHeapPtr maps/sets must not trap.
+  let ok = instance
+    .get_typed_func::<(), f64>(&mut store, "probe-str-map-non-heap")
+    .expect("probe-str-map-non-heap")
+    .call(&mut store, ())
+    .expect("non-heap probes must not trap");
+  assert_eq!(ok, 1.0);
+
+  let ptr_a = call_ptr(&mut store, "alloc-live-a") as f64;
+  let ptr_b = call_ptr(&mut store, "alloc-live-b") as f64;
+  assert_ne!(ptr_a, ptr_b);
+  let ok_widen = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "map-widening-aliasing-check")
+    .expect("map-widening-aliasing-check")
+    .call(&mut store, (ptr_a, ptr_b))
+    .expect("map widening check");
+  assert_eq!(ok_widen, 1.0);
+
+  let ok_boxed = instance
+    .get_typed_func::<(), f64>(&mut store, "promote-boxed-json-bool-hof")
+    .expect("promote-boxed-json-bool-hof")
+    .call(&mut store, ())
+    .expect("boxed json bool HOF promote");
+  assert_eq!(ok_boxed, 1.0);
+  let pump_churn = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
+  for i in 0..80 {
+    let _ = pump_churn.call(&mut store, i as f64).expect("churn");
+  }
+  let ok_after_compact = instance
+    .get_typed_func::<(), f64>(&mut store, "read-persisted-boxed-bools")
+    .expect("read-persisted-boxed-bools")
+    .call(&mut store, ())
+    .expect("boxed json bools survive compaction");
+  assert_eq!(ok_after_compact, 1.0);
+
+  // Struct->Map keeps Number fields PureScalar (kv_kind=5) while Dynamic keeps DynamicBoxed (kv_kind=1)
+  let sm_num_ptr = call_boxed_ptr(&mut store, "struct-to-map-num");
+  assert_eq!(read_u32(&store, sm_num_ptr + 4), 5, "NumBox to-map kv_kind");
+  let sm_dyn_ptr = call_boxed_ptr(&mut store, "struct-to-map-dyn");
+  assert_eq!(read_u32(&store, sm_dyn_ptr + 4), 1, "DynBox to-map kv_kind");
+
+  // encode-map-as on (List (Option Number)) produces DynamicBoxed (0), not ExactHeapPtr (2)
+  let enc_ptr = call_boxed_ptr(&mut store, "encode-opt-num-list");
+  assert_eq!(
+    read_u32(&store, enc_ptr + 4),
+    0,
+    "encoded List<Option<Number>> elem_kind must be DynamicBoxed"
+  );
+}

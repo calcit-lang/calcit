@@ -1283,6 +1283,61 @@ fn emit_decode_map_option(
   Ok(())
 }
 
+fn encoded_slot_kind(
+  graph: &DataShapeGraph,
+  node_id: usize,
+  hint: Option<&CalcitTypeAnnotation>,
+  mode: MapCodecMode,
+) -> ContainerSlotKind {
+  match graph.nodes.get(node_id) {
+    Some(DataShapeNode::Dynamic) => ContainerSlotKind::DynamicBoxed,
+    Some(
+      DataShapeNode::Nil
+      | DataShapeNode::Unit
+      | DataShapeNode::Bool
+      | DataShapeNode::Number
+      | DataShapeNode::Numeric(_)
+      | DataShapeNode::Tag,
+    ) => ContainerSlotKind::PureScalar,
+    Some(
+      DataShapeNode::String
+      | DataShapeNode::List(_)
+      | DataShapeNode::Tuple(_)
+      | DataShapeNode::Set(_)
+      | DataShapeNode::Map { .. }
+      | DataShapeNode::Struct { .. }
+      | DataShapeNode::Enum { .. },
+    ) => ContainerSlotKind::ExactHeapPtr,
+    Some(DataShapeNode::MapOption { nominal, inner, .. }) => match mode {
+      MapCodecMode::Decode => ContainerSlotKind::ExactHeapPtr,
+      MapCodecMode::Encode => {
+        let inner_hint = hint_option_inner(hint, nominal);
+        let inner_kind = if matches!(graph.nodes.get(*inner), Some(DataShapeNode::Dynamic)) {
+          if inner_hint
+            .as_ref()
+            .and_then(|ty| ty.resolve_to_enum())
+            .is_some_and(|actual| actual.name() == nominal.name() || actual.same_nominal_definition(nominal))
+          {
+            ContainerSlotKind::ExactHeapPtr
+          } else {
+            inner_hint
+              .as_ref()
+              .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new(ty.clone())))
+              .unwrap_or(ContainerSlotKind::DynamicBoxed)
+          }
+        } else {
+          encoded_slot_kind(graph, *inner, inner_hint.as_ref(), mode)
+        };
+        ContainerSlotKind::ExactHeapPtr.join(inner_kind)
+      }
+    },
+    Some(DataShapeNode::Buffer) => ContainerSlotKind::ExactHeapPtr,
+    Some(_) | None => hint
+      .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new(ty.clone())))
+      .unwrap_or(ContainerSlotKind::DynamicBoxed),
+  }
+}
+
 fn emit_decode_map_list(
   ctx: &mut WasmGenCtx,
   graph: &DataShapeGraph,
@@ -1302,10 +1357,7 @@ fn emit_decode_map_list(
   ctx.emit(Instruction::LocalSet(src_ptr));
   let count = emit_load_container_count_i32(ctx, src_ptr);
   let inner_hint = hint_list_elem(static_hint);
-  let elem_kind = inner_hint
-    .as_ref()
-    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
-    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let elem_kind = encoded_slot_kind(graph, item_id, inner_hint.as_ref(), mode);
   let dst_ptr = emit_alloc_typed_list(ctx, count, elem_kind);
   let valid = ctx.alloc_i32(1);
   let all_identical = ctx.alloc_i32(1);
@@ -1409,13 +1461,13 @@ fn emit_decode_map_tuple(
   ctx.emit(Instruction::I32Const(slots.len() as i32));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  let tuple_elem_kind = (0..slots.len()).fold(ContainerSlotKind::EmptyUntyped, |acc, idx| {
-    let slot_kind = hint_tuple_slot(static_hint, idx)
-      .as_ref()
-      .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
-      .unwrap_or(ContainerSlotKind::DynamicBoxed);
-    acc.join(slot_kind)
-  });
+  let tuple_elem_kind = slots
+    .iter()
+    .enumerate()
+    .fold(ContainerSlotKind::EmptyUntyped, |acc, (idx, slot_id)| {
+      let slot_hint = hint_tuple_slot(static_hint, idx);
+      acc.join(encoded_slot_kind(graph, *slot_id, slot_hint.as_ref(), mode))
+    });
   let dst_ptr = emit_alloc_typed_list(ctx, count, tuple_elem_kind);
   let valid = ctx.alloc_i32(1);
   for (idx, slot_id) in slots.iter().enumerate() {
@@ -1486,10 +1538,7 @@ fn emit_decode_map_set(
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(src_ptr));
   let count = emit_load_container_count_i32(ctx, src_ptr);
-  let set_elem_kind = hint_set_elem(static_hint)
-    .as_ref()
-    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
-    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let set_elem_kind = encoded_slot_kind(graph, item_id, hint_set_elem(static_hint).as_ref(), mode);
   let ts = ctx.i32_offset(count, 1);
   let dst_ptr = emit_alloc_typed_container(ctx, count, ts, "set", set_elem_kind as u32);
   let hashes_ptr = emit_alloc_typed_list(ctx, count, ContainerSlotKind::PureScalar);
@@ -1619,14 +1668,8 @@ fn emit_decode_map_table(
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
   let (k_hint, v_hint) = hint_map_kv(static_hint);
-  let k_kind = k_hint
-    .as_ref()
-    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
-    .unwrap_or(ContainerSlotKind::DynamicBoxed);
-  let v_kind = v_hint
-    .as_ref()
-    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
-    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let k_kind = encoded_slot_kind(graph, *key, k_hint.as_ref(), mode);
+  let v_kind = encoded_slot_kind(graph, *value, v_hint.as_ref(), mode);
   let kv_kind = ContainerSlotKind::pack_kv(k_kind, v_kind);
   let dst_flat = emit_alloc_typed_container(ctx, count, total_slots, "map", kv_kind);
   let valid = ctx.alloc_i32(1);

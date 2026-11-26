@@ -169,9 +169,7 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_single_kind(
   a: u32,
   b_val: u32,
   kind: u32,
-  f64_value_eq_idx: u32,
-  value_equal_idx: u32,
-  heap_value_equal_idx: u32,
+  (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx): (u32, u32, u32, u32),
 ) {
   b.emit(Instruction::LocalGet(kind));
   b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
@@ -186,6 +184,12 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_single_kind(
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   b.emit(Instruction::LocalGet(a));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::LocalGet(b_val));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(a));
   b.emit(Instruction::LocalGet(b_val));
   b.emit(Instruction::F64Eq);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
@@ -196,6 +200,9 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_single_kind(
   b.emit(Instruction::LocalGet(b_val));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::Call(heap_value_equal_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(a));
@@ -209,7 +216,7 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_pair_kinds(
   b: &mut RuntimeFnBuilder,
   (a, b_val): (u32, u32),
   (kind_a, kind_b): (u32, u32),
-  (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx): (u32, u32, u32),
+  (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx): (u32, u32, u32, u32),
 ) {
   b.emit(Instruction::LocalGet(kind_a));
   b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
@@ -217,11 +224,22 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_pair_kinds(
   b.emit(Instruction::LocalGet(kind_b));
   b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
   b.emit(Instruction::I32Eq);
-  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(kind_a));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(kind_b));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(a));
   b.emit(Instruction::LocalGet(b_val));
   b.emit(Instruction::Call(f64_value_eq_idx));
+  b.emit(Instruction::End);
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(kind_a));
   b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
@@ -244,9 +262,40 @@ pub(in crate::wasm::emit_wasm) fn rt_emit_eq_with_pair_kinds(
   b.emit(Instruction::Call(heap_value_equal_idx));
   b.emit(Instruction::End);
   b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(kind_a));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(kind_b));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(a));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::LocalGet(b_val));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(a));
+  b.emit(Instruction::LocalGet(b_val));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(a));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalGet(b_val));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::Call(heap_value_equal_idx));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(a));
   b.emit(Instruction::LocalGet(b_val));
   b.emit(Instruction::Call(value_equal_idx));
+  b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
 }
@@ -255,9 +304,16 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_key_equal(
   value_equal_idx: u32,
   heap_value_equal_idx: u32,
   f64_value_eq_idx: u32,
+  is_heap_ptr_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(3); // a: f64, b: f64, key_kind: i32
-  rt_emit_eq_with_single_kind(&mut b, 0, 1, 2, f64_value_eq_idx, value_equal_idx, heap_value_equal_idx);
+  rt_emit_eq_with_single_kind(
+    &mut b,
+    0,
+    1,
+    2,
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
+  );
   b.finish(vec![ValType::F64, ValType::F64, ValType::I32], vec![ValType::I32])
 }
 
@@ -1138,6 +1194,8 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   heap_value_hash_idx: u32,
   root_assoc_idx: u32,
   map_make_idx: u32,
+  map_linearize_idx: u32,
+  map_root_from_flat_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4);
   let count = b.alloc_i32();
@@ -1153,6 +1211,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   let hash = b.alloc_i32();
   let added = b.alloc_i32();
   let new_count = b.alloc_i32();
+  let flat = b.alloc_i32();
 
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(0)));
@@ -1191,6 +1250,28 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(8)));
   b.emit(Instruction::LocalSet(root));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::LocalGet(old_k));
+  b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalGet(new_k));
+  b.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(map_linearize_idx));
+  b.emit(Instruction::LocalTee(flat));
+  b.emit(Instruction::LocalGet(new_kv_kind));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(flat));
+  b.emit(Instruction::Call(map_root_from_flat_idx));
+  b.emit(Instruction::LocalSet(root));
+  b.emit(Instruction::Drop);
+  b.emit(Instruction::End);
   rt_emit_hash_with_kind(&mut b, 1, new_k, hash, scalar_hash_idx, value_hash_idx, heap_value_hash_idx);
   b.emit(Instruction::LocalGet(root));
   b.emit(Instruction::LocalGet(1));
@@ -1216,6 +1297,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_get_value(
   value_hash_idx: u32,
   heap_value_hash_idx: u32,
   root_lookup_idx: u32,
+  is_heap_ptr_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let key_kind = b.alloc_i32();
@@ -1227,7 +1309,18 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_get_value(
   b.emit(Instruction::I32Load(mem_arg_i32(4)));
   b.emit(Instruction::I32Const(3));
   b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalSet(key_kind));
+  b.emit(Instruction::LocalTee(key_kind));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(8)));
   b.emit(Instruction::LocalSet(root));
@@ -1248,6 +1341,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_contains_key(
   value_hash_idx: u32,
   heap_value_hash_idx: u32,
   root_lookup_idx: u32,
+  is_heap_ptr_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let key_kind = b.alloc_i32();
@@ -1259,7 +1353,18 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_contains_key(
   b.emit(Instruction::I32Load(mem_arg_i32(4)));
   b.emit(Instruction::I32Const(3));
   b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalSet(key_kind));
+  b.emit(Instruction::LocalTee(key_kind));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(8)));
   b.emit(Instruction::LocalSet(root));
@@ -1443,7 +1548,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
   map_linearize_idx: u32,
   map_root_lookup_idx: u32,
   (scalar_hash_idx, value_hash_idx, heap_value_hash_idx): (u32, u32, u32),
-  (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx): (u32, u32, u32),
+  (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx): (u32, u32, u32, u32),
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2); // a=0, b=1
   let count_a = b.alloc_i32();
@@ -1580,6 +1685,26 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
   b.emit(Instruction::Br(2));
   b.emit(Instruction::End);
 
+  // If map_b expects ExactHeapPtr keys, a non-heap key from map_a (e.g. DynamicBoxed scalar)
+  // cannot match and must not be truncated via I32TruncF64U.
+  b.emit(Instruction::LocalGet(key_kind_b));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(key_kind_a));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(key));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(all_eq));
+  b.emit(Instruction::Br(3));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+
   // (found, val_b) = __rt_map_root_lookup(root_b, key, hash(key, key_kind_b), key_kind_b)
   rt_emit_hash_with_kind(&mut b, key, key_kind_b, hash, scalar_hash_idx, value_hash_idx, heap_value_hash_idx);
   b.emit(Instruction::LocalGet(root_b));
@@ -1604,7 +1729,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_equal(
     &mut b,
     (val_a, val_b),
     (val_kind_a, val_kind_b),
-    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
   );
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
@@ -1635,6 +1760,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_equal(
   value_equal_idx: u32,
   heap_value_equal_idx: u32,
   f64_value_eq_idx: u32,
+  is_heap_ptr_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let count = b.alloc_i32();
@@ -1705,7 +1831,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_equal(
     &mut b,
     (elem, elem_b),
     (kind_a, kind_b),
-    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
   );
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
@@ -1744,6 +1870,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_find_elem(
   value_equal_idx: u32,
   heap_value_equal_idx: u32,
   f64_value_eq_idx: u32,
+  is_heap_ptr_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
   let count = b.alloc_i32();
@@ -1777,7 +1904,13 @@ pub(in crate::wasm::emit_wasm) fn build_rt_set_find_elem(
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalSet(elem));
-  rt_emit_eq_with_single_kind(&mut b, elem, 1, elem_kind, f64_value_eq_idx, value_equal_idx, heap_value_equal_idx);
+  rt_emit_eq_with_single_kind(
+    &mut b,
+    elem,
+    1,
+    elem_kind,
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
+  );
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::LocalSet(found_idx));

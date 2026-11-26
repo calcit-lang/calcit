@@ -343,7 +343,12 @@ impl ContainerSlotKind {
       _ => {
         let ev = infer_wasm_evidence(ctx, expr);
         let ty = ev.scalar_origin.as_ref().unwrap_or(&ev.annotation);
-        Self::from_type_annotation(ty)
+        let kind = Self::from_type_annotation(ty);
+        if kind == Self::PureScalar && !super::expr_is_guaranteed_unboxed_scalar(ctx, expr) {
+          Self::DynamicBoxed
+        } else {
+          kind
+        }
       }
     }
   }

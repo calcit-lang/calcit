@@ -1129,6 +1129,25 @@ fn infer_hof_result_slot_kind(
   elem_ev: Option<WasmTypeEvidence>,
   arity: u32,
 ) -> ContainerSlotKind {
+  let guard_boxed_scalar = |ctx: &WasmGenCtx, slot_kind: ContainerSlotKind, inline_body: Option<&[Calcit]>| -> ContainerSlotKind {
+    if slot_kind != ContainerSlotKind::PureScalar || !ctx.has_boxed_json_scalars {
+      return slot_kind;
+    }
+    if matches!(kind, FoldlCallKind::Proc(_)) {
+      return slot_kind;
+    }
+    if let Some(body) = inline_body
+      && body.last().is_some_and(|expr| super::expr_is_guaranteed_unboxed_scalar(ctx, expr))
+    {
+      return slot_kind;
+    }
+    if let FoldlCallKind::Static(fn_idx, _) = kind
+      && ctx.fn_signatures.get(fn_idx).is_some_and(|sig| sig.result != NativeValRepr::F64)
+    {
+      return slot_kind;
+    }
+    ContainerSlotKind::DynamicBoxed
+  };
   if let FoldlCallKind::Inline(closure) = kind {
     let mut arg_evs = Vec::with_capacity(arity as usize);
     if arity == 2 {
@@ -1136,7 +1155,11 @@ fn infer_hof_result_slot_kind(
     }
     arg_evs.push(elem_ev.unwrap_or_else(|| WasmTypeEvidence::contract(crate::wasm::host::calcit::DYNAMIC_TYPE.clone())));
     if let Some(ret_ev) = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new()) {
-      let slot_kind = ContainerSlotKind::from_type_annotation(&ret_ev.annotation);
+      let slot_kind = guard_boxed_scalar(
+        ctx,
+        ContainerSlotKind::from_type_annotation(&ret_ev.annotation),
+        Some(&closure.body),
+      );
       if slot_kind != ContainerSlotKind::DynamicBoxed {
         return slot_kind;
       }
@@ -1145,7 +1168,7 @@ fn infer_hof_result_slot_kind(
   if let Some(ty) = infer_wasm_static_type(ctx, callee) {
     let expanded = expand_wasm_value_type(&ty);
     if let CalcitTypeAnnotation::Fn(fn_ty) = expanded.as_ref() {
-      let slot_kind = ContainerSlotKind::from_type_annotation(&fn_ty.return_type);
+      let slot_kind = guard_boxed_scalar(ctx, ContainerSlotKind::from_type_annotation(&fn_ty.return_type), None);
       if slot_kind != ContainerSlotKind::DynamicBoxed {
         return slot_kind;
       }
@@ -1156,7 +1179,7 @@ fn infer_hof_result_slot_kind(
     && let Some(signature) = program::lookup_def_schema(ns, def).resolve_to_fn()
     && !signature.return_type.contains_type_var()
   {
-    let slot_kind = ContainerSlotKind::from_type_annotation(&signature.return_type);
+    let slot_kind = guard_boxed_scalar(ctx, ContainerSlotKind::from_type_annotation(&signature.return_type), None);
     if slot_kind != ContainerSlotKind::DynamicBoxed {
       return slot_kind;
     }

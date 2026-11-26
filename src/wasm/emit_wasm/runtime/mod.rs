@@ -990,6 +990,8 @@ pub(super) fn build_runtime_fns(
     heap_value_hash_idx,
     map_root_assoc_idx,
     map_make_idx,
+    map_linearize_idx,
+    map_root_from_flat_idx,
   ));
 
   let map_get_value_idx = base_index + fns.len() as u32;
@@ -999,6 +1001,7 @@ pub(super) fn build_runtime_fns(
     map_key_hash_idx,
     heap_value_hash_idx,
     map_root_lookup_idx,
+    is_heap_ptr_idx,
   ));
 
   let map_contains_key_idx = base_index + fns.len() as u32;
@@ -1008,6 +1011,7 @@ pub(super) fn build_runtime_fns(
     map_key_hash_idx,
     heap_value_hash_idx,
     map_root_lookup_idx,
+    is_heap_ptr_idx,
   ));
 
   let map_contains_value_idx = base_index + fns.len() as u32;
@@ -1250,11 +1254,16 @@ pub(super) fn build_runtime_fns(
     map_linearize_idx,
     map_root_lookup_idx,
     (hash_idx, map_key_hash_idx, heap_value_hash_idx),
-    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
   ));
 
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
-  fns.push(build_rt_set_equal(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx));
+  fns.push(build_rt_set_equal(
+    value_equal_idx,
+    heap_value_equal_idx,
+    f64_value_eq_idx,
+    is_heap_ptr_idx,
+  ));
 
   fn_index.insert(String::from("__rt_heap_value_equal"), heap_value_equal_idx);
   fns.push(build_rt_heap_value_equal(
@@ -1274,7 +1283,7 @@ pub(super) fn build_runtime_fns(
     enum_layouts,
   ));
 
-  fns[set_find_slot] = build_rt_set_find_elem(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx);
+  fns[set_find_slot] = build_rt_set_find_elem(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx, is_heap_ptr_idx);
   fns[value_hash_slot] = build_rt_value_hash_dispatch(hash_idx, is_heap_ptr_idx, heap_value_hash_idx);
   fns[heap_value_hash_slot] = build_rt_heap_value_hash(
     value_tags,
@@ -1288,7 +1297,7 @@ pub(super) fn build_runtime_fns(
     struct_layouts,
     enum_layouts,
   );
-  fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx);
+  fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx, is_heap_ptr_idx);
 
   Ok(RuntimeFns {
     fns,
@@ -3045,7 +3054,7 @@ fn build_rt_heap_value_equal(
       &mut b,
       (elem_a, elem_b),
       (kind_a, kind_b),
-      (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
+      (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx, is_heap_ptr_idx),
     );
     b.emit(Instruction::I32Eqz);
     b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
@@ -4025,5 +4034,157 @@ mod tests {
       hash_fn.call(&mut store, legacy_ptr as f64).expect("hash legacy"),
       "equal compact and legacy enums must produce identical hashes even when 16392 is a live heap object"
     );
+  }
+
+  #[test]
+  fn pure_scalar_vs_dynamic_boxed_list_equality_remains_transitive() {
+    let tags = ValueRuntimeTags {
+      string: 1,
+      buffer: 2,
+      list: 3,
+      enum_tag: 4,
+      map: 5,
+      set: 6,
+      struct_tag: 7,
+      dyn_trait: 8,
+      nil: 9,
+      bool_tag: 10,
+      number: 11,
+      any_box: 12,
+      closure: 13,
+      none_tag: 14,
+      some_tag: 15,
+    };
+    let is_heap_ptr_stub = CompiledFn {
+      export_name: None,
+      params: vec![ValType::F64],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::LocalGet(0), f64_const((HEAP_BASE + 8) as f64), Instruction::F64Ge],
+    };
+    let scalar_hash = build_rt_hash_f64();
+    let str_compare = strings::build_rt_str_compare();
+    let stub_linearize = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let stub_struct_load = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32, ValType::I32],
+      results: vec![ValType::F64],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let f64_value_eq = build_rt_f64_value_eq();
+    let stub_container_eq = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::Unreachable],
+    };
+    let mut value_equal = build_rt_value_equal(5, 0, 9);
+    value_equal.export_name = Some("value_equal".into());
+    let heap_value_equal = build_rt_heap_value_equal(
+      tags,
+      HeapValueEqualFns {
+        str_compare_idx: 2,
+        value_equal_idx: 8,
+        heap_value_equal_idx: 9,
+        map_equal_idx: 6,
+        set_equal_idx: 7,
+        f64_value_eq_idx: 5,
+        is_heap_ptr_idx: 0,
+        struct_load_field_idx: 4,
+        enum_load_payload_idx: 4,
+      },
+      &StructLayouts::default(),
+      &EnumLayouts::default(),
+    );
+    let value_hash = build_rt_value_hash_dispatch(1, 0, 11);
+    let heap_value_hash = build_rt_heap_value_hash(tags, (1, 10, 11, 3, 4), &StructLayouts::default(), &EnumLayouts::default());
+
+    let bytes = build_wasm_module(
+      &[
+        is_heap_ptr_stub,
+        scalar_hash,
+        str_compare,
+        stub_linearize,
+        stub_struct_load,
+        f64_value_eq,
+        stub_container_eq.clone(),
+        stub_container_eq,
+        value_equal,
+        heap_value_equal,
+        value_hash,
+        heap_value_hash,
+      ],
+      &[],
+      HEAP_BASE,
+      &[],
+      &[],
+      tags.string,
+      ModuleFunctionLayout {
+        runtime_fn_count: 12,
+        number_format_fn_count: 0,
+        table_fn_count: 0,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
+        rest_adapters: HashMap::new(),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid transitivity check wasm module");
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("compile wasm");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory");
+    let eq_fn = instance
+      .get_typed_func::<(f64, f64), i32>(&mut store, "value_equal")
+      .expect("value_equal");
+
+    let write_i32 = |store: &mut Store<()>, addr: usize, val: i32| {
+      memory.write(store, addr, &val.to_le_bytes()).expect("write i32");
+    };
+    let write_f64 = |store: &mut Store<()>, addr: usize, val: f64| {
+      memory.write(store, addr, &val.to_le_bytes()).expect("write f64");
+    };
+    let write_str = |store: &mut Store<()>, raw_addr: usize, text: &[u8]| -> usize {
+      write_i32(store, raw_addr, HEAP_MAGIC);
+      write_i32(store, raw_addr + 4, tags.string);
+      let logical = raw_addr + 8;
+      write_f64(store, logical, text.len() as f64);
+      memory.write(store, logical + 8, text).expect("write bytes");
+      logical
+    };
+    let write_list1 = |store: &mut Store<()>, raw_addr: usize, elem_kind: u32, elem: f64| -> f64 {
+      write_i32(store, raw_addr, HEAP_MAGIC);
+      write_i32(store, raw_addr + 4, tags.list);
+      let logical = raw_addr + 8;
+      write_i32(store, logical, 1);
+      write_i32(store, logical + 4, elem_kind as i32);
+      write_f64(store, logical + 8, elem);
+      logical as f64
+    };
+
+    let p = write_str(&mut store, HEAP_BASE as usize, b"hi") as f64;
+    let q = write_str(&mut store, (HEAP_BASE + 32) as usize, b"hi") as f64;
+    assert_ne!(p, q);
+
+    let list_a = write_list1(&mut store, (HEAP_BASE + 64) as usize, ContainerSlotKind::PureScalar as u32, p);
+    let list_b = write_list1(&mut store, (HEAP_BASE + 96) as usize, ContainerSlotKind::DynamicBoxed as u32, p);
+    let list_c = write_list1(&mut store, (HEAP_BASE + 128) as usize, ContainerSlotKind::PureScalar as u32, q);
+    let list_d = write_list1(&mut store, (HEAP_BASE + 160) as usize, ContainerSlotKind::ExactHeapPtr as u32, q);
+
+    assert_eq!(eq_fn.call(&mut store, (list_a, list_b)).expect("A == B"), 1);
+    assert_eq!(eq_fn.call(&mut store, (list_b, list_c)).expect("B != C"), 0);
+    assert_eq!(eq_fn.call(&mut store, (list_a, list_c)).expect("A != C"), 0);
+    assert_eq!(eq_fn.call(&mut store, (list_a, list_d)).expect("PureScalar != ExactHeapPtr"), 0);
+    assert_eq!(eq_fn.call(&mut store, (list_d, list_a)).expect("ExactHeapPtr != PureScalar"), 0);
   }
 }
