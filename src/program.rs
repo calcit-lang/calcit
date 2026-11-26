@@ -327,7 +327,7 @@ pub(crate) struct ProgramTestStateGuard {
   runtime_data: ProgramRuntimeData,
   compiled_data: ProgramCompiledData,
   code_data: ProgramCodeData,
-  non_coherent_nominal_state: (u64, HashSet<String>),
+  non_coherent_nominal_state: Option<HashSet<String>>,
   def_id_index: ProgramDefIdIndex,
   feature_policy: HashMap<String, snapshot::FeaturePolicy>,
   target: Option<snapshot::SnapshotTarget>,
@@ -339,16 +339,16 @@ impl Drop for ProgramTestStateGuard {
     invalidate_field_write_shapes();
     *PROGRAM_RUNTIME_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.runtime_data);
     *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.compiled_data);
-    *PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.code_data);
-    let restored_non_coherent = std::mem::take(&mut self.non_coherent_nominal_state);
-    *NON_COHERENT_NOMINAL_STATE.write().unwrap_or_else(|error| error.into_inner()) = (
-      if restored_non_coherent.0 == u64::MAX {
-        u64::MAX
-      } else {
-        PROGRAM_CODE_DATA.generation()
-      },
-      restored_non_coherent.1,
-    );
+    {
+      let mut code_guard = PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner());
+      *code_guard = std::mem::take(&mut self.code_data);
+      let restored_gen = PROGRAM_CODE_DATA.generation();
+      let restored_non_coherent = self.non_coherent_nominal_state.take();
+      *NON_COHERENT_NOMINAL_STATE.write().unwrap_or_else(|error| error.into_inner()) = match restored_non_coherent {
+        Some(defs) => (restored_gen, defs),
+        None => (u64::MAX, HashSet::new()),
+      };
+    }
     {
       // Preprocessed code embeds def ids. A value built while this guard was
       // held can outlive it, so a rolled-back id must never name another def.
@@ -365,6 +365,14 @@ impl Drop for ProgramTestStateGuard {
 #[cfg(test)]
 pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
   let lock = PROGRAM_TEST_STATE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+  let code_guard = PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner());
+  let code_gen = PROGRAM_CODE_DATA.generation();
+  let code_data = code_guard.clone();
+  let non_coherent_nominal_state = {
+    let cache = NON_COHERENT_NOMINAL_STATE.read().unwrap_or_else(|error| error.into_inner());
+    (cache.0 == code_gen).then(|| cache.1.clone())
+  };
+  drop(code_guard);
   ProgramTestStateGuard {
     _lock: lock,
     runtime_data: PROGRAM_RUNTIME_DATA_STATE.read().unwrap_or_else(|error| error.into_inner()).clone(),
@@ -372,8 +380,8 @@ pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
       .read()
       .unwrap_or_else(|error| error.into_inner())
       .clone(),
-    code_data: PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner()).clone(),
-    non_coherent_nominal_state: NON_COHERENT_NOMINAL_STATE.read().unwrap_or_else(|error| error.into_inner()).clone(),
+    code_data,
+    non_coherent_nominal_state,
     def_id_index: PROGRAM_DEF_ID_INDEX.read().unwrap_or_else(|error| error.into_inner()).clone(),
     feature_policy: ACTIVE_FEATURE_POLICY.read().unwrap_or_else(|error| error.into_inner()).clone(),
     target: *ACTIVE_TARGET.read().unwrap_or_else(|error| error.into_inner()),
