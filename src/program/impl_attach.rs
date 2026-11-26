@@ -1160,7 +1160,7 @@ fn collect_expr_param_sinks(
         if let Some(pattern) = pair.first() {
           for name in match_pattern_bound_names(pattern) {
             scoped_vars.insert(name.clone(), HashSet::new());
-            scoped_fns.remove(&name);
+            scoped_fns.insert(name, HashSet::new());
           }
         }
         collect_expr_param_sinks(scan, body, &scoped_vars, fn_sinks, &scoped_fns, out);
@@ -1355,7 +1355,7 @@ fn walk_expr_for_non_coherent(
         if let Some(pattern) = pair.first() {
           for name in match_pattern_bound_names(pattern) {
             scoped.insert(name.clone(), Vec::new());
-            scoped_fns.remove(&name);
+            scoped_fns.insert(name, HashSet::new());
           }
         }
         walk_expr_for_non_coherent(scan, body, &scoped, &scoped_fns, None, state);

@@ -2851,4 +2851,29 @@ fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
     !impl_attach::collect_non_coherent_nominal_defs(&nested_match_shadowed).contains("app.m/P"),
     "nested match inside shadowing match branch must not leak outer param or top-level P"
   );
+
+  // Pattern-bound name shadowing both an outer local helper and a global attachment helper `decorate`
+  // must keep an empty sink entry so `(decorate ...)` does not fall through to the global helper.
+  let shadowed_global_fn = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("decorate", "defn decorate (x) (impl-traits x P-Labeled-1)"),
+      (
+        "UseMatchShadowGlobalFn",
+        "defn use-shadow-fn (opt) (let ((decorate (fn (x) x))) (match opt ((:some decorate) (decorate (%{} P :name |a))) ((:none) 0)))",
+      ),
+      (
+        "WrapShadowGlobalFn",
+        "defn wrap-shadow-fn (arg opt) (let ((decorate (fn (x) x))) (match opt ((:some decorate) (decorate arg)) ((:none) 0)))",
+      ),
+      ("CallWrapShadowGlobalFn", "def v $ wrap-shadow-fn (%{} P :name |a) (Some 1)"),
+    ],
+    &[],
+  );
+  assert!(
+    !impl_attach::collect_non_coherent_nominal_defs(&shadowed_global_fn).contains("app.m/P"),
+    "match pattern binding shadowing global helper name must block fallthrough in both walker and param sink collector"
+  );
 }
