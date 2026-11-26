@@ -32,29 +32,10 @@ pub(super) struct RuntimeFns {
 }
 
 pub(super) struct ModuleFunctionLayout {
-  pub(super) runtime_fn_count: u32,
   pub(super) number_format_fn_count: u32,
-  pub(super) table_fn_count: u32,
   pub(super) memory_layout: WasmMemoryLayout,
   pub(super) global_layout: WasmGlobalLayout,
-  /// `(call arity, table slot) -> adapter function index`. A function value
-  /// is its table slot; a call with N arguments uses funcref table N (see
-  /// `call_indirect`). In table N the slot of a `&` rest-parameter function
-  /// points at an adapter typed `(f64 x N) -> f64` that packs the trailing
-  /// arguments into the rest list (#1972); every other slot points at the
-  /// function itself, so a call with the wrong arity fails the signature check.
-  pub(super) rest_adapters: HashMap<(u32, u32), u32>,
   pub(super) prune_unused_imports: bool,
-}
-
-/// `call_indirect` for a function value called with `arity` arguments: the
-/// canonical type `(f64 x arity) -> f64` and the funcref table for that arity.
-#[cfg(test)]
-pub(super) fn call_indirect(arity: u32) -> Instruction<'static> {
-  Instruction::CallIndirect {
-    type_index: arity,
-    table_index: arity,
-  }
 }
 
 /// List of host-imported functions.
@@ -257,18 +238,8 @@ pub(super) fn core_host_import(name: &str) -> Option<&'static HostImport> {
   CORE_HOST_IMPORTS.iter().find(|import| import.name == name)
 }
 
-/// Maximum arity covered by canonical call_indirect type entries.
-/// Types 0..MAX_CANONICAL_ARITY are always reserved: type N = (f64 × N) → f64.
-/// A module whose `call_indirect` uses a larger arity reserves more entries.
-pub(super) const MAX_CANONICAL_ARITY: u32 = 8;
-
 /// Build a binary WASM module from compiled functions.
 /// Host imports occupy the first function indices, then generated functions follow.
-///
-/// `layout.runtime_fn_count`: how many leading entries in `fns` are runtime helper
-/// functions (not user-defined calcit functions). User functions immediately
-/// after that prefix are registered in the funcref table.
-/// `layout.table_fn_count` excludes target-specific entry adapters such as `_start`.
 pub(super) fn build_wasm_module(
   fns: &[CompiledFn],
   host_imports: &[HostImport],
@@ -284,29 +255,11 @@ pub(super) fn build_wasm_module(
   let fns = &linked.fns;
   let kept_imports: Vec<&HostImport> = linked.kept_import_indices.iter().map(|&i| &host_imports[i]).collect();
   let new_num_imports = kept_imports.len() as u32;
-  let used_tables = &linked.used_tables;
 
-  // Type section (deduplicated; canonical HOF types 0..canonical_arity are only
-  // emitted when at least one indirect funcref table is materialized).
+  // Type section (deduplicated).
   let mut types = TypeSection::new();
   let mut type_map: HashMap<(Vec<ValType>, Vec<ValType>), u32> = HashMap::new();
   let mut type_count = 0u32;
-  if !used_tables.is_empty() {
-    let canonical_arity = fns
-      .iter()
-      .flat_map(|f| f.instructions.iter())
-      .filter_map(|instruction| match instruction {
-        Instruction::CallIndirect { type_index, .. } | Instruction::ReturnCallIndirect { type_index, .. } => Some(*type_index + 1),
-        _ => None,
-      })
-      .fold(MAX_CANONICAL_ARITY, u32::max);
-    for arity in 0..canonical_arity {
-      let sig = (vec![ValType::F64; arity as usize], vec![ValType::F64]);
-      types.ty().function(sig.0.iter().copied(), sig.1.iter().copied());
-      type_map.insert(sig, type_count);
-      type_count += 1;
-    }
-  }
   let mut intern_type = |params: Vec<ValType>, results: Vec<ValType>| -> u32 {
     if let Some(&idx) = type_map.get(&(params.clone(), results.clone())) {
       return idx;
@@ -339,25 +292,6 @@ pub(super) fn build_wasm_module(
     functions.function(ty_idx);
   }
   module.section(&functions);
-
-  // Table section: funcref table N serves function-value calls with N
-  // arguments. Populated from reachable table indices only so pooling hosts
-  // with a 1-table limit (such as `wasmtime serve`) stay compatible.
-  if !used_tables.is_empty() {
-    let table_count = used_tables.last().expect("non-empty used_tables") + 1;
-    let mut tables = TableSection::new();
-    for table in 0..table_count {
-      let size = if used_tables.contains(&table) { layout.table_fn_count } else { 0 } as u64;
-      tables.table(TableType {
-        element_type: RefType::FUNCREF,
-        minimum: size,
-        maximum: Some(size),
-        table64: false,
-        shared: false,
-      });
-    }
-    module.section(&tables);
-  }
 
   // Memory section: baseline pages covering static data, optional persistent semi-spaces, and Scratch Arena.
   let mut memories = MemorySection::new();
@@ -502,19 +436,6 @@ pub(super) fn build_wasm_module(
     }
   }
   module.section(&exports);
-
-  // Element section: populate each used funcref table with linked function indices.
-  if !linked.table_elements.is_empty() {
-    let mut elements = ElementSection::new();
-    for (table, fn_indices) in &linked.table_elements {
-      elements.active(
-        Some(*table),
-        &ConstExpr::i32_const(0),
-        Elements::Functions(fn_indices.as_slice().into()),
-      );
-    }
-    module.section(&elements);
-  }
 
   // Code section
   let mut codes = CodeSection::new();
@@ -3790,12 +3711,9 @@ mod tests {
       &[],
       tags.string,
       ModuleFunctionLayout {
-        runtime_fn_count: 12,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -4004,12 +3922,9 @@ mod tests {
       &[],
       tags.string,
       ModuleFunctionLayout {
-        runtime_fn_count: 14,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(patched_start, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -4169,12 +4084,9 @@ mod tests {
       &[],
       tags.string,
       ModuleFunctionLayout {
-        runtime_fn_count: 12,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )

@@ -147,7 +147,7 @@ yarn try-wasm
 
 command init definition 正常返回时状态为 `0`；`quit!` 接受 `0..255` 的整数，映射到所选协议的退出操作（Preview 1 为 `proc_exit`）。该限制与原生、JavaScript 后端一致，避免宿主各自执行隐式饱和或取模。
 
-WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。通用目标校验使用 `E_WASM_CAPABILITY` / `E_WASM_TARGET`；WASI 0.3 command 另明确拒绝边界不匹配或缺少对应 WASI 0.3 效应入口的能力（`E_WASI_COMMAND_CAPABILITY`）、可达但无法为当前目标编译的依赖定义如 `.walk-dir`（`E_WASI_COMMAND_DEPENDENCY`，内含底层 `E_WASM_CAPABILITY` 原因）、无法证明的间接调用（`E_WASI_COMMAND_INDIRECT`）及通用 export（`E_WASI_COMMAND_EXPORT`）。这些诊断是目标证据，不是增加一套表层语言规则；Preview 1 的 ABI 名称也不会成为 Calcit 源码 API。
+WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。通用目标校验使用 `E_WASM_CAPABILITY` / `E_WASM_TARGET`；WASI 0.3 command 另明确拒绝边界不匹配或缺少对应 WASI 0.3 效应入口的能力（`E_WASI_COMMAND_CAPABILITY`）、可达但无法为当前目标编译的依赖定义如 `.walk-dir`（`E_WASI_COMMAND_DEPENDENCY`，内含底层 `E_WASM_CAPABILITY` 原因）及通用 export（`E_WASI_COMMAND_EXPORT`）。这些诊断是目标证据，不是增加一套表层语言规则；Preview 1 的 ABI 名称也不会成为 Calcit 源码 API。
 
 ## 声明式 WASM FFI
 

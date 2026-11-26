@@ -65,7 +65,9 @@ fn is_non_null_heap_ptr_type(annotation: &Arc<CalcitTypeAnnotation>) -> bool {
     | CalcitTypeAnnotation::AnonymousEnum
     | CalcitTypeAnnotation::Any
     | CalcitTypeAnnotation::DynTrait(_)
-    | CalcitTypeAnnotation::Fn(_) => true,
+    | CalcitTypeAnnotation::Fn(_)
+    | CalcitTypeAnnotation::DynFn
+    | CalcitTypeAnnotation::BufList => true,
     CalcitTypeAnnotation::Enum(enum_def, _) | CalcitTypeAnnotation::EnumValue(enum_def) => !is_option_enum_def(enum_def),
     CalcitTypeAnnotation::TypeRef(_, _) => {
       if expanded.is_option_type() || expanded.resolve_to_union().is_some() {
@@ -151,7 +153,11 @@ impl StructFieldKind {
       | CalcitTypeAnnotation::Enum(_, _)
       | CalcitTypeAnnotation::EnumValue(_)
       | CalcitTypeAnnotation::AnonymousEnum
-      | CalcitTypeAnnotation::Any => Self::HeapPtrI32,
+      | CalcitTypeAnnotation::Any
+      | CalcitTypeAnnotation::DynTrait(_)
+      | CalcitTypeAnnotation::Fn(_)
+      | CalcitTypeAnnotation::DynFn
+      | CalcitTypeAnnotation::BufList => Self::HeapPtrI32,
       CalcitTypeAnnotation::TypeRef(_, _)
         if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() || expanded.is_option_type() =>
       {
@@ -2397,6 +2403,43 @@ mod tests {
       ))),
       StructFieldKind::HeapPtrI32
     );
+
+    let dyn_trait = Arc::new(CalcitTypeAnnotation::DynTrait(Arc::new(
+      crate::wasm::host::calcit::CalcitTrait::new_reference("test.main/Show"),
+    )));
+    let fn_ty = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(
+      crate::wasm::host::calcit::CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        cases: Default::default(),
+        guard: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+        return_type: Arc::new(CalcitTypeAnnotation::Number),
+        fn_kind: crate::wasm::host::calcit::SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(Default::default()),
+        runtime_arity: None,
+      },
+    )));
+    let dyn_fn = Arc::new(CalcitTypeAnnotation::DynFn);
+    let buf_list = Arc::new(CalcitTypeAnnotation::BufList);
+    for heap_ty in [dyn_trait, fn_ty, dyn_fn, buf_list] {
+      assert_eq!(
+        StructFieldKind::from_type_annotation(&heap_ty),
+        StructFieldKind::HeapPtrI32,
+        "expected HeapPtrI32 for {heap_ty:?}"
+      );
+      let opt_heap_ty = Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![heap_ty.clone()]),
+      ));
+      assert_eq!(
+        StructFieldKind::from_type_annotation(&opt_heap_ty),
+        StructFieldKind::OptionHeapPtrI32,
+        "expected OptionHeapPtrI32 for Option<{heap_ty:?}>"
+      );
+    }
   }
 
   #[test]

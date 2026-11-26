@@ -3203,3 +3203,204 @@ fn typed_container_safety_guards_json_keys_map_widening_and_encode_kinds() {
     "encoded List<Option<Number>> elem_kind must be DynamicBoxed"
   );
 }
+
+#[test]
+fn compact_struct_dyn_trait_fn_and_buf_list_fields_promote_and_compact() {
+  let dir = TestDirectory::create("wasm-compact-heap-fields");
+  let snapshot = r#"
+{} (:package |compact-heap-fields)
+  :about "|Compact 4B HeapPtrI32 footprint and defref compaction for DynTrait/Fn/DynFn/BufList fields"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-heap-fields.main/main!) (:mode :native) (:reload-fn 'compact-heap-fields.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-heap-fields.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Labeler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait Labeler
+            .tag-label $ Fn Self (-> String)
+          :examples $ []
+          :schema $ quote Trait
+        'PlainTag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct PlainTag (:name String) (:impls Labeler)
+          :examples $ []
+          :schema $ quote StructDef
+        'PlainTagImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl PlainTag Labeler
+            .tag-label $ fn (self)
+              hint-fn $ Fn compact-heap-fields.main/PlainTag (-> String)
+              :name self
+          :examples $ []
+          :schema $ quote Impl
+        'CompactHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CompactHolder
+            :dyn $ Dyn compact-heap-fields.main/Labeler
+            :cb $ Fn Number (-> Number)
+            :dyn-cb AnyFn
+            :buf BufList
+            :opt-dyn $ Option (Dyn compact-heap-fields.main/Labeler)
+          :examples $ []
+          :schema $ quote StructDef
+        'init-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn init-cb (x) (&+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*persisted-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-holder
+            CompactHolder :dyn (dyn:box (PlainTag :name |seed) Labeler) :cb init-cb :dyn-cb (assert-type init-cb AnyFn) :buf (&buf-list:new) :opt-dyn None
+          :examples $ []
+          :schema $ quote $ Ref CompactHolder
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'alloc-only-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-only-holder (d cb dyn-cb buf)
+            CompactHolder :dyn d :cb cb :dyn-cb dyn-cb :buf buf :opt-dyn (Some d)
+          :examples $ []
+          :schema $ quote $ Fn (Dyn compact-heap-fields.main/Labeler) (Fn Number (-> Number)) AnyFn BufList (-> CompactHolder)
+        'make-dyn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-dyn () (dyn:box (PlainTag :name (&str:concat |t |ag)) Labeler)
+          :examples $ []
+          :schema $ quote $ Fn (-> (Dyn compact-heap-fields.main/Labeler))
+        'make-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-cb (k) (fn (x) (&+ x k))
+          :examples $ []
+          :schema $ quote $ Fn Number (-> (Fn Number (-> Number)))
+        'make-dyn-cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-dyn-cb (k) (assert-type (fn (x) (&* x k)) AnyFn)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> AnyFn)
+        'make-buf $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-buf ()
+            let
+                b $ &buf-list:new
+              &buf-list:push b (&str:concat |h |i)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'commit-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-holder (k)
+            let
+                d $ dyn:box (PlainTag :name (&str:concat |li |ve-tag)) Labeler
+                od $ dyn:box (PlainTag :name (&str:concat |li |ve-opt)) Labeler
+                cb $ fn (x) (&+ x k)
+                dcb $ assert-type (fn (x) (&* x k)) AnyFn
+                b $ &buf-list:push (&buf-list:new) (&str:concat |li |ve-buf)
+              reset! *persisted-holder $ CompactHolder :dyn d :cb cb :dyn-cb dcb :buf b :opt-dyn (Some od)
+              , true
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Bool)
+        'pump-holder-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-holder-churn (n)
+            reset! *churn (&str:pad-right (&str:concat |churn- (to-string n)) 32768 |Z)
+            &str:count @*churn
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-persisted-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-persisted-holder ()
+            let
+                h @*persisted-holder
+                opt-ok $ match (:opt-dyn h)
+                  (:some v) (= (.tag-label v) |live-opt)
+                  (:none) false
+                buf-list $ &buf-list:to-list (:buf h)
+              and
+                = ((:dyn h) .tag-label) |live-tag
+                = ((:cb h) 10) 15
+                = (assert-type ((:dyn-cb h) 6) Number) 30
+                = (&list:count buf-list) 1
+                = (assert-type (&list:nth buf-list 0) String) |live-buf
+                , opt-ok
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-heap-fields.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset");
+
+  let d = instance
+    .get_typed_func::<(), f64>(&mut store, "make-dyn")
+    .expect("make-dyn")
+    .call(&mut store, ())
+    .expect("make-dyn runs");
+  let cb = instance
+    .get_typed_func::<f64, f64>(&mut store, "make-cb")
+    .expect("make-cb")
+    .call(&mut store, 2.0)
+    .expect("make-cb runs");
+  let dyn_cb = instance
+    .get_typed_func::<f64, f64>(&mut store, "make-dyn-cb")
+    .expect("make-dyn-cb")
+    .call(&mut store, 3.0)
+    .expect("make-dyn-cb runs");
+  let buf = instance
+    .get_typed_func::<(), f64>(&mut store, "make-buf")
+    .expect("make-buf")
+    .call(&mut store, ())
+    .expect("make-buf runs");
+
+  // CompactHolder: 8B GC header + 8B struct header + 5 * 4B fields (4 HeapPtrI32 + 1 OptionHeapPtrI32) = 36B -> aligned to 40B;
+  // plus 16B return root node = 56B total (whereas 8B BoxedF64 fields would require 8 + 8 + 40 + 16 = 72B).
+  let before = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let _ = instance
+    .get_typed_func::<(f64, f64, f64, f64), f64>(&mut store, "alloc-only-holder")
+    .expect("alloc-only-holder")
+    .call(&mut store, (d, cb, dyn_cb, buf))
+    .expect("alloc-only-holder runs");
+  let after = get_i32_global(&mut store, &instance, "__heap_ptr");
+  assert_eq!(
+    after - before,
+    56,
+    "CompactHolder with 4 HeapPtrI32 + 1 OptionHeapPtrI32 fields must allocate 40B + 16B root node"
+  );
+  arena_reset.call(&mut store, ()).expect("arena reset");
+
+  // Commit to defref, force semi-space compaction into semi-space B, and verify all 5 fields survive intact.
+  let static_end = get_i32_global(&mut store, &instance, "__arena_base") - 2 * INITIAL_SEMI_SPACE_BYTES;
+  assert_eq!(
+    instance
+      .get_typed_func::<f64, f64>(&mut store, "commit-holder")
+      .expect("commit-holder")
+      .call(&mut store, 5.0)
+      .expect("commit-holder runs"),
+    1.0
+  );
+  let pump = instance
+    .get_typed_func::<f64, f64>(&mut store, "pump-holder-churn")
+    .expect("pump-holder-churn");
+  let mut compacted = false;
+  for i in 1..=25 {
+    pump.call(&mut store, i as f64).expect("pump churn");
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let space_b_base = cur_arena_base - (cur_arena_base - static_end) / 2;
+    let pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers >= space_b_base && pers < cur_arena_base {
+      compacted = true;
+      break;
+    }
+  }
+  assert!(compacted, "expected persistent heap compaction into semi-space B");
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "read-persisted-holder")
+      .expect("read-persisted-holder")
+      .call(&mut store, ())
+      .expect("read-persisted-holder runs"),
+    1.0
+  );
+}

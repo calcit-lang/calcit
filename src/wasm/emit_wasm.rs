@@ -27,8 +27,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use wasm_encoder::{
-  CodeSection, ConstExpr, ElementSection, Elements, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType,
-  Ieee64, Instruction, MemorySection, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
+  CodeSection, ConstExpr, ExportKind, ExportSection, Function, FunctionSection, GlobalSection, GlobalType, Ieee64, Instruction,
+  MemorySection, MemoryType, Module, TypeSection, ValType,
 };
 
 use crate::wasm::host::builtins::syntax::get_raw_args_fn;
@@ -1937,7 +1937,6 @@ fn emit_wasm_impl(
       .any(|f| f.instructions.iter().any(|i| matches!(i, Instruction::CallIndirect { .. }))),
     "emitted WASM module must not contain CallIndirect instructions"
   );
-  let rest_adapters = HashMap::new();
 
   // Build module using wasm-encoder
   let wasm_bytes = build_wasm_module(
@@ -1948,12 +1947,9 @@ fn emit_wasm_impl(
     &atom_initial_values,
     str_tag_id,
     ModuleFunctionLayout {
-      runtime_fn_count,
       number_format_fn_count,
-      table_fn_count: fn_defs.len() as u32,
       memory_layout,
       global_layout,
-      rest_adapters,
       prune_unused_imports: true,
     },
   )?;
@@ -2419,20 +2415,15 @@ fn reject_reachable_wasm_dependencies(
       .get((index - num_imports) as usize)
       .ok_or_else(|| format!("E_WASI_COMMAND_DEPENDENCY: missing function index {index}"))?;
     for instruction in &function.instructions {
-      match instruction {
-        Instruction::Call(callee) => pending.push(*callee),
-        Instruction::CallIndirect { .. } if wasi_command => {
-          return Err("E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability".into());
-        }
-        _ => {}
+      if let Instruction::Call(callee) = instruction {
+        pending.push(*callee);
       }
     }
   }
   Ok(())
 }
 
-/// Replace unreachable non-exported function bodies with `unreachable` in WASI Components
-/// so dead dependency `call_indirect` instructions do not pull funcref tables into pooling hosts.
+/// Replace unreachable non-exported function bodies with `unreachable` in WASI Components.
 fn prune_unreachable_wasi_component_fns(functions: &mut [CompiledFn], num_imports: u32, entry_index: u32) {
   let mut pending = vec![entry_index];
   for (i, func) in functions.iter().enumerate() {
@@ -2449,10 +2440,8 @@ fn prune_unreachable_wasi_component_fns(functions: &mut [CompiledFn], num_import
       continue;
     };
     for instr in &func.instructions {
-      match instr {
-        Instruction::Call(callee) | Instruction::RefFunc(callee) => pending.push(*callee),
-        Instruction::CallIndirect { .. } => return,
-        _ => {}
+      if let Instruction::Call(callee) = instr {
+        pending.push(*callee);
       }
     }
   }
@@ -10819,6 +10808,11 @@ fn program_has_boxed_json_scalars(
       Calcit::Method(name, MethodKind::Invoke(_)) => name.as_ref() == "parse-json",
       Calcit::Proc(CalcitProc::JsonParse | CalcitProc::NativeTryParseJson) => true,
       Calcit::List(items) => items.iter().any(expr_uses_json_parse),
+      Calcit::Fn { info, .. } => info.body.iter().any(expr_uses_json_parse),
+      Calcit::Thunk(thunk) => expr_uses_json_parse(thunk.get_code()),
+      Calcit::Map(map) => map.iter().any(|(k, v)| expr_uses_json_parse(k) || expr_uses_json_parse(v)),
+      Calcit::Set(set) => set.iter().any(expr_uses_json_parse),
+      Calcit::Recur(args) => args.iter().any(expr_uses_json_parse),
       _ => false,
     }
   }
@@ -11022,30 +11016,6 @@ fn emit_convert_repr(ctx: &mut WasmGenCtx, src: NativeValRepr, dst: NativeValRep
       emit_box_repr_to_f64(ctx, src);
       emit_unbox_f64_to_repr(ctx, dst);
     }
-  }
-}
-
-/// A funcref table entry for the `&` rest-parameter function `target` with
-/// `fixed` leading parameters, typed `(f64 x arity) -> f64` like every
-/// function-value call with `arity` arguments: it packs the arguments after
-/// the fixed ones into a new list and calls `target` (#1972).
-#[cfg(test)]
-fn build_rest_adapter(ctx: &mut WasmGenCtx, target: u32, fixed: u32, arity: u32) -> CompiledFn {
-  ctx.instructions.clear();
-  ctx.extra_locals.clear();
-  ctx.next_local = arity;
-  let rest = emit_list_from_locals(ctx, &(fixed..arity).collect::<Vec<_>>());
-  for param in 0..fixed {
-    ctx.emit(Instruction::LocalGet(param));
-  }
-  ctx.emit(Instruction::LocalGet(rest));
-  ctx.emit(Instruction::Call(target));
-  CompiledFn {
-    export_name: None,
-    params: vec![ValType::F64; arity as usize],
-    results: vec![ValType::F64],
-    locals: std::mem::take(&mut ctx.extra_locals),
-    instructions: std::mem::take(&mut ctx.instructions),
   }
 }
 
@@ -17986,19 +17956,18 @@ mod tests {
   use std::sync::Arc;
 
   use super::component::component_type_owns_memory;
-  use super::runtime::call_indirect;
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
     HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasiWorld, WasmBoundary, WasmCompileEnv,
     WasmGenCtx, WasmGlobalLayout, WasmMemoryLayout, WasmTarget, WasmTypeEvidence, build_cabi_free_fn, build_cabi_realloc_fn,
-    build_component_export_adapter, build_component_import_adapter, build_rest_adapter, build_string_pool,
+    build_component_export_adapter, build_component_import_adapter, build_component_struct_lift_fn, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
     emit_call_spread, emit_call_spread_args_as_regular, emit_inline_closure_call, emit_proc_call, emit_recur_loop,
     expr_uses_wasi_clocks, expr_uses_wasi_file, expr_uses_wasi_read_dir, expr_uses_wasi_wait, host_imports_for_target,
-    index_host_imports, mem_arg_i32, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
+    index_host_imports, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
     validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols, validate_recur_evidence,
     wasi_component_file_imports, wasi_component_read_dir_imports, wasm_non_nil_value_is_nonzero,
   };
@@ -18869,113 +18838,6 @@ mod tests {
     assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
   }
 
-  /// A function value is its table slot, and a call with N arguments goes
-  /// through funcref table N. There, the slot of a `&` rest-parameter function
-  /// holds an adapter typed `(f64 x N) -> f64` that packs the trailing
-  /// arguments into the rest list (#1972); a fixed-arity slot holds the
-  /// function itself, so calling it with another arity fails the signature check.
-  #[test]
-  fn rest_function_table_slots_pack_trailing_arguments() {
-    let function = |params: usize, export_name: Option<&str>, instructions: Vec<Instruction<'static>>| CompiledFn {
-      export_name: export_name.map(str::to_owned),
-      params: vec![ValType::F64; params],
-      results: vec![ValType::F64],
-      locals: vec![],
-      instructions,
-    };
-    let env = WasmCompileEnv {
-      function_value_dependencies: Default::default(),
-      dyn_traits: Default::default(),
-      fn_index: HashMap::new(),
-      fn_arity: HashMap::new(),
-      fn_has_rest: HashMap::new(),
-      fn_signatures: HashMap::new(),
-      has_boxed_json_scalars: true,
-      runtime_fn_index: HashMap::new(),
-      tag_index: HashMap::from([("list".to_string(), 1)]),
-      struct_layouts: Default::default(),
-      enum_layouts: Default::default(),
-      string_pool: HashMap::new(),
-      atom_globals: HashMap::new(),
-      atom_is_scalar: HashMap::new(),
-      value_imports: HashMap::new(),
-      static_fn_defs: HashMap::new(),
-      closures: Default::default(),
-      host_imports: HashMap::new(),
-      target: WasmTarget::Core,
-      boundary: WasmBoundary::Native,
-      world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
-      any_type_table: Default::default(),
-    };
-    let mut ctx = WasmGenCtx::new(0, env);
-    // Calls `call_indirect` on `slot` with `arity` arguments 10, 20, ...
-    let caller = |name: &str, slot: i32, arity: u32| {
-      let mut instructions: Vec<Instruction<'static>> = (1..=arity).map(|i| super::f64_const(10.0 * f64::from(i))).collect();
-      instructions.push(Instruction::I32Const(slot));
-      instructions.push(call_indirect(arity));
-      function(0, Some(name), instructions)
-    };
-    // Table slot 0 is `(a & xs)` returning `a + count xs`; slot 1 is `(a b)`
-    // returning `b`. Functions 4 and 5 are rest adapters for arities 3 and 1.
-    let fns = [
-      function(
-        2,
-        None,
-        vec![
-          Instruction::LocalGet(1),
-          Instruction::I32TruncF64U,
-          Instruction::I32Load(mem_arg_i32(0)),
-          Instruction::F64ConvertI32U,
-          Instruction::LocalGet(0),
-          Instruction::F64Add,
-        ],
-      ),
-      function(2, None, vec![Instruction::LocalGet(1)]),
-      caller("rest3", 0, 3),
-      caller("rest1", 0, 1),
-      build_rest_adapter(&mut ctx, 0, 1, 3),
-      build_rest_adapter(&mut ctx, 0, 1, 1),
-      caller("fixed2", 1, 2),
-      caller("fixed3", 1, 3),
-    ];
-    let bytes = build_wasm_module(
-      &fns,
-      &[],
-      16384,
-      &[],
-      &[],
-      1,
-      ModuleFunctionLayout {
-        runtime_fn_count: 0,
-        number_format_fn_count: 0,
-        table_fn_count: 2,
-        memory_layout: WasmMemoryLayout::compute(16384, 0),
-        global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::from([((3, 0), 4), ((1, 0), 5)]),
-        prune_unused_imports: false,
-      },
-    )
-    .expect("valid module");
-    let engine = Engine::default();
-    let module = Module::new(&engine, &bytes).expect("valid module");
-    let mut store = Store::new(&engine, ());
-    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
-    let mut call = |name: &str| {
-      let function = instance.get_typed_func::<(), f64>(&mut store, name).expect("caller export");
-      function.call(&mut store, ())
-    };
-    assert_eq!(call("rest3").expect("packs two trailing arguments"), 12.0);
-    assert_eq!(call("rest1").expect("packs an empty rest list"), 10.0);
-    assert_eq!(call("fixed2").expect("fixed-arity slot is called directly"), 20.0);
-    let error = call("fixed3").expect_err("wrong arity traps");
-    assert_eq!(
-      error.downcast_ref::<wasmtime::Trap>(),
-      Some(&wasmtime::Trap::BadSignature),
-      "{error:?}"
-    );
-  }
-
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
     Calcit::List(Arc::new(CalcitList::from(&items[..])))
@@ -19171,12 +19033,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 0,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -19196,12 +19055,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 0,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -19279,12 +19135,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 0,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(16384, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -19438,12 +19291,9 @@ mod tests {
         &[],
         1,
         ModuleFunctionLayout {
-          runtime_fn_count: 4,
           number_format_fn_count: 0,
-          table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
-          rest_adapters: HashMap::new(),
           prune_unused_imports: false,
         },
       )
@@ -19558,12 +19408,9 @@ mod tests {
         &[],
         1,
         ModuleFunctionLayout {
-          runtime_fn_count: 5,
           number_format_fn_count: 0,
-          table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
-          rest_adapters: HashMap::new(),
           prune_unused_imports: false,
         },
       )
@@ -19737,12 +19584,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 5,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(heap_start, 0),
         global_layout,
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -19923,12 +19767,9 @@ mod tests {
         &[],
         1,
         ModuleFunctionLayout {
-          runtime_fn_count: 6,
           number_format_fn_count: 0,
-          table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(heap_start, 0),
           global_layout,
-          rest_adapters: HashMap::new(),
           prune_unused_imports: false,
         },
       )
@@ -20067,12 +19908,9 @@ mod tests {
         &[],
         1,
         ModuleFunctionLayout {
-          runtime_fn_count: 3,
           number_format_fn_count: 0,
-          table_fn_count: 0,
           memory_layout: WasmMemoryLayout::compute(16384, 0),
           global_layout,
-          rest_adapters: HashMap::new(),
           prune_unused_imports: false,
         },
       )
@@ -20126,7 +19964,7 @@ mod tests {
       locals: vec![],
       instructions,
     };
-    let mut functions = [
+    let functions = [
       function(vec![Instruction::Call(3)]),
       function(vec![Instruction::Call(4)]),
       function(vec![Instruction::Unreachable]),
@@ -20143,12 +19981,6 @@ mod tests {
     assert!(error.starts_with("E_WASI_COMMAND_CAPABILITY:"), "{error}");
     assert!(error.contains("calcit.core/fs-path:read-text"), "{error}");
     assert!(reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).is_ok());
-    functions[3].instructions.push(Instruction::CallIndirect {
-      type_index: 0,
-      table_index: 0,
-    });
-    let indirect = reject_reachable_wasi_command_dependencies(&functions, 2, 5, &unsupported).unwrap_err();
-    assert!(indirect.starts_with("E_WASI_COMMAND_INDIRECT:"), "{indirect}");
   }
 
   #[test]
@@ -21554,12 +21386,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 3,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
@@ -21614,6 +21443,151 @@ mod tests {
     ])];
     let open_fn_defs = vec![("app.main".to_owned(), "parse".to_owned(), CalcitFnArgs::Args(vec![]), open_body)];
     assert!(program_has_boxed_json_scalars(&open_fn_defs, &HashMap::new()));
+  }
+
+  #[test]
+  fn program_has_boxed_json_scalars_recurses_into_fn_thunk_map_and_set() {
+    use super::{CalcitFnArgs, program_has_boxed_json_scalars};
+    use crate::wasm::host::calcit::{CalcitFn, CalcitFnCallShape, CalcitFnUsageMeta, CalcitThunk, CalcitThunkInfo};
+
+    let parse_call = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeTryParseJson),
+      Calcit::Nil,
+      Calcit::new_str("{}"),
+    ]);
+    let fn_expr = Calcit::Fn {
+      id: Arc::from("nested"),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("nested"),
+        def_ns: Arc::from("app.main"),
+        def_ref: None,
+        usage: CalcitFnUsageMeta::default(),
+        scope: Default::default(),
+        args: Arc::new(CalcitFnArgs::Args(vec![])),
+        call_shape: CalcitFnCallShape::fixed(0),
+        body: vec![parse_call.clone()],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        return_type: crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+        arg_types: vec![],
+        rest_type: None,
+      }),
+    };
+    let thunk_expr = Calcit::Thunk(CalcitThunk::Code {
+      code: Arc::new(parse_call.clone()),
+      info: Arc::new(CalcitThunkInfo {
+        ns: Arc::from("app.main"),
+        def: Arc::from("thunk-fn"),
+      }),
+    });
+    let map_key_expr = Calcit::Map(rpds::HashTrieMap::new_sync().insert(parse_call.clone(), Calcit::Number(1.0)));
+    let map_val_expr = Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::tag("k"), parse_call.clone()));
+    let set_expr = Calcit::Set(rpds::HashTrieSet::new_sync().insert(parse_call));
+
+    for expr in [fn_expr, thunk_expr, map_key_expr, map_val_expr, set_expr] {
+      let fn_defs = vec![("app.main".to_owned(), "check".to_owned(), CalcitFnArgs::Args(vec![]), vec![expr])];
+      assert!(
+        program_has_boxed_json_scalars(&fn_defs, &HashMap::new()),
+        "program_has_boxed_json_scalars must recurse into nested Fn/Thunk/Map/Set expressions"
+      );
+    }
+  }
+
+  #[test]
+  fn component_struct_lift_option_niche_rejects_invalid_discriminant() {
+    let struct_type = ComponentAbiType::Struct(ComponentStructType {
+      id: "app.main/OptRecord".into(),
+      tag: "OptRecord".into(),
+      fields: vec![("label".into(), ComponentAbiType::Option(Box::new(ComponentAbiType::String)))],
+    });
+    let struct_layout = super::StructLayout::compute(&[super::StructFieldKind::OptionHeapPtrI32]).expect("struct layout");
+    let list_codecs = BTreeMap::new();
+    let struct_codecs = BTreeMap::new();
+    let variant_codecs = BTreeMap::new();
+    let codecs = ComponentValueCodecs {
+      str_new_index: 1,
+      buffer_new_index: 0,
+      arena_alloc_index: 0,
+      cabi_realloc_index: 0,
+      enum_load_payload_index: 0,
+      option_from_niche_ptr_index: 0,
+      option_to_niche_ptr_index: 0,
+      enum_layouts: Box::leak(Box::new(super::EnumLayouts::default())),
+      list_codecs: &list_codecs,
+      struct_codecs: &struct_codecs,
+      variant_codecs: &variant_codecs,
+    };
+    let mut lift_fn = build_component_struct_lift_fn(&struct_type, 10, 2, &struct_layout, &codecs);
+    lift_fn.export_name = Some("lift".into());
+    let alloc_fn = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32],
+      results: vec![ValType::I32],
+      locals: vec![],
+      instructions: vec![Instruction::I32Const(HEAP_BASE + 1024)],
+    };
+    let str_new_fn = CompiledFn {
+      export_name: None,
+      params: vec![ValType::I32, ValType::I32],
+      results: vec![ValType::F64],
+      locals: vec![],
+      instructions: vec![super::f64_const(f64::from(HEAP_BASE + 2048))],
+    };
+    let bytes = build_wasm_module(
+      &[alloc_fn, str_new_fn, lift_fn],
+      &[],
+      HEAP_BASE,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        number_format_fn_count: 0,
+        memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
+        global_layout: WasmGlobalLayout::compute(0, false),
+        prune_unused_imports: false,
+      },
+    )
+    .expect("valid component struct lift module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("compile lift module");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate lift module");
+    let memory = instance.get_memory(&mut store, "memory").expect("memory");
+    let lift = instance.get_typed_func::<i32, f64>(&mut store, "lift").expect("lift fn");
+
+    let src_addr = HEAP_BASE + 64;
+    let field_offset = struct_layout.fields[0].offset as usize;
+    let read_i32 = |store: &Store<()>, addr: usize| -> i32 {
+      let mut buf = [0u8; 4];
+      memory.read(store, addr, &mut buf).expect("read i32");
+      i32::from_le_bytes(buf)
+    };
+
+    // Discriminant 0 => None (niche 0)
+    memory.write(&mut store, src_addr as usize, &[0u8; 12]).expect("write none");
+    let none_ptr = lift.call(&mut store, src_addr).expect("lift none") as usize;
+    assert_eq!(read_i32(&store, none_ptr + field_offset), 0);
+
+    // Discriminant 1 => Some(str) (non-zero ptr from str_new_fn)
+    let mut some_bytes = [0u8; 12];
+    some_bytes[0] = 1;
+    some_bytes[4..8].copy_from_slice(&(HEAP_BASE + 256).to_le_bytes());
+    some_bytes[8..12].copy_from_slice(&2i32.to_le_bytes());
+    memory.write(&mut store, src_addr as usize, &some_bytes).expect("write some");
+    let some_ptr = lift.call(&mut store, src_addr).expect("lift some") as usize;
+    assert_eq!(read_i32(&store, some_ptr + field_offset), HEAP_BASE + 2048);
+
+    // Discriminant > 1 => trap unreachable
+    for bad_disc in [2u8, 255u8] {
+      some_bytes[0] = bad_disc;
+      memory.write(&mut store, src_addr as usize, &some_bytes).expect("write invalid");
+      let err = lift.call(&mut store, src_addr).expect_err("invalid discriminant must trap");
+      assert_eq!(
+        err.downcast_ref::<wasmtime::Trap>(),
+        Some(&wasmtime::Trap::UnreachableCodeReached),
+        "discriminant={bad_disc}: {err:?}"
+      );
+    }
   }
 
   #[test]
@@ -21780,12 +21754,9 @@ mod tests {
       &[],
       1,
       ModuleFunctionLayout {
-        runtime_fn_count: 0,
         number_format_fn_count: 0,
-        table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE + 96, 0),
         global_layout: WasmGlobalLayout::compute(0, false),
-        rest_adapters: HashMap::new(),
         prune_unused_imports: false,
       },
     )
