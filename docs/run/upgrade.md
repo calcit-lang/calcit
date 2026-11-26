@@ -50,13 +50,17 @@ related:
   - 若原本在值位置依赖双参数 `if` 在假分支返回 `nil`，请显式补齐三参数 `else` 分支（如 `if cond val nil`），或改用 `Option :some` / `Option :none`。
   - `trim` 双参数模式与 JS `&compare` 统一按 Unicode 标量语义与码点顺序比较（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
 - **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950、#2958）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 与 `Fn` 按指针/引用身份比较、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`。
-  - 若历史状态对比（`Dynamic` 与 `false`、`nil` 或异构值比较）触发 `E_GENERIC_WHERE_BOUND_MISMATCH`：优先收窄后再用 `=`（例如 `(and (bool? value) (= value false))`、`(nil? value)` 或 `decode-map-as`）；若业务确实需要在未收窄的开放边界上做原样值比较，改用 `identical? value false` 或底层原语 `&= value false`。
-  - 与 JavaScript 宿主 `undefined` / `null` 判等时，改用 `js-nullish?` / `js-present?`（或显式 `identical?`），避免直接对 `JsObject` / `JsNullish` 调用 `=`。
+  - 若历史状态对比（`Dynamic` 与 `false`、`nil` 或异构值比较）触发 `E_GENERIC_WHERE_BOUND_MISMATCH`：优先收窄后再用 `=`（例如 `(and (bool? value) (= value false))`、`(nil? value)` 或 `decode-map-as`）；若业务确实需要在未收窄的开放边界上做值比较，改用 `&=`（深比较）。仅当需要引用身份语义时使用 `identical?`：它对列表、映射、集合、结构体、枚举值（含 `Option`）与引用按引用比较，独立构造的相等容器结果为 `false`；标量（`nil`、布尔、数字、字符串、标签）仍按值比较，例如 `identical? value false`。
+  - 与 JavaScript 宿主 `undefined` / `null` 判等时，改用 `js-nullish?` / `js-present?`（仅当确实需要按引用语义比对宿主对象身份时使用 `identical?`），避免直接对 `JsObject` / `JsNullish` 调用 `=`。
 
 ```cirru
 defn is-legacy-false? (value)
   hint-fn $ Fn Dynamic (-> Bool)
   if (bool? value) (= value false) false
+
+defn is-dynamic-equal-false? (value)
+  hint-fn $ Fn Dynamic (-> Bool)
+  &= value false
 
 defn is-same-dynamic-false? (value)
   hint-fn $ Fn Dynamic (-> Bool)

@@ -232,40 +232,42 @@ pub static PROGRAM_CODE_DATA: LazyLock<ProgramCodeLock> = LazyLock::new(ProgramC
 /// `impl-traits` decoration across source loading and preprocessing.
 static NON_COHERENT_NOMINAL_STATE: LazyLock<RwLock<(u64, HashSet<String>)>> = LazyLock::new(|| RwLock::new((u64::MAX, HashSet::new())));
 
-fn ensure_non_coherent_nominal_state() {
-  let current_gen = PROGRAM_CODE_DATA.generation();
-  if NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").0 == current_gen {
-    return;
-  }
+fn with_synced_non_coherent_nominal_state_read<R>(reader: impl FnOnce(&HashSet<String>) -> R) -> R {
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
   let gen_while_locked = PROGRAM_CODE_DATA.generation();
+  {
+    let state = NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs");
+    if state.0 == gen_while_locked {
+      return reader(&state.1);
+    }
+  }
   let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
-  drop(source);
   let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
-  // Never overwrite a newer generation's cache (or a post-collection write) with stale results.
-  if gen_while_locked == PROGRAM_CODE_DATA.generation() && (state.0 == u64::MAX || state.0 < gen_while_locked) {
+  // Keep `source` read lock held across installation and consumption so no writer
+  // can advance `PROGRAM_CODE_DATA` generation or publish a stale snapshot.
+  if state.0 == u64::MAX || state.0 < gen_while_locked {
     *state = (gen_while_locked, collected);
   }
+  reader(&state.1)
 }
 
 pub(crate) fn is_non_coherent_nominal_def(def_ref: &str) -> bool {
-  ensure_non_coherent_nominal_state();
-  NON_COHERENT_NOMINAL_STATE
-    .read()
-    .expect("read non-coherent nominal defs")
-    .1
-    .contains(def_ref)
+  with_synced_non_coherent_nominal_state_read(|defs| defs.contains(def_ref))
 }
 
 pub(crate) fn record_non_coherent_nominal_def(def_ref: &str) {
-  ensure_non_coherent_nominal_state();
+  let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  let gen_while_locked = PROGRAM_CODE_DATA.generation();
   let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
+  if state.0 == u64::MAX || state.0 < gen_while_locked {
+    let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
+    *state = (gen_while_locked, collected);
+  }
   state.1.insert(def_ref.to_owned());
 }
 
 pub(crate) fn snapshot_non_coherent_nominal_defs() -> HashSet<String> {
-  ensure_non_coherent_nominal_state();
-  NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs").1.clone()
+  with_synced_non_coherent_nominal_state_read(|defs| defs.clone())
 }
 
 /// The lock around [`ProgramCodeData`]. Every write access bumps a generation
