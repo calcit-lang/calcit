@@ -1524,9 +1524,16 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
     ctx.begin_block_if();
 
     for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
+      let val_slot_kind = match layout.fields[field_idx].kind {
+        StructFieldKind::HeapPtrI32 | StructFieldKind::OptionHeapPtrI32 => ContainerSlotKind::ExactHeapPtr,
+        StructFieldKind::BoxedF64 => ContainerSlotKind::DynamicBoxed,
+        _ => ContainerSlotKind::PureScalar,
+      };
+      let add_kv_kind = ContainerSlotKind::pack_kv(ContainerSlotKind::PureScalar, val_slot_kind);
       ctx.emit(Instruction::LocalGet(map_ptr));
       ctx.emit(f64_const(*field_tag_id as f64));
       emit_load_struct_field_as_repr(ctx, record_ptr, layout.fields[field_idx], NativeValRepr::F64);
+      ctx.emit(Instruction::I32Const(add_kv_kind as i32));
       ctx.emit(Instruction::Call(assoc_fn_idx));
       ctx.emit(Instruction::LocalSet(map_ptr));
     }

@@ -1300,8 +1300,13 @@ fn emit_decode_map_list(
   ctx.emit(Instruction::LocalGet(input));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(src_ptr));
-  let count = emit_load_count_i32(ctx, src_ptr);
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
+  let inner_hint = hint_list_elem(static_hint);
+  let elem_kind = inner_hint
+    .as_ref()
+    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
+    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let dst_ptr = emit_alloc_typed_list(ctx, count, elem_kind);
   let valid = ctx.alloc_i32(1);
   let all_identical = ctx.alloc_i32(1);
   let i = ctx.alloc_i32(0);
@@ -1399,12 +1404,19 @@ fn emit_decode_map_tuple(
   ctx.emit(Instruction::LocalGet(input));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(src_ptr));
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Const(slots.len() as i32));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let tuple_elem_kind = (0..slots.len()).fold(ContainerSlotKind::EmptyUntyped, |acc, idx| {
+    let slot_kind = hint_tuple_slot(static_hint, idx)
+      .as_ref()
+      .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
+      .unwrap_or(ContainerSlotKind::DynamicBoxed);
+    acc.join(slot_kind)
+  });
+  let dst_ptr = emit_alloc_typed_list(ctx, count, tuple_elem_kind);
   let valid = ctx.alloc_i32(1);
   for (idx, slot_id) in slots.iter().enumerate() {
     ctx.emit(Instruction::LocalGet(valid));
@@ -1473,10 +1485,14 @@ fn emit_decode_map_set(
   ctx.emit(Instruction::LocalGet(input));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(src_ptr));
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
+  let set_elem_kind = hint_set_elem(static_hint)
+    .as_ref()
+    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
+    .unwrap_or(ContainerSlotKind::DynamicBoxed);
   let ts = ctx.i32_offset(count, 1);
-  let dst_ptr = emit_alloc_with_count(ctx, count, ts, "set");
-  let hashes_ptr = emit_alloc_list(ctx, count);
+  let dst_ptr = emit_alloc_typed_container(ctx, count, ts, "set", set_elem_kind as u32);
+  let hashes_ptr = emit_alloc_typed_list(ctx, count, ContainerSlotKind::PureScalar);
   let valid = ctx.alloc_i32(1);
   let i = ctx.alloc_i32(0);
   ctx.begin_block();
@@ -1594,7 +1610,7 @@ fn emit_decode_map_table(
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(map_ptr));
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
-  let count = emit_load_count_i32(ctx, flat_ptr);
+  let count = emit_load_container_count_i32(ctx, flat_ptr);
   let total_slots = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Const(2));
@@ -1602,7 +1618,17 @@ fn emit_decode_map_table(
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_flat = emit_alloc_with_count(ctx, count, total_slots, "map");
+  let (k_hint, v_hint) = hint_map_kv(static_hint);
+  let k_kind = k_hint
+    .as_ref()
+    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
+    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let v_kind = v_hint
+    .as_ref()
+    .map(|ty| ContainerSlotKind::from_type_annotation(&Arc::new((*ty).clone())))
+    .unwrap_or(ContainerSlotKind::DynamicBoxed);
+  let kv_kind = ContainerSlotKind::pack_kv(k_kind, v_kind);
+  let dst_flat = emit_alloc_typed_container(ctx, count, total_slots, "map", kv_kind);
   let valid = ctx.alloc_i32(1);
   let i = ctx.alloc_i32(0);
   ctx.begin_block();
@@ -1692,7 +1718,7 @@ fn emit_decode_map_table(
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eq);
   ctx.begin_block_if();
-  let out_map = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  let out_map = emit_alloc_map_with_root_kind(ctx, actual_count, hashed_root, kv_kind);
   ctx.emit(Instruction::LocalGet(out_map));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(decoded));
@@ -1794,7 +1820,8 @@ fn emit_encode_map_struct(
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_flat = emit_alloc_with_count(ctx, included_count, total_slots, "map");
+  let encode_kv_kind = ContainerSlotKind::pack_kv(ContainerSlotKind::PureScalar, ContainerSlotKind::DynamicBoxed);
+  let dst_flat = emit_alloc_typed_container(ctx, included_count, total_slots, "map", encode_kv_kind);
   let write_off = ctx.alloc_i32(8);
   for (idx, (field, _)) in fields.iter().enumerate() {
     let field_tag_id = *ctx
@@ -1825,7 +1852,7 @@ fn emit_encode_map_struct(
   let actual_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
   ctx.emit(Instruction::LocalSet(actual_count));
-  let out_map = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  let out_map = emit_alloc_map_with_root_kind(ctx, actual_count, hashed_root, encode_kv_kind);
   ctx.emit(Instruction::LocalGet(out_map));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(decoded));
@@ -1893,7 +1920,7 @@ fn emit_decode_map_struct(
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(map_ptr));
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
-  let entry_count = emit_load_count_i32(ctx, flat_ptr);
+  let entry_count = emit_load_container_count_i32(ctx, flat_ptr);
   let i = ctx.alloc_i32(0);
   ctx.begin_block();
   ctx.begin_loop();
@@ -2962,14 +2989,15 @@ fn emit_parse_scalar_map(
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(count));
   let total_slots = ctx.alloc_i32(1);
-  let flat_root = emit_alloc_with_count(ctx, count, total_slots, "map");
+  let empty_kv = ContainerSlotKind::pack_kv(ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped);
+  let flat_root = emit_alloc_typed_container(ctx, count, total_slots, "map", empty_kv);
   ctx.emit(Instruction::LocalGet(flat_root));
   ctx.call_rt("__rt_map_root_from_flat");
   let hashed_root = ctx.alloc_local_typed(ValType::I32);
   let actual_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
   ctx.emit(Instruction::LocalSet(actual_count));
-  let map_ptr = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  let map_ptr = emit_alloc_map_with_root_kind(ctx, actual_count, hashed_root, empty_kv);
 
   emit_scan_scalar_map_entries(
     ctx,
@@ -3004,6 +3032,7 @@ fn emit_parse_scalar_map(
       ctx.emit(Instruction::LocalGet(map_ptr));
       ctx.emit(Instruction::LocalGet(key_value));
       ctx.emit(Instruction::LocalGet(item_value));
+      ctx.emit(Instruction::I32Const(0));
       ctx.call_rt("__rt_map_assoc");
       ctx.emit(Instruction::LocalSet(map_ptr));
       ctx.emit(Instruction::Else);

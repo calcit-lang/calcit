@@ -818,8 +818,11 @@ fn build_rt_json_parse_at_impl(
   b.emit(Instruction::End);
   rt_emit_alloc_const(&mut b, 8, list_buf, list_tag);
   b.emit(Instruction::LocalGet(list_buf));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list_buf));
+  b.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   if let Some(jv) = json_value {
     b.emit(Instruction::LocalGet(list_buf));
     b.emit(Instruction::F64ConvertI32U);
@@ -949,10 +952,17 @@ fn build_rt_json_parse_at_impl(
   b.emit(Instruction::I32Const(b']' as i32));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  let arr_elem_kind = if json_value.is_some() {
+    ContainerSlotKind::ExactHeapPtr
+  } else {
+    ContainerSlotKind::DynamicBoxed
+  };
   b.emit(Instruction::LocalGet(list_buf));
   b.emit(Instruction::LocalGet(list_cnt));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list_buf));
+  b.emit(Instruction::I32Const(arr_elem_kind as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   if let Some(jv) = json_value {
     b.emit(Instruction::LocalGet(list_buf));
     b.emit(Instruction::F64ConvertI32U);
@@ -1010,12 +1020,19 @@ fn build_rt_json_parse_at_impl(
   fail_return(&mut b, cur);
   b.emit(Instruction::End);
   rt_emit_alloc_const(&mut b, 16, map_ptr, map_tag);
+  let empty_kv = ContainerSlotKind::pack_kv(ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped);
   b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
   b.emit(Instruction::LocalGet(map_ptr));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Store(mem_arg_f64(8)));
+  b.emit(Instruction::I32Const(empty_kv as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
+  b.emit(Instruction::LocalGet(map_ptr));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(8)));
+  b.emit(Instruction::LocalGet(map_ptr));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::I32Store(mem_arg_i32(12)));
   if let Some(jv) = json_value {
     b.emit(Instruction::LocalGet(map_ptr));
     b.emit(Instruction::F64ConvertI32U);
@@ -1155,6 +1172,7 @@ fn build_rt_json_parse_at_impl(
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalGet(key_tag));
   if let Some(jv) = json_value {
+    b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
     b.emit(Instruction::Call(jv.map_key_equal_idx));
   } else {
     b.emit(Instruction::F64Eq);
@@ -1273,10 +1291,18 @@ fn build_rt_json_parse_at_impl(
   b.emit(Instruction::I32Const(b'}' as i32));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  let obj_val_kind = if json_value.is_some() {
+    ContainerSlotKind::ExactHeapPtr
+  } else {
+    ContainerSlotKind::DynamicBoxed
+  };
+  let obj_kv_kind = ContainerSlotKind::pack_kv(ContainerSlotKind::ExactHeapPtr, obj_val_kind);
   b.emit(Instruction::LocalGet(obj_buf));
   b.emit(Instruction::LocalGet(pair_cnt));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(obj_buf));
+  b.emit(Instruction::I32Const(obj_kv_kind as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   b.emit(Instruction::LocalGet(obj_buf));
   b.emit(Instruction::Call(map_from_flat_idx));
   b.emit(Instruction::LocalSet(map_ptr));

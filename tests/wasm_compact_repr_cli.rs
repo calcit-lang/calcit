@@ -2698,3 +2698,203 @@ fn option_niche_branch_keeps_defref_reset_state_branch_local() {
   assert_eq!(run_fn.call(&mut store, 1.0).expect("flag=true"), 6.0);
   assert_eq!(run_fn.call(&mut store, 0.0).expect("flag=false"), 6.0);
 }
+
+#[test]
+fn typed_container_slot_kinds_and_propagation_headers() {
+  let dir = TestDirectory::create("wasm-typed-container-headers");
+  let snapshot = r#"
+{} (:package |typed-headers)
+  :about "|Verify exact u32 container headers and ContainerSlotKind propagation across List, Set, BufList, Map while keeping String f64 len untouched"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'typed-headers.main/main!) (:mode :native) (:reload-fn 'typed-headers.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'typed-headers.main
+    %{} 'FileEntry
+      :defs $ {}
+        'empty-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-list () ([] )
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'empty-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-set () (#{})
+          :examples $ []
+          :schema $ quote $ Fn (-> (Set Number))
+        'empty-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-map () (&{})
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'scalar-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-list () ([] 1 2 3)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'str-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export str-list () ([] |a |b)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List String))
+        'mixed-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mixed-list () (&buf-list:push (&buf-list:new) (append ([] 1 |a) 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'adopted-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export adopted-list () (append ([] ) 10)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'mapped-count-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mapped-count-list () (map ([] |a |bb) count)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'filtered-str-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export filtered-str-list () (filter ([] |a |bb) $ fn (s) (> (count s) 1))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List String))
+        'concat-scalar-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export concat-scalar-list () (concat ([] 1) ([] 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'concat-mixed-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export concat-mixed-list () (&buf-list:push (&buf-list:new) (concat ([] 1 |a) ([] 2)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-to-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-to-set () (&list:to-set ([] 1 2 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (Set Number))
+        'empty-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-buflist () (&buf-list:new)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-buflist () (&buf-list:push (&buf-list:new) 99)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'mixed-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mixed-buflist () (&buf-list:push (&buf-list:push (&buf-list:new) 99) |s)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-buflist-to-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-buflist-to-list () (assert-type (&buf-list:to-list (&buf-list:push (&buf-list:new) 99)) (List Number))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'scalar-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-map () (&{} :a 1 :b 2)
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'str-num-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export str-num-map () (&{} |k 1)
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map String Number))
+        'merged-scalar-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export merged-scalar-map () (merge (&{} :a 1) (&{} :b 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'merged-mixed-val-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export merged-mixed-val-map () (&buf-list:push (&buf-list:new) (merge (&{} :a 1 :b |x) (&{} :c 2)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'sample-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export sample-string () (&str:concat |hel |lo)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns typed-headers.main (:require)
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let call_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    let v = instance
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .expect(name)
+      .call(&mut *store, ())
+      .expect(name);
+    v as usize
+  };
+  let read_u32 = |store: &Store<StoreLimits>, addr: usize| -> u32 {
+    let mut buf = [0u8; 4];
+    memory.read(store, addr, &mut buf).expect("memory read u32");
+    u32::from_le_bytes(buf)
+  };
+  let read_f64 = |store: &Store<StoreLimits>, addr: usize| -> f64 {
+    let mut buf = [0u8; 8];
+    memory.read(store, addr, &mut buf).expect("memory read f64");
+    f64::from_le_bytes(buf)
+  };
+
+  // List & Set headers: [count:u32 @ 0][elem_kind:u32 @ 4]
+  // 0 = DynamicBoxed, 1 = PureScalar, 2 = ExactHeapPtr, 3 = EmptyUntyped
+  for (name, boxed_in_buf, expected_count, expected_kind) in [
+    ("empty-list", false, 0u32, 3u32),
+    ("empty-set", false, 0, 3),
+    ("scalar-list", false, 3, 1),
+    ("str-list", false, 2, 2),
+    ("mixed-list", true, 3, 0),
+    ("adopted-list", false, 1, 1),
+    ("mapped-count-list", false, 2, 1),
+    ("filtered-str-list", false, 1, 2),
+    ("concat-scalar-list", false, 2, 1),
+    ("concat-mixed-list", true, 3, 0),
+    ("scalar-to-set", false, 2, 1),
+    ("scalar-buflist-to-list", false, 1, 1),
+  ] {
+    let raw_ptr = call_ptr(&mut store, name);
+    let ptr = if boxed_in_buf {
+      read_f64(&store, raw_ptr + 16) as usize
+    } else {
+      raw_ptr
+    };
+    assert_eq!(read_u32(&store, ptr), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kind, "{name} elem_kind");
+  }
+
+  // BufList headers: [cap:u32 @ 0][elem_kind:u32 @ 4][count:u32 @ 8][reserved:u32 @ 12]
+  for (name, expected_cap, expected_kind, expected_count) in [
+    ("empty-buflist", 8u32, 3u32, 0u32),
+    ("scalar-buflist", 8, 1, 1),
+    ("mixed-buflist", 8, 0, 2),
+  ] {
+    let ptr = call_ptr(&mut store, name);
+    assert_eq!(read_u32(&store, ptr), expected_cap, "{name} cap");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kind, "{name} elem_kind");
+    assert_eq!(read_u32(&store, ptr + 8), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 12), 0, "{name} reserved");
+  }
+
+  // Map headers: [count:u32 @ 0][kv_kind:u32 @ 4][root_ptr:i32 @ 8][reserved:i32 @ 12]
+  for (name, boxed_in_buf, expected_count, expected_kv_kind, expect_nonnull_root) in [
+    ("empty-map", false, 0u32, 15u32, false),
+    ("scalar-map", false, 2, 5, true),
+    ("str-num-map", false, 1, 6, true),
+    ("merged-scalar-map", false, 2, 5, true),
+    ("merged-mixed-val-map", true, 3, 1, true),
+  ] {
+    let raw_ptr = call_ptr(&mut store, name);
+    let ptr = if boxed_in_buf {
+      read_f64(&store, raw_ptr + 16) as usize
+    } else {
+      raw_ptr
+    };
+    assert_eq!(read_u32(&store, ptr), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kv_kind, "{name} kv_kind");
+    let root = read_u32(&store, ptr + 8);
+    assert_eq!(root != 0, expect_nonnull_root, "{name} root_ptr={root}");
+    assert_eq!(read_u32(&store, ptr + 12), 0, "{name} reserved");
+  }
+
+  // String keeps [len:f64 @ 0] untouched.
+  let s_ptr = call_ptr(&mut store, "sample-string");
+  assert_eq!(read_f64(&store, s_ptr), 5.0);
+}

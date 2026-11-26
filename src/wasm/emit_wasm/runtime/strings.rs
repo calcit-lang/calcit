@@ -2652,8 +2652,10 @@ pub(super) fn build_rt_str_split(string_tag: i32, list_tag: i32, find_from_idx: 
   rt_emit_alloc_dynamic(&mut b, list_size, list_ptr, list_tag);
   b.emit(Instruction::LocalGet(list_ptr));
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list_ptr));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
 
   // --- PASS 2: FILL ---
   b.emit(Instruction::I32Const(0));

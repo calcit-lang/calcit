@@ -2416,8 +2416,10 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_component_read_dir_fn(
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(list));
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   b.emit(Instruction::LocalGet(list));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -3530,8 +3532,10 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_read_dir_fn(
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(list));
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   b.emit(Instruction::LocalGet(list));
   b.finish(vec![ValType::I32], vec![ValType::I32])
 }
@@ -3772,8 +3776,10 @@ pub(in crate::wasm::emit_wasm) fn build_wasi_get_args_fn(
   rt_emit_alloc_dynamic(&mut b, list_size, list, list_tag);
   b.emit(Instruction::LocalGet(list));
   b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(list));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
 
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(index));
@@ -4499,9 +4505,10 @@ mod tests {
 
       let mut items = Vec::new();
       if list_ptr != 0 {
+        let mut count_buf = [0u8; 4];
+        mem.read(&store, list_ptr as usize, &mut count_buf).expect("list count");
+        let count = u32::from_le_bytes(count_buf) as usize;
         let mut buf = [0u8; 8];
-        mem.read(&store, list_ptr as usize, &mut buf).expect("list count");
-        let count = f64::from_le_bytes(buf) as usize;
         for idx in 0..count {
           mem.read(&store, list_ptr as usize + (idx + 1) * 8, &mut buf).expect("item ptr");
           let str_ptr = f64::from_le_bytes(buf) as usize;

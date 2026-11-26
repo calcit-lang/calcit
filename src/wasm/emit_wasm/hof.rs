@@ -230,7 +230,7 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   let list_ptr = emit_foldl_collection(ctx, &args[0])?;
   // Load count (number of elements)
-  let count = emit_load_count_i32(ctx, list_ptr);
+  let count = emit_load_container_count_i32(ctx, list_ptr);
 
   // Evaluate init → acc local
   let acc = ctx.alloc_local();
@@ -565,7 +565,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   // Evaluate collection → i32 pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, list_ptr);
+  let count = emit_load_container_count_i32(ctx, list_ptr);
 
   // Evaluate init acc → local
   let acc = ctx.alloc_local();
@@ -634,7 +634,7 @@ pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, list_ptr);
+  let count = emit_load_container_count_i32(ctx, list_ptr);
 
   let acc = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -718,7 +718,7 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
   // Evaluate xs → list pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, list_ptr);
+  let count = emit_load_container_count_i32(ctx, list_ptr);
 
   // Evaluate initial acc
   let acc = ctx.alloc_local();
@@ -1011,11 +1011,7 @@ pub(super) fn emit_map_fold_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   let flat_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(flat_ptr));
 
-  let count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(count));
+  let count = emit_load_container_count_i32(ctx, flat_ptr);
 
   let acc = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
@@ -1126,14 +1122,87 @@ fn emit_copy_type_tag(ctx: &mut WasmGenCtx, src_ptr: u32, dst_ptr: u32) {
   ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 }
 
+fn infer_hof_result_slot_kind(
+  ctx: &mut WasmGenCtx,
+  kind: &FoldlCallKind,
+  callee: &Calcit,
+  elem_ev: Option<WasmTypeEvidence>,
+  arity: u32,
+) -> ContainerSlotKind {
+  if let FoldlCallKind::Inline(closure) = kind {
+    let mut arg_evs = Vec::with_capacity(arity as usize);
+    if arity == 2 {
+      arg_evs.push(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Number)));
+    }
+    arg_evs.push(elem_ev.unwrap_or_else(|| WasmTypeEvidence::contract(crate::wasm::host::calcit::DYNAMIC_TYPE.clone())));
+    if let Some(ret_ev) = infer_inline_closure_result_with_evidences(ctx, closure, &arg_evs, &mut HashSet::new()) {
+      let slot_kind = ContainerSlotKind::from_type_annotation(&ret_ev.annotation);
+      if slot_kind != ContainerSlotKind::DynamicBoxed {
+        return slot_kind;
+      }
+    }
+  }
+  if let Some(ty) = infer_wasm_static_type(ctx, callee) {
+    let expanded = expand_wasm_value_type(&ty);
+    if let CalcitTypeAnnotation::Fn(fn_ty) = expanded.as_ref() {
+      let slot_kind = ContainerSlotKind::from_type_annotation(&fn_ty.return_type);
+      if slot_kind != ContainerSlotKind::DynamicBoxed {
+        return slot_kind;
+      }
+    }
+  }
+  if let Some(key) = direct_definition_reference(callee)
+    && let Some((ns, def)) = key.rsplit_once('/')
+    && let Some(signature) = program::lookup_def_schema(ns, def).resolve_to_fn()
+    && !signature.return_type.contains_type_var()
+  {
+    let slot_kind = ContainerSlotKind::from_type_annotation(&signature.return_type);
+    if slot_kind != ContainerSlotKind::DynamicBoxed {
+      return slot_kind;
+    }
+  }
+  if let FoldlCallKind::Proc(proc) = kind {
+    return match proc {
+      CalcitProc::NativeAdd
+      | CalcitProc::NativeMinus
+      | CalcitProc::NativeMultiply
+      | CalcitProc::NativeDivide
+      | CalcitProc::NumberQuestion
+      | CalcitProc::NilQuestion
+      | CalcitProc::Not
+      | CalcitProc::NativeListEmpty
+      | CalcitProc::NativeMapEmpty
+      | CalcitProc::NativeSetEmpty
+      | CalcitProc::NativeListCount
+      | CalcitProc::NativeMapCount
+      | CalcitProc::NativeSetCount
+      | CalcitProc::NativeStrCount => ContainerSlotKind::PureScalar,
+      CalcitProc::NativeStr => ContainerSlotKind::ExactHeapPtr,
+      _ => ContainerSlotKind::DynamicBoxed,
+    };
+  }
+  ContainerSlotKind::DynamicBoxed
+}
+
 pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "map")?;
+  let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
+  let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map: {e}"))?;
+  let static_out_kind = infer_hof_result_slot_kind(ctx, &kind, &args[1], elem_ev, 1);
+  let out_kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(static_out_kind as i32));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(out_kind));
+  let dst_ptr = emit_alloc_typed_list_dyn(ctx, count, out_kind);
   // Preserve source type tag (set→set, list→list)
   emit_copy_type_tag(ctx, src_ptr, dst_ptr);
-  let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   // write f(elem) into dst[i]: push address of dst[i] then store result
   ctx.emit(Instruction::LocalGet(dst_ptr));
@@ -1155,9 +1224,19 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(2, args, "map-indexed")?;
   let elem_ev = infer_collection_element_evidence(ctx, &args[0]);
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_hof_callee(ctx, &args[1], 2).map_err(|e| format!("map-indexed: {e}"))?;
+  let static_out_kind = infer_hof_result_slot_kind(ctx, &kind, &args[1], elem_ev.clone(), 2);
+  let out_kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(static_out_kind as i32));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(out_kind));
+  let dst_ptr = emit_alloc_typed_list_dyn(ctx, count, out_kind);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   // write f(i, elem) into dst[i]
   ctx.emit(Instruction::LocalGet(dst_ptr));
@@ -1178,7 +1257,7 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "each")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("each: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   emit_unary_step(ctx, &kind, elem, Some(&args[0]))?;
@@ -1192,9 +1271,10 @@ pub(super) fn emit_each(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Str
 pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "filter")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
+  let elem_kind = emit_load_container_kind_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter: {e}"))?;
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let dst_ptr = emit_alloc_typed_list_dyn(ctx, count, elem_kind);
   emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
@@ -1206,7 +1286,9 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
   ctx.emit(Instruction::End);
   emit_list_iter_end(ctx, i);
   // update count header to actual result_count
-  ctx.store_i32_as_f64(dst_ptr, result_count, 0);
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::LocalGet(result_count));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
@@ -1215,7 +1297,7 @@ pub(super) fn emit_filter(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "any?")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("any?: {e}"))?;
   let result = ctx.alloc_local();
   ctx.emit(f64_const(0.0));
@@ -1237,7 +1319,7 @@ pub(super) fn emit_any(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
 pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "every?")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("every?: {e}"))?;
   let result = ctx.alloc_local();
   ctx.emit(f64_const(1.0));
@@ -1260,7 +1342,7 @@ pub(super) fn emit_every(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 pub(super) fn emit_find(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "find")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find: {e}"))?;
   let result = ctx.alloc_local();
   let found = ctx.alloc_local_typed(ValType::I32);
@@ -1303,9 +1385,10 @@ pub(super) fn emit_mapcat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "filter-not")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
+  let elem_kind = emit_load_container_kind_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("filter-not: {e}"))?;
-  let dst_ptr = emit_alloc_list(ctx, count);
+  let dst_ptr = emit_alloc_typed_list_dyn(ctx, count, elem_kind);
   emit_copy_type_tag(ctx, src_ptr, dst_ptr);
   let result_count = ctx.alloc_i32(0);
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
@@ -1318,7 +1401,9 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::End);
   emit_list_iter_end(ctx, i);
   // update count header to actual result_count
-  ctx.store_i32_as_f64(dst_ptr, result_count, 0);
+  ctx.emit(Instruction::LocalGet(dst_ptr));
+  ctx.emit(Instruction::LocalGet(result_count));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.ptr_to_f64(dst_ptr);
   Ok(())
 }
@@ -1405,7 +1490,7 @@ pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), S
 pub(super) fn emit_find_index(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "find-index")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src_ptr);
+  let count = emit_load_container_count_i32(ctx, src_ptr);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("find-index: {e}"))?;
   let result = ctx.alloc_local();
   let found = ctx.alloc_local_typed(ValType::I32);
@@ -1471,12 +1556,8 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
   let flat_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(flat_ptr));
 
-  // n_pairs = flat_ptr[0] (f64 → i32)
-  let n_pairs = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(n_pairs));
+  // n_pairs = flat_ptr[0] (`u32 @ 0`)
+  let n_pairs = emit_load_container_count_i32(ctx, flat_ptr);
 
   // Start accumulator as an empty map
   emit_map_new(ctx, &[])?;
@@ -1550,6 +1631,7 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
     ctx.emit(Instruction::LocalGet(acc));
     ctx.emit(Instruction::LocalGet(new_key));
     ctx.emit(Instruction::LocalGet(new_val));
+    ctx.emit(Instruction::I32Const(0));
     ctx.emit(Instruction::Call(assoc_idx));
     ctx.emit(Instruction::LocalSet(acc));
     ctx.emit(Instruction::End);
@@ -1565,6 +1647,7 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
     ctx.emit(Instruction::LocalGet(acc));
     ctx.emit(Instruction::LocalGet(new_key));
     ctx.emit(Instruction::LocalGet(new_val));
+    ctx.emit(Instruction::I32Const(0));
     ctx.emit(Instruction::Call(assoc_idx));
     ctx.emit(Instruction::LocalSet(acc));
   }

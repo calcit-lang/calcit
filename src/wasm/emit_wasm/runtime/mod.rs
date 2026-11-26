@@ -776,11 +776,7 @@ pub(super) fn build_runtime_fns(
 
   let map_flat_pairs_name = String::from("__rt_map_flat_pairs");
   fn_index.insert(map_flat_pairs_name, base_index + fns.len() as u32);
-  let map_flat_pairs_instructions = vec![
-    Instruction::LocalGet(0),
-    Instruction::F64Load(mem_arg_f64(8)),
-    Instruction::I32TruncF64U,
-  ];
+  let map_flat_pairs_instructions = vec![Instruction::LocalGet(0), Instruction::I32Load(mem_arg_i32(8))];
   fns.push(CompiledFn {
     export_name: None,
     params: vec![ValType::I32],
@@ -799,12 +795,10 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(map_find_key_name, base_index + fns.len() as u32);
   let map_find_key_instructions = vec![
     Instruction::LocalGet(0),
-    Instruction::F64Load(mem_arg_f64(8)),
-    Instruction::I32TruncF64U,
+    Instruction::I32Load(mem_arg_i32(8)),
     Instruction::LocalSet(5),
     Instruction::LocalGet(5),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
+    Instruction::I32Load(mem_arg_i32(0)),
     Instruction::LocalSet(2),
     Instruction::I32Const(-1),
     Instruction::LocalSet(4),
@@ -852,12 +846,10 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(map_find_value_name, base_index + fns.len() as u32);
   let map_find_value_instructions = vec![
     Instruction::LocalGet(0),
-    Instruction::F64Load(mem_arg_f64(8)),
-    Instruction::I32TruncF64U,
+    Instruction::I32Load(mem_arg_i32(8)),
     Instruction::LocalSet(5),
     Instruction::LocalGet(5),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
+    Instruction::I32Load(mem_arg_i32(0)),
     Instruction::LocalSet(2),
     Instruction::I32Const(-1),
     Instruction::LocalSet(4),
@@ -924,6 +916,11 @@ pub(super) fn build_runtime_fns(
   // Fill these mutually dependent helpers once the map and equality indices exist.
   fns.push(build_rt_hash_f64());
 
+  let heap_value_hash_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_heap_value_hash"), heap_value_hash_idx);
+  let heap_value_hash_slot = fns.len();
+  fns.push(build_rt_hash_f64());
+
   let map_key_equal_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_key_equal"), map_key_equal_idx);
   let key_equal_slot = fns.len();
@@ -954,15 +951,32 @@ pub(super) fn build_runtime_fns(
 
   let map_from_flat_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_from_flat"), map_from_flat_idx);
-  fns.push(build_rt_map_from_flat(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
+  fns.push(build_rt_map_from_flat(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_assoc_idx,
+    map_make_idx,
+  ));
 
   let map_from_flat_checked_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_from_flat_checked"), map_from_flat_checked_idx);
-  fns.push(build_rt_map_from_flat_checked(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
+  fns.push(build_rt_map_from_flat_checked(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_assoc_idx,
+    map_make_idx,
+  ));
 
   let map_root_from_flat_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_from_flat"), map_root_from_flat_idx);
-  fns.push(build_rt_map_root_from_flat(map_key_hash_idx, map_root_assoc_idx));
+  fns.push(build_rt_map_root_from_flat(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_assoc_idx,
+  ));
 
   let map_linearize_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_linearize"), map_linearize_idx);
@@ -970,15 +984,31 @@ pub(super) fn build_runtime_fns(
 
   let map_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_assoc"), map_assoc_idx);
-  fns.push(build_rt_map_assoc(map_key_hash_idx, map_root_assoc_idx, map_make_idx));
+  fns.push(build_rt_map_assoc(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_assoc_idx,
+    map_make_idx,
+  ));
 
   let map_get_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_get_value"), map_get_value_idx);
-  fns.push(build_rt_map_get_value(map_key_hash_idx, map_root_lookup_idx));
+  fns.push(build_rt_map_get_value(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_lookup_idx,
+  ));
 
   let map_contains_key_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_contains_key"), map_contains_key_idx);
-  fns.push(build_rt_map_contains_key(map_key_hash_idx, map_root_lookup_idx));
+  fns.push(build_rt_map_contains_key(
+    hash_idx,
+    map_key_hash_idx,
+    heap_value_hash_idx,
+    map_root_lookup_idx,
+  ));
 
   let map_contains_value_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_contains_value"), map_contains_value_idx);
@@ -1210,48 +1240,55 @@ pub(super) fn build_runtime_fns(
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
   let set_equal_idx = value_equal_idx + 2;
+  let heap_value_equal_idx = value_equal_idx + 3;
   fn_index.insert(String::from("__rt_value_equal"), value_equal_idx);
-  fns.push(build_rt_value_equal(
-    value_tags,
-    (
-      str_compare_idx,
-      value_equal_idx,
-      map_equal_idx,
-      set_equal_idx,
-      is_heap_ptr_idx,
-      struct_load_field_idx,
-      enum_load_payload_idx,
-    ),
-    struct_layouts,
-    enum_layouts,
-  ));
+  fns.push(build_rt_value_equal(f64_value_eq_idx, is_heap_ptr_idx, heap_value_equal_idx));
 
   // Map values can contain nested Options and Enums, so use the same deep comparator.
   fn_index.insert(String::from("__rt_map_equal"), map_equal_idx);
   fns.push(build_rt_map_equal(
     map_linearize_idx,
-    map_key_hash_idx,
     map_root_lookup_idx,
-    value_equal_idx,
+    (hash_idx, map_key_hash_idx, heap_value_hash_idx),
+    (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
   ));
 
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
-  fns.push(build_rt_set_equal(value_equal_idx));
+  fns.push(build_rt_set_equal(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx));
 
-  fns[set_find_slot] = build_rt_set_find_elem(value_equal_idx);
-  fns[value_hash_slot] = build_rt_value_hash(
+  fn_index.insert(String::from("__rt_heap_value_equal"), heap_value_equal_idx);
+  fns.push(build_rt_heap_value_equal(
+    value_tags,
+    HeapValueEqualFns {
+      str_compare_idx,
+      value_equal_idx,
+      heap_value_equal_idx,
+      map_equal_idx,
+      set_equal_idx,
+      f64_value_eq_idx,
+      is_heap_ptr_idx,
+      struct_load_field_idx,
+      enum_load_payload_idx,
+    },
+    struct_layouts,
+    enum_layouts,
+  ));
+
+  fns[set_find_slot] = build_rt_set_find_elem(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx);
+  fns[value_hash_slot] = build_rt_value_hash_dispatch(hash_idx, is_heap_ptr_idx, heap_value_hash_idx);
+  fns[heap_value_hash_slot] = build_rt_heap_value_hash(
     value_tags,
     (
       hash_idx,
       map_key_hash_idx,
+      heap_value_hash_idx,
       map_linearize_idx,
-      is_heap_ptr_idx,
       struct_load_field_idx,
     ),
     struct_layouts,
     enum_layouts,
   );
-  fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
+  fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx, heap_value_equal_idx, f64_value_eq_idx);
 
   Ok(RuntimeFns {
     fns,
@@ -2262,9 +2299,24 @@ fn push_hash_compact_field(
   b.emit(Instruction::LocalSet(item_hash));
 }
 
-pub(super) fn build_rt_value_hash(
+fn build_rt_value_hash_dispatch(scalar_hash_idx: u32, is_heap_ptr_idx: u32, heap_value_hash_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(1);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::Call(heap_value_hash_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::F64], vec![ValType::I32])
+}
+
+pub(super) fn build_rt_heap_value_hash(
   tags: ValueRuntimeTags,
-  (scalar_hash_idx, self_idx, map_linearize_idx, is_heap_ptr_idx, struct_load_field_idx): (u32, u32, u32, u32, u32),
+  (scalar_hash_idx, value_hash_idx, self_heap_idx, map_linearize_idx, struct_load_field_idx): (u32, u32, u32, u32, u32),
   struct_layouts: &StructLayouts,
   enum_layouts: &EnumLayouts,
 ) -> CompiledFn {
@@ -2285,10 +2337,12 @@ pub(super) fn build_rt_value_hash(
     none_tag,
     some_tag,
   } = tags;
-  let mut b = RuntimeFnBuilder::new(1);
-  let ptr = b.alloc_i32();
+  let mut b = RuntimeFnBuilder::new(1); // ptr: i32
   let tag = b.alloc_i32();
   let count = b.alloc_i32();
+  let slot_kind = b.alloc_i32();
+  let key_kind = b.alloc_i32();
+  let val_kind = b.alloc_i32();
   let i = b.alloc_i32();
   let hash = b.alloc_i32();
   let item_hash = b.alloc_i32();
@@ -2299,15 +2353,34 @@ pub(super) fn build_rt_value_hash(
   let field_kind = b.alloc_i32();
   let field_val = b.alloc_f64();
   let raw_opt = b.alloc_i32();
+  let ptr = 0;
 
-  // Check range and active regions before converting: negative numbers, NaN, infinities,
-  // and numbers colliding with inactive semi-space addresses are treated as scalars.
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::Call(is_heap_ptr_idx));
-  b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(ptr));
+  let emit_hash_slot = |b: &mut RuntimeFnBuilder, addr_offset: u64, kind_local: u32, out_local: u32| {
+    b.emit(Instruction::LocalGet(kind_local));
+    b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(ptr));
+    b.emit(Instruction::F64Load(mem_arg_f64(addr_offset)));
+    b.emit(Instruction::Call(scalar_hash_idx));
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(kind_local));
+    b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+    b.emit(Instruction::I32Eq);
+    b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+    b.emit(Instruction::LocalGet(ptr));
+    b.emit(Instruction::F64Load(mem_arg_f64(addr_offset)));
+    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::Call(self_heap_idx));
+    b.emit(Instruction::Else);
+    b.emit(Instruction::LocalGet(ptr));
+    b.emit(Instruction::F64Load(mem_arg_f64(addr_offset)));
+    b.emit(Instruction::Call(value_hash_idx));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalSet(out_local));
+  };
+
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::I32Const(4));
   b.emit(Instruction::I32Sub);
@@ -2346,8 +2419,6 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Const(dyn_trait_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
-  // Hash `trait_word` (`trait_id` + `scalar_kind` + heap flag) rather than `vtable_id`
-  // so two boxes of equal values with differing impl identities share one hash.
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::I32Load(mem_arg_i32(4)));
   b.emit(Instruction::I32Const(0x0100_0193));
@@ -2363,7 +2434,7 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::If(BlockType::Result(ValType::I32)));
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
-  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Call(value_hash_idx));
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -2376,7 +2447,8 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Const(closure_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -2402,7 +2474,8 @@ pub(super) fn build_rt_value_hash(
   }
   b.emit(Instruction::I32Eqz);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -2478,7 +2551,7 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::If(BlockType::Result(ValType::I32)));
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
-  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Call(value_hash_idx));
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -2545,7 +2618,7 @@ pub(super) fn build_rt_value_hash(
       &mut b,
       (ptr, packed, field_kind, field_val, raw_opt, item_hash),
       (enum_tag, none_tag, some_tag),
-      (scalar_hash_idx, self_idx, struct_load_field_idx),
+      (scalar_hash_idx, value_hash_idx, struct_load_field_idx),
       false,
     );
     b.emit(Instruction::LocalGet(hash));
@@ -2570,7 +2643,8 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::I32Const(closure_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
-  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::Call(scalar_hash_idx));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
@@ -2585,6 +2659,16 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::LocalSet(count));
+  b.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  b.emit(Instruction::LocalSet(slot_kind));
+  b.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  b.emit(Instruction::LocalSet(key_kind));
+  b.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  b.emit(Instruction::LocalSet(val_kind));
+
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::I32Const(enum_tag));
   b.emit(Instruction::I32Eq);
@@ -2637,7 +2721,7 @@ pub(super) fn build_rt_value_hash(
       &mut b,
       (ptr, packed, field_kind, field_val, raw_opt, item_hash),
       (enum_tag, none_tag, some_tag),
-      (scalar_hash_idx, self_idx, struct_load_field_idx),
+      (scalar_hash_idx, value_hash_idx, struct_load_field_idx),
       true,
     );
     b.emit(Instruction::LocalGet(hash));
@@ -2658,19 +2742,30 @@ pub(super) fn build_rt_value_hash(
     b.emit(Instruction::End);
   }
   b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(count));
-  b.emit(Instruction::End);
-
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::I32Const(map_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalTee(packed));
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(key_kind));
+  b.emit(Instruction::LocalGet(packed));
+  b.emit(Instruction::I32Const(2));
+  b.emit(Instruction::I32ShrU);
+  b.emit(Instruction::I32Const(3));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::LocalSet(val_kind));
+  b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::Call(map_linearize_idx));
   b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Load(mem_arg_i32(4)));
+  b.emit(Instruction::LocalSet(slot_kind));
+  b.emit(Instruction::End);
   b.emit(Instruction::End);
 
   // Lists and nominal Enum payloads are ordered. Sets and map entries are unordered.
@@ -2682,27 +2777,27 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::LocalGet(count));
   b.emit(Instruction::I32GeU);
   b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(8)));
-  b.emit(Instruction::Call(self_idx));
-  b.emit(Instruction::LocalSet(item_hash));
+
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::I32Const(map_tag));
   b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(BlockType::Empty));
+  emit_hash_slot(&mut b, 8, key_kind, item_hash);
   b.emit(Instruction::LocalGet(item_hash));
   b.emit(Instruction::I32Const(0x0100_0193));
   b.emit(Instruction::I32Mul);
-  b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(16)));
-  b.emit(Instruction::Call(self_idx));
+  emit_hash_slot(&mut b, 16, val_kind, item_hash);
+  b.emit(Instruction::LocalGet(item_hash));
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::LocalSet(item_hash));
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::I32Const(8));
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::Else);
+  emit_hash_slot(&mut b, 8, slot_kind, item_hash);
   b.emit(Instruction::End);
+
   b.emit(Instruction::LocalGet(tag));
   b.emit(Instruction::I32Const(list_tag));
   b.emit(Instruction::I32Eq);
@@ -2734,10 +2829,10 @@ pub(super) fn build_rt_value_hash(
   b.emit(Instruction::LocalGet(hash));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::Call(scalar_hash_idx));
-  b.finish(vec![ValType::F64], vec![ValType::I32])
+  b.finish(vec![ValType::I32], vec![ValType::I32])
 }
 
 /// `__rt_value_equal(a: f64, b: f64) → i32`
@@ -2750,20 +2845,61 @@ pub(super) fn build_rt_value_hash(
 /// - Structs: definition/layout identity and recursive field comparison.
 /// - Maps and Sets: recursive structural comparison.
 /// - Other heap objects: pointer (f64) equality.
-fn build_rt_value_equal(
+fn build_rt_value_equal(f64_value_eq_idx: u32, is_heap_ptr_idx: u32, heap_value_equal_idx: u32) -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(f64_value_eq_idx));
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::Call(is_heap_ptr_idx));
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::Call(heap_value_equal_idx));
+  b.emit(Instruction::Else);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
+}
+
+struct HeapValueEqualFns {
+  str_compare_idx: u32,
+  value_equal_idx: u32,
+  heap_value_equal_idx: u32,
+  map_equal_idx: u32,
+  set_equal_idx: u32,
+  f64_value_eq_idx: u32,
+  is_heap_ptr_idx: u32,
+  struct_load_field_idx: u32,
+  enum_load_payload_idx: u32,
+}
+
+fn build_rt_heap_value_equal(
   tags: ValueRuntimeTags,
-  (str_compare_idx, self_idx, map_equal_idx, set_equal_idx, is_heap_ptr_idx, struct_load_field_idx, enum_load_payload_idx): (
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-    u32,
-  ),
+  fns: HeapValueEqualFns,
   struct_layouts: &StructLayouts,
   enum_layouts: &EnumLayouts,
 ) -> CompiledFn {
+  let HeapValueEqualFns {
+    str_compare_idx,
+    value_equal_idx,
+    heap_value_equal_idx,
+    map_equal_idx,
+    set_equal_idx,
+    f64_value_eq_idx,
+    is_heap_ptr_idx,
+    struct_load_field_idx,
+    enum_load_payload_idx,
+  } = fns;
   let ValueRuntimeTags {
     string: string_tag,
     buffer: buffer_tag,
@@ -2781,14 +2917,16 @@ fn build_rt_value_equal(
     none_tag,
     some_tag,
   } = tags;
-  // params: 0 = a (f64), 1 = b (f64)
+  // params: 0 = ptr_a (i32), 1 = ptr_b (i32)
+  let ptr_a = 0;
+  let ptr_b = 1;
   let mut b = RuntimeFnBuilder::new(2);
-  let result = b.alloc_i32(); // 0=not-equal, 1=equal
-  let ptr_a = b.alloc_i32();
-  let ptr_b = b.alloc_i32();
+  let result = b.alloc_i32();
   let tag_a = b.alloc_i32();
   let tag_b = b.alloc_i32();
   let cnt = b.alloc_i32();
+  let kind_a = b.alloc_i32();
+  let kind_b = b.alloc_i32();
   let i = b.alloc_i32();
   let elem_a = b.alloc_f64();
   let elem_b = b.alloc_f64();
@@ -2801,43 +2939,16 @@ fn build_rt_value_equal(
   let layout_b = b.alloc_i32();
   let meta_a = b.alloc_i32();
   let meta_b = b.alloc_i32();
-  let kind_a = b.alloc_i32();
-  let kind_b = b.alloc_i32();
   let raw_a = b.alloc_i32();
   let raw_b = b.alloc_i32();
   let box_ptr = b.alloc_i32();
 
-  // Fast path: scalar value equality (NaN equals NaN, `-0` equals `0`)
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::F64Ne);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Ne);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalGet(ptr_a));
+  b.emit(Instruction::LocalGet(ptr_b));
+  b.emit(Instruction::I32Eq);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Else);
-
-  // Check both are valid live heap pointers across active regions
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::Call(is_heap_ptr_idx));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::Call(is_heap_ptr_idx));
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
-
-  // Convert to i32 pointers
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(ptr_a));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(ptr_b));
 
   // Read type tags (ptr - 4 = raw_base + 4)
   b.emit(Instruction::LocalGet(ptr_a));
@@ -2878,7 +2989,7 @@ fn build_rt_value_equal(
   b.emit(Instruction::F64Eq);
   b.emit(Instruction::Else);
 
-  // List deep comparison
+  // List deep comparison (`[count:u32 @ 0][elem_kind:u32 @ 4]`)
   b.emit(Instruction::LocalGet(tag_a));
   b.emit(Instruction::I32Const(list_tag));
   b.emit(Instruction::I32Eq);
@@ -2886,31 +2997,32 @@ fn build_rt_value_equal(
   {
     // count_a == count_b?
     b.emit(Instruction::LocalGet(ptr_a));
-    b.emit(Instruction::F64Load(mem_arg_f64(0)));
-    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
     b.emit(Instruction::LocalSet(cnt));
     b.emit(Instruction::LocalGet(ptr_b));
-    b.emit(Instruction::F64Load(mem_arg_f64(0)));
-    b.emit(Instruction::I32TruncF64U);
+    b.emit(Instruction::I32Load(mem_arg_i32(0)));
     b.emit(Instruction::LocalGet(cnt));
     b.emit(Instruction::I32Ne);
     b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
     b.emit(Instruction::I32Const(0));
     b.emit(Instruction::Else);
-    // Compare each element recursively
+    b.emit(Instruction::LocalGet(ptr_a));
+    b.emit(Instruction::I32Load(mem_arg_i32(4)));
+    b.emit(Instruction::LocalSet(kind_a));
+    b.emit(Instruction::LocalGet(ptr_b));
+    b.emit(Instruction::I32Load(mem_arg_i32(4)));
+    b.emit(Instruction::LocalSet(kind_b));
+    // Compare each element recursively or via PureScalar/ExactHeapPtr fast paths
     b.emit(Instruction::I32Const(1));
     b.emit(Instruction::LocalSet(result));
     b.emit(Instruction::I32Const(0));
     b.emit(Instruction::LocalSet(i));
-    // block (break-out-on-mismatch)
     b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
     b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-    // exit when i >= cnt
     b.emit(Instruction::LocalGet(i));
     b.emit(Instruction::LocalGet(cnt));
     b.emit(Instruction::I32GeU);
-    b.emit(Instruction::BrIf(1)); // break out of block
-    // elem_a = ptr_a[8 + i*8]
+    b.emit(Instruction::BrIf(1));
     b.emit(Instruction::LocalGet(ptr_a));
     b.emit(Instruction::I32Const(8));
     b.emit(Instruction::I32Add);
@@ -2920,7 +3032,6 @@ fn build_rt_value_equal(
     b.emit(Instruction::I32Add);
     b.emit(Instruction::F64Load(mem_arg_f64(0)));
     b.emit(Instruction::LocalSet(elem_a));
-    // elem_b = ptr_b[8 + i*8]
     b.emit(Instruction::LocalGet(ptr_b));
     b.emit(Instruction::I32Const(8));
     b.emit(Instruction::I32Add);
@@ -2930,26 +3041,27 @@ fn build_rt_value_equal(
     b.emit(Instruction::I32Add);
     b.emit(Instruction::F64Load(mem_arg_f64(0)));
     b.emit(Instruction::LocalSet(elem_b));
-    // if !value_equal(elem_a, elem_b) → result=0, break
-    b.emit(Instruction::LocalGet(elem_a));
-    b.emit(Instruction::LocalGet(elem_b));
-    b.emit(Instruction::Call(self_idx));
+    collections::rt_emit_eq_with_pair_kinds(
+      &mut b,
+      (elem_a, elem_b),
+      (kind_a, kind_b),
+      (f64_value_eq_idx, value_equal_idx, heap_value_equal_idx),
+    );
     b.emit(Instruction::I32Eqz);
     b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
     b.emit(Instruction::I32Const(0));
     b.emit(Instruction::LocalSet(result));
-    b.emit(Instruction::Br(2)); // break out of block
+    b.emit(Instruction::Br(2));
     b.emit(Instruction::End);
-    // i++
     b.emit(Instruction::LocalGet(i));
     b.emit(Instruction::I32Const(1));
     b.emit(Instruction::I32Add);
     b.emit(Instruction::LocalSet(i));
-    b.emit(Instruction::Br(0)); // continue loop
-    b.emit(Instruction::End); // loop
-    b.emit(Instruction::End); // block
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
     b.emit(Instruction::LocalGet(result));
-    b.emit(Instruction::End); // count_ne if
+    b.emit(Instruction::End);
   }
 
   b.emit(Instruction::Else);
@@ -2987,7 +3099,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::F64ConvertI32U);
     b.emit(Instruction::LocalGet(b_raw));
     b.emit(Instruction::F64ConvertI32U);
-    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Call(value_equal_idx));
     b.emit(Instruction::End);
   };
   let push_cmp_niche_vs_boxed = |b: &mut RuntimeFnBuilder, opt_raw: u32, boxed_f64: u32| {
@@ -3038,7 +3150,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::I32Const(0));
     b.emit(Instruction::Call(enum_load_payload_idx));
     b.emit(Instruction::End);
-    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Call(value_equal_idx));
     b.emit(Instruction::Else);
     b.emit(Instruction::I32Const(0));
     b.emit(Instruction::End);
@@ -3081,7 +3193,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::LocalSet(elem_b));
     b.emit(Instruction::LocalGet(elem_a));
     b.emit(Instruction::LocalGet(elem_b));
-    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Call(value_equal_idx));
     b.emit(Instruction::I32Eqz);
     b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
     b.emit(Instruction::I32Const(0));
@@ -3225,7 +3337,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
     b.emit(Instruction::LocalGet(elem_a));
     b.emit(Instruction::LocalGet(elem_b));
-    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Call(value_equal_idx));
     b.emit(Instruction::Else);
     b.emit(Instruction::LocalGet(elem_a));
     b.emit(Instruction::LocalGet(elem_b));
@@ -3345,7 +3457,7 @@ fn build_rt_value_equal(
     b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
     b.emit(Instruction::LocalGet(elem_a));
     b.emit(Instruction::LocalGet(elem_b));
-    b.emit(Instruction::Call(self_idx));
+    b.emit(Instruction::Call(value_equal_idx));
     b.emit(Instruction::Else);
     // Packed scalar fields hold non-heap values; compare without probing the heap table.
     b.emit(Instruction::LocalGet(elem_a));
@@ -3444,7 +3556,7 @@ fn build_rt_value_equal(
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::LocalGet(ptr_b));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
-  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Call(value_equal_idx));
   b.emit(Instruction::Else);
   b.emit(Instruction::LocalGet(ptr_a));
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -3495,7 +3607,7 @@ fn build_rt_value_equal(
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   b.emit(Instruction::LocalGet(elem_a));
   b.emit(Instruction::LocalGet(elem_b));
-  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::Call(value_equal_idx));
   b.emit(Instruction::Else);
   emit_f64_eq_with_nan(&mut b);
   b.emit(Instruction::End);
@@ -3525,14 +3637,9 @@ fn build_rt_value_equal(
 
   b.emit(Instruction::End); // string if
   b.emit(Instruction::End); // tag_ne if
-  b.emit(Instruction::Else);
-  // Not both heap pointers → not equal
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::End); // both_heap if
+  b.emit(Instruction::End); // ptr_a == ptr_b fast path
 
-  b.emit(Instruction::End); // fast-path if
-
-  b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
+  b.finish(vec![ValType::I32, ValType::I32], vec![ValType::I32])
 }
 
 #[cfg(test)]
@@ -3582,8 +3689,7 @@ mod tests {
       locals: vec![],
       instructions: vec![Instruction::Unreachable],
     };
-    let mut value_equal = build_rt_value_equal(tags, (2, 5, 6, 7, 0, 4, 4), &StructLayouts::default(), &EnumLayouts::default());
-    value_equal.export_name = Some("value_equal".into());
+    let f64_value_eq = build_rt_f64_value_eq();
     let stub_container_eq = CompiledFn {
       export_name: None,
       params: vec![ValType::I32, ValType::I32],
@@ -3591,8 +3697,27 @@ mod tests {
       locals: vec![],
       instructions: vec![Instruction::Unreachable],
     };
-    let mut value_hash = build_rt_value_hash(tags, (1, 8, 3, 0, 4), &StructLayouts::default(), &EnumLayouts::default());
+    let mut value_equal = build_rt_value_equal(5, 0, 9);
+    value_equal.export_name = Some("value_equal".into());
+    let heap_value_equal = build_rt_heap_value_equal(
+      tags,
+      HeapValueEqualFns {
+        str_compare_idx: 2,
+        value_equal_idx: 8,
+        heap_value_equal_idx: 9,
+        map_equal_idx: 6,
+        set_equal_idx: 7,
+        f64_value_eq_idx: 5,
+        is_heap_ptr_idx: 0,
+        struct_load_field_idx: 4,
+        enum_load_payload_idx: 4,
+      },
+      &StructLayouts::default(),
+      &EnumLayouts::default(),
+    );
+    let mut value_hash = build_rt_value_hash_dispatch(1, 0, 11);
     value_hash.export_name = Some("value_hash".into());
+    let heap_value_hash = build_rt_heap_value_hash(tags, (1, 10, 11, 3, 4), &StructLayouts::default(), &EnumLayouts::default());
 
     let bytes = build_wasm_module(
       &[
@@ -3601,10 +3726,13 @@ mod tests {
         str_compare,
         stub_linearize,
         stub_struct_load,
-        value_equal,
+        f64_value_eq,
         stub_container_eq.clone(),
         stub_container_eq,
+        value_equal,
+        heap_value_equal,
         value_hash,
+        heap_value_hash,
       ],
       &[],
       HEAP_BASE,
@@ -3612,7 +3740,7 @@ mod tests {
       &[],
       tags.string,
       ModuleFunctionLayout {
-        runtime_fn_count: 9,
+        runtime_fn_count: 12,
         number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(HEAP_BASE, 0),
@@ -3741,10 +3869,13 @@ mod tests {
     // 4 = stub_opt_from_niche
     // 5 = struct_load_field
     // 6 = enum_load_payload
-    // 7 = value_equal
+    // 7 = f64_value_eq
     // 8 = stub_map_equal
     // 9 = stub_set_equal
-    // 10 = value_hash
+    // 10 = value_equal
+    // 11 = heap_value_equal
+    // 12 = value_hash
+    // 13 = heap_value_hash
     let is_heap_ptr_stub = CompiledFn {
       export_name: None,
       params: vec![ValType::F64],
@@ -3770,8 +3901,7 @@ mod tests {
     };
     let struct_load_field = build_rt_struct_load_field(4);
     let enum_load_payload = build_rt_enum_load_payload(&patched_layouts, 5);
-    let mut value_equal = build_rt_value_equal(tags, (2, 7, 8, 9, 0, 5, 6), &StructLayouts::default(), &patched_layouts);
-    value_equal.export_name = Some("value_equal".into());
+    let f64_value_eq = build_rt_f64_value_eq();
     let stub_container_eq = CompiledFn {
       export_name: None,
       params: vec![ValType::I32, ValType::I32],
@@ -3779,8 +3909,27 @@ mod tests {
       locals: vec![],
       instructions: vec![Instruction::Unreachable],
     };
-    let mut value_hash = build_rt_value_hash(tags, (1, 10, 3, 0, 5), &StructLayouts::default(), &patched_layouts);
+    let mut value_equal = build_rt_value_equal(7, 0, 11);
+    value_equal.export_name = Some("value_equal".into());
+    let heap_value_equal = build_rt_heap_value_equal(
+      tags,
+      HeapValueEqualFns {
+        str_compare_idx: 2,
+        value_equal_idx: 10,
+        heap_value_equal_idx: 11,
+        map_equal_idx: 8,
+        set_equal_idx: 9,
+        f64_value_eq_idx: 7,
+        is_heap_ptr_idx: 0,
+        struct_load_field_idx: 5,
+        enum_load_payload_idx: 6,
+      },
+      &StructLayouts::default(),
+      &patched_layouts,
+    );
+    let mut value_hash = build_rt_value_hash_dispatch(1, 0, 13);
     value_hash.export_name = Some("value_hash".into());
+    let heap_value_hash = build_rt_heap_value_hash(tags, (1, 12, 13, 3, 5), &StructLayouts::default(), &patched_layouts);
 
     let bytes = build_wasm_module(
       &[
@@ -3791,10 +3940,13 @@ mod tests {
         stub_opt_from_niche,
         struct_load_field,
         enum_load_payload,
-        value_equal,
+        f64_value_eq,
         stub_container_eq.clone(),
         stub_container_eq,
+        value_equal,
+        heap_value_equal,
         value_hash,
+        heap_value_hash,
       ],
       &[],
       patched_start,
@@ -3802,7 +3954,7 @@ mod tests {
       &[],
       tags.string,
       ModuleFunctionLayout {
-        runtime_fn_count: 11,
+        runtime_fn_count: 14,
         number_format_fn_count: 0,
         table_fn_count: 0,
         memory_layout: WasmMemoryLayout::compute(patched_start, 0),

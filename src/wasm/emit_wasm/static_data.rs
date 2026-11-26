@@ -1061,8 +1061,15 @@ fn append_static_empty_container(
   let logical_ptr = (*heap_start as u32) + 8;
   data_segment.extend_from_slice(&(HEAP_MAGIC as u32).to_le_bytes());
   data_segment.extend_from_slice(&tag_id.to_le_bytes());
-  for _ in 0..f64_slots {
-    data_segment.extend_from_slice(&0.0f64.to_le_bytes());
+  let header_kind = match tag_name {
+    "map" => ContainerSlotKind::pack_kv(ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped),
+    "list" | "set" => ContainerSlotKind::EmptyUntyped as u32,
+    _ => 0,
+  };
+  data_segment.extend_from_slice(&0u32.to_le_bytes());
+  data_segment.extend_from_slice(&header_kind.to_le_bytes());
+  for _ in 1..f64_slots {
+    data_segment.extend_from_slice(&0u64.to_le_bytes());
   }
   *heap_start += 8 + (f64_slots as i32) * 8;
   logical_ptr as f64
