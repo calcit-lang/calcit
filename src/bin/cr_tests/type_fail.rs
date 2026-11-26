@@ -9175,3 +9175,108 @@ defn main! ()
     }
   });
 }
+
+#[test]
+fn macro_expanded_predicate_dispatch_prunes_impossible_branches() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+    let app = r#"
+ns app.main
+defstruct Shape (:name String)
+defmacro wrap-comp (body)
+  quasiquote $ let
+      res ~body
+    if (struct? res) (&struct:matches? res Shape)
+      if (list? res) (&list:first res)
+        if (map? res) (&map:contains? res :a) false
+defn check-map ()
+  wrap-comp $ {} (:a 1)
+defn check-list ()
+  wrap-comp $ [] 1 2
+defn check-struct ()
+  wrap-comp $ Shape :name |ok
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  , check-map
+  , check-list
+  , check-struct
+  , &unit
+"#;
+    let entries = load_snippet_entries(app);
+    run_check_only(&entries).expect("macro-expanded predicate dispatch must prune impossible branches");
+
+    // Coarse `(struct? m)` on a provably non-struct (`Map`) prunes its true branch (avoiding E_PROC_ARG_TYPE_MISMATCH
+    // on `&struct:matches?`), while `(&struct:matches? g Greeter)` inside `defimpl` preserves its runtime guard.
+    let guarded_matches_on_map = r#"
+ns app.main
+defstruct Shape (:name String)
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      m $ {} (:a 1)
+    if (struct? m) (&struct:matches? m Shape) (&map:contains? m :a)
+  , &unit
+"#;
+    let map_entries = load_snippet_entries(guarded_matches_on_map);
+    run_check_only(&map_entries).expect("(if (struct? m) ...) on Map must prune impossible true branch");
+
+    let defimpl_guard_app = r#"
+ns app.main
+defstruct Greeter (:name String)
+deftrait Labeled (.label $ Fn Self (-> String))
+def LabeledImpl $ defimpl Greeter Labeled
+  .label $ fn (g)
+    if (&struct:matches? g Greeter) (:name g) (raise |rejected-foreign-struct)
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      Other $ impl-traits
+        defstruct Greeter (:name String)
+        , LabeledImpl
+    assert= |rejected-foreign-struct $ try (.label $ Other :name |Ada) (fn (msg) msg)
+  , &unit
+"#;
+    let _non_strict = StrictTypesReset::disabled();
+    let guard_entries = load_snippet_entries(defimpl_guard_app);
+    let eval_res =
+      calcit::run_program(guard_entries.init_ns, guard_entries.init_def, &[]).expect("defimpl guard should preserve runtime check");
+    drop(_non_strict);
+    assert_eq!(eval_res, Calcit::Unit);
+
+    // Pruning an impossible branch must still evaluate a non-literal condition so runtime
+    // errors in the condition itself are preserved.
+    let failing_cond_app = r#"
+ns app.main
+defn open-map ()
+  hint-fn $ Fn (-> Dynamic)
+  {} (:a 1)
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  if (let ((_ (&list:nth (open-map) 0))) true) :reached :never
+  , &unit
+"#;
+    let _non_strict = StrictTypesReset::disabled();
+    let failing_cond_entries = load_snippet_entries(failing_cond_app);
+    calcit::run_program(failing_cond_entries.init_ns, failing_cond_entries.init_def, &[])
+      .expect_err("pruned branch must preserve runtime failure inside condition");
+    drop(_non_strict);
+
+    let reachable_error_app = r#"
+ns app.main
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let
+      res $ {} (:a 1)
+    if (map? res) (&list:first res) false
+  , &unit
+"#;
+    let bad_entries = load_snippet_entries(reachable_error_app);
+    let err = run_check_only(&bad_entries).expect_err("reachable mismatch must still fail strict check-only");
+    assert!(
+      err.contains("E_PROC_ARG_TYPE_MISMATCH") || err.contains("Found 1 errors during preprocessing"),
+      "unexpected reachable branch error: {err}"
+    );
+  });
+}
