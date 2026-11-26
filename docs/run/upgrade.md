@@ -24,7 +24,11 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.48.0 静态连贯 Trait 与值级 `impl-traits` 弃用（#2949）
+## 0.46.0 静态内核（Phase 1–4）收口与 WASM/WASI 运行时升级（#2931）
+
+本版本将静态内核规划（Phase 1–4，对应 Milestones #95–#98）合并作为 `0.46.0` 一并发布，统一 Native / JS / WASM 三端核心语义、补齐可控动态原语并移除 WASM/WASI 运行时的保守扫描与固定容量限制：
+
+### 静态连贯 Trait 与值级 `impl-traits` 弃用（#2949）
 
 本版本在全程序加载、预处理与 WASM/WASI 代码生成阶段引入静态连贯（Static Coherence）分析，解除普通顶层名义类型在跨边界分发时的动态跟踪与 8 路分支限制：
 
@@ -39,15 +43,20 @@ related:
   - 值级/局部 `impl-traits`（及 `&struct:impl-traits`、`&enum:impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`）已标记为弃用，仅保留既有兼容路径。请迁移为顶层 `(:impls …)` + `defimpl`，需要动态多态集合或句柄时改用对象安全 `(Dyn Trait)`（`dyn:box`）。
   - JS 运行时中已无引用且未纳入统一契约的死助手 `&enum:with-impls` 已移除；如有历史脚本直接调用，请改用 `(:impls …)`。
 
-## 0.46.0 双参数 `if` 假分支统一返回 `Unit` 与 Unicode 标量对齐（#2928）
+### 核心语义对齐、受控动态原语与泛型 Trait 约束（#2928–#2950）
 
-本版本统一了 native、JS 与 WASM 后端在双参数 `if` 假分支返回值以及 `trim` / `&compare` Unicode 标量语义上的差异：
-
-- **双参数 `if` 假分支统一返回 `&unit`（`Unit`）**：此前 native 返回 `nil`、JS 返回 `null`，而 WASM 返回 `&unit`。现在三端在运行时与静态常量折叠中一律对无 `else` 分支的 `if` 在条件为 `false` 时返回 `&unit`；类型推导将缺省 `else` 分支视为 `Unit`（不再推导为 `Nullable`）。
+- **双参数 `if` 假分支统一返回 `&unit`（`Unit`）与 Unicode 标量对齐（#2928）**：此前 native 返回 `nil`、JS 返回 `null`，而 WASM 返回 `&unit`。现在三端在运行时与静态常量折叠中一律对无 `else` 分支的 `if` 在条件为 `false` 时返回 `&unit`；类型推导将缺省 `else` 分支视为 `Unit`（不再推导为 `Nullable`）。
   - 若双参数 `if` 用于副作用语句位置（真分支为 `Unit` 或发散），无需改动且现在可直接满足 `Unit` 返回签名。
   - 若原本在值位置依赖双参数 `if` 在假分支返回 `nil`，请显式补齐三参数 `else` 分支（如 `if cond val nil`），或改用 `Option :some` / `Option :none`。
-- **`trim` 双参数模式按单个 Unicode 标量校验与裁剪**：native 与 JS 均改为按 Unicode 标量数校验单字符模式（与 WASM 一致），支持 `"é"`、`"😀"` 等多字节 / 非 BMP 单个 Unicode 标量，并拒绝多标量字符串。
-- **JS `&compare` 字符串与 Tag 按 Unicode 标量顺序比较**：JS 运行时在 `&compare` 比较 `String` 与 `Tag` 时改用 Unicode 码点顺序，与 native、WASM 保持一致（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
+  - `trim` 双参数模式与 JS `&compare` 统一按 Unicode 标量语义与码点顺序比较（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
+- **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 按指针、`Fn` 按值、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`（需要运行时多态比较时请用 `&=` 或 `identical?`）。
+- **显式受控动态与结构化值（#2930、#2940、#2941）**：引入封闭递归 `JsonValue` 与 `EdnValue` ADT、封闭 `Any`（`any:box` / `any:downcast` 配合编译期规范 `TypeId`）、以及对象安全 `(Dyn Trait)`（`dyn:box`），并统一 `src/ffi_boundary.rs` 宿主边界分区。
+
+### WASM / WASI 闭包提升、紧凑布局与弹性持久堆（#2948、#2962–#2964）
+
+- **Lambda 提升闭包与静态 `BrTable` 分派（#2948）**：WASM/WASI 完整支持逃逸闭包、嵌套 `fn`/`defn` 与第一类函数值，并通过 `__closure_call_<arity>` `BrTable` trampoline 彻底淘汰 `CallIndirect` 与额外 `funcref` 表。
+- **紧凑名义 `Enum` 与 `Option<HeapPtr>` 空指针 Niche（#2962）**：Struct/Enum 中的闭合非空堆指针 `Option<T>` 字段以 4 字节空指针 niche 存储，字面量写入与直消费零包装分配；名义 `Enum` 启用 `[count:u16][layout_id:u16][tag_id:u32]` 紧凑布局。
+- **精确类型容器头与弹性迭代持久堆（#2963、#2964）**：`List`/`Set`/`BufList`/`Map` 携带精确 `u32` `ContainerSlotKind` 元数据，纯标量容器彻底跳过 `HEAP_MAGIC` 指针探测；持久堆改用 O(1) 栈深度迭代 Cheney BFS 与动态可扩容半空间（初始 256 KiB 按需翻倍扩容），彻底移除 1 MiB 固定容量与 256 层递归限制。
 
 ## 0.45.0 严格 `Bool` 条件与 `Dynamic` 消费边界收紧（#2881）
 
