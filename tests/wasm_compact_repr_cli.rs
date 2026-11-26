@@ -2409,20 +2409,23 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
           :examples $ []
           :schema $ quote EnumDef
         'verify-lifted-parity $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export verify-lifted-parity (lifted)
+          :code $ quote $ defwasm-export verify-lifted-parity (lifted expected)
             let
                 compact-some $ %:: Action :Apply (assert-type 9 UInt16) (Some |hi) true
                 compact-none $ %:: Action :Apply (assert-type 9 UInt16) None false
                 empty-a $ %:: Action :Noop
               and
-                or
+                if (= expected 0)
                   and (= lifted compact-some) (= (&hash lifted) (&hash compact-some))
-                  and (= lifted compact-none) (= (&hash lifted) (&hash compact-none))
-                  and (= lifted empty-a) (= (&hash lifted) (&hash empty-a))
+                  if (= expected 1)
+                    and (= lifted compact-none) (= (&hash lifted) (&hash compact-none))
+                    if (= expected 2)
+                      and (= lifted empty-a) (= (&hash lifted) (&hash empty-a))
+                      , false
                 not= compact-some compact-none
                 not= (&hash compact-some) (&hash compact-none)
           :examples $ []
-          :schema $ quote $ Fn Action (-> Bool)
+          :schema $ quote $ Fn Action UInt8 (-> Bool)
         'make-compact-action $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export make-compact-action (with-str)
             if with-str
@@ -2456,10 +2459,10 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
     .expect("cabi_realloc");
 
   // Alphabetical variants: 0 = :Apply(UInt16, Option<String>, Bool), 1 = :Noop
-  // Flat params for verify-lifted-parity(Action) -> i32:
-  // (discriminant:i32, u16_val:i32, opt_disc:i32, str_ptr:i32, str_len:i32, bool_val:i32)
+  // Flat params for verify-lifted-parity(Action, UInt8) -> i32:
+  // (discriminant:i32, u16_val:i32, opt_disc:i32, str_ptr:i32, str_len:i32, bool_val:i32, expected:i32)
   let verify_lifted = instance
-    .get_typed_func::<(i32, i32, i32, i32, i32, i32), i32>(&mut store, "verify-lifted-parity")
+    .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32), i32>(&mut store, "verify-lifted-parity")
     .expect("verify-lifted-parity");
 
   let hi_bytes = b"hi";
@@ -2468,13 +2471,22 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
 
   // Lifted :Apply(9, Some("hi"), true) has layout_id == 0, compared against WASM-constructed compact layout_id >= 1.
   assert_eq!(
-    verify_lifted.call(&mut store, (0, 9, 1, hi_ptr, 2, 1)).expect("call :Apply some"),
+    verify_lifted
+      .call(&mut store, (0, 9, 1, hi_ptr, 2, 1, 0))
+      .expect("call :Apply some"),
     1
   );
   // Lifted :Apply(9, None, false)
-  assert_eq!(verify_lifted.call(&mut store, (0, 9, 0, 0, 0, 0)).expect("call :Apply none"), 1);
+  assert_eq!(verify_lifted.call(&mut store, (0, 9, 0, 0, 0, 0, 1)).expect("call :Apply none"), 1);
   // Lifted :Noop
-  assert_eq!(verify_lifted.call(&mut store, (1, 0, 0, 0, 0, 0)).expect("call :Noop"), 1);
+  assert_eq!(verify_lifted.call(&mut store, (1, 0, 0, 0, 0, 0, 2)).expect("call :Noop"), 1);
+  // Mismatched expected variants must be rejected.
+  assert_eq!(
+    verify_lifted
+      .call(&mut store, (1, 0, 0, 0, 0, 0, 0))
+      .expect("call :Noop with :Apply some expected"),
+    0
+  );
 
   // Lower compact Action (layout_id >= 1) back out through Component ABI export.
   let make_compact = instance
@@ -2506,4 +2518,183 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
   assert_eq!(buf[8], 0);
   assert_eq!(buf[20], 0);
   post_compact.call(&mut store, ret_none).expect("post none");
+}
+
+#[test]
+fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
+  let dir = TestDirectory::create("wasm-enum-assoc-encode");
+  let snapshot = r#"
+{} (:package |assoc-encode)
+  :about "|Enum assoc non-narrowing fallback and encode-map-as Option<String> test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'assoc-encode.main/main!) (:mode :native) (:reload-fn 'assoc-encode.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'assoc-encode.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Packet $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Packet (:Frame UInt8 (Option String))
+          :examples $ []
+          :schema $ quote EnumDef
+        'verify! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify! ()
+            let
+                p $ %:: Packet :Frame (assert-type 5 UInt8) (Some |abcdefgh)
+                fitted $ &enum:assoc p 1 9
+                legacy-fitted $ :: :Frame 9 (Some |abcdefgh)
+                overflowed $ &enum:assoc p 1 256
+                legacy-overflow $ :: :Frame 256 (Some |abcdefgh)
+                str-replaced $ &enum:assoc p 2 |raw-str
+                legacy-str-replaced $ :: :Frame 5 |raw-str
+                encoded $ encode-map-as p Packet
+                roundtrip $ decode-map-as encoded Packet
+              and
+                &= fitted legacy-fitted
+                = (&hash fitted) (&hash legacy-fitted)
+                &= (:: :v (&enum:nth fitted 1)) (:: :v 9)
+                &= overflowed legacy-overflow
+                = (&hash overflowed) (&hash legacy-overflow)
+                &= (:: :v (&enum:nth overflowed 1)) (:: :v 256)
+                &= str-replaced legacy-str-replaced
+                = (&hash str-replaced) (&hash legacy-str-replaced)
+                = roundtrip p
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns assoc-encode.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let verify = instance.get_typed_func::<(), f64>(&mut store, "verify!").expect("verify! export");
+  assert_eq!(verify.call(&mut store, ()).expect("verify! runs"), 1.0);
+}
+
+#[test]
+fn option_niche_branch_keeps_defref_reset_state_branch_local() {
+  let bad_dir = TestDirectory::create("wasm-opt-branch-reset-bad");
+  let bad_snapshot = r#"
+{} (:package |opt-reset-bad)
+  :about "|Option branch must not leak then-arm defatom reset into else arm"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'opt-reset-bad.main/main!) (:mode :native) (:reload-fn 'opt-reset-bad.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'opt-reset-bad.main
+    %{} 'FileEntry
+      :defs $ {}
+        'OptHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptHolder (:slot (Option (Fn Number (-> Number))))
+          :examples $ []
+          :schema $ quote StructDef
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *cb $ fn (x) (hint-fn $ Fn Number (-> Number)) x
+          :examples $ []
+          :schema $ quote $ Ref (Fn Number (-> Number))
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                flag false
+                h $ %{} OptHolder
+                  :slot $ if flag
+                    let ((_ (reset! *cb inc1))) (Some inc1)
+                    Some @*cb
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns opt-reset-bad.main
+"#;
+  let bad_snapshot_path = bad_dir.0.join("calcit.cirru");
+  fs::write(&bad_snapshot_path, bad_snapshot).expect("bad snapshot writes");
+  let bad_out = bad_dir.0.join("out");
+  fs::create_dir(&bad_out).expect("out dir creates");
+  let bad_compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&bad_snapshot_path)
+    .args(["wasm", "--boundary", "native", "--emit-path"])
+    .arg(&bad_out)
+    .output()
+    .expect("compile runs");
+  assert!(
+    !bad_compile.status.success(),
+    "else-arm reading uninitialized closure defref after then-arm reset must fail"
+  );
+  let stderr = String::from_utf8_lossy(&bad_compile.stderr);
+  assert!(
+    stderr.contains("E_WASM_CLOSURE_SPECIALIZATION"),
+    "expected E_WASM_CLOSURE_SPECIALIZATION, got:\n{stderr}"
+  );
+
+  let good_dir = TestDirectory::create("wasm-opt-branch-reset-good");
+  let good_snapshot = r#"
+{} (:package |opt-reset-good)
+  :about "|Option branch resetting defatom in both arms permits read after conditional"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'opt-reset-good.main/main!) (:mode :native) (:reload-fn 'opt-reset-good.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'opt-reset-good.main
+    %{} 'FileEntry
+      :defs $ {}
+        'OptHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptHolder (:slot (Option (Fn Number (-> Number))))
+          :examples $ []
+          :schema $ quote StructDef
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *cb $ fn (x) (hint-fn $ Fn Number (-> Number)) x
+          :examples $ []
+          :schema $ quote $ Ref (Fn Number (-> Number))
+        'run! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export run! (flag)
+            let
+                _h $ %{} OptHolder
+                  :slot $ if flag
+                    let ((_ (reset! *cb inc1))) (Some inc1)
+                    let ((_ (reset! *cb inc1))) None
+                f @*cb
+              f 5
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns opt-reset-good.main
+"#;
+  let wasm_path = compile_wasm_with_boundary(&good_dir, good_snapshot, "native");
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let run_fn = instance.get_typed_func::<f64, f64>(&mut store, "run!").expect("run! export");
+  assert_eq!(run_fn.call(&mut store, 1.0).expect("flag=true"), 6.0);
+  assert_eq!(run_fn.call(&mut store, 0.0).expect("flag=false"), 6.0);
 }

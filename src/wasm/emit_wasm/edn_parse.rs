@@ -2185,7 +2185,10 @@ fn emit_decode_map_enum(
     ctx.emit(Instruction::LocalGet(input));
     ctx.emit(Instruction::LocalSet(decoded));
     ctx.emit(Instruction::Else);
-    let enum_ptr = emit_alloc_nominal_enum_from_f64_locals(ctx, nominal, variant.ref_str(), expected_tag, &values)?;
+    let enum_ptr = match mode {
+      MapCodecMode::Decode => emit_alloc_nominal_enum_from_f64_locals(ctx, nominal, variant.ref_str(), expected_tag, &values)?,
+      MapCodecMode::Encode => emit_alloc_legacy_enum_from_f64_locals(ctx, expected_tag, &values)?,
+    };
     ctx.emit(Instruction::LocalGet(enum_ptr));
     ctx.emit(Instruction::F64ConvertI32U);
     ctx.emit(Instruction::LocalSet(decoded));

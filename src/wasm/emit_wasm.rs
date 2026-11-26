@@ -87,13 +87,14 @@ use runtime::{
 #[allow(unused_imports)]
 use structs::{
   EnumLayouts, StructFieldKind, StructFieldLayout, StructLayout, StructLayouts, collect_enum_layouts, collect_struct_layouts,
-  component_struct_identity, emit_alloc_nominal_enum_from_f64_locals, emit_enum_assoc, emit_enum_count, emit_enum_definition,
-  emit_enum_new, emit_enum_new_raw_i32, emit_enum_nth, emit_enum_nth_as_repr, emit_load_enum_payload_as_f64,
-  emit_load_struct_field_as_repr, emit_named_enum_new, emit_named_enum_new_raw_i32, emit_store_compact_header, emit_store_enum_header,
-  emit_store_struct_field_expr, emit_store_struct_field_from_f64_local, emit_struct_assoc_at, emit_struct_contains, emit_struct_count,
-  emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new,
-  emit_struct_new_raw_i32, emit_struct_nth, emit_struct_nth_as_repr, emit_struct_to_map, emit_struct_with_at, enum_identity_tag,
-  option_niche_inner, qualify_for_definition_ref, resolve_enum_ref, resolve_struct_ref, try_parse_defrecord_form,
+  component_struct_identity, emit_alloc_legacy_enum_from_f64_locals, emit_alloc_nominal_enum_from_f64_locals, emit_enum_assoc,
+  emit_enum_count, emit_enum_definition, emit_enum_new, emit_enum_new_raw_i32, emit_enum_nth, emit_enum_nth_as_repr,
+  emit_load_enum_payload_as_f64, emit_load_struct_field_as_repr, emit_named_enum_new, emit_named_enum_new_raw_i32,
+  emit_store_compact_header, emit_store_enum_header, emit_store_struct_field_expr, emit_store_struct_field_from_f64_local,
+  emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag, emit_struct_get,
+  emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_new_raw_i32, emit_struct_nth, emit_struct_nth_as_repr,
+  emit_struct_to_map, emit_struct_with_at, enum_identity_tag, option_niche_inner, qualify_for_definition_ref, resolve_enum_ref,
+  resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its

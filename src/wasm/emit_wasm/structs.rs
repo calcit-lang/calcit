@@ -697,14 +697,21 @@ pub(super) fn collect_enum_layouts(
   }
 
   let mut layouts = EnumLayouts::default();
-  for (index, (identity, kinds)) in variant_kinds.into_iter().enumerate() {
-    let id = (index + 1) as u32;
-    if id > u32::from(u16::MAX) {
+  let mut next_id = 1u32;
+  for (identity, kinds) in variant_kinds {
+    if kinds.len() > usize::from(u16::MAX) {
+      return Err("Compact Enum variant payload count exceeds u16::MAX".into());
+    }
+    // Variants whose field offsets exceed u16 metadata remain unregistered and fall back to layout_id == 0.
+    let Ok(layout) = StructLayout::compute(&kinds) else {
+      continue;
+    };
+    if next_id > u32::from(u16::MAX) {
       return Err("Compact Enum variant layout count exceeds u16::MAX".into());
     }
-    let layout = StructLayout::compute(&kinds)?;
-    layouts.layouts.insert(id, layout);
-    layouts.ids.insert(identity, id);
+    layouts.layouts.insert(next_id, layout);
+    layouts.ids.insert(identity, next_id);
+    next_id += 1;
   }
   Ok(layouts)
 }
@@ -763,15 +770,18 @@ pub(super) fn emit_option_expr_to_niche_i32(ctx: &mut WasmGenCtx, expr: &Calcit)
       }
       if matches!(&items[0], Calcit::Syntax(CalcitSyntax::If, _)) && (items.len() == 3 || items.len() == 4) {
         emit_expr_as_repr(ctx, &items[1], NativeValRepr::BoolI32)?;
+        let after_cond_resets = ctx.reset_initialized_atoms.clone();
         ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
         ctx.block_depth += 1;
         emit_option_expr_to_niche_i32(ctx, &items[2])?;
+        let then_resets = std::mem::replace(&mut ctx.reset_initialized_atoms, after_cond_resets);
         ctx.emit(Instruction::Else);
         if items.len() == 4 {
           emit_option_expr_to_niche_i32(ctx, &items[3])?;
         } else {
           ctx.emit(Instruction::I32Const(0));
         }
+        ctx.reset_initialized_atoms.retain(|k| then_resets.contains(k));
         ctx.block_depth -= 1;
         ctx.emit(Instruction::End);
         return Ok(());
@@ -1807,6 +1817,20 @@ pub(super) fn emit_load_enum_payload_as_f64(ctx: &mut WasmGenCtx, enum_ptr: u32,
   }
 }
 
+/// Allocate a legacy (`layout_id == 0`) enum from already-evaluated `f64` payload locals.
+pub(super) fn emit_alloc_legacy_enum_from_f64_locals(ctx: &mut WasmGenCtx, tag_id: u32, values: &[u32]) -> Result<u32, String> {
+  let payload_u16 = u16::try_from(values.len()).map_err(|_| "Enum payload count exceeds u16::MAX".to_owned())?;
+  let enum_ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((1 + values.len()) * 8) as i32, enum_ptr, "enum");
+  emit_store_enum_header(ctx, enum_ptr, payload_u16, 0, tag_id);
+  for (payload_index, value) in values.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(enum_ptr));
+    ctx.emit(Instruction::LocalGet(*value));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + payload_index) * 8) as u64)));
+  }
+  Ok(enum_ptr)
+}
+
 /// Allocate a nominal enum variant from already-evaluated `f64` payload locals, using compact
 /// `EnumLayouts` when registered and falling back to `layout_id == 0` otherwise.
 pub(super) fn emit_alloc_nominal_enum_from_f64_locals(
@@ -1817,28 +1841,22 @@ pub(super) fn emit_alloc_nominal_enum_from_f64_locals(
   values: &[u32],
 ) -> Result<u32, String> {
   let payload_u16 = u16::try_from(values.len()).map_err(|_| "Enum payload count exceeds u16::MAX".to_owned())?;
-  let enum_ptr = ctx.alloc_local_typed(ValType::I32);
   if let Some((layout_id, layout)) = ctx
     .enum_layouts
     .get_for_def(nominal, variant_tag, values.len())
     .map(|(id, l)| (id, l.clone()))
   {
+    let enum_ptr = ctx.alloc_local_typed(ValType::I32);
     let total_size = i32::try_from(layout.payload_bytes).map_err(|_| "Compact Enum layout exceeds i32 size".to_owned())?;
     emit_bump_alloc(ctx, total_size, enum_ptr, "enum");
     emit_store_enum_header(ctx, enum_ptr, payload_u16, layout_id, tag_id);
     for (field, value_local) in layout.fields.iter().zip(values) {
       emit_store_struct_field_from_f64_local(ctx, enum_ptr, *field, *value_local);
     }
+    Ok(enum_ptr)
   } else {
-    emit_bump_alloc(ctx, ((1 + values.len()) * 8) as i32, enum_ptr, "enum");
-    emit_store_enum_header(ctx, enum_ptr, payload_u16, 0, tag_id);
-    for (payload_index, value) in values.iter().enumerate() {
-      ctx.emit(Instruction::LocalGet(enum_ptr));
-      ctx.emit(Instruction::LocalGet(*value));
-      ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + payload_index) * 8) as u64)));
-    }
+    emit_alloc_legacy_enum_from_f64_locals(ctx, tag_id, values)
   }
-  Ok(enum_ptr)
 }
 
 /// Emit `&enum:nth enum_value idx` in the requested representation.
@@ -2331,13 +2349,63 @@ mod tests {
       assert_eq!(StructFieldKind::from_type_annotation(&scalar_opt), StructFieldKind::HeapPtrI32);
     }
 
-    let unresolved_opt = Arc::new(CalcitTypeAnnotation::TypeRef(
-      Arc::from("calcit.core/Option"),
-      Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
-        Arc::from("MaybeUnionOrUnknown"),
-        Arc::new(vec![]),
-      ))]),
-    ));
-    assert_eq!(StructFieldKind::from_type_annotation(&unresolved_opt), StructFieldKind::HeapPtrI32);
+    let unresolved_opt = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("MaybeUnionOrUnknown"), Arc::new(vec![])));
+    assert_eq!(
+      StructFieldKind::from_type_annotation(&Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from("calcit.core/Option"),
+        Arc::new(vec![unresolved_opt]),
+      ))),
+      StructFieldKind::HeapPtrI32
+    );
+  }
+
+  #[test]
+  fn collect_enum_layouts_skips_variants_exceeding_u16_offset_while_registering_others() {
+    use crate::wasm::host::calcit::{CalcitList, CalcitStructValue};
+    use cirru_edn::EdnTag;
+
+    let huge_proto = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(
+        EdnTag::new("HugeEnum"),
+        vec![EdnTag::new("Small"), EdnTag::new("Wide")],
+      )),
+      values: Arc::new(vec![
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("bool")]))),
+        Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("number"); 8192]))),
+      ]),
+    };
+    let enum_rc = Arc::new(
+      CalcitEnumDef::from_struct(huge_proto)
+        .expect("valid huge enum")
+        .with_definition_ref("test.main", "HugeEnum"),
+    );
+    let expr = Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::EnumDef(enum_rc.clone())])));
+    let fn_defs = vec![("test.main".to_owned(), "make".to_owned(), CalcitFnArgs::Args(vec![]), vec![expr])];
+    let layouts = collect_enum_layouts(&HashMap::new(), &fn_defs, &[], None).expect("wide variant skips gracefully");
+    assert!(layouts.get_for_def(&enum_rc, "Small", 1).is_some());
+    assert!(layouts.get_for_def(&enum_rc, "Wide", 8192).is_none());
+
+    let overflow_proto = CalcitStructValue {
+      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("TooMany"), vec![EdnTag::new("Overflow")])),
+      values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::Vector(vec![
+        Calcit::tag("unit");
+        usize::from(u16::MAX) + 1
+      ])))]),
+    };
+    let too_many = Arc::new(
+      CalcitEnumDef::from_struct(overflow_proto)
+        .expect("valid overflow enum def")
+        .with_definition_ref("test.main", "TooMany"),
+    );
+    let overflow_fn = vec![(
+      "test.main".to_owned(),
+      "bad".to_owned(),
+      CalcitFnArgs::Args(vec![]),
+      vec![Calcit::EnumDef(too_many)],
+    )];
+    let err = collect_enum_layouts(&HashMap::new(), &overflow_fn, &[], None)
+      .err()
+      .expect("payload count > u16::MAX must still fail");
+    assert!(err.contains("u16::MAX"), "unexpected error: {err}");
   }
 }
