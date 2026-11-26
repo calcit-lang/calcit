@@ -49,7 +49,21 @@ related:
   - 若双参数 `if` 用于副作用语句位置（真分支为 `Unit` 或发散），无需改动且现在可直接满足 `Unit` 返回签名。
   - 若原本在值位置依赖双参数 `if` 在假分支返回 `nil`，请显式补齐三参数 `else` 分支（如 `if cond val nil`），或改用 `Option :some` / `Option :none`。
   - `trim` 双参数模式与 JS `&compare` 统一按 Unicode 标量语义与码点顺序比较（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
-- **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 与 `Fn` 按指针/引用身份比较、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`（需要运行时多态比较时请用 `&=` 或 `identical?`）。
+- **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950、#2958）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 与 `Fn` 按指针/引用身份比较、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`。
+  - 若历史状态对比（`Dynamic` 与 `false`、`nil` 或异构值比较）触发 `E_GENERIC_WHERE_BOUND_MISMATCH`：优先收窄后再用 `=`（例如 `(and (bool? value) (= value false))`、`(nil? value)` 或 `decode-map-as`）；若业务确实需要在未收窄的开放边界上做原样值比较，改用 `identical? value false` 或底层原语 `&= value false`。
+  - 与 JavaScript 宿主 `undefined` / `null` 判等时，改用 `js-nullish?` / `js-present?`（或显式 `identical?`），避免直接对 `JsObject` / `JsNullish` 调用 `=`。
+
+```cirru
+defn is-legacy-false? (value)
+  hint-fn $ Fn Dynamic (-> Bool)
+  if (bool? value) (= value false) false
+
+defn is-same-dynamic-false? (value)
+  hint-fn $ Fn Dynamic (-> Bool)
+  identical? value false
+
+, true
+```
 - **显式受控动态与结构化值（#2930、#2940、#2941）**：引入封闭递归 `JsonValue` 与 `EdnValue` ADT、封闭 `Any`（`any:box` / `any:downcast` 配合编译期规范 `TypeId`）、以及对象安全 `(Dyn Trait)`（`dyn:box`），并统一 `src/ffi_boundary.rs` 宿主边界分区。
 
 ### WASM / WASI 闭包提升、紧凑布局与弹性持久堆（#2948、#2962–#2964）
