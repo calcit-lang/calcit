@@ -9,6 +9,7 @@ pub(super) struct ConditionEvidence {
   pub when_false: ScopeTypes,
   pub true_reachable: bool,
   pub false_reachable: bool,
+  pub preserves_locals: bool,
 }
 
 #[derive(Clone)]
@@ -83,11 +84,13 @@ fn following(prefix: &Path, suffix: Option<Path>) -> Option<Path> {
 
 pub(super) fn infer(expr: &Calcit, scope: &ScopeTypes) -> ConditionEvidence {
   let outcomes = visit::<false, false>(expr, scope, &HashMap::new(), &mut 4096, 0);
+  let preserves_locals = outcomes.preserves_locals();
   ConditionEvidence {
     true_reachable: outcomes.truthy.is_some(),
     false_reachable: outcomes.falsey.is_some(),
     when_true: outcomes.truthy.map(|path| path.facts).unwrap_or_default(),
     when_false: outcomes.falsey.map(|path| path.facts).unwrap_or_default(),
+    preserves_locals,
   }
 }
 

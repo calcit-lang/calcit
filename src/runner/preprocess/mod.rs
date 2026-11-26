@@ -14799,12 +14799,14 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     ctx,
   );
 
+  let raw_cond_is_bool_literal = matches!(args.first(), Some(Calcit::Bool(_)));
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let tail_signature = tail_context::take_for_current();
-  // Prune statically unreachable branches only during speculative `:cases` body
-  // verification; ordinary compilation keeps every branch checked and preserves
-  // runtime type-guard `if` forms (P7 below only folds Bool literals).
-  let prune_dead_branches = in_case_body_verification();
+  // Prune statically unreachable branches during `:cases` body verification, and
+  // outside it whenever a non-literal condition is proven dead without side
+  // effects (e.g. macro-expanded `struct?` / `list?` / `map?` dispatch under #2944).
+  // Hand-written `if true` / `if false` literals keep checking both branches.
+  let prune_dead_branches = in_case_body_verification() || (!raw_cond_is_bool_literal && narrowing.preserves_locals);
   let prune_true = prune_dead_branches && !narrowing.true_reachable && narrowing.false_reachable;
   let prune_false = prune_dead_branches && narrowing.true_reachable && !narrowing.false_reachable;
 
@@ -15062,7 +15064,13 @@ pub(super) fn static_type_predicate_truth(cond_form: &Calcit, scope_types: &Scop
       if matches!(target_ty.as_ref(), CalcitTypeAnnotation::Nullable(_, _)) {
         return None;
       }
-      if let Some(actual_struct) = target_ty.resolve_to_struct() {
+      // Keep runtime `&struct:matches?` checks on struct values executable during
+      // ordinary compilation, since `defimpl` methods can be dynamically attached
+      // to unrelated structs via `impl-traits`. Only `:cases` verification may
+      // fold nominal struct-origin comparisons statically.
+      if in_case_body_verification()
+        && let Some(actual_struct) = target_ty.resolve_to_struct()
+      {
         return Some(actual_struct.name == expected_struct.name && actual_struct.definition_ref == expected_struct.definition_ref);
       }
       if static_type_predicate_matches_kind(target_ty.as_ref(), "struct") == Some(false) {
@@ -31828,5 +31836,100 @@ mod tests {
     let tv_ty = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     scope.insert(Arc::from("x"), tv_ty.clone());
     assert_eq!(static_type_predicate_truth(&core_pred("list?", local_x(tv_ty)), &scope), None);
+  }
+
+  #[test]
+  fn preprocess_if_prunes_statically_unreachable_predicate_branches_without_hiding_live_errors() {
+    let _lock = lock_preprocess_test_state();
+
+    let ns = "tests.prune-impossible-pred";
+    let def = "check";
+    let x_sym: Arc<str> = Arc::from("x");
+    let map_ty = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let x_local = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&x_sym),
+      sym: x_sym.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(ns),
+        at_def: Arc::from(def),
+      }),
+      location: None,
+      type_info: map_ty.clone(),
+    });
+    let core_pred = |proc: CalcitProc, arg: Calcit| Calcit::from(vec![Calcit::Proc(proc), arg]);
+    let list_nth_x = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeListNth), x_local.clone(), Calcit::Number(0.0)]);
+    let map_contains_x = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMapContains),
+      x_local.clone(),
+      Calcit::Tag(EdnTag::from("a")),
+    ]);
+
+    let run_if = |cond: Calcit, then_branch: Calcit, else_branch: Calcit| -> Result<Calcit, CalcitErr> {
+      let mut scope_defs = HashSet::new();
+      scope_defs.insert(x_sym.clone());
+      let mut scope_types = ScopeTypes::new();
+      scope_types.insert(x_sym.clone(), map_ty.clone());
+      let warnings = RefCell::new(vec![]);
+      let call_stack = CallStackList::default();
+      let args = CalcitList::from(&[cond, then_branch, else_branch][..]);
+      let mut ctx = PreprocessContext {
+        scope_defs: &scope_defs,
+        scope_types: &mut scope_types,
+        file_ns: ns,
+        check_warnings: &warnings,
+        call_stack: &call_stack,
+        call_location: None,
+      };
+      let out = preprocess_if(&CalcitSyntax::If, calcit::CORE_NS, &args, &mut ctx)?;
+      if let Some(first) = warnings.borrow().first() {
+        return Err(CalcitErr::use_msg_stack(
+          CalcitErrKind::Type,
+          first.message().to_owned(),
+          &call_stack,
+        ));
+      }
+      Ok(out)
+    };
+
+    // Stale `list?` branch on a known Map is pruned, leaving only the `map?` branch.
+    let pruned = run_if(
+      core_pred(CalcitProc::ListQuestion, x_local.clone()),
+      list_nth_x.clone(),
+      run_if(
+        core_pred(CalcitProc::MapQuestion, x_local.clone()),
+        map_contains_x,
+        Calcit::Bool(false),
+      )
+      .expect("inner map? check succeeds"),
+    )
+    .expect("unreachable list? branch on known Map must be pruned");
+    assert!(
+      matches!(&pruned, Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeMapContains)))),
+      "expected pruned result to collapse to reachable map branch, got: {pruned:?}"
+    );
+
+    // A type error in the reachable branch is still diagnosed.
+    let err = run_if(core_pred(CalcitProc::MapQuestion, x_local), list_nth_x.clone(), Calcit::Bool(false))
+      .expect_err("type mismatch in reachable map? branch must still fail");
+    assert!(
+      err.msg.contains("list") || err.code.as_deref() == Some("E_PROC_ARG_TYPE_MISMATCH"),
+      "unexpected reachable branch error: {err}"
+    );
+
+    // Side-effecting condition keeps both branches checked even when outcome is constant.
+    let eff_cond = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(calcit::CORE_NS)),
+      Calcit::from(CalcitList::default()),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::GenerateId)]),
+      Calcit::Bool(true),
+    ]);
+    run_if(eff_cond, Calcit::Bool(true), list_nth_x.clone()).expect_err("side-effecting condition must keep checking both branches");
+
+    // Hand-written literal `if false` keeps checking the false branch.
+    run_if(Calcit::Bool(false), list_nth_x, Calcit::Bool(true))
+      .expect_err("hand-written literal `if false` must still check the true branch");
   }
 }
