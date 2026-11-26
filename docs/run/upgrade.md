@@ -49,12 +49,12 @@ related:
   - 若双参数 `if` 用于副作用语句位置（真分支为 `Unit` 或发散），无需改动且现在可直接满足 `Unit` 返回签名。
   - 若原本在值位置依赖双参数 `if` 在假分支返回 `nil`，请显式补齐三参数 `else` 分支（如 `if cond val nil`），或改用 `Option :some` / `Option :none`。
   - `trim` 双参数模式与 JS `&compare` 统一按 Unicode 标量语义与码点顺序比较（例如 `U+E000` 小于 `U+1F600` `"😀"`）。
-- **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 按指针、`Fn` 按值、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`（需要运行时多态比较时请用 `&=` 或 `identical?`）。
+- **核心 `Hash` Trait 与 `Eq`/`Hash` 泛型收紧（#2942、#2950）**：新增核心 `Hash` trait 并补齐 `Buffer` / `BufList` / `Unit` / `Numeric` / `Method` 等内建 `Eq`/`Compare`/`Hash`/`Debug` 实现；`=`, `not=`, `/=`, `&list:includes?`, `includes?` 与 `distinct-values` 要求相应泛型参数满足 `:where $ T Eq`（或 `Eq` + `Hash`）；跨端统一 `identical?`（Native `DynTrait` 与 `Fn` 按指针/引用身份比较、`String` 在 WASM 按内容比较），请避免对 `JsObject`、`Fn` 或开放 `Dynamic` 直接调用 `=`（需要运行时多态比较时请用 `&=` 或 `identical?`）。
 - **显式受控动态与结构化值（#2930、#2940、#2941）**：引入封闭递归 `JsonValue` 与 `EdnValue` ADT、封闭 `Any`（`any:box` / `any:downcast` 配合编译期规范 `TypeId`）、以及对象安全 `(Dyn Trait)`（`dyn:box`），并统一 `src/ffi_boundary.rs` 宿主边界分区。
 
 ### WASM / WASI 闭包提升、紧凑布局与弹性持久堆（#2948、#2962–#2964）
 
-- **Lambda 提升闭包与静态 `BrTable` 分派（#2948）**：WASM/WASI 完整支持逃逸闭包、嵌套 `fn`/`defn` 与第一类函数值，并通过 `__closure_call_<arity>` `BrTable` trampoline 彻底淘汰 `CallIndirect` 与额外 `funcref` 表。
+- **Lambda 提升闭包与静态 `BrTable` 分派（#2948）**：WASM/WASI 支持逃逸闭包（单个闭包至多捕获 64 个变量，超过时报 `E_WASM_CLOSURE_SPECIALIZATION`）、嵌套 `fn`/`defn` 与第一类函数值，并通过 `__closure_call_<arity>` `BrTable` trampoline 彻底淘汰 `CallIndirect` 与额外 `funcref` 表；完整支持边界见 [WASM 支持矩阵](../installation/wasm-support.md)。
 - **紧凑名义 `Enum` 与 `Option<HeapPtr>` 空指针 Niche（#2962）**：Struct/Enum 中的闭合非空堆指针 `Option<T>` 字段以 4 字节空指针 niche 存储，字面量写入与直消费零包装分配；名义 `Enum` 启用 `[count:u16][layout_id:u16][tag_id:u32]` 紧凑布局。
 - **精确类型容器头与弹性迭代持久堆（#2963、#2964）**：`List`/`Set`/`BufList`/`Map` 携带精确 `u32` `ContainerSlotKind` 元数据，纯标量容器彻底跳过 `HEAP_MAGIC` 指针探测；持久堆改用 O(1) 栈深度迭代 Cheney BFS 与动态可扩容半空间（初始 256 KiB 按需翻倍扩容），彻底移除 1 MiB 固定容量与 256 层递归限制。
 
