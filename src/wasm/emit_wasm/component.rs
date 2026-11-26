@@ -1310,7 +1310,7 @@ pub(super) fn push_store_f64_into_compact_struct_field(instructions: &mut Vec<In
     StructFieldKind::UnitZero => {
       instructions.extend([Instruction::Drop, Instruction::Drop]);
     }
-    StructFieldKind::BoxedF64 => instructions.push(Instruction::F64Store(mem_arg_f64(offset))),
+    StructFieldKind::BoxedF64 | StructFieldKind::ScalarF64 => instructions.push(Instruction::F64Store(mem_arg_f64(offset))),
     StructFieldKind::BoolU8 => instructions.extend([f64_const(0.0), Instruction::F64Ne, Instruction::I32Store8(mem_arg_byte(offset))]),
     StructFieldKind::Int8 => instructions.extend([Instruction::I32TruncF64S, Instruction::I32Store8(mem_arg_byte(offset))]),
     StructFieldKind::UInt8 => instructions.extend([Instruction::I32TruncF64U, Instruction::I32Store8(mem_arg_byte(offset))]),
@@ -1338,7 +1338,7 @@ pub(super) fn push_load_compact_struct_field_f64(
   }
   instructions.push(Instruction::LocalGet(struct_ptr));
   match field.kind {
-    StructFieldKind::BoxedF64 => instructions.push(Instruction::F64Load(mem_arg_f64(offset))),
+    StructFieldKind::BoxedF64 | StructFieldKind::ScalarF64 => instructions.push(Instruction::F64Load(mem_arg_f64(offset))),
     StructFieldKind::BoolU8 | StructFieldKind::UInt8 => {
       instructions.extend([Instruction::I32Load8U(mem_arg_byte(offset)), Instruction::F64ConvertI32U])
     }

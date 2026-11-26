@@ -67,12 +67,13 @@ use component::{
   component_memory_layout, push_component_result_reclaim, push_load_value_flat, push_store_value_flat,
 };
 use memory::{
-  ComponentMemoryGlobals, PERSISTENT_COMPACT_THRESHOLD, PersistentPromoteFns, PromoteTypeTags, RelocateScratchFns, WasmGlobalLayout,
-  WasmMemoryLayout, build_arena_reset_fn, build_rt_arena_alloc_fn, build_rt_commit_defref_fn, build_rt_compact_persistent_fn,
-  build_rt_component_rewind_to_mark_fn, build_rt_component_turn_enter_fn, build_rt_component_turn_exit_fn, build_rt_fwd_get_fn,
-  build_rt_fwd_grow_fn, build_rt_fwd_mark_flag_fn, build_rt_fwd_put_fn, build_rt_is_heap_ptr_fn, build_rt_persistent_alloc_fn,
-  build_rt_promote_map_node_fn, build_rt_promote_value_fn, build_rt_relocate_scratch_map_node_fn, build_rt_relocate_scratch_refs_fn,
-  build_rt_turn_end_fn, build_rt_turn_enter_fn,
+  ComponentMemoryGlobals, INITIAL_PERSISTENT_COMPACT_THRESHOLD, INITIAL_PERSISTENT_SEMI_SPACE_BYTES, PersistentPromoteFns,
+  PromoteTypeTags, RelocateScratchFns, WasmGlobalLayout, WasmMemoryLayout, build_arena_reset_fn, build_rt_arena_alloc_fn,
+  build_rt_cheney_scan_fn, build_rt_commit_defref_fn, build_rt_compact_persistent_fn, build_rt_component_rewind_to_mark_fn,
+  build_rt_component_turn_enter_fn, build_rt_component_turn_exit_fn, build_rt_copy_shallow_map_node_fn, build_rt_copy_shallow_value_fn,
+  build_rt_fwd_get_fn, build_rt_fwd_grow_fn, build_rt_fwd_mark_flag_fn, build_rt_fwd_put_fn, build_rt_is_heap_ptr_fn,
+  build_rt_persistent_alloc_fn, build_rt_promote_map_node_fn, build_rt_promote_value_fn, build_rt_relocate_scratch_refs_fn,
+  build_rt_turn_end_fn, build_rt_turn_enter_fn, build_rt_work_grow_fn, build_rt_work_push_fn,
 };
 use methods::{emit_call_args, emit_method_invoke, emit_type_of_local};
 use runtime::{

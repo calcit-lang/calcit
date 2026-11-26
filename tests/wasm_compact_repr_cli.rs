@@ -12,7 +12,7 @@ use wasmtime::{Engine, ExternType, Instance, Linker, Module, Store, StoreLimits,
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
 const EIGHT_MIB: usize = 8 * 1024 * 1024;
-const SEMI_SPACE_BYTES: i32 = 1024 * 1024;
+const INITIAL_SEMI_SPACE_BYTES: i32 = 256 * 1024;
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -840,8 +840,8 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let _ = parse_wasm_module(&bytes);
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
 
-  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let static_end = initial_arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let arena_reset = instance
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset");
@@ -858,8 +858,7 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let scratch_after = get_i32_global(&mut store, &instance, "__heap_ptr");
   arena_reset.call(&mut store, ()).expect("arena reset");
 
-  // Separately measure promoted persistent footprint across 1,000 linked nodes in 20 chains
-  // (keeping per-chain depth below MAX_PROMOTE_DEPTH = 256):
+  // Separately measure promoted persistent footprint across 1,000 linked nodes in 20 chains:
   let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
   let alloc_chain = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "alloc-compact-chain")
@@ -890,6 +889,9 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let mut compacted = false;
   for i in 1..=25 {
     pump_churn.call(&mut store, i as f64).expect("pump churn");
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let semi_space_bytes = (cur_arena_base - static_end) / 2;
+    let space_b_base = static_end + semi_space_bytes;
     if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
       compacted = true;
       break;
@@ -2145,14 +2147,17 @@ fn option_niche_zero_alloc_writes_direct_consumers_and_escaping_identity() {
     1.0
   );
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let pump = instance
     .get_typed_func::<f64, f64>(&mut store, "pump-niche-churn")
     .expect("pump-niche-churn");
   let mut compacted = false;
   for i in 1..=25 {
     pump.call(&mut store, i as f64).expect("pump churn");
-    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let space_b_base = cur_arena_base - (cur_arena_base - static_end) / 2;
+    let pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers >= space_b_base && pers < cur_arena_base {
       compacted = true;
       break;
     }
@@ -2369,12 +2374,15 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
     1.0
   );
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let pump = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
   let mut compacted = false;
   for i in 1..=25 {
     pump.call(&mut store, i as f64).expect("pump churn");
-    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let space_b_base = cur_arena_base - (cur_arena_base - static_end) / 2;
+    let pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers >= space_b_base && pers < cur_arena_base {
       compacted = true;
       break;
     }
@@ -2538,6 +2546,24 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
           :code $ quote $ defenum Packet (:Frame UInt8 (Option String))
           :examples $ []
           :schema $ quote EnumDef
+        'Metric $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Metric (:Reading Number String)
+          :examples $ []
+          :schema $ quote EnumDef
+        'assoc-metric-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export assoc-metric-num ()
+            let
+                m $ %:: Metric :Reading 1.5 |seed
+              &enum:assoc m 1 3.5
+          :examples $ []
+          :schema $ quote $ Fn (-> Enum)
+        'assoc-metric-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export assoc-metric-str ()
+            let
+                m $ %:: Metric :Reading 1.5 |seed
+              &enum:assoc m 1 |raw
+          :examples $ []
+          :schema $ quote $ Fn (-> Enum)
         'verify! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export verify! ()
             let
@@ -2548,6 +2574,9 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
                 legacy-overflow $ :: :Frame 256 (Some |abcdefgh)
                 str-replaced $ &enum:assoc p 2 |raw-str
                 legacy-str-replaced $ :: :Frame 5 |raw-str
+                m $ %:: Metric :Reading 1.5 |seed
+                m-num $ &enum:assoc m 1 3.5
+                m-str $ &enum:assoc m 1 |raw
                 encoded $ encode-map-as p Packet
                 roundtrip $ decode-map-as encoded Packet
               and
@@ -2559,6 +2588,9 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
                 &= (:: :v (&enum:nth overflowed 1)) (:: :v 256)
                 &= str-replaced legacy-str-replaced
                 = (&hash str-replaced) (&hash legacy-str-replaced)
+                &= m-num (:: :Reading 3.5 |seed)
+                = (&hash m-num) (&hash (:: :Reading 3.5 |seed))
+                &= m-str (:: :Reading |raw |seed)
                 = roundtrip p
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
@@ -2578,6 +2610,27 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
   let verify = instance.get_typed_func::<(), f64>(&mut store, "verify!").expect("verify! export");
   assert_eq!(verify.call(&mut store, ()).expect("verify! runs"), 1.0);
+  let assoc_metric_num = instance
+    .get_typed_func::<(), f64>(&mut store, "assoc-metric-num")
+    .expect("assoc-metric-num export");
+  let assoc_metric_str = instance
+    .get_typed_func::<(), f64>(&mut store, "assoc-metric-str")
+    .expect("assoc-metric-str export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let num_ptr = assoc_metric_num.call(&mut store, ()).expect("assoc-metric-num") as usize;
+  let str_ptr = assoc_metric_str.call(&mut store, ()).expect("assoc-metric-str") as usize;
+  let mut bytes2 = [0u8; 2];
+  memory.read(&store, num_ptr + 2, &mut bytes2).expect("read compact layout_id");
+  assert!(
+    u16::from_le_bytes(bytes2) >= 1,
+    "&enum:assoc on Number (ScalarF64) must keep compact layout_id >= 1"
+  );
+  memory.read(&store, str_ptr + 2, &mut bytes2).expect("read fallback layout_id");
+  assert_eq!(
+    u16::from_le_bytes(bytes2),
+    0,
+    "&enum:assoc with heap pointer into ScalarF64 slot must fall back to layout_id == 0"
+  );
 }
 
 #[test]
