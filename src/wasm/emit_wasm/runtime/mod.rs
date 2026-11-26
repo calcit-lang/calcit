@@ -1941,6 +1941,14 @@ fn push_value_fits_struct_field_kind(
   });
   close_count += 1;
 
+  // Unboxed Number slots must not store heap pointers because Cheney GC skips ScalarF64 fields.
+  emit_branch(b, &[StructFieldKind::ScalarF64], &|b| {
+    b.emit(Instruction::LocalGet(val_local));
+    b.emit(Instruction::Call(is_heap_ptr_idx));
+    b.emit(Instruction::I32Eqz);
+  });
+  close_count += 1;
+
   emit_branch(b, &[StructFieldKind::UnitZero], &|b| {
     b.emit(Instruction::LocalGet(val_local));
     b.emit(f64_const(0.0));

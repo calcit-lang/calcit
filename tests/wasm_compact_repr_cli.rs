@@ -2546,6 +2546,24 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
           :code $ quote $ defenum Packet (:Frame UInt8 (Option String))
           :examples $ []
           :schema $ quote EnumDef
+        'Metric $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Metric (:Reading Number String)
+          :examples $ []
+          :schema $ quote EnumDef
+        'assoc-metric-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export assoc-metric-num ()
+            let
+                m $ %:: Metric :Reading 1.5 |seed
+              &enum:assoc m 1 3.5
+          :examples $ []
+          :schema $ quote $ Fn (-> Enum)
+        'assoc-metric-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export assoc-metric-str ()
+            let
+                m $ %:: Metric :Reading 1.5 |seed
+              &enum:assoc m 1 |raw
+          :examples $ []
+          :schema $ quote $ Fn (-> Enum)
         'verify! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export verify! ()
             let
@@ -2556,6 +2574,9 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
                 legacy-overflow $ :: :Frame 256 (Some |abcdefgh)
                 str-replaced $ &enum:assoc p 2 |raw-str
                 legacy-str-replaced $ :: :Frame 5 |raw-str
+                m $ %:: Metric :Reading 1.5 |seed
+                m-num $ &enum:assoc m 1 3.5
+                m-str $ &enum:assoc m 1 |raw
                 encoded $ encode-map-as p Packet
                 roundtrip $ decode-map-as encoded Packet
               and
@@ -2567,6 +2588,9 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
                 &= (:: :v (&enum:nth overflowed 1)) (:: :v 256)
                 &= str-replaced legacy-str-replaced
                 = (&hash str-replaced) (&hash legacy-str-replaced)
+                &= m-num (:: :Reading 3.5 |seed)
+                = (&hash m-num) (&hash (:: :Reading 3.5 |seed))
+                &= m-str (:: :Reading |raw |seed)
                 = roundtrip p
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
@@ -2586,6 +2610,27 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
   let verify = instance.get_typed_func::<(), f64>(&mut store, "verify!").expect("verify! export");
   assert_eq!(verify.call(&mut store, ()).expect("verify! runs"), 1.0);
+  let assoc_metric_num = instance
+    .get_typed_func::<(), f64>(&mut store, "assoc-metric-num")
+    .expect("assoc-metric-num export");
+  let assoc_metric_str = instance
+    .get_typed_func::<(), f64>(&mut store, "assoc-metric-str")
+    .expect("assoc-metric-str export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let num_ptr = assoc_metric_num.call(&mut store, ()).expect("assoc-metric-num") as usize;
+  let str_ptr = assoc_metric_str.call(&mut store, ()).expect("assoc-metric-str") as usize;
+  let mut bytes2 = [0u8; 2];
+  memory.read(&store, num_ptr + 2, &mut bytes2).expect("read compact layout_id");
+  assert!(
+    u16::from_le_bytes(bytes2) >= 1,
+    "&enum:assoc on Number (ScalarF64) must keep compact layout_id >= 1"
+  );
+  memory.read(&store, str_ptr + 2, &mut bytes2).expect("read fallback layout_id");
+  assert_eq!(
+    u16::from_le_bytes(bytes2),
+    0,
+    "&enum:assoc with heap pointer into ScalarF64 slot must fall back to layout_id == 0"
+  );
 }
 
 #[test]

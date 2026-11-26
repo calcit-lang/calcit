@@ -4298,6 +4298,8 @@ pub(super) fn build_rt_compact_persistent_fn(
     Instruction::If(BlockType::Empty),
   ]);
   emit_compute_new_space_size_and_grow_mem(&mut instructions);
+  // Second pass only runs when Space A was initially active (Attempt 1 wrote to Space B, new_space == 1);
+  // when Space B was initially active (new_space == 0), Attempt 1 already evacuated directly into Space A.
   instructions.extend([
     Instruction::LocalGet(new_space),
     Instruction::I32Const(0),
@@ -4611,22 +4613,25 @@ pub(super) fn build_rt_turn_end_fn(
   }
   instructions.push(Instruction::End);
 
-  // Per-call Scratch reclamation runs even when active_turns > 0 (e.g., nested callbacks or calls
-  // after a trapped defwasm-import), skipped only when needs_compact == 2 indicates an uncommitted overflow root.
-  if let Some(pers) = &globals.persistent {
-    instructions.extend([
-      Instruction::GlobalGet(pers.needs_compact),
-      Instruction::I32Const(2),
-      Instruction::I32Ne,
-      Instruction::If(BlockType::Empty),
-    ]);
-  }
+  // Always register verified new Scratch return roots so subsequent scalar turns keep deferring growth,
+  // while guarding __heap_ptr rewind when needs_compact == 2 indicates an uncommitted overflow target.
   let emit_rewind = |insns: &mut Vec<Instruction<'static>>| {
+    if let Some(pers) = &globals.persistent {
+      insns.extend([
+        Instruction::GlobalGet(pers.needs_compact),
+        Instruction::I32Const(2),
+        Instruction::I32Ne,
+        Instruction::If(BlockType::Empty),
+      ]);
+    }
     insns.extend([Instruction::LocalGet(0), Instruction::GlobalSet(HEAP_PTR_GLOBAL)]);
     if globals.persistent.is_some()
       && let Some(native) = &globals.native
     {
       emit_pop_scratch_roots_above(insns, globals, native, 0);
+    }
+    if globals.persistent.is_some() {
+      insns.push(Instruction::End);
     }
   };
   instructions.extend([
@@ -4680,9 +4685,6 @@ pub(super) fn build_rt_turn_end_fn(
   instructions.extend([Instruction::End, Instruction::Else]);
   emit_rewind(&mut instructions);
   instructions.push(Instruction::End);
-  if globals.persistent.is_some() {
-    instructions.push(Instruction::End);
-  }
   instructions.push(Instruction::LocalGet(3));
   CompiledFn {
     export_name: None,
@@ -4862,6 +4864,14 @@ pub(super) fn build_rt_component_turn_exit_fn(
       Instruction::End,
     ]);
   }
+  if let Some(pers) = &globals.persistent {
+    instructions.extend([
+      Instruction::GlobalGet(pers.needs_compact),
+      Instruction::I32Const(2),
+      Instruction::I32Ne,
+      Instruction::If(BlockType::Empty),
+    ]);
+  }
   instructions.extend([
     Instruction::GlobalGet(comp.total_live),
     Instruction::I32Eqz,
@@ -4882,6 +4892,11 @@ pub(super) fn build_rt_component_turn_exit_fn(
     Instruction::Call(rewind_to_mark_idx),
     Instruction::End,
     Instruction::End,
+  ]);
+  if globals.persistent.is_some() {
+    instructions.push(Instruction::End);
+  }
+  instructions.extend([
     Instruction::I32Const(0),
     Instruction::GlobalSet(comp.turn_mark),
     Instruction::I32Const(0),

@@ -3723,6 +3723,31 @@ fn core_wasm_growable_semispace_exceeds_2mib_and_defers_while_scratch_root_live(
             &str:concat (&str:slice @*aux 0 8) (&str:concat |# (to-string (&str:count @*aux)))
           :examples $ []
           :schema $ quote $ Fn (-> String)
+        'wrap-blob-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export wrap-blob-list ()
+            [] @*blob |tail
+          :examples $ []
+          :schema $ quote $ Fn (-> (List String))
+        'set-aux-scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-aux-scalar (size)
+            reset! *aux $ &str:pad-right |AUX2- size |Y
+            &str:count @*aux
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'set-aux-overflow-and-wrap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-aux-overflow-and-wrap (size)
+            reset! *aux $ &str:pad-right |OVF- size |Z
+            [] |ovf-list $ to-string (&str:count @*aux)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> (List String))
+        'read-pair-summary $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-pair-summary (xs)
+            let
+                s0 $ &list:nth xs 0
+                s1 $ &list:nth xs 1
+              &str:concat (&str:slice s0 0 8) (&str:concat |# (&str:concat (to-string (&str:count s0)) (&str:concat |: s1)))
+          :examples $ []
+          :schema $ quote $ Fn (List String) (-> String)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []
@@ -3803,6 +3828,110 @@ fn core_wasm_growable_semispace_exceeds_2mib_and_defers_while_scratch_root_live(
   let aux_after = read_aux_head.call(&mut store, ()).expect("read-aux-head after grow");
   assert_eq!(read_wasm_str(&mut store, &instance, aux_after), "AUX-XXXX#1500000");
   arena_reset.call(&mut store, ()).expect("__arena_reset final");
+
+  // Fresh instance under 32 MiB starting from 256 KiB to test:
+  // (Case 2) Deferral caused by a Scratch list returned by an *earlier* call holding a non-static persistent child (@*blob),
+  // followed by a separate scalar-returning call whose commit crosses semi / 2.
+  // (Case 3) Overflow commit (needs_compact == 2) that also returns a new Scratch list registering in scratch_roots_head.
+  let (mut s2, inst2) = instantiate_core_with_limit(&wasm, THIRTY_TWO_MIB);
+  let base2_init = get_i32_global(&mut s2, &inst2, "__arena_base");
+  let static_end2 = base2_init - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let set_blob2 = inst2.get_typed_func::<(f64, f64), f64>(&mut s2, "set-blob").expect("set-blob 2");
+  let read_blob2 = inst2
+    .get_typed_func::<(), f64>(&mut s2, "read-blob-head")
+    .expect("read-blob-head 2");
+  let read_aux2 = inst2.get_typed_func::<(), f64>(&mut s2, "read-aux-head").expect("read-aux-head 2");
+  let wrap_blob2 = inst2
+    .get_typed_func::<(), f64>(&mut s2, "wrap-blob-list")
+    .expect("wrap-blob-list 2");
+  let set_aux_scalar2 = inst2
+    .get_typed_func::<f64, f64>(&mut s2, "set-aux-scalar")
+    .expect("set-aux-scalar 2");
+  let set_aux_ovf2 = inst2
+    .get_typed_func::<f64, f64>(&mut s2, "set-aux-overflow-and-wrap")
+    .expect("set-aux-overflow-and-wrap 2");
+  let read_pair2 = inst2
+    .get_typed_func::<f64, f64>(&mut s2, "read-pair-summary")
+    .expect("read-pair-summary 2");
+  let reset2 = inst2.get_typed_func::<(), ()>(&mut s2, "__arena_reset").expect("__arena_reset 2");
+
+  assert_eq!(set_blob2.call(&mut s2, (5.0, 300_000.0)).expect("seed 300k blob"), 300_000.0);
+  reset2.call(&mut s2, ()).expect("__arena_reset seed 2");
+  let (sa2_0, sb2_0, arena2_0) = persistent_space_bounds(&mut s2, &inst2, static_end2);
+  let semi2_0 = sb2_0 - sa2_0;
+
+  let earlier_blob_list = wrap_blob2.call(&mut s2, ()).expect("wrap-blob-list");
+  let aux_step = 200_000.0;
+  assert_eq!(
+    set_aux_scalar2
+      .call(&mut s2, aux_step)
+      .expect("set-aux-scalar crosses next_compact_ptr and semi2_0 / 2"),
+    aux_step
+  );
+  assert_eq!(
+    get_i32_global(&mut s2, &inst2, "__arena_base"),
+    arena2_0,
+    "__arena_base must stay unchanged while earlier Scratch root holding @*blob is live"
+  );
+  let pair_summary = read_pair2
+    .call(&mut s2, earlier_blob_list)
+    .expect("read-pair-summary while deferred");
+  assert_eq!(read_wasm_str(&mut s2, &inst2, pair_summary), "B-5BBBBB#300000:tail");
+
+  reset2.call(&mut s2, ()).expect("__arena_reset executes deferred growth 2");
+  let (sa2_1, sb2_1, arena2_1) = persistent_space_bounds(&mut s2, &inst2, static_end2);
+  let semi2_1 = sb2_1 - sa2_1;
+  assert!(
+    semi2_1 > semi2_0,
+    "expected deferred growth after __arena_reset (semi2_0={semi2_0}, semi2_1={semi2_1})"
+  );
+  assert!(arena2_1 > arena2_0);
+  let blob_after2 = read_blob2.call(&mut s2, ()).expect("read-blob-head after 2");
+  assert_eq!(read_wasm_str(&mut s2, &inst2, blob_after2), "B-5BBBBB#300000");
+  let aux_after2 = read_aux2.call(&mut s2, ()).expect("read-aux-head after 2");
+  assert_eq!(
+    read_wasm_str(&mut s2, &inst2, aux_after2),
+    format!("AUX2-YYY#{}", aux_step as usize)
+  );
+  reset2.call(&mut s2, ()).expect("__arena_reset clear 2");
+
+  // Case 3: Overflow commit (needs_compact == 2) that also returns a new Scratch list must register it in
+  // scratch_roots_head so a subsequent scalar call keeps deferring until __arena_reset().
+  let ovf_size = f64::from(semi2_1 + 50_000);
+  let ovf_list_ptr = set_aux_ovf2.call(&mut s2, ovf_size).expect("set-aux-overflow-and-wrap");
+  assert_eq!(
+    get_i32_global(&mut s2, &inst2, "__arena_base"),
+    arena2_1,
+    "__arena_base must not move while overflow + Scratch return is live"
+  );
+  assert_eq!(
+    set_blob2.call(&mut s2, (6.0, 128.0)).expect("scalar set-blob while ovf_list live"),
+    128.0
+  );
+  assert_eq!(
+    get_i32_global(&mut s2, &inst2, "__arena_base"),
+    arena2_1,
+    "subsequent scalar call must still see ovf_list_ptr in scratch_roots_head and defer growth"
+  );
+  let ovf_summary = read_pair2.call(&mut s2, ovf_list_ptr).expect("read-pair-summary on ovf_list_ptr");
+  assert_eq!(
+    read_wasm_str(&mut s2, &inst2, ovf_summary),
+    format!("ovf-list#8:{}", ovf_size as usize)
+  );
+  reset2.call(&mut s2, ()).expect("__arena_reset executes deferred overflow growth");
+  let (sa2_2, sb2_2, arena2_2) = persistent_space_bounds(&mut s2, &inst2, static_end2);
+  let semi2_2 = sb2_2 - sa2_2;
+  assert!(
+    semi2_2 > semi2_1,
+    "expected deferred overflow growth (semi2_1={semi2_1}, semi2_2={semi2_2})"
+  );
+  assert!(arena2_2 > arena2_1);
+  let aux_after3 = read_aux2.call(&mut s2, ()).expect("read-aux-head after 3");
+  assert_eq!(
+    read_wasm_str(&mut s2, &inst2, aux_after3),
+    format!("OVF-ZZZZ#{}", ovf_size as usize)
+  );
+  reset2.call(&mut s2, ()).expect("__arena_reset final 2");
 }
 
 #[test]
@@ -4063,4 +4192,131 @@ fn core_wasm_exact_pointer_heap_address_aliasing_across_growable_compaction() {
   let lbl_out = read_pair_check.call(&mut store, live_churn_addr).expect("read-pair-check");
   assert_eq!(read_wasm_str(&mut store, &instance, lbl_out), "exact-heap-label");
   arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}
+
+#[test]
+fn component_wasm_deferred_overflow_preserves_scratch_defref_until_cabi_post() {
+  let dir = TestDirectory::create("component-wasm-deferred-overflow");
+  let snapshot = r#"
+{}
+  :about "|Test Component turn-exit preserves uncommitted needs_compact == 2 Scratch defref until cabi_post releases buffers."
+  :package |comp-defref-ovf
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'comp-defref-ovf.main/main!) (:mode :native) (:reload-fn 'comp-defref-ovf.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'comp-defref-ovf.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*comp-log $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *comp-log |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'keep-buf $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export keep-buf ()
+            &str:concat |keep- |buf
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'store-overflow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-overflow (size)
+            reset! *comp-log $ &str:pad-right |OVF- size |Q
+            &str:count @*comp-log
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-log-head $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-log-head ()
+            &str:concat (&str:slice @*comp-log 0 8) (&str:concat |# (to-string (&str:count @*comp-log)))
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns comp-defref-ovf.main
+"#;
+  let snapshot_path = dir.0.join("calcit.cirru");
+  fs::write(&snapshot_path, snapshot).expect("snapshot writes");
+  let out_dir = dir.0.join("out");
+  fs::create_dir(&out_dir).expect("out dir creates");
+
+  let compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot_path)
+    .args(["wasm", "--boundary", "component", "--emit-path"])
+    .arg(&out_dir)
+    .output()
+    .expect("component compile runs");
+  assert!(
+    compile.status.success(),
+    "component compile failed\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&compile.stdout),
+    String::from_utf8_lossy(&compile.stderr)
+  );
+
+  let (mut store, instance) = instantiate_core_with_limit(&out_dir.join("program.wasm"), THIRTY_TWO_MIB);
+  let memory = instance.get_memory(&mut store, "memory").expect("memory");
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let keep_buf = instance.get_typed_func::<(), i32>(&mut store, "keep-buf").expect("keep-buf");
+  let keep_buf_post = instance
+    .get_typed_func::<i32, ()>(&mut store, "cabi_post_keep-buf")
+    .expect("cabi_post_keep-buf");
+  let store_overflow = instance
+    .get_typed_func::<f64, f64>(&mut store, "store-overflow")
+    .expect("store-overflow");
+  let read_log_head = instance
+    .get_typed_func::<(), i32>(&mut store, "read-log-head")
+    .expect("read-log-head");
+  let read_log_post = instance
+    .get_typed_func::<i32, ()>(&mut store, "cabi_post_read-log-head")
+    .expect("cabi_post_read-log-head");
+
+  let read_cabi_str = |store: &Store<StoreLimits>, ptr_len_pair: i32| -> String {
+    let mut pair = [0u8; 8];
+    memory.read(store, ptr_len_pair as usize, &mut pair).expect("read ret pair");
+    let ptr = u32::from_le_bytes(pair[0..4].try_into().unwrap()) as usize;
+    let len = u32::from_le_bytes(pair[4..8].try_into().unwrap()) as usize;
+    let mut bytes = vec![0u8; len];
+    memory.read(store, ptr, &mut bytes).expect("read ret bytes");
+    String::from_utf8(bytes).expect("utf8 ret str")
+  };
+
+  // Hold a Component string buffer live so comp.total_live > 0 blocks semi-space growth.
+  let kept_ret = keep_buf.call(&mut store, ()).expect("keep-buf");
+  assert_eq!(read_cabi_str(&store, kept_ret), "keep-buf");
+
+  // Commit a 300,000-byte string (> 256 KiB initial semi-space), deferring growth in needs_compact == 2.
+  assert_eq!(store_overflow.call(&mut store, 300_000.0).expect("store-overflow"), 300_000.0);
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__arena_base"),
+    initial_arena_base,
+    "__arena_base must stay unchanged while Component buffer is live"
+  );
+  assert!(
+    get_i32_global(&mut store, &instance, "__heap_ptr") >= initial_arena_base + 300_000,
+    "turn_exit must not rewind __heap_ptr over uncommitted 300 KB defref value in Scratch"
+  );
+
+  let head_ret_1 = read_log_head.call(&mut store, ()).expect("read-log-head before cabi_post");
+  assert_eq!(read_cabi_str(&store, head_ret_1), "OVF-QQQQ#300000");
+  read_log_post.call(&mut store, head_ret_1).expect("cabi_post_read-log-head 1");
+
+  // Release the kept Component buffer: comp.total_live drops to 0, executing deferred compaction + growth.
+  keep_buf_post.call(&mut store, kept_ret).expect("cabi_post_keep-buf");
+  let grown_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  assert!(
+    grown_arena_base > initial_arena_base,
+    "expected semi-space growth once comp.total_live drops to 0"
+  );
+  assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), grown_arena_base);
+
+  let head_ret_2 = read_log_head.call(&mut store, ()).expect("read-log-head after cabi_post");
+  assert_eq!(read_cabi_str(&store, head_ret_2), "OVF-QQQQ#300000");
+  read_log_post.call(&mut store, head_ret_2).expect("cabi_post_read-log-head 2");
 }
