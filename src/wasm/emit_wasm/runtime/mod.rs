@@ -405,7 +405,7 @@ pub(super) fn build_wasm_module(
   globals.global(
     GlobalType {
       val_type: ValType::I32,
-      mutable: false,
+      mutable: layout.global_layout.persistent.is_some(),
       shared: false,
     },
     &ConstExpr::i32_const(layout.memory_layout.arena_base),
@@ -437,7 +437,14 @@ pub(super) fn build_wasm_module(
       layout.memory_layout.space_a_base,
       layout.memory_layout.space_a_end,
       0,
-      layout.memory_layout.space_a_base + PERSISTENT_COMPACT_THRESHOLD,
+      layout.memory_layout.space_a_base + INITIAL_PERSISTENT_COMPACT_THRESHOLD,
+      0,
+      0,
+      0,
+      0,
+      INITIAL_PERSISTENT_SEMI_SPACE_BYTES,
+      0,
+      0,
       0,
       0,
       0,
@@ -671,6 +678,29 @@ pub(super) fn build_runtime_fns(
     fn_index.insert(String::from("__rt_fwd_mark_flag"), fwd_mark_flag_idx);
     fns.push(build_rt_fwd_mark_flag_fn(pers, fwd_grow_idx));
 
+    let work_grow_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_work_grow"), work_grow_idx);
+    fns.push(build_rt_work_grow_fn(pers, arena_alloc_idx));
+
+    let work_push_idx = base_index + fns.len() as u32;
+    fn_index.insert(String::from("__rt_work_push"), work_push_idx);
+    fns.push(build_rt_work_push_fn(pers, work_grow_idx));
+
+    let copy_shallow_value_slot = fns.len();
+    let copy_shallow_value_idx = base_index + copy_shallow_value_slot as u32;
+    fn_index.insert(String::from("__rt_copy_shallow_value"), copy_shallow_value_idx);
+    fns.push(build_rt_hash_f64());
+
+    let copy_shallow_map_node_slot = fns.len();
+    let copy_shallow_map_node_idx = base_index + copy_shallow_map_node_slot as u32;
+    fn_index.insert(String::from("__rt_copy_shallow_map_node"), copy_shallow_map_node_idx);
+    fns.push(build_rt_hash_f64());
+
+    let cheney_scan_slot = fns.len();
+    let cheney_scan_idx = base_index + cheney_scan_slot as u32;
+    fn_index.insert(String::from("__rt_cheney_scan"), cheney_scan_idx);
+    fns.push(build_rt_hash_f64());
+
     let promote_value_slot = fns.len();
     let promote_value_idx = base_index + promote_value_slot as u32;
     fn_index.insert(String::from("__rt_promote_value"), promote_value_idx);
@@ -686,19 +716,15 @@ pub(super) fn build_runtime_fns(
     fn_index.insert(String::from("__rt_relocate_scratch_refs"), relocate_refs_idx);
     fns.push(build_rt_hash_f64());
 
-    let relocate_map_node_slot = fns.len();
-    let relocate_map_node_idx = base_index + relocate_map_node_slot as u32;
-    fn_index.insert(String::from("__rt_relocate_scratch_map_node"), relocate_map_node_idx);
-    fns.push(build_rt_hash_f64());
-
     let persistent_alloc_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_persistent_alloc"), persistent_alloc_idx);
     fns.push(build_rt_persistent_alloc_fn(pers));
 
     let promote_fns = PersistentPromoteFns {
       persistent_alloc: persistent_alloc_idx,
-      promote_value: promote_value_idx,
-      promote_map_node: promote_map_node_idx,
+      copy_shallow_value: copy_shallow_value_idx,
+      copy_shallow_map_node: copy_shallow_map_node_idx,
+      cheney_scan: cheney_scan_idx,
       fwd_get: fwd_get_idx,
       fwd_put: fwd_put_idx,
     };
@@ -707,19 +733,28 @@ pub(super) fn build_runtime_fns(
       promote_map_node: promote_map_node_idx,
       fwd_get: fwd_get_idx,
       fwd_mark_flag: fwd_mark_flag_idx,
-      relocate_refs: relocate_refs_idx,
-      relocate_map_node: relocate_map_node_idx,
+      work_push: work_push_idx,
     };
 
-    fns[promote_map_node_slot] = build_rt_promote_map_node_fn(memory_layout, pers, &promote_fns);
-    fns[promote_value_slot] = build_rt_promote_value_fn(memory_layout, pers, &promote_fns, &promote_tags, struct_layouts, enum_layouts);
-    fns[relocate_map_node_slot] = build_rt_relocate_scratch_map_node_fn(memory_layout, pers, &relocate_fns);
+    fns[copy_shallow_map_node_slot] = build_rt_copy_shallow_map_node_fn(memory_layout, global_layout, pers, &promote_fns);
+    fns[copy_shallow_value_slot] = build_rt_copy_shallow_value_fn(
+      memory_layout,
+      global_layout,
+      pers,
+      &promote_fns,
+      &promote_tags,
+      struct_layouts,
+      enum_layouts,
+    );
+    fns[cheney_scan_slot] = build_rt_cheney_scan_fn(pers, &promote_fns, &promote_tags, struct_layouts, enum_layouts);
+    fns[promote_map_node_slot] = build_rt_promote_map_node_fn(pers, &promote_fns);
+    fns[promote_value_slot] = build_rt_promote_value_fn(pers, &promote_fns);
     fns[relocate_refs_slot] =
-      build_rt_relocate_scratch_refs_fn(memory_layout, pers, &relocate_fns, &promote_tags, struct_layouts, enum_layouts);
+      build_rt_relocate_scratch_refs_fn(global_layout, pers, &relocate_fns, &promote_tags, struct_layouts, enum_layouts);
 
     let commit_defref_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_commit_defref"), commit_defref_idx);
-    fns.push(build_rt_commit_defref_fn(memory_layout, pers, promote_value_idx));
+    fns.push(build_rt_commit_defref_fn(global_layout, pers, promote_value_idx));
 
     let compact_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_compact_persistent"), compact_idx);
@@ -729,6 +764,7 @@ pub(super) fn build_runtime_fns(
       pers,
       promote_value_idx,
       relocate_refs_idx,
+      arena_alloc_idx,
       atom_is_scalar,
     ));
     Some(compact_idx)
@@ -740,24 +776,19 @@ pub(super) fn build_runtime_fns(
     let native = global_layout.native.as_ref().expect("native turn globals must exist");
     let turn_enter_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_turn_enter"), turn_enter_idx);
-    fns.push(build_rt_turn_enter_fn(memory_layout, global_layout, native, compact_persistent_idx));
+    fns.push(build_rt_turn_enter_fn(global_layout, native, compact_persistent_idx));
 
     let turn_end_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_turn_end"), turn_end_idx);
-    fns.push(build_rt_turn_end_fn(
-      memory_layout,
-      global_layout,
-      compact_persistent_idx,
-      arena_alloc_idx,
-    ));
+    fns.push(build_rt_turn_end_fn(global_layout, compact_persistent_idx, arena_alloc_idx));
 
     let arena_reset_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__arena_reset"), arena_reset_idx);
-    fns.push(build_arena_reset_fn(memory_layout, global_layout, native, compact_persistent_idx));
+    fns.push(build_arena_reset_fn(global_layout, native, compact_persistent_idx));
   } else if let Some(comp) = &global_layout.component {
     let turn_enter_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_turn_enter"), turn_enter_idx);
-    fns.push(build_rt_component_turn_enter_fn(memory_layout, global_layout, comp));
+    fns.push(build_rt_component_turn_enter_fn(global_layout, comp));
 
     let rewind_to_mark_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_rewind_to_mark"), rewind_to_mark_idx);
@@ -766,7 +797,6 @@ pub(super) fn build_runtime_fns(
     let turn_exit_idx = base_index + fns.len() as u32;
     fn_index.insert(String::from("__rt_component_turn_exit"), turn_exit_idx);
     fns.push(build_rt_component_turn_exit_fn(
-      memory_layout,
       global_layout,
       comp,
       rewind_to_mark_idx,
@@ -1589,7 +1619,11 @@ pub(super) fn build_rt_struct_load_field(option_from_niche_ptr_idx: u32) -> Comp
     b.emit(Instruction::End);
   };
 
-  emit_case(&mut b, &[StructFieldKind::BoxedF64 as i32], &[Instruction::F64Load(mem_arg_f64(0))]);
+  emit_case(
+    &mut b,
+    &[StructFieldKind::BoxedF64 as i32, StructFieldKind::ScalarF64 as i32],
+    &[Instruction::F64Load(mem_arg_f64(0))],
+  );
   emit_case(
     &mut b,
     &[StructFieldKind::BoolU8 as i32, StructFieldKind::UInt8 as i32],
@@ -1779,7 +1813,7 @@ pub(super) fn build_rt_struct_store_field(is_heap_ptr_idx: u32, bool_tag: i32, o
 
   emit_case(
     &mut b,
-    &[StructFieldKind::BoxedF64 as i32],
+    &[StructFieldKind::BoxedF64 as i32, StructFieldKind::ScalarF64 as i32],
     &[],
     Instruction::F64Store(mem_arg_f64(0)),
   );

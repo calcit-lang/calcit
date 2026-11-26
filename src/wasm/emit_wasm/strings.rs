@@ -657,29 +657,12 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     ctx.emit(Instruction::F64Eq);
     ctx.begin_block_if();
     {
-      let raw = ctx.alloc_local_typed(ValType::I32);
-      ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-      ctx.emit(Instruction::LocalTee(raw));
-      ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-      ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
-      ctx.emit(Instruction::LocalGet(raw));
-      ctx.emit(Instruction::I32Const(string_type_tag));
-      ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
-      // write byte_len = 0.0 at raw+8
-      ctx.emit(Instruction::LocalGet(raw));
-      ctx.emit(Instruction::I32Const(8));
-      ctx.emit(Instruction::I32Add);
+      let empty_str_ptr = ctx.alloc_local_typed(ValType::I32);
+      heap::emit_bump_alloc(ctx, 8, empty_str_ptr, "string");
+      ctx.emit(Instruction::LocalGet(empty_str_ptr));
       ctx.emit(Instruction::F64Const(wasm_encoder::Ieee64::from(0.0f64)));
       ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-      // advance heap_ptr by 16 (header=8 + byte_len_slot=8)
-      ctx.emit(Instruction::LocalGet(raw));
-      ctx.emit(Instruction::I32Const(16));
-      ctx.emit(Instruction::I32Add);
-      ctx.emit(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
-      // result = (raw + 8) as f64
-      ctx.emit(Instruction::LocalGet(raw));
-      ctx.emit(Instruction::I32Const(8));
-      ctx.emit(Instruction::I32Add);
+      ctx.emit(Instruction::LocalGet(empty_str_ptr));
       ctx.emit(Instruction::F64ConvertI32U);
       ctx.emit(Instruction::LocalSet(result));
     }
@@ -1222,6 +1205,22 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     Instruction::LocalGet(4),
     Instruction::I32Sub,
     Instruction::LocalSet(1),
+    // Align heap_ptr to 8 bytes and snapshot current linear memory pages (local 14).
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32Const(7),
+    Instruction::I32Add,
+    Instruction::LocalTee(13),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(13),
+    Instruction::I32Const(-8),
+    Instruction::I32And,
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::MemorySize(0),
+    Instruction::LocalSet(14),
     // new_ptr = heap_ptr + 8; padding starts at new_ptr + 8 (+ str_len on the right)
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::I32Const(8),
@@ -1271,10 +1270,40 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     Instruction::I32Add,
     Instruction::LocalSet(10),
     Instruction::End,
-    // pad_dst[i] = byte
+    // Ensure linear memory covers pad_dst + i before writing byte.
     Instruction::LocalGet(7),
     Instruction::LocalGet(8),
     Instruction::I32Add,
+    Instruction::LocalTee(13),
+    Instruction::LocalGet(7),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(13),
+    Instruction::I32Const(16),
+    Instruction::I32ShrU,
+    Instruction::LocalTee(15),
+    Instruction::LocalGet(14),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(15),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalTee(15),
+    Instruction::LocalGet(14),
+    Instruction::I32Sub,
+    Instruction::MemoryGrow(0),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(15),
+    Instruction::LocalSet(14),
+    Instruction::End,
+    // pad_dst[i] = byte
+    Instruction::LocalGet(13),
     Instruction::LocalGet(11),
     Instruction::I32Store8(mem_arg_byte(0)),
     // i++, j++
@@ -1289,6 +1318,66 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     Instruction::Br(0),
     Instruction::End, // $pad_loop
     Instruction::End, // $pad_break
+    // total_len = str_len + i; compute final_end = heap_ptr + 16 + ((total_len + 7) & -8) and cover in memory
+    Instruction::LocalGet(3),
+    Instruction::LocalGet(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(12),
+    Instruction::LocalGet(3),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(12),
+    Instruction::I32Const(7),
+    Instruction::I32Add,
+    Instruction::LocalTee(13),
+    Instruction::LocalGet(12),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(13),
+    Instruction::I32Const(-8i32),
+    Instruction::I32And,
+    Instruction::I32Const(16),
+    Instruction::I32Add,
+    Instruction::LocalTee(13),
+    Instruction::I32Const(16),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(13),
+    Instruction::I32Add,
+    Instruction::LocalTee(13),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32LtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::LocalGet(13),
+    Instruction::I32Const(1),
+    Instruction::I32Sub,
+    Instruction::I32Const(16),
+    Instruction::I32ShrU,
+    Instruction::LocalTee(15),
+    Instruction::LocalGet(14),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::LocalGet(15),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalGet(14),
+    Instruction::I32Sub,
+    Instruction::MemoryGrow(0),
+    Instruction::I32Const(-1),
+    Instruction::I32Eq,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    Instruction::End,
     // memory.copy(dst = new_ptr + 8 (+ i on the left), src = str_ptr + 8, n = str_len)
     Instruction::LocalGet(6),
     Instruction::I32Const(8),
@@ -1303,11 +1392,7 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     Instruction::I32Add,
     Instruction::LocalGet(3),
     Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
-    // total_len = str_len + i, stored as the byte length at new_ptr+0
-    Instruction::LocalGet(3),
-    Instruction::LocalGet(8),
-    Instruction::I32Add,
-    Instruction::LocalSet(12),
+    // store total_len at new_ptr+0
     Instruction::LocalGet(6),
     Instruction::LocalGet(12),
     Instruction::F64ConvertI32U,
@@ -1319,16 +1404,8 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     Instruction::GlobalGet(HEAP_PTR_GLOBAL),
     Instruction::I32Const(str_tag_id),
     Instruction::I32Store(mem_arg_i32(4)),
-    // heap_ptr += 16 + ((total_len + 7) & -8)
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(16),
-    Instruction::I32Add,
-    Instruction::LocalGet(12),
-    Instruction::I32Const(7),
-    Instruction::I32Add,
-    Instruction::I32Const(-8i32),
-    Instruction::I32And,
-    Instruction::I32Add,
+    // heap_ptr = final_end
+    Instruction::LocalGet(13),
     Instruction::GlobalSet(HEAP_PTR_GLOBAL),
     // return f64(new_ptr)
     Instruction::LocalGet(6),
@@ -1339,7 +1416,7 @@ fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
     export_name: None,
     params: vec![ValType::I32, ValType::I32, ValType::I32],
     results: vec![ValType::F64],
-    locals: vec![ValType::I32; 10],
+    locals: vec![ValType::I32; 13],
     instructions,
   }
 }

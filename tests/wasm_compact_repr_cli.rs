@@ -12,7 +12,7 @@ use wasmtime::{Engine, ExternType, Instance, Linker, Module, Store, StoreLimits,
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
 const EIGHT_MIB: usize = 8 * 1024 * 1024;
-const SEMI_SPACE_BYTES: i32 = 1024 * 1024;
+const INITIAL_SEMI_SPACE_BYTES: i32 = 256 * 1024;
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -840,8 +840,8 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let _ = parse_wasm_module(&bytes);
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
 
-  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let static_end = initial_arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let arena_reset = instance
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset");
@@ -858,8 +858,7 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let scratch_after = get_i32_global(&mut store, &instance, "__heap_ptr");
   arena_reset.call(&mut store, ()).expect("arena reset");
 
-  // Separately measure promoted persistent footprint across 1,000 linked nodes in 20 chains
-  // (keeping per-chain depth below MAX_PROMOTE_DEPTH = 256):
+  // Separately measure promoted persistent footprint across 1,000 linked nodes in 20 chains:
   let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
   let alloc_chain = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "alloc-compact-chain")
@@ -890,6 +889,9 @@ fn compact_struct_and_enum_footprint_benchmark_and_defref_compaction() {
   let mut compacted = false;
   for i in 1..=25 {
     pump_churn.call(&mut store, i as f64).expect("pump churn");
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let semi_space_bytes = (cur_arena_base - static_end) / 2;
+    let space_b_base = static_end + semi_space_bytes;
     if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
       compacted = true;
       break;
@@ -2145,14 +2147,17 @@ fn option_niche_zero_alloc_writes_direct_consumers_and_escaping_identity() {
     1.0
   );
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let pump = instance
     .get_typed_func::<f64, f64>(&mut store, "pump-niche-churn")
     .expect("pump-niche-churn");
   let mut compacted = false;
   for i in 1..=25 {
     pump.call(&mut store, i as f64).expect("pump churn");
-    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let space_b_base = cur_arena_base - (cur_arena_base - static_end) / 2;
+    let pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers >= space_b_base && pers < cur_arena_base {
       compacted = true;
       break;
     }
@@ -2369,12 +2374,15 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
     1.0
   );
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
   let pump = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
   let mut compacted = false;
   for i in 1..=25 {
     pump.call(&mut store, i as f64).expect("pump churn");
-    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+    let cur_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+    let space_b_base = cur_arena_base - (cur_arena_base - static_end) / 2;
+    let pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+    if pers >= space_b_base && pers < cur_arena_base {
       compacted = true;
       break;
     }

@@ -176,11 +176,11 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请求临时分配隔离回收：
 
-- **三段式线性内存区域**：静态常量池位于 `[HEAP_BASE, static_end)`；若程序包含 `defref`，其后预留两个各 1 MiB 的持久区半空间（Semi-Space A/B），否则直接衔接请求区；其后的 `[arena_base, ...)` 为请求级 Scratch Arena，由 `__heap_ptr` 线性 bump 分配，并通过只读 global `__arena_base` 与（含 `defref` 时导出的）`__persistent_ptr` 向宿主暴露水位线状态。
+- **三段式线性内存区域**：静态常量池位于 `[HEAP_BASE, static_end)`；若程序包含 `defref`，其后预留两个初始各 256 KiB 的持久区半空间（Semi-Space A/B），在安全的 turn 边界按需倍增扩容，否则直接衔接请求区；其后的 `[arena_base, ...)` 为请求级 Scratch Arena，由 `__heap_ptr` 线性 bump 分配，并通过 runtime 更新的 global `__arena_base` 与（含 `defref` 时导出的）`__persistent_ptr` 向宿主暴露水位线状态。
 - **Copy-on-Commit 与半空间压缩**：
   - `defref` 的静态初始值（`String`、`Tag`、`Number`、`Bool`、`Nil` 与空容器 `[]`/`{}`/`#{}`）留在静态池；编译期已知为 `Ref <Scalar>` 或写入值为静态标量时，`reset!` / `swap!` 绕过 `__rt_commit_defref`，半空间压缩也会跳过静态标量 `Ref`。
-  - 非标量写入进入 `__rt_commit_defref`，在 Scratch Arena 之上的临时开放寻址 forwarding table 对共享子图做 DAG 去重晋升而不修改 Scratch 对象的 `HEAP_MAGIC` 头，深拷贝晋升可达子图（`String`、`Buffer`、`List`、`Map`、`Set`、`Struct`、`Enum` 及 HAMT 节点）并复用已在目标半空间的节点。
-  - 当本次 commit 确实增加了活跃半空间分配（`pers.ptr > ptr_before`）且超出相对上次压缩剩余半空间的一半（`next_compact_ptr = new_ptr + ((new_end - new_ptr) >> 1)`）或发生 turn 内临时溢出时标记压缩；压缩通过 `stage_ptr`/`stage_limit` 预演、原子提交 `atom` 全局量与元数据、并通过两遍遍历重定位仍保活的 Scratch 返回值链（`scratch_roots_head`）与当前返回值可达的旧半空间子指针，确保之前导出尚未被 `__arena_reset()` 释放的 Scratch 返回图（及其引用的旧半空间子对象）在多次跨 turn 压缩后依然有效；压缩途中若因容量溢出 trap，旧半空间根保持完整可读，且仅当允许安全回退（`can_rewind_stale`）且 `pers.scratch_end` 之上的临时 forwarding table 仍位于 Scratch 顶部（无宿主通过 `__str_new` 追加新分配）时才回收该失败工作区，否则仅清零 forwarding 状态并继续保留宿主新写入的参数或已发布根仍引用的 Scratch 对象，重试时仍会正确报告或完成压缩。
+  - 非标量写入进入 `__rt_commit_defref`，在 Scratch Arena 之上的临时开放寻址 forwarding table 对共享子图做 DAG 去重晋升而不修改 Scratch 对象的 `HEAP_MAGIC` 头，采用 O(1) 调用栈的迭代 Cheney BFS（`scan_ptr` 追赶目标 `alloc_ptr`）深拷贝晋升可达子图（`String`、`Buffer`、`List`、`Map`、`Set`、`Struct`、`Enum` 及 HAMT 节点）并复用已在目标半空间的节点。
+  - 当本次 commit 确实增加了活跃半空间分配（`pers.ptr > ptr_before`）且超出相对上次压缩剩余半空间的一半（`next_compact_ptr = new_ptr + ((new_end - new_ptr) >> 1)`）或发生 turn 内临时溢出时标记压缩；压缩通过 `stage_ptr`/`stage_limit` 预演、原子提交 `atom` 全局量与元数据、并通过基于 Scratch 顶部显式动态扩容 worklist 栈的两遍遍历重定位仍保活的 Scratch 返回值链（`scratch_roots_head`）与当前返回值可达的旧半空间子指针，确保之前导出尚未被 `__arena_reset()` 释放的 Scratch 返回图（及其引用的旧半空间子对象）在多次跨 turn 压缩后依然有效；当外层 turn 结束且无未释放的保活 Scratch / Component 根时，若存活对象超过半空间一半或发生 turn 内溢出，运行时通过非重叠高址 staging + `memory.grow` 将半空间按 `max(semi_space_bytes * 2, aligned_needed * 2)` 扩容至 `[static_end, static_end + live_bytes)` 并更新 `__arena_base`（若仍有保活根则安全延迟到 `__arena_reset()` 时扩容）；压缩途中若因线性内存上限溢出 trap，旧半空间根保持完整可读，且仅当允许安全回退（`can_rewind_stale`）且 `pers.scratch_end` 之上的临时工作区仍位于 Scratch 顶部（无宿主通过 `__str_new` 追加新分配）时才回收该失败工作区，否则仅清零 forwarding/worklist 状态并继续保留宿主新写入的参数或已发布根仍引用的 Scratch 对象，重试时仍会正确报告或完成压缩。
 - **O(1) Turn 级水印复位、堆返回值保活与异常恢复**：
   - Core `defwasm-export` 在退出时：若返回值为静态标量（或位于持久区/静态池/进入前 Scratch 的既有值），立即将 `__heap_ptr` 复位为进入时的水印并弹出该水印之上的保留根链表节点；若返回值是本 turn 在 Scratch Arena 新分配的堆对象，则在持久堆模式下压入 `scratch_roots_head` 保持活跃直至宿主显式调用 `__arena_reset()`（直接返回 `defref` 中的裸持久指针应先读取或随 `__arena_reset()` 生命周期管理，跨压缩继续读取则请通过新分配的 Scratch 容器返回或重新读取 `@*ref`）。`__arena_reset()` 会清零 `active_turns` / `host_call_depth` / `scratch_roots_head`、回收遗留转发工作区（同样仅在其位于栈顶时）、执行待定半空间压缩并将 `__heap_ptr` 重置回 `__arena_base`。
   - Core trap 恢复遵循明确的宿主契约：由于 WebAssembly trap 会直接展开回宿主而不执行 WASM epilogue，仅纯 WASM 与内置 `io::*` 叶子导入（不包裹 `host_call_depth`）在捕获 trap 后无需 `__arena_reset()` 即可由下一次顶层导出通过 `__rt_turn_enter`（`host_call_depth == 0`）全量恢复；对可重入的 `defwasm-import` 仍保留 `host_call_depth` 以支持回调嵌套，因此**宿主一旦捕获来自 `defwasm-import` 的 trap，必须在继续复用实例时显式调用 `__arena_reset()`** 以恢复最外层 turn 记账并执行待定压缩（包括半空间溢出 `needs_compact == 2` 时暂停单调用 Scratch 回退以避免覆写溢出到 Scratch 的 `*ref` 目标，直到 `__arena_reset()` 将其压缩迁出并复位）。
@@ -204,6 +204,4 @@ WASM/WASI 运行时采用分层线性内存布局，将长期状态与单次请�
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。
 - `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。
 - `=`、`&compare` 和缺少具体标量证据的 `type-of` 仅把落入活跃区间（静态池、当前活跃持久区半空间与 `[arena_base + 8, __heap_ptr)`）且 `ptr-8` 处为 `HEAP_MAGIC` 的整数视作堆值，开放或可空边界下同值标量与指针仍可能混淆，具名标量的静态证据不受影响。
-- 单个持久区半空间容量上限为 1 MiB，全部活跃 `defref` 可达对象图超出该上限时会触发 WASM trap。
 - 已证明为整型细化类型（`Int8`..`UInt64`）的 WASM 内部槽位与紧凑 `Struct` 字段使用原生整型表示，会将 `-0` 规范化为 `0`（数值相等与比较语义不变，需要保留 IEEE 754 负零符号时请使用通用 `Number` 或 `Float64`）。
-- `defref` 晋升与半空间压缩的图遍历递归深度上限为 256 层，超过该深度时会触发 WASM trap。

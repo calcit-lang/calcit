@@ -21,8 +21,17 @@ use wasmtime::{
 };
 
 const HEAP_MAGIC: i32 = 0xCA1C_17A9u32 as i32;
-const SEMI_SPACE_BYTES: i32 = 1024 * 1024;
+const INITIAL_SEMI_SPACE_BYTES: i32 = 256 * 1024;
 const EIGHT_MIB: usize = 8 * 1024 * 1024;
+const THIRTY_TWO_MIB: usize = 32 * 1024 * 1024;
+
+fn persistent_space_bounds(store: &mut Store<StoreLimits>, instance: &Instance, static_end: i32) -> (i32, i32, i32) {
+  let arena_base = get_i32_global(store, instance, "__arena_base");
+  let semi_space_bytes = (arena_base - static_end) / 2;
+  let space_a_base = static_end;
+  let space_b_base = static_end + semi_space_bytes;
+  (space_a_base, space_b_base, arena_base)
+}
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -591,8 +600,8 @@ fn core_wasm_persistent_heap_compacts_across_semispaces_under_8mib_limit() {
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
   let initial_pages = memory.size(&store);
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let init_seeds = instance
     .get_typed_func::<(), f64>(&mut store, "init-seeds")
@@ -705,8 +714,8 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let same_turn = instance
     .get_typed_func::<f64, f64>(&mut store, "swap-and-check-same-turn")
@@ -739,8 +748,8 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   arena_reset.call(&mut store, ()).expect("__arena_reset after same_turn");
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 
-  // (b1) Pump persistent heap near 512 KiB compaction threshold, then reset + return `@*state`.
-  for i in 1..=25u64 {
+  // (b1) Pump persistent heap near 128 KiB initial compaction threshold, then reset + return `@*state`.
+  for i in 1..=5u64 {
     bump_large
       .call(&mut store, (i as f64, 20_480.0))
       .expect("bump-large should succeed");
@@ -748,7 +757,7 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   let before_flip_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(before_flip_a >= space_a_base && before_flip_a < space_b_base);
   let mut flipped = false;
-  for k in 26..=35u64 {
+  for k in 6..=15u64 {
     let ret = return_new
       .call(&mut store, (k as f64, 24_576.0))
       .expect("reset-and-return-new should succeed");
@@ -767,16 +776,16 @@ fn core_wasm_same_turn_old_ref_and_compaction_return_value_survive() {
   }
   assert!(flipped, "expected return_new turn to trigger semi-space A -> B compaction");
 
-  // (b2) Pump persistent heap in semi-space B near 512 KiB, then capture `old` and return `old` on compaction turn!
-  for i in 1..=24u64 {
+  // (b2) Pump persistent heap in semi-space B near threshold, then capture `old` and return `old` on compaction turn!
+  for i in 1..=5u64 {
     bump_large
       .call(&mut store, (100.0 + i as f64, 20_480.0))
       .expect("bump-large in space B should succeed");
   }
-  let initial_tag = format!("v-{}", 100 + 24);
+  let initial_tag = format!("v-{}", 100 + 5);
   let mut expected_old = format!("{initial_tag}{}", "P".repeat(20_480usize - initial_tag.len()));
   let mut old_survived_compaction = false;
-  for k in 25..=35u64 {
+  for k in 6..=15u64 {
     let ret_old = return_old
       .call(&mut store, (200.0 + k as f64, 24_576.0))
       .expect("reset-and-return-old should succeed");
@@ -851,8 +860,8 @@ fn core_wasm_mid_turn_persistent_overflow_compacts_cleanly_at_turn_end() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
   assert_eq!(get_i32_global(&mut store, &instance, "__persistent_ptr"), space_a_base);
 
   let flood = instance
@@ -987,8 +996,8 @@ fn core_wasm_static_defref_initializers_and_stale_magic_type_of() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let verify_static = instance
     .get_typed_func::<(), f64>(&mut store, "verify-static-inits")
@@ -1322,8 +1331,8 @@ fn core_wasm_proven_scalar_reset_and_compaction_preserve_number() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let write_scalar = instance
     .get_typed_func::<f64, f64>(&mut store, "write-scalar")
@@ -1424,8 +1433,8 @@ fn core_wasm_shared_scratch_dag_promotes_once_without_corrupting_scratch() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let commit_shared = instance
     .get_typed_func::<f64, f64>(&mut store, "commit-shared-dag")
@@ -1527,8 +1536,7 @@ fn core_wasm_unchanged_large_live_defref_skips_redundant_compaction() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
 
   let set_big = instance.get_typed_func::<f64, f64>(&mut store, "set-big").expect("set-big export");
   let alias_big = instance
@@ -1538,41 +1546,49 @@ fn core_wasm_unchanged_large_live_defref_skips_redundant_compaction() {
     .get_typed_func::<(f64, f64), f64>(&mut store, "set-alias-small")
     .expect("set-alias-small export");
 
-  // Exceed initial 512 KiB threshold so turn end compacts the 600 KiB live string into semi-space B.
-  assert_eq!(set_big.call(&mut store, 600_000.0).expect("set-big"), 600_000.0);
-  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
-  assert!(pers_b >= space_b_base && pers_b < arena_base);
+  // Grow in two steps so semi_space_bytes lands at ~1.2 MiB with *big = 500 KiB (< semi / 2).
+  assert_eq!(set_big.call(&mut store, 300_000.0).expect("set-big 300k"), 300_000.0);
+  assert_eq!(set_big.call(&mut store, 500_000.0).expect("set-big 500k"), 500_000.0);
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
+  assert!(
+    space_b_base - space_a_base >= 1_200_000,
+    "expected semi-space to grow past 1.2 MiB, got {}",
+    space_b_base - space_a_base
+  );
+  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_a >= space_a_base && pers_a < space_b_base);
 
-  // Committing an already-persistent ref (@*big) does not advance pers.ptr and must NOT ping-pong back to A.
+  // Committing an already-persistent ref (@*big) does not advance pers.ptr and must NOT ping-pong to Space B.
   for _ in 0..5 {
-    assert_eq!(alias_big.call(&mut store, ()).expect("alias-big"), 600_000.0);
-    assert_eq!(get_i32_global(&mut store, &instance, "__persistent_ptr"), pers_b);
+    assert_eq!(alias_big.call(&mut store, ()).expect("alias-big"), 500_000.0);
+    assert_eq!(get_i32_global(&mut store, &instance, "__persistent_ptr"), pers_a);
   }
 
-  // Small allocations well below half the remaining semi-space (~212 KiB) must NOT re-trigger compaction.
+  // Medium allocations well below half the remaining semi-space (~350 KiB) must NOT re-trigger compaction.
   for k in 1..=4u64 {
     assert_eq!(
-      set_alias_small.call(&mut store, (k as f64, 16_384.0)).expect("set-alias-small"),
-      16_384.0
+      set_alias_small.call(&mut store, (k as f64, 80_000.0)).expect("set-alias-small"),
+      80_000.0
     );
     let pers_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
     assert!(
-      pers_now >= space_b_base && pers_now < arena_base,
-      "small commit {k} must stay in semi-space B without redundant compaction (pers_now={pers_now})"
+      pers_now >= space_a_base && pers_now < space_b_base,
+      "small commit {k} must stay in semi-space A without redundant compaction (pers_now={pers_now})"
     );
   }
 
-  // Pushing past next_compact_ptr (~212 KiB above pers_b) triggers compaction cleanly back to semi-space A.
+  // Pushing past next_compact_ptr (~350 KiB above pers_a) while keeping total live (500K + 80K <= semi / 2)
+  // triggers compaction cleanly into semi-space B (without growing!).
   assert_eq!(
     set_alias_small
-      .call(&mut store, (5.0, 260_000.0))
+      .call(&mut store, (5.0, 80_000.0))
       .expect("set-alias-small threshold"),
-    260_000.0
+    80_000.0
   );
-  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(
-    pers_a >= space_a_base && pers_a < space_b_base,
-    "expected threshold-crossing commit to compact cleanly back into semi-space A, got pers_a={pers_a}"
+    pers_b >= space_b_base && pers_b < arena_base,
+    "expected threshold-crossing commit to compact cleanly into semi-space B, got pers_b={pers_b}"
   );
 }
 
@@ -1636,8 +1652,7 @@ fn core_wasm_compaction_trap_leaves_old_roots_valid_and_recoverable() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
 
   let set_a = instance.get_typed_func::<f64, f64>(&mut store, "set-a").expect("set-a export");
   let set_b = instance.get_typed_func::<f64, f64>(&mut store, "set-b").expect("set-b export");
@@ -1650,13 +1665,14 @@ fn core_wasm_compaction_trap_leaves_old_roots_valid_and_recoverable() {
     .expect("__arena_reset export");
 
   assert_eq!(set_a.call(&mut store, 600_000.0).expect("set-a"), 600_000.0);
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
   let pers_before = get_i32_global(&mut store, &instance, "__persistent_ptr");
-  assert!(pers_before >= space_b_base && pers_before < arena_base);
+  assert!(pers_before >= space_a_base && pers_before < space_b_base);
 
-  // Promoting *b (600 KiB) alongside *a (600 KiB) exceeds 1 MiB semi-space during staged compaction and must trap.
+  // Promoting *b (2 MiB) alongside *a (600 KiB) requires > 8 MiB StoreLimits when growing semi-spaces and must trap.
   let trap_err = set_b
-    .call(&mut store, 600_000.0)
-    .expect_err("600K + 600K live defrefs must trap during compaction staging");
+    .call(&mut store, 2_000_000.0)
+    .expect_err("600K + 2M live defrefs must trap against 8 MiB StoreLimits during compaction staging");
   assert!(
     format!("{trap_err:?}").contains("unreachable"),
     "expected wasm unreachable trap on semi-space OOM, got {trap_err:?}"
@@ -1667,9 +1683,9 @@ fn core_wasm_compaction_trap_leaves_old_roots_valid_and_recoverable() {
     "failed staged compaction must not publish partial persistent metadata"
   );
 
-  // Shrinking *b back to static string and completing turn-end compaction recovers cleanly with *a intact.
+  // Shrinking *b back to static string and completing turn-end compaction recovers cleanly into semi-space B with *a intact.
   let a_ptr = recover_a.call(&mut store, ()).expect("recover-and-read-a must succeed");
-  assert!(a_ptr >= f64::from(space_a_base) && a_ptr < f64::from(space_b_base));
+  assert!(a_ptr >= f64::from(space_b_base) && a_ptr < f64::from(arena_base));
   let a_text = read_wasm_str(&mut store, &instance, a_ptr);
   assert_eq!(a_text.len(), 600_000);
   assert!(a_text.starts_with("A-LIVE-AAA"));
@@ -1733,7 +1749,8 @@ fn core_wasm_compaction_relocates_old_space_children_of_scratch_return() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (_space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let pump_state = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "pump-state")
@@ -1748,16 +1765,16 @@ fn core_wasm_compaction_relocates_old_space_children_of_scratch_return() {
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset export");
 
-  for i in 1..=24u64 {
+  for i in 1..=5u64 {
     pump_state
       .call(&mut store, (i as f64, 20_480.0))
       .expect("pump-state should succeed");
   }
-  let initial_tag = format!("p-{}", 24);
+  let initial_tag = format!("p-{}", 5);
   let mut expected_old = format!("{initial_tag}{}", "P".repeat(20_480usize - initial_tag.len()));
 
   let mut compacted = false;
-  for k in 25..=35u64 {
+  for k in 6..=15u64 {
     let wrapped_ptr = wrap_old
       .call(&mut store, (k as f64, 24_576.0))
       .expect("wrap-old-and-trigger-compact should succeed");
@@ -1841,7 +1858,8 @@ fn core_wasm_trapped_export_recovers_arena_reset_and_compaction() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (_space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let pump_log = instance
     .get_typed_func::<(f64, f64), f64>(&mut store, "pump-log")
@@ -1857,12 +1875,12 @@ fn core_wasm_trapped_export_recovers_arena_reset_and_compaction() {
     .get_typed_func::<(), ()>(&mut store, "__arena_reset")
     .expect("__arena_reset export");
 
-  for n in 1..=24u64 {
+  for n in 1..=5u64 {
     pump_log.call(&mut store, (n as f64, 20_480.0)).expect("pump-log should succeed");
   }
   assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
 
-  // Trap mid-export after crossing the 512 KiB threshold and leaving Scratch & active_turns dirty.
+  // Trap mid-export after crossing the 128 KiB initial threshold and leaving Scratch & active_turns dirty.
   let err1 = write_and_trap
     .call(&mut store, (99.0, 40_960.0))
     .expect_err("write-and-trap should trap");
@@ -2256,8 +2274,8 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
 
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (_space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
   let call_host = instance
     .get_typed_func::<f64, f64>(&mut store, "call-host")
     .expect("call-host export");
@@ -2349,22 +2367,24 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
   assert_eq!(text_before.len(), 262_144);
   assert!(text_before.starts_with("ov-5OOO"));
 
-  // Per the Core post-trap contract, __arena_reset() clears active_turns/host_call_depth, compacts *state into space B, and resets Scratch.
+  // Per the Core post-trap contract, __arena_reset() clears active_turns/host_call_depth, compacts *state (growing
+  // semi-space A above 512 KiB), and resets Scratch.
   arena_reset.call(&mut store, ()).expect("__arena_reset recovers needs_compact == 2");
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
-  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(
-    pers_b >= space_b_base && pers_b < space_b_base + 270_000,
-    "expected *state compacted into semi-space B, got pers_b={pers_b}"
+    pers_a >= space_a_base && pers_a < space_a_base + 270_000,
+    "expected *state compacted into grown semi-space A, got pers_a={pers_a}"
   );
   let s_after = read_state.call(&mut store, ()).expect("read-state after reset");
-  assert!(s_after >= f64::from(space_b_base) && s_after < f64::from(arena_base));
+  assert!(s_after >= f64::from(space_a_base) && s_after < f64::from(space_b_base));
   let text_after = read_wasm_str(&mut store, &instance, s_after);
   assert_eq!(text_after.len(), 262_144);
   assert!(text_after.starts_with("ov-5OOO"));
 
-  // Normal turn-end compaction resumes (B -> A when exceeding threshold).
-  let mut flipped_back = false;
+  // Normal turn-end compaction resumes (A -> B when exceeding threshold).
+  let mut flipped_to_b = false;
   for k in 6..=10u64 {
     assert_eq!(
       pump_state
@@ -2372,15 +2392,16 @@ fn core_wasm_host_import_trap_reclaims_scratch_and_supports_reentrancy() {
         .expect("pump-state post-recovery"),
       262_144.0
     );
+    let (_, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
     let pers_now = get_i32_global(&mut store, &instance, "__persistent_ptr");
-    if pers_now >= space_a_base && pers_now < space_b_base {
-      flipped_back = true;
+    if pers_now >= space_b_base && pers_now < arena_base {
+      flipped_to_b = true;
       break;
     }
   }
   assert!(
-    flipped_back,
-    "expected normal turn-end compaction B -> A after __arena_reset recovery"
+    flipped_to_b,
+    "expected normal turn-end compaction A -> B after __arena_reset recovery"
   );
 }
 
@@ -2441,8 +2462,8 @@ fn core_wasm_earlier_scratch_return_graph_survives_later_compaction() {
   let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
 
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
-  let space_a_base = arena_base - 2 * SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
 
   let make_list = instance
     .get_typed_func::<f64, f64>(&mut store, "make-list-with-state")
@@ -2461,16 +2482,16 @@ fn core_wasm_earlier_scratch_return_graph_survives_later_compaction() {
     .expect("__arena_reset export");
 
   let prefix = "first-300k-";
-  let expected_300k = format!("{prefix}{}", "F".repeat(300_000usize - prefix.len()));
+  let expected_70k = format!("{prefix}{}", "F".repeat(70_000usize - prefix.len()));
 
-  let list_ptr = make_list.call(&mut store, 300_000.0).expect("make-list-with-state should succeed");
+  let list_ptr = make_list.call(&mut store, 70_000.0).expect("make-list-with-state should succeed");
   assert!(list_ptr >= f64::from(arena_base));
   assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") < space_b_base);
 
-  // Without reading `list_ptr` or calling `__arena_reset()`, overwrite `*state` with 600 KiB and compact A -> B.
+  // Without reading `list_ptr` or calling `__arena_reset()`, overwrite `*state` with 150 KiB and compact A -> B.
   assert_eq!(
-    replace_compact.call(&mut store, 600_000.0).expect("replace-state-and-compact"),
-    600_000.0
+    replace_compact.call(&mut store, 150_000.0).expect("replace-state-and-compact"),
+    150_000.0
   );
   let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(
@@ -2478,14 +2499,14 @@ fn core_wasm_earlier_scratch_return_graph_survives_later_compaction() {
     "expected A -> B compaction, got pers_b={pers_b}"
   );
 
-  // Earlier Scratch List must still read intact with its 300 KiB child relocated into space B.
+  // Earlier Scratch List must still read intact with its 70 KiB child relocated into space B.
   let out1_ptr = read_list_item
     .call(&mut store, list_ptr)
     .expect("read-list-item after first compaction");
-  assert_eq!(read_wasm_str(&mut store, &instance, out1_ptr), format!("{expected_300k}::kept-tag"));
+  assert_eq!(read_wasm_str(&mut store, &instance, out1_ptr), format!("{expected_70k}::kept-tag"));
 
   // Trigger a second compaction B -> A; earlier Scratch List must remain valid.
-  assert_eq!(pump_state.call(&mut store, (1.0, 120_000.0)).expect("pump-state 1"), 120_000.0);
+  assert_eq!(pump_state.call(&mut store, (1.0, 70_000.0)).expect("pump-state 1"), 70_000.0);
   let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(
     pers_a >= space_a_base && pers_a < space_b_base,
@@ -2494,17 +2515,24 @@ fn core_wasm_earlier_scratch_return_graph_survives_later_compaction() {
   let out2_ptr = read_list_item
     .call(&mut store, list_ptr)
     .expect("read-list-item after second compaction");
-  assert_eq!(read_wasm_str(&mut store, &instance, out2_ptr), format!("{expected_300k}::kept-tag"));
+  assert_eq!(read_wasm_str(&mut store, &instance, out2_ptr), format!("{expected_70k}::kept-tag"));
 
-  // Once the host calls __arena_reset(), the old 300 KiB child is no longer traced by later compactions.
+  // Once the host calls __arena_reset(), the old 70 KiB child is no longer traced by later compactions
+  // (deferred compaction runs on __arena_reset and drops Space B usage to just the 70 KiB *state).
   arena_reset.call(&mut store, ()).expect("__arena_reset");
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
-  assert_eq!(pump_state.call(&mut store, (2.0, 350_000.0)).expect("pump-state 2"), 350_000.0);
-  let pers_b_final = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let pers_after_reset = get_i32_global(&mut store, &instance, "__persistent_ptr");
   assert!(
-    pers_b_final >= space_b_base && (pers_b_final - space_b_base) < 360_000,
-    "expected discarded 300 KiB Scratch return child to be collected after __arena_reset, got used={}",
-    pers_b_final - space_b_base
+    pers_after_reset >= space_b_base && (pers_after_reset - space_b_base) < 100_000,
+    "expected discarded 70 KiB Scratch return child to be collected on __arena_reset, got used={}",
+    pers_after_reset - space_b_base
+  );
+  assert_eq!(pump_state.call(&mut store, (2.0, 100_000.0)).expect("pump-state 2"), 100_000.0);
+  let pers_a_final = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(
+    pers_a_final >= space_a_base && (pers_a_final - space_a_base) < 110_000,
+    "expected B -> A compaction to keep only 100 KiB *state, got used={}",
+    pers_a_final - space_a_base
   );
 }
 
@@ -2570,7 +2598,7 @@ fn core_wasm_repeated_arena_reset_retries_reclaim_failed_compaction_workspace() 
 
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
 
   let set_a_many = instance
     .get_typed_func::<(), f64>(&mut store, "set-a-many")
@@ -2584,23 +2612,24 @@ fn core_wasm_repeated_arena_reset_retries_reclaim_failed_compaction_workspace() 
     .expect("__arena_reset export");
 
   assert_eq!(set_a_many.call(&mut store, ()).expect("set-a-many"), 201.0);
-  let pers_b = get_i32_global(&mut store, &instance, "__persistent_ptr");
-  assert!(pers_b >= space_b_base && pers_b < arena_base);
+  let (space_a_base, space_b_base, arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
+  let pers_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_a >= space_a_base && pers_a < space_b_base);
 
-  // Promoting *b (600 KiB) alongside *a (~614 KiB across 201 nodes -> triggers fwd_grow) traps during compaction.
+  // Promoting *b (2 MiB) alongside *a (~614 KiB across 201 nodes -> triggers fwd_grow) traps against 8 MiB StoreLimits.
   let err = set_b
-    .call(&mut store, 600_000.0)
-    .expect_err("614K + 600K must trap on semi-space overflow");
+    .call(&mut store, 2_000_000.0)
+    .expect_err("614K + 2M must trap against 8 MiB StoreLimits during compaction");
   assert!(format!("{err:?}").contains("unreachable"));
   let heap_after_trap = get_i32_global(&mut store, &instance, "__heap_ptr");
   let pages_after_trap = memory.size(&store);
-  assert!(heap_after_trap > arena_base + 600_000);
+  assert!(heap_after_trap > arena_base + 2_000_000);
 
-  // 1,500 failed __arena_reset() retries would grow > 8 MiB if abandoned ~6 KiB forwarding tables were not reclaimed.
+  // 1,500 failed __arena_reset() retries would grow > 8 MiB if abandoned staging/forwarding workspace were not reclaimed.
   for retry in 0..1_500u64 {
     let retry_err = arena_reset
       .call(&mut store, ())
-      .expect_err("retry with > 1 MiB live defrefs must still trap");
+      .expect_err("retry exceeding 8 MiB StoreLimits must still trap");
     assert!(format!("{retry_err:?}").contains("unreachable"));
     assert_eq!(
       get_i32_global(&mut store, &instance, "__heap_ptr"),
@@ -2711,7 +2740,7 @@ fn core_wasm_commit_trap_then_str_new_preserves_host_arg_across_export() {
 
   let memory = instance.get_memory(&mut store, "memory").expect("memory export");
   let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
-  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let static_end = arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
 
   let set_a = instance.get_typed_func::<f64, f64>(&mut store, "set-a").expect("set-a export");
   let set_b = instance.get_typed_func::<f64, f64>(&mut store, "set-b").expect("set-b export");
@@ -2737,10 +2766,12 @@ fn core_wasm_commit_trap_then_str_new_preserves_host_arg_across_export() {
 
   // Sub-case A: Staged compaction traps after raising __heap_ptr above pers.scratch_end (active_turns == 0).
   assert_eq!(set_a.call(&mut store, 600_000.0).expect("set-a"), 600_000.0);
-  assert!(get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base);
+  let (space_a_base, space_b_base, _arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
+  let pers_after_a = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(pers_after_a >= space_a_base && pers_after_a < space_b_base);
   let compact_trap = set_b
-    .call(&mut store, 600_000.0)
-    .expect_err("600K + 600K must trap during staged compaction");
+    .call(&mut store, 2_000_000.0)
+    .expect_err("600K + 2M must trap against 8 MiB StoreLimits during staged compaction");
   assert!(format!("{compact_trap:?}").contains("unreachable"));
 
   let arg_a = format!("HOST-ARG-AFTER-COMPACT-TRAP-{}", "Z".repeat(4096));
@@ -2758,16 +2789,22 @@ fn core_wasm_commit_trap_then_str_new_preserves_host_arg_across_export() {
   let b_ptr = read_b.call(&mut store, ()).expect("read-b");
   assert_eq!(read_wasm_str(&mut store, &instance, b_ptr), arg_a);
   arena_reset.call(&mut store, ()).expect("__arena_reset after sub-case A");
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
   assert_eq!(get_i32_global(&mut store, &instance, "__heap_ptr"), arena_base);
 
   // Sub-case B: __rt_commit_defref traps mid-export (active_turns == 1) after allocating forwarding table above pers.scratch_end.
   let commit_trap = commit_deep_chain
-    .call(&mut store, 260.0)
-    .expect_err("depth 260 chain should trap at MAX_PROMOTE_DEPTH");
+    .call(&mut store, 120_000.0)
+    .expect_err("120k-node chain forwarding table growth should trap at 8 MiB StoreLimits");
   assert!(format!("{commit_trap:?}").contains("unreachable"));
 
   let arg_b = format!("HOST-ARG-AFTER-COMMIT-TRAP-{}", "Q".repeat(4096));
   let src_b = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  let needed_end = src_b as usize + arg_b.len();
+  if needed_end > memory.data_size(&store) {
+    let extra_pages = (needed_end - memory.data_size(&store)).div_ceil(65_536) as u64;
+    memory.grow(&mut store, extra_pages).expect("grow memory for host arg B");
+  }
   memory
     .write(&mut store, src_b as usize, arg_b.as_bytes())
     .expect("write host arg B");
@@ -2994,7 +3031,7 @@ fn core_wasm_dyn_trait_promotes_and_compacts_across_defref_turns() {
 "#;
   let wasm_path = compile_core_wasm(&dir, snapshot);
   let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
-  let persistent_base = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  let static_end = get_i32_global(&mut store, &instance, "__persistent_ptr");
   let arena_base = get_i32_global(&mut store, &instance, "__heap_ptr");
 
   let store_items = instance
@@ -3035,10 +3072,10 @@ fn core_wasm_dyn_trait_promotes_and_compacts_across_defref_turns() {
     assert_eq!(churn_heap.call(&mut store, p_ptr).expect("churn"), 1.0);
     arena_reset.call(&mut store, ()).expect("__arena_reset after churn");
   }
-  assert!(
-    get_i32_global(&mut store, &instance, "__persistent_ptr") >= persistent_base + SEMI_SPACE_BYTES
-      || get_i32_global(&mut store, &instance, "__persistent_ptr") > persistent_base
-  );
+  let (space_a_base, space_b_base, cur_arena_base) = persistent_space_bounds(&mut store, &instance, static_end);
+  assert!(space_b_base - space_a_base > INITIAL_SEMI_SPACE_BYTES);
+  let cur_pers = get_i32_global(&mut store, &instance, "__persistent_ptr");
+  assert!(cur_pers > space_a_base && cur_pers < cur_arena_base);
 
   let rendered_ptr = read_items.call(&mut store, ()).expect("read-items after compaction");
   assert_eq!(
@@ -3589,9 +3626,10 @@ fn core_wasm_typed_containers_survive_heap_address_aliasing_and_compaction() {
   );
   arena_reset.call(&mut store, ()).expect("__arena_reset after commit-aliasing");
 
-  // Churn persistent heap past compaction threshold across semi-spaces while holding live aliasing containers.
-  let big = "Q".repeat(300_000);
-  for _ in 0..4 {
+  // Churn persistent heap past compaction threshold across semi-spaces (without growing past 256 KiB
+  // so __arena_base stays unchanged) while holding live aliasing containers.
+  let big = "Q".repeat(100_000);
+  for _ in 0..6 {
     let top = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
     memory.write(&mut store, top as usize, big.as_bytes()).expect("write big payload");
     let big_ptr = str_new.call(&mut store, (top, big.len() as i32)).expect("__str_new big");
@@ -3630,5 +3668,399 @@ fn core_wasm_typed_containers_survive_heap_address_aliasing_and_compaction() {
   );
   memory.read(&store, buf_ptr + 24, &mut buf8).expect("read buf elem 1");
   assert_eq!(f64::from_le_bytes(buf8), pers_addr, "BufList elem 1 must keep pers_addr verbatim");
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}
+
+#[test]
+fn core_wasm_growable_semispace_exceeds_2mib_and_defers_while_scratch_root_live() {
+  let dir = TestDirectory::create("wasm-growable-2mib");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for >2 MiB growable persistent semi-spaces and deferred growth with live scratch_roots_head."
+  :package |growable-2mib
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'growable-2mib.main/main!) (:mode :native) (:reload-fn 'growable-2mib.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'growable-2mib.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*blob $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *blob |init
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*aux $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *aux |aux-init
+          :examples $ []
+          :schema $ quote $ Ref String
+        'set-blob $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-blob (tag-num size)
+            reset! *blob $ &str:pad-right (&str:concat |B- (to-string tag-num)) size |B
+            &str:count @*blob
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'set-aux-and-wrap-old $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export set-aux-and-wrap-old (size)
+            let
+                old-aux @*aux
+              reset! *aux $ &str:pad-right |AUX- size |X
+              [] old-aux |kept
+          :examples $ []
+          :schema $ quote $ Fn Number (-> (List String))
+        'read-wrapped $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-wrapped (xs)
+            &str:concat (&list:nth xs 0) (&str:concat |:: (&list:nth xs 1))
+          :examples $ []
+          :schema $ quote $ Fn (List String) (-> String)
+        'read-blob-head $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-blob-head ()
+            &str:concat (&str:slice @*blob 0 8) (&str:concat |# (to-string (&str:count @*blob)))
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'read-aux-head $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-aux-head ()
+            &str:concat (&str:slice @*aux 0 8) (&str:concat |# (to-string (&str:count @*aux)))
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns growable-2mib.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, THIRTY_TWO_MIB);
+
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let static_end = initial_arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let set_blob = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "set-blob")
+    .expect("set-blob export");
+  let set_aux_wrap = instance
+    .get_typed_func::<f64, f64>(&mut store, "set-aux-and-wrap-old")
+    .expect("set-aux-and-wrap-old export");
+  let read_wrapped = instance
+    .get_typed_func::<f64, f64>(&mut store, "read-wrapped")
+    .expect("read-wrapped export");
+  let read_blob_head = instance
+    .get_typed_func::<(), f64>(&mut store, "read-blob-head")
+    .expect("read-blob-head export");
+  let read_aux_head = instance
+    .get_typed_func::<(), f64>(&mut store, "read-aux-head")
+    .expect("read-aux-head export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+
+  // Grow in stages from 256 KiB -> >2 MiB live state (~2.4 MiB -> semi_space >= 4.8 MiB).
+  for (idx, size) in [(1.0, 300_000.0), (2.0, 900_000.0), (3.0, 2_400_000.0)] {
+    assert_eq!(set_blob.call(&mut store, (idx, size)).expect("set-blob grow"), size);
+    assert_eq!(
+      get_i32_global(&mut store, &instance, "__heap_ptr"),
+      get_i32_global(&mut store, &instance, "__arena_base")
+    );
+  }
+  let (space_a_1, space_b_1, arena_1) = persistent_space_bounds(&mut store, &instance, static_end);
+  let semi_1 = space_b_1 - space_a_1;
+  assert!(
+    semi_1 >= 4_800_000,
+    "expected semi-space to grow >= 4.8 MiB for 2.4 MiB live blob, got {semi_1}"
+  );
+  assert!(arena_1 > initial_arena_base);
+  let blob_info = read_blob_head.call(&mut store, ()).expect("read-blob-head");
+  assert_eq!(read_wasm_str(&mut store, &instance, blob_info), "B-3BBBBB#2400000");
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+
+  // While a Scratch return value is live (scratch_roots_head != 0), a > semi_1/2 commit defers growth until __arena_reset().
+  let wrapped_ptr = set_aux_wrap
+    .call(&mut store, 1_500_000.0)
+    .expect("set-aux-and-wrap-old should defer growth");
+  assert_eq!(
+    get_i32_global(&mut store, &instance, "__arena_base"),
+    arena_1,
+    "__arena_base must not move while scratch_roots_head != 0"
+  );
+  let wrapped_text = read_wrapped.call(&mut store, wrapped_ptr).expect("read-wrapped");
+  assert_eq!(read_wasm_str(&mut store, &instance, wrapped_text), "aux-init::kept");
+
+  // __arena_reset() clears scratch_roots_head and executes the deferred semi-space growth.
+  arena_reset.call(&mut store, ()).expect("__arena_reset executes deferred growth");
+  let (space_a_2, space_b_2, arena_2) = persistent_space_bounds(&mut store, &instance, static_end);
+  let semi_2 = space_b_2 - space_a_2;
+  assert!(
+    semi_2 > semi_1,
+    "expected deferred growth after __arena_reset (semi_1={semi_1}, semi_2={semi_2})"
+  );
+  assert!(arena_2 > arena_1);
+  let blob_after = read_blob_head.call(&mut store, ()).expect("read-blob-head after grow");
+  assert_eq!(read_wasm_str(&mut store, &instance, blob_after), "B-3BBBBB#2400000");
+  let aux_after = read_aux_head.call(&mut store, ()).expect("read-aux-head after grow");
+  assert_eq!(read_wasm_str(&mut store, &instance, aux_after), "AUX-XXXX#1500000");
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}
+
+#[test]
+fn core_wasm_deep_dag_over_1000_levels_promotes_and_relocates_without_stack_overflow() {
+  let dir = TestDirectory::create("wasm-deep-dag-1200");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot for >1000-deep DAG iterative Cheney BFS promotion and worklist Scratch relocation."
+  :package |deep-dag
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'deep-dag.main/main!) (:mode :native) (:reload-fn 'deep-dag.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'deep-dag.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Chain (:Leaf String) (:Link deep-dag.main/Chain)
+          :examples $ []
+          :schema $ quote EnumDef
+        '*chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *chain $ Chain :Leaf |init
+          :examples $ []
+          :schema $ quote $ Ref deep-dag.main/Chain
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'build-and-commit-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export build-and-commit-chain (depth)
+            let
+                loop-fn $ fn (k acc)
+                  hint-fn $ Fn Number deep-dag.main/Chain (-> deep-dag.main/Chain)
+                  if (&<= k 0) , acc
+                    recur (&- k 1) (Chain :Link acc)
+                deep $ loop-fn depth (Chain :Leaf |deep-leaf)
+              reset! *chain deep
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'wrap-scratch-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export wrap-scratch-chain (depth)
+            let
+                tail-old @*chain
+                loop-fn $ fn (k acc)
+                  hint-fn $ Fn Number deep-dag.main/Chain (-> deep-dag.main/Chain)
+                  if (&<= k 0) , acc
+                    recur (&- k 1) (Chain :Link acc)
+              loop-fn depth tail-old
+          :examples $ []
+          :schema $ quote $ Fn Number (-> deep-dag.main/Chain)
+        'churn-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-heap (k size)
+            reset! *churn $ &str:pad-right (&str:concat |C- (to-string k)) size |C
+            &str:count @*churn
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Number)
+        'measure-chain-depth $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn measure-chain-depth (node acc)
+            hint-fn $ Fn deep-dag.main/Chain Number (-> Number)
+            match node
+              (:Leaf s) (&+ acc (&str:count s))
+              (:Link next) (recur next (&+ acc 1))
+          :examples $ []
+          :schema $ quote $ Fn deep-dag.main/Chain Number (-> Number)
+        'check-persisted-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-persisted-chain ()
+            measure-chain-depth @*chain 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'check-scratch-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-scratch-chain (node)
+            measure-chain-depth node 0
+          :examples $ []
+          :schema $ quote $ Fn deep-dag.main/Chain (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns deep-dag.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, EIGHT_MIB);
+
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let static_end = initial_arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let build_commit = instance
+    .get_typed_func::<f64, f64>(&mut store, "build-and-commit-chain")
+    .expect("build-and-commit-chain");
+  let wrap_scratch = instance
+    .get_typed_func::<f64, f64>(&mut store, "wrap-scratch-chain")
+    .expect("wrap-scratch-chain");
+  let churn_heap = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "churn-heap")
+    .expect("churn-heap");
+  let check_persisted = instance
+    .get_typed_func::<(), f64>(&mut store, "check-persisted-chain")
+    .expect("check-persisted-chain");
+  let check_scratch = instance
+    .get_typed_func::<f64, f64>(&mut store, "check-scratch-chain")
+    .expect("check-scratch-chain");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset");
+
+  // 1,200-deep Chain (> 256 old MAX_PROMOTE_DEPTH) promotes iteratively into Space A.
+  assert_eq!(build_commit.call(&mut store, 1_200.0).expect("commit depth 1200"), 1.0);
+  assert_eq!(check_persisted.call(&mut store, ()).expect("check depth 1200"), 1_209.0);
+
+  // Wrap a 1,100-deep Scratch Chain pointing to the 1,200-deep persistent Chain, keeping it in scratch_roots_head.
+  let scratch_wrapped = wrap_scratch.call(&mut store, 1_100.0).expect("wrap 1100-deep scratch chain");
+  assert!(scratch_wrapped >= f64::from(initial_arena_base));
+
+  // Trigger multiple compactions A -> B -> A while the 2,300-deep combined Scratch + Persistent graph stays live!
+  let mut flipped_to_b = false;
+  for k in 1..=12u64 {
+    assert_eq!(churn_heap.call(&mut store, (k as f64, 32_768.0)).expect("churn"), 32_768.0);
+    let (_, space_b_base, _) = persistent_space_bounds(&mut store, &instance, static_end);
+    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+      flipped_to_b = true;
+    }
+  }
+  assert!(flipped_to_b, "expected churn to trigger semi-space compaction");
+  assert_eq!(
+    check_scratch
+      .call(&mut store, scratch_wrapped)
+      .expect("check 2300-deep relocated scratch+persistent chain"),
+    2_309.0
+  );
+  assert_eq!(check_persisted.call(&mut store, ()).expect("check persisted 1200"), 1_209.0);
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+  assert_eq!(check_persisted.call(&mut store, ()).expect("check persisted after reset"), 1_209.0);
+}
+
+#[test]
+fn core_wasm_exact_pointer_heap_address_aliasing_across_growable_compaction() {
+  let dir = TestDirectory::create("wasm-exact-ptr-aliasing");
+  let snapshot = r#"
+{}
+  :about "|Test snapshot verifying exact-pointer Struct/Closure/AnyBox fields and heap-address-aliasing Numbers across growable compaction."
+  :package |exact-ptr-alias
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'exact-ptr-alias.main/main!) (:mode :native) (:reload-fn 'exact-ptr-alias.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'exact-ptr-alias.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Pair (:alias-num Number) (:label String) (:boxed Any)
+          :examples $ []
+          :schema $ quote StructDef
+        '*pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *pair $ Pair :alias-num 0 :label |init :boxed (any:box 0)
+          :examples $ []
+          :schema $ quote $ Ref exact-ptr-alias.main/Pair
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'store-aliasing-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export store-aliasing-pair (alias-addr label)
+            let
+                p $ Pair :alias-num alias-addr :label label :boxed (any:box alias-addr)
+              reset! *pair p
+              , 1
+          :examples $ []
+          :schema $ quote $ Fn Number String (-> Number)
+        'grow-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export grow-churn (size)
+            reset! *churn $ &str:pad-right |GROW- size |G
+            &str:count @*churn
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-pair-check $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-pair-check (expected-addr)
+            let
+                p @*pair
+                num-ok $ &= (:alias-num p) expected-addr
+                box-ok $ match (any:downcast (:boxed p) Number)
+                  (:some v) (&= v expected-addr)
+                  (:none) false
+                lbl-ok $ &= (type-of (:label p)) :string
+              if (and num-ok box-ok lbl-ok) (:label p) |mismatch
+          :examples $ []
+          :schema $ quote $ Fn Number (-> String)
+        'read-churn-ptr $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-churn-ptr () , @*churn
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns exact-ptr-alias.main
+"#;
+  let wasm = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm, THIRTY_TWO_MIB);
+
+  let initial_arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let static_end = initial_arena_base - 2 * INITIAL_SEMI_SPACE_BYTES;
+  let store_pair = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "store-aliasing-pair")
+    .expect("store-aliasing-pair");
+  let grow_churn = instance.get_typed_func::<f64, f64>(&mut store, "grow-churn").expect("grow-churn");
+  let read_pair_check = instance
+    .get_typed_func::<f64, f64>(&mut store, "read-pair-check")
+    .expect("read-pair-check");
+  let read_churn_ptr = instance
+    .get_typed_func::<(), f64>(&mut store, "read-churn-ptr")
+    .expect("read-churn-ptr");
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory");
+
+  // Allocate a live persistent string in Space A so we capture its exact heap address.
+  assert_eq!(grow_churn.call(&mut store, 1024.0).expect("seed churn"), 1024.0);
+  let live_churn_addr = read_churn_ptr.call(&mut store, ()).expect("read churn ptr");
+  assert!(live_churn_addr >= f64::from(static_end) && live_churn_addr < f64::from(initial_arena_base));
+
+  // Store that exact heap address as a scalar Number and AnyBox(Number) alongside an exact HeapPtrI32 String.
+  let label_bytes = b"exact-heap-label";
+  let src = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory.write(&mut store, src as usize, label_bytes).expect("write label");
+  let label_ptr = str_new.call(&mut store, (src, label_bytes.len() as i32)).expect("__str_new label");
+  assert_eq!(
+    store_pair
+      .call(&mut store, (live_churn_addr, label_ptr))
+      .expect("store-aliasing-pair"),
+    1.0
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset");
+
+  // Grow semi-spaces past 256 KiB -> >600 KiB -> >1.2 MiB, relocating *pair's exact HeapPtrI32 :label
+  // while leaving :alias-num and AnyBox(Number) numerically equal to the stale Space-A address.
+  assert_eq!(grow_churn.call(&mut store, 300_000.0).expect("grow 300k"), 300_000.0);
+  assert_eq!(grow_churn.call(&mut store, 700_000.0).expect("grow 700k"), 700_000.0);
+  let (_, space_b_base, arena_now) = persistent_space_bounds(&mut store, &instance, static_end);
+  assert!(space_b_base - static_end >= 1_400_000);
+  assert!(arena_now > initial_arena_base);
+
+  let lbl_out = read_pair_check.call(&mut store, live_churn_addr).expect("read-pair-check");
+  assert_eq!(read_wasm_str(&mut store, &instance, lbl_out), "exact-heap-label");
   arena_reset.call(&mut store, ()).expect("__arena_reset final");
 }

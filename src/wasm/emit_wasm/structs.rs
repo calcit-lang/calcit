@@ -44,6 +44,7 @@ pub(super) enum StructFieldKind {
   UInt64 = 11,
   HeapPtrI32 = 12,
   OptionHeapPtrI32 = 13,
+  ScalarF64 = 14,
 }
 
 fn is_option_enum_def(enum_def: &CalcitEnumDef) -> bool {
@@ -110,7 +111,7 @@ impl StructFieldKind {
       Self::BoolU8 | Self::Int8 | Self::UInt8 => 1,
       Self::Int16 | Self::UInt16 => 2,
       Self::TagU32 | Self::Int32 | Self::UInt32 | Self::HeapPtrI32 | Self::OptionHeapPtrI32 => 4,
-      Self::BoxedF64 | Self::Int64 | Self::UInt64 => 8,
+      Self::BoxedF64 | Self::ScalarF64 | Self::Int64 | Self::UInt64 => 8,
     }
   }
 
@@ -124,6 +125,7 @@ impl StructFieldKind {
     }
     let expanded = expand_wasm_value_type(annotation);
     match expanded.as_ref() {
+      CalcitTypeAnnotation::Number => Self::ScalarF64,
       CalcitTypeAnnotation::Bool => Self::BoolU8,
       CalcitTypeAnnotation::Tag => Self::TagU32,
       CalcitTypeAnnotation::Unit => Self::UnitZero,
@@ -136,7 +138,7 @@ impl StructFieldKind {
         CalcitNumericRefinement::UInt32 => Self::UInt32,
         CalcitNumericRefinement::Int64 => Self::Int64,
         CalcitNumericRefinement::UInt64 => Self::UInt64,
-        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::BoxedF64,
+        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::ScalarF64,
       },
       CalcitTypeAnnotation::String
       | CalcitTypeAnnotation::Buffer
@@ -163,7 +165,7 @@ impl StructFieldKind {
     match value_type {
       ComponentAbiType::Unit => Self::UnitZero,
       ComponentAbiType::Bool => Self::BoolU8,
-      ComponentAbiType::Number => Self::BoxedF64,
+      ComponentAbiType::Number => Self::ScalarF64,
       ComponentAbiType::Numeric(refinement) => match refinement {
         CalcitNumericRefinement::Int8 => Self::Int8,
         CalcitNumericRefinement::UInt8 => Self::UInt8,
@@ -173,7 +175,7 @@ impl StructFieldKind {
         CalcitNumericRefinement::UInt32 => Self::UInt32,
         CalcitNumericRefinement::Int64 => Self::Int64,
         CalcitNumericRefinement::UInt64 => Self::UInt64,
-        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::BoxedF64,
+        CalcitNumericRefinement::Float32 | CalcitNumericRefinement::Float64 => Self::ScalarF64,
       },
       ComponentAbiType::Option(inner)
         if matches!(
@@ -200,7 +202,7 @@ impl StructFieldKind {
 
   pub(super) fn native_repr(self) -> NativeValRepr {
     match self {
-      Self::BoxedF64 | Self::OptionHeapPtrI32 => NativeValRepr::F64,
+      Self::BoxedF64 | Self::OptionHeapPtrI32 | Self::ScalarF64 => NativeValRepr::F64,
       Self::BoolU8 => NativeValRepr::BoolI32,
       Self::TagU32 => NativeValRepr::TagI32,
       Self::UnitZero => NativeValRepr::UnitI32,
@@ -822,7 +824,7 @@ pub(super) fn emit_option_expr_to_niche_i32(ctx: &mut WasmGenCtx, expr: &Calcit)
 fn emit_store_struct_field_instr(ctx: &mut WasmGenCtx, field: StructFieldLayout) {
   let offset = u64::from(field.offset);
   match field.kind {
-    StructFieldKind::BoxedF64 => ctx.emit(Instruction::F64Store(mem_arg_f64(offset))),
+    StructFieldKind::BoxedF64 | StructFieldKind::ScalarF64 => ctx.emit(Instruction::F64Store(mem_arg_f64(offset))),
     StructFieldKind::BoolU8 | StructFieldKind::Int8 | StructFieldKind::UInt8 => {
       ctx.emit(Instruction::I32Store8(mem_arg_byte(offset)));
     }
@@ -916,7 +918,7 @@ pub(super) fn emit_load_struct_field_as_repr(ctx: &mut WasmGenCtx, ptr_local: u3
   }
   ctx.emit(Instruction::LocalGet(ptr_local));
   match field.kind {
-    StructFieldKind::BoxedF64 => ctx.emit(Instruction::F64Load(mem_arg_f64(offset))),
+    StructFieldKind::BoxedF64 | StructFieldKind::ScalarF64 => ctx.emit(Instruction::F64Load(mem_arg_f64(offset))),
     StructFieldKind::BoolU8 | StructFieldKind::UInt8 => ctx.emit(Instruction::I32Load8U(mem_arg_byte(offset))),
     StructFieldKind::Int8 => ctx.emit(Instruction::I32Load8S(mem_arg_byte(offset))),
     StructFieldKind::UInt16 => ctx.emit(Instruction::I32Load16U(mem_arg_i16(offset))),
