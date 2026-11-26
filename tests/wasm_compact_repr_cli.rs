@@ -3019,12 +3019,20 @@ fn typed_container_safety_guards_json_keys_map_widening_and_encode_kinds() {
                 kept $ match (&map:get (as-dyn widened) 42)
                   (:some v) v
                   (:none) 0
+                got-a $ match (&map:get (as-dyn widened) ptr-a)
+                  (:some v) v
+                  (:none) 0
+                got-b $ match (&map:get (as-dyn widened) ptr-b)
+                  (:some v) v
+                  (:none) 0
                 a $ [] (&+ ptr-a 0)
                 c $ [] (&+ ptr-b 0)
               and
                 &= @*live-a @*live-b
                 &= (&map:count widened) 4
                 &= kept 77
+                &= got-a 88
+                &= got-b 89
                 &map:includes? (as-dyn widened) 88
                 &map:includes? (as-dyn widened) 89
                 &map:includes? (as-dyn widened) 99

@@ -317,6 +317,82 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_key_equal(
   b.finish(vec![ValType::F64, ValType::F64, ValType::I32], vec![ValType::I32])
 }
 
+/// Scans `count` key-value pairs at `base + entry_offset + i*16` and sets `found_idx` to the
+/// matching entry index or `-1`. For multi-entry `DynamicBoxed` buckets/maps, prefers an exact
+/// `PureScalar` f64 match before falling back to `DynamicBoxed` equality so aliased numeric keys
+/// widened into `DynamicBoxed` still resolve to their own entries.
+#[allow(clippy::too_many_arguments)]
+fn rt_emit_find_key_in_pairs(
+  b: &mut RuntimeFnBuilder,
+  base: u32,
+  entry_offset: i32,
+  count: u32,
+  target_key: u32,
+  key_kind: u32,
+  key_equal_idx: u32,
+  i: u32,
+  found_idx: u32,
+) {
+  let emit_scan = |b: &mut RuntimeFnBuilder, exact_scalar: bool| {
+    b.emit(Instruction::I32Const(0));
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalGet(count));
+    b.emit(Instruction::I32GeU);
+    b.emit(Instruction::BrIf(1));
+    b.emit(Instruction::LocalGet(base));
+    b.emit(Instruction::I32Const(entry_offset));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(16));
+    b.emit(Instruction::I32Mul);
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::F64Load(mem_arg_f64(0)));
+    b.emit(Instruction::LocalGet(target_key));
+    if exact_scalar {
+      b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
+    } else {
+      b.emit(Instruction::LocalGet(key_kind));
+    }
+    b.emit(Instruction::Call(key_equal_idx));
+    b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::LocalSet(found_idx));
+    b.emit(Instruction::Br(2));
+    b.emit(Instruction::End);
+    b.emit(Instruction::LocalGet(i));
+    b.emit(Instruction::I32Const(1));
+    b.emit(Instruction::I32Add);
+    b.emit(Instruction::LocalSet(i));
+    b.emit(Instruction::Br(0));
+    b.emit(Instruction::End);
+    b.emit(Instruction::End);
+  };
+
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::LocalSet(found_idx));
+
+  b.emit(Instruction::LocalGet(key_kind));
+  b.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32GtU);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  emit_scan(b, true);
+  b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(found_idx));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  emit_scan(b, false);
+  b.emit(Instruction::End);
+}
+
 pub(in crate::wasm::emit_wasm) fn build_rt_map_make(map_tag: i32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(3); // count, root_ptr, kv_kind
   let dst = b.alloc_i32();
@@ -352,7 +428,6 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_root_assoc(copy_fn_idx: u32, key_
   let slots = b.alloc_i32();
   let addr = b.alloc_i32();
   let added = b.alloc_i32();
-  let key_addr = b.alloc_i32();
 
   b.emit(Instruction::LocalGet(3));
   b.emit(Instruction::I32Const(31));
@@ -464,40 +539,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_root_assoc(copy_fn_idx: u32, key_
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(bucket_count));
-  b.emit(Instruction::I32Const(-1));
-  b.emit(Instruction::LocalSet(found_idx));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(bucket_count));
-  b.emit(Instruction::I32GeU);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(bucket));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalTee(key_addr));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(4));
-  b.emit(Instruction::Call(key_equal_idx));
-  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalSet(found_idx));
-  b.emit(Instruction::Br(2));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
+  rt_emit_find_key_in_pairs(&mut b, bucket, 16, bucket_count, 1, 4, key_equal_idx, i, found_idx);
 
   b.emit(Instruction::LocalGet(found_idx));
   b.emit(Instruction::I32Const(-1));
@@ -597,6 +639,7 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_root_lookup(key_equal_idx: u32) -
   let bucket = b.alloc_i32();
   let count = b.alloc_i32();
   let i = b.alloc_i32();
+  let found_idx = b.alloc_i32();
   let found = b.alloc_i32();
   let value = b.alloc_f64();
 
@@ -632,45 +675,22 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_root_lookup(key_equal_idx: u32) -
   b.emit(Instruction::F64Load(mem_arg_f64(8)));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalSet(count));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::I32GeU);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(bucket));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(3));
-  b.emit(Instruction::Call(key_equal_idx));
+  rt_emit_find_key_in_pairs(&mut b, bucket, 16, count, 1, 3, key_equal_idx, i, found_idx);
+  b.emit(Instruction::LocalGet(found_idx));
+  b.emit(Instruction::I32Const(-1));
+  b.emit(Instruction::I32Ne);
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(found));
   b.emit(Instruction::LocalGet(bucket));
   b.emit(Instruction::I32Const(24));
   b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(found_idx));
   b.emit(Instruction::I32Const(16));
   b.emit(Instruction::I32Mul);
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::LocalSet(value));
-  b.emit(Instruction::Br(2));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::End);
@@ -1485,43 +1505,11 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_dissoc(
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::Call(map_linearize_idx));
   b.emit(Instruction::LocalSet(flat));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(found));
+  rt_emit_find_key_in_pairs(&mut b, flat, 8, count, 1, key_kind, key_equal_idx, i, found_idx);
+  b.emit(Instruction::LocalGet(found_idx));
   b.emit(Instruction::I32Const(-1));
-  b.emit(Instruction::LocalSet(found_idx));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::I32GeU);
-  b.emit(Instruction::BrIf(1));
-  b.emit(Instruction::LocalGet(flat));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(16));
-  b.emit(Instruction::I32Mul);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(key_kind));
-  b.emit(Instruction::Call(key_equal_idx));
-  b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
-  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Ne);
   b.emit(Instruction::LocalSet(found));
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalSet(found_idx));
-  b.emit(Instruction::Br(2));
-  b.emit(Instruction::End);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Br(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
 
   b.emit(Instruction::LocalGet(found));
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
