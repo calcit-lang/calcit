@@ -299,6 +299,16 @@ impl TypeAliasDecl {
   pub(crate) fn expand(&self, ns: &str, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
     let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(&self.body), &self.generics);
     let parsed = super::type_refs::qualify_namespace_type_refs(parsed, ns);
+    self.substitute_generics(parsed, args)
+  }
+
+  /// Like [`Self::expand`], without locking global program data to qualify namespace refs.
+  pub(crate) fn expand_unqualified(&self, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
+    let parsed = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&declared_type_form(&self.body), &self.generics);
+    self.substitute_generics(parsed, args)
+  }
+
+  fn substitute_generics(&self, parsed: Arc<CalcitTypeAnnotation>, args: &[Arc<CalcitTypeAnnotation>]) -> Arc<CalcitTypeAnnotation> {
     if self.generics.is_empty() {
       return parsed;
     }

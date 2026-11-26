@@ -2877,3 +2877,64 @@ fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
     "match pattern binding shadowing global helper name must block fallthrough in both walker and param sink collector"
   );
 }
+
+#[test]
+fn impl_attach_scan_under_program_write_lock_handles_typeref_fn_schemas_without_deadlock() {
+  // Reproduces the `apply_code_changes` / `extract_program_data` lock order where
+  // `PROGRAM_CODE_DATA.write()` is held across `stage_source_impls` while a definition
+  // carries a `TypeRef` schema (value schema or `deftype` fn-schema alias).
+  let mut program_for_param = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("BoxFn", "deftype BoxFn $ Fn P (-> String)"),
+      ("use-alias", "defn use-alias (p) (impl-traits p P-Labeled-1)"),
+      ("mk-p", "defn mk-p () (%{} P :name |a)"),
+    ],
+    &[],
+  );
+  if let Some(app_m) = program_for_param.get_mut("app.m") {
+    if let Some(entry) = app_m.defs.get_mut("use-alias") {
+      entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("BoxFn"), Arc::new(vec![])));
+    }
+    if let Some(entry) = app_m.defs.get_mut("mk-p") {
+      entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("UnknownValue"), Arc::new(vec![])));
+    }
+  }
+
+  let mut program_for_return = impl_attach_program(
+    "defstruct P (:name String)",
+    &[
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
+      ("RetFn", "deftype RetFn $ Fn (-> P)"),
+      ("mk-p", "defn mk-p () (%{} P :name |a)"),
+      ("use-ret", "defn use-ret () (impl-traits (mk-p) P-Labeled-1)"),
+    ],
+    &[],
+  );
+  if let Some(app_m) = program_for_return.get_mut("app.m")
+    && let Some(entry) = app_m.defs.get_mut("mk-p")
+  {
+    entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("RetFn"), Arc::new(vec![])));
+  }
+
+  let (param_non_coherent, return_non_coherent) = {
+    let mut guard = PROGRAM_CODE_DATA.write().expect("lock program code data");
+    let previous = std::mem::replace(&mut *guard, program_for_param);
+    let param_res = impl_attach::collect_non_coherent_nominal_defs(&guard);
+    *guard = program_for_return;
+    let return_res = impl_attach::collect_non_coherent_nominal_defs(&guard);
+    *guard = previous;
+    (param_res, return_res)
+  };
+  assert!(
+    param_non_coherent.contains("app.m/P"),
+    "lock-free fn-schema alias traversal must bind param nominal under write lock"
+  );
+  assert!(
+    return_non_coherent.contains("app.m/P"),
+    "lock-free fn-schema alias traversal must resolve call return nominal under write lock"
+  );
+}
