@@ -312,7 +312,7 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 
   let value = emit_str_index_value(ctx, &args[1])?;
   let index = emit_str_index(ctx, value);
-  let len = emit_load_count_i32(ctx, ptr);
+  let len = emit_load_str_len_i32(ctx, ptr);
   let start = emit_str_scalar_offset(ctx, ptr, len, index);
   ctx.emit(Instruction::LocalGet(start));
   ctx.emit(Instruction::LocalGet(len));
@@ -346,7 +346,7 @@ pub(super) fn emit_str_rest(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
 }
 
 pub(super) fn emit_str_rest_from_ptr(ctx: &mut WasmGenCtx, ptr: u32) {
-  let len = emit_load_count_i32(ctx, ptr);
+  let len = emit_load_str_len_i32(ctx, ptr);
   let start = ctx.alloc_i32(0);
   emit_str_advance_scalar(ctx, ptr, len, start);
   emit_str_copy_range(ctx, ptr, start, len);
@@ -362,7 +362,7 @@ pub(super) fn emit_str_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let to_value = args.get(2).map(|expr| emit_str_index_value(ctx, expr)).transpose()?;
   let from = emit_str_index(ctx, from_value);
   let to = to_value.map(|value| emit_str_index(ctx, value));
-  let len = emit_load_count_i32(ctx, ptr);
+  let len = emit_load_str_len_i32(ctx, ptr);
   let start = emit_str_scalar_offset(ctx, ptr, len, from);
   let end = to.map(|index| emit_str_scalar_offset(ctx, ptr, len, index)).unwrap_or(len);
   emit_str_copy_range(ctx, ptr, start, end);
@@ -386,7 +386,7 @@ pub(super) fn emit_str_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let value = emit_str_index_value(ctx, &args[1])?;
   let index = emit_str_index(ctx, value);
-  let len = emit_load_count_i32(ctx, ptr);
+  let len = emit_load_str_len_i32(ctx, ptr);
   let offset = emit_str_scalar_offset(ctx, ptr, len, index);
   ctx.emit(Instruction::LocalGet(offset));
   ctx.emit(Instruction::LocalGet(len));
@@ -1350,7 +1350,7 @@ pub(super) fn emit_join_string_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, se
   ctx.emit(Instruction::LocalGet(xs_f64));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(xs_ptr));
-  let count = emit_load_count_i32(ctx, xs_ptr);
+  let count = emit_load_container_count_i32(ctx, xs_ptr);
 
   // result starts as "" (empty string in pool or alloc 0-length string)
   let result = ctx.alloc_local();

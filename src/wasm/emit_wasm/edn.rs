@@ -719,11 +719,7 @@ fn emit_edn_map(
   ctx.emit(Instruction::LocalGet(map_ptr));
   ctx.call_rt("__rt_map_linearize");
   ctx.emit(Instruction::LocalSet(flat_ptr));
-  let count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(count));
+  let count = emit_load_container_count_i32(ctx, flat_ptr);
 
   // Sort the fresh flat buffer in place. Closed homogeneous key types make the
   // native EDN ordering reducible to numeric/tag order or UTF-8 string order.
@@ -920,11 +916,7 @@ fn emit_edn_list(
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  let count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(count));
+  let count = emit_load_container_count_i32(ctx, ptr);
   let index = ctx.alloc_i32(0);
   let result = literal_local(ctx, if nested { "([]" } else { "[]" })?;
 
@@ -1375,11 +1367,7 @@ fn emit_json_list(
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ptr));
-  let count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(count));
+  let count = emit_load_container_count_i32(ctx, ptr);
 
   let result = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(count));
@@ -1889,11 +1877,7 @@ fn emit_json_map(
   ctx.emit(Instruction::LocalGet(map_ptr));
   ctx.call_rt("__rt_map_linearize");
   ctx.emit(Instruction::LocalSet(flat_ptr));
-  let count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(flat_ptr));
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(count));
+  let count = emit_load_container_count_i32(ctx, flat_ptr);
 
   let result = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(count));

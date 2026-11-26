@@ -3392,3 +3392,243 @@ fn core_wasm_closures_promote_and_compact_mixed_captures_across_defref() {
   );
   arena_reset.call(&mut store, ()).expect("__arena_reset final");
 }
+
+#[test]
+fn core_wasm_typed_containers_survive_heap_address_aliasing_and_compaction() {
+  let dir = TestDirectory::create("wasm-typed-container-aliasing");
+  let snapshot = r#"
+{} (:package |typed-container-aliasing)
+  :about "|Verify PureScalar and ExactHeapPtr typed containers preserve heap-aliasing numbers across defref commit and compaction"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'typed-container-aliasing.main/main!) (:mode :native) (:reload-fn 'typed-container-aliasing.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'typed-container-aliasing.main
+    %{} 'FileEntry
+      :defs $ {}
+        '*pers-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *pers-str |initial-persistent-string
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*num-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *num-list ([] 0)
+          :examples $ []
+          :schema $ quote $ Ref (List Number)
+        '*num-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *num-set (#{} 0)
+          :examples $ []
+          :schema $ quote $ Ref (Set Number)
+        '*num-buf $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *num-buf (&buf-list:new)
+          :examples $ []
+          :schema $ quote $ Ref BufList
+        '*tag-num-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *tag-num-map (&{} :init 0)
+          :examples $ []
+          :schema $ quote $ Ref (Map Tag Number)
+        '*num-tag-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *num-tag-map (&{} 0 :init)
+          :examples $ []
+          :schema $ quote $ Ref (Map Number Tag)
+        '*str-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *str-list ([] |init)
+          :examples $ []
+          :schema $ quote $ Ref (List String)
+        '*str-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *str-map (&{} |init |val)
+          :examples $ []
+          :schema $ quote $ Ref (Map String String)
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |empty
+          :examples $ []
+          :schema $ quote $ Ref String
+        'commit-pers-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-pers-str (s)
+            reset! *pers-str s
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'current-pers-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export current-pers-str () @*pers-str
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'current-num-buf $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export current-num-buf () @*num-buf
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'commit-aliasing $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-aliasing (addr-s addr-p alias-s)
+            reset! *num-list ([] addr-s addr-p 42)
+            reset! *num-set (#{} addr-s addr-p)
+            reset! *num-buf (&buf-list:push (&buf-list:push (&buf-list:new) addr-s) addr-p)
+            reset! *tag-num-map (&{} :s addr-s :p addr-p)
+            reset! *num-tag-map (&{} addr-s :hit-s addr-p :hit-p)
+            reset! *str-list ([] (&str:concat |left- alias-s) |right)
+            reset! *str-map (&{} (&str:concat |k- alias-s) (&str:concat |v- alias-s))
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn Number Number String (-> Number)
+        'churn-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export churn-heap (s)
+            reset! *churn s
+            , 1
+          :examples $ []
+          :schema $ quote $ Fn String (-> Number)
+        'verify-aliasing $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-aliasing (addr-s addr-p alias-s)
+            let
+                xs @*num-list
+                st @*num-set
+                bl (&buf-list:to-list @*num-buf)
+                tm @*tag-num-map
+                nm @*num-tag-map
+                sl @*str-list
+                sm @*str-map
+                expected-s (&str:concat |left- alias-s)
+                expected-k (&str:concat |k- alias-s)
+                expected-v (&str:concat |v- alias-s)
+                list-ok $ and
+                  = (&list:count xs) 3
+                  = (&list:nth xs 0) addr-s
+                  = (&list:nth xs 1) addr-p
+                  = (&list:nth xs 2) 42
+                  = xs ([] (+ addr-s 0) (+ addr-p 0) 42)
+                  = (&hash ([] addr-s)) (&hash ([] (+ addr-s 0)))
+                  not= (&hash ([] addr-s)) (&hash ([] alias-s))
+                set-ok $ and
+                  includes? st addr-s
+                  includes? st addr-p
+                  not (includes? st (+ addr-s 1))
+                buf-ok $ = (&buf-list:count @*num-buf) 2
+                map-ok $ and
+                  = (get tm :s) (Some addr-s)
+                  = (get tm :p) (Some addr-p)
+                  = (get nm addr-s) (Some :hit-s)
+                  = (get nm addr-p) (Some :hit-p)
+                  not (&map:contains? nm (+ addr-s 1))
+                exact-ok $ and
+                  = (&list:nth sl 0) expected-s
+                  = (&list:nth sl 1) |right
+                  = (&map:get sm expected-k) (Some expected-v)
+              if (and list-ok set-ok buf-ok map-ok exact-ok) 1 0
+          :examples $ []
+          :schema $ quote $ Fn Number Number String (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns typed-container-aliasing.main
+"#;
+  let wasm_path = compile_core_wasm(&dir, snapshot);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let str_new = instance
+    .get_typed_func::<(i32, i32), f64>(&mut store, "__str_new")
+    .expect("__str_new export");
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset export");
+  let commit_pers_str = instance
+    .get_typed_func::<f64, f64>(&mut store, "commit-pers-str")
+    .expect("commit-pers-str export");
+  let current_pers_str = instance
+    .get_typed_func::<(), f64>(&mut store, "current-pers-str")
+    .expect("current-pers-str export");
+  let commit_aliasing = instance
+    .get_typed_func::<(f64, f64, f64), f64>(&mut store, "commit-aliasing")
+    .expect("commit-aliasing export");
+  let churn_heap = instance
+    .get_typed_func::<f64, f64>(&mut store, "churn-heap")
+    .expect("churn-heap export");
+  let current_num_buf = instance
+    .get_typed_func::<(), f64>(&mut store, "current-num-buf")
+    .expect("current-num-buf export");
+  let verify_aliasing = instance
+    .get_typed_func::<(f64, f64, f64), f64>(&mut store, "verify-aliasing")
+    .expect("verify-aliasing export");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let pers_label = "pers-alias-target";
+  let scratch_src = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory
+    .write(&mut store, scratch_src as usize, pers_label.as_bytes())
+    .expect("write pers label");
+  let pers_scratch = str_new
+    .call(&mut store, (scratch_src, pers_label.len() as i32))
+    .expect("__str_new pers label");
+  assert_eq!(commit_pers_str.call(&mut store, pers_scratch).expect("commit-pers-str"), 1.0);
+  arena_reset.call(&mut store, ()).expect("__arena_reset after commit-pers-str");
+  let pers_addr = current_pers_str.call(&mut store, ()).expect("current-pers-str");
+  assert_eq!(read_header_magic(&mut store, &instance, pers_addr), HEAP_MAGIC);
+
+  let alias_text = "scratch-alias";
+  let alias_src = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory
+    .write(&mut store, alias_src as usize, alias_text.as_bytes())
+    .expect("write alias label");
+  let scratch_addr = str_new
+    .call(&mut store, (alias_src, alias_text.len() as i32))
+    .expect("__str_new alias");
+  assert_eq!(read_header_magic(&mut store, &instance, scratch_addr), HEAP_MAGIC);
+  assert_eq!(
+    commit_aliasing
+      .call(&mut store, (scratch_addr, pers_addr, scratch_addr))
+      .expect("commit-aliasing"),
+    1.0
+  );
+  assert_eq!(
+    verify_aliasing
+      .call(&mut store, (scratch_addr, pers_addr, scratch_addr))
+      .expect("verify-aliasing before reset"),
+    1.0
+  );
+  arena_reset.call(&mut store, ()).expect("__arena_reset after commit-aliasing");
+
+  // Churn persistent heap past compaction threshold across semi-spaces while holding live aliasing containers.
+  let big = "Q".repeat(300_000);
+  for _ in 0..4 {
+    let top = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+    memory.write(&mut store, top as usize, big.as_bytes()).expect("write big payload");
+    let big_ptr = str_new.call(&mut store, (top, big.len() as i32)).expect("__str_new big");
+    assert_eq!(churn_heap.call(&mut store, big_ptr).expect("churn-heap"), 1.0);
+    arena_reset.call(&mut store, ()).expect("__arena_reset after churn");
+  }
+
+  // Re-allocate a live Scratch string at the exact `scratch_addr` address (arena was reset, so first alloc lands at identical offset)
+  // and verify all containers still preserve `scratch_addr` and `pers_addr` as Numbers without false HEAP_MAGIC aliasing.
+  let alias_src_after = get_i32_global(&mut store, &instance, "__heap_ptr") + 64;
+  memory
+    .write(&mut store, alias_src_after as usize, alias_text.as_bytes())
+    .expect("write alias label after compaction");
+  let recreated_scratch_addr = str_new
+    .call(&mut store, (alias_src_after, alias_text.len() as i32))
+    .expect("__str_new recreated alias");
+  assert_eq!(recreated_scratch_addr, scratch_addr);
+  assert_eq!(
+    verify_aliasing
+      .call(&mut store, (scratch_addr, pers_addr, recreated_scratch_addr))
+      .expect("verify-aliasing after compaction"),
+    1.0
+  );
+  let buf_ptr = current_num_buf.call(&mut store, ()).expect("current-num-buf") as usize;
+  let mut buf4 = [0u8; 4];
+  let mut buf8 = [0u8; 8];
+  memory.read(&store, buf_ptr + 4, &mut buf4).expect("read buf elem_kind");
+  assert_eq!(u32::from_le_bytes(buf4), 1, "BufList<Number> must stay PureScalar after compaction");
+  memory.read(&store, buf_ptr + 8, &mut buf4).expect("read buf count");
+  assert_eq!(u32::from_le_bytes(buf4), 2, "BufList count must be 2");
+  memory.read(&store, buf_ptr + 16, &mut buf8).expect("read buf elem 0");
+  assert_eq!(
+    f64::from_le_bytes(buf8),
+    scratch_addr,
+    "BufList elem 0 must keep scratch_addr verbatim"
+  );
+  memory.read(&store, buf_ptr + 24, &mut buf8).expect("read buf elem 1");
+  assert_eq!(f64::from_le_bytes(buf8), pers_addr, "BufList elem 1 must keep pers_addr verbatim");
+  arena_reset.call(&mut store, ()).expect("__arena_reset final");
+}

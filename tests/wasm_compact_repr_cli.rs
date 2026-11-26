@@ -2698,3 +2698,455 @@ fn option_niche_branch_keeps_defref_reset_state_branch_local() {
   assert_eq!(run_fn.call(&mut store, 1.0).expect("flag=true"), 6.0);
   assert_eq!(run_fn.call(&mut store, 0.0).expect("flag=false"), 6.0);
 }
+
+#[test]
+fn typed_container_slot_kinds_and_propagation_headers() {
+  let dir = TestDirectory::create("wasm-typed-container-headers");
+  let snapshot = r#"
+{} (:package |typed-headers)
+  :about "|Verify exact u32 container headers and ContainerSlotKind propagation across List, Set, BufList, Map while keeping String f64 len untouched"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'typed-headers.main/main!) (:mode :native) (:reload-fn 'typed-headers.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'typed-headers.main
+    %{} 'FileEntry
+      :defs $ {}
+        'empty-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-list () ([] )
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'empty-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-set () (#{})
+          :examples $ []
+          :schema $ quote $ Fn (-> (Set Number))
+        'empty-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-map () (&{})
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'scalar-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-list () ([] 1 2 3)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'str-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export str-list () ([] |a |b)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List String))
+        'mixed-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mixed-list () (&buf-list:push (&buf-list:new) (append ([] 1 |a) 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'adopted-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export adopted-list () (append ([] ) 10)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'mapped-count-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mapped-count-list () (map ([] |a |bb) count)
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'filtered-str-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export filtered-str-list () (filter ([] |a |bb) $ fn (s) (> (count s) 1))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List String))
+        'concat-scalar-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export concat-scalar-list () (concat ([] 1) ([] 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'concat-mixed-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export concat-mixed-list () (&buf-list:push (&buf-list:new) (concat ([] 1 |a) ([] 2)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-to-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-to-set () (&list:to-set ([] 1 2 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (Set Number))
+        'empty-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export empty-buflist () (&buf-list:new)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-buflist () (&buf-list:push (&buf-list:new) 99)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'mixed-buflist $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export mixed-buflist () (&buf-list:push (&buf-list:push (&buf-list:new) 99) |s)
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'scalar-buflist-to-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-buflist-to-list () (assert-type (&buf-list:to-list (&buf-list:push (&buf-list:new) 99)) (List Number))
+          :examples $ []
+          :schema $ quote $ Fn (-> (List Number))
+        'scalar-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export scalar-map () (&{} :a 1 :b 2)
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'str-num-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export str-num-map () (&{} |k 1)
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map String Number))
+        'merged-scalar-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export merged-scalar-map () (merge (&{} :a 1) (&{} :b 2))
+          :examples $ []
+          :schema $ quote $ Fn (-> (Map Tag Number))
+        'merged-mixed-val-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export merged-mixed-val-map () (&buf-list:push (&buf-list:new) (merge (&{} :a 1 :b |x) (&{} :c 2)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'sample-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export sample-string () (&str:concat |hel |lo)
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns typed-headers.main (:require)
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+
+  let call_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    let v = instance
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .expect(name)
+      .call(&mut *store, ())
+      .expect(name);
+    v as usize
+  };
+  let read_u32 = |store: &Store<StoreLimits>, addr: usize| -> u32 {
+    let mut buf = [0u8; 4];
+    memory.read(store, addr, &mut buf).expect("memory read u32");
+    u32::from_le_bytes(buf)
+  };
+  let read_f64 = |store: &Store<StoreLimits>, addr: usize| -> f64 {
+    let mut buf = [0u8; 8];
+    memory.read(store, addr, &mut buf).expect("memory read f64");
+    f64::from_le_bytes(buf)
+  };
+
+  // List & Set headers: [count:u32 @ 0][elem_kind:u32 @ 4]
+  // 0 = DynamicBoxed, 1 = PureScalar, 2 = ExactHeapPtr, 3 = EmptyUntyped
+  for (name, boxed_in_buf, expected_count, expected_kind) in [
+    ("empty-list", false, 0u32, 3u32),
+    ("empty-set", false, 0, 3),
+    ("scalar-list", false, 3, 1),
+    ("str-list", false, 2, 2),
+    ("mixed-list", true, 3, 0),
+    ("adopted-list", false, 1, 1),
+    ("mapped-count-list", false, 2, 1),
+    ("filtered-str-list", false, 1, 2),
+    ("concat-scalar-list", false, 2, 1),
+    ("concat-mixed-list", true, 3, 0),
+    ("scalar-to-set", false, 2, 1),
+    ("scalar-buflist-to-list", false, 1, 1),
+  ] {
+    let raw_ptr = call_ptr(&mut store, name);
+    let ptr = if boxed_in_buf {
+      read_f64(&store, raw_ptr + 16) as usize
+    } else {
+      raw_ptr
+    };
+    assert_eq!(read_u32(&store, ptr), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kind, "{name} elem_kind");
+  }
+
+  // BufList headers: [cap:u32 @ 0][elem_kind:u32 @ 4][count:u32 @ 8][reserved:u32 @ 12]
+  for (name, expected_cap, expected_kind, expected_count) in [
+    ("empty-buflist", 8u32, 3u32, 0u32),
+    ("scalar-buflist", 8, 1, 1),
+    ("mixed-buflist", 8, 0, 2),
+  ] {
+    let ptr = call_ptr(&mut store, name);
+    assert_eq!(read_u32(&store, ptr), expected_cap, "{name} cap");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kind, "{name} elem_kind");
+    assert_eq!(read_u32(&store, ptr + 8), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 12), 0, "{name} reserved");
+  }
+
+  // Map headers: [count:u32 @ 0][kv_kind:u32 @ 4][root_ptr:i32 @ 8][reserved:i32 @ 12]
+  for (name, boxed_in_buf, expected_count, expected_kv_kind, expect_nonnull_root) in [
+    ("empty-map", false, 0u32, 15u32, false),
+    ("scalar-map", false, 2, 5, true),
+    ("str-num-map", false, 1, 6, true),
+    ("merged-scalar-map", false, 2, 5, true),
+    ("merged-mixed-val-map", true, 3, 1, true),
+  ] {
+    let raw_ptr = call_ptr(&mut store, name);
+    let ptr = if boxed_in_buf {
+      read_f64(&store, raw_ptr + 16) as usize
+    } else {
+      raw_ptr
+    };
+    assert_eq!(read_u32(&store, ptr), expected_count, "{name} count");
+    assert_eq!(read_u32(&store, ptr + 4), expected_kv_kind, "{name} kv_kind");
+    let root = read_u32(&store, ptr + 8);
+    assert_eq!(root != 0, expect_nonnull_root, "{name} root_ptr={root}");
+    assert_eq!(read_u32(&store, ptr + 12), 0, "{name} reserved");
+  }
+
+  // String keeps [len:f64 @ 0] untouched.
+  let s_ptr = call_ptr(&mut store, "sample-string");
+  assert_eq!(read_f64(&store, s_ptr), 5.0);
+}
+
+#[test]
+fn typed_container_safety_guards_json_keys_map_widening_and_encode_kinds() {
+  let dir = TestDirectory::create("wasm-typed-container-guards");
+  let snapshot = r#"
+{} (:package |typed-guards)
+  :about "|Regression checks for typed container non-heap probes, map key widening, json-parse tag keys, struct-to-map scalar fields, and encoded option lists"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'typed-guards.main/main!) (:mode :native) (:reload-fn 'typed-guards.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'typed-guards.main
+    %{} 'FileEntry
+      :defs $ {}
+        'NumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumBox (:n Number)
+          :examples $ []
+          :schema $ quote StructDef
+        'DynBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct DynBox (:d Dynamic)
+          :examples $ []
+          :schema $ quote StructDef
+        '*persisted-boxed-bools $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-boxed-bools $ assert-type ([] ) (List Bool)
+          :examples $ []
+          :schema $ quote $ Ref (List Bool)
+        '*persisted-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-str |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'as-dyn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn as-dyn (x) , x
+          :examples $ []
+          :schema $ quote $ Fn Dynamic (-> Dynamic)
+        'parsed-json-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export parsed-json-map ()
+            let
+                parsed $ json-parse "|{\"a\":1}"
+              &buf-list:push (&buf-list:new) parsed
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'promote-boxed-json-bool-hof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export promote-boxed-json-bool-hof ()
+            let
+                raw $ json-parse "|[true,false]"
+                typed-xs $ assert-type raw (List Bool)
+                mapped $ map typed-xs (fn (x) x)
+                direct $ [] (&list:nth typed-xs 0)
+              reset! *persisted-boxed-bools mapped
+              and (&= (&list:nth @*persisted-boxed-bools 0) true) (&= (&list:nth direct 0) true)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'pump-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-churn (n)
+            reset! *persisted-str (&str:pad-right (&str:concat |c- (to-string n)) 32768 |Z)
+            &str:count @*persisted-str
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'read-persisted-boxed-bools $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-persisted-boxed-bools ()
+            let
+                xs @*persisted-boxed-bools
+              and (&= (&list:nth xs 0) true) (&= (&list:nth xs 1) false)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'probe-str-map-non-heap $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export probe-str-map-non-heap ()
+            let
+                sm $ &{} |a 1 |b 2
+                dyn-sm $ as-dyn sm
+                dm $ &{} -1 1 |a 2
+                dyn-dm $ as-dyn dm
+                has-false $ &map:contains? dyn-sm false
+                got-false $ &map:get dyn-sm false
+                dissoc-neg $ &map:dissoc dyn-sm -1
+                dissoc-false $ &map:dissoc dyn-sm false
+                eq-ab $ &= dyn-dm dyn-sm
+                eq-ba $ &= dyn-sm dyn-dm
+                set-s $ #{} |a |b
+                dyn-set $ as-dyn set-s
+                has-neg-in-set $ &set:includes? dyn-set -1
+              and
+                not has-false
+                got-false .none?
+                &= dissoc-neg dyn-sm
+                &= dissoc-false dyn-sm
+                not eq-ab
+                not eq-ba
+                not has-neg-in-set
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        '*live-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *live-a |seed-a
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*live-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *live-b |seed-b
+          :examples $ []
+          :schema $ quote $ Ref String
+        'alloc-live-a $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-live-a ()
+            reset! *live-a (&str:concat |x |y)
+            , @*live-a
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'alloc-live-b $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-live-b ()
+            reset! *live-b (&str:concat |x |y)
+            , @*live-b
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'map-widening-aliasing-check $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export map-widening-aliasing-check (ptr-a ptr-b)
+            let
+                base-map $ &{} 42 77 (&+ ptr-a 0) 88 (&+ ptr-b 0) 89
+                dyn-map $ as-dyn base-map
+                widened $ &map:assoc dyn-map |extra 99
+                kept $ match (&map:get (as-dyn widened) 42)
+                  (:some v) v
+                  (:none) 0
+                got-a $ match (&map:get (as-dyn widened) ptr-a)
+                  (:some v) v
+                  (:none) 0
+                got-b $ match (&map:get (as-dyn widened) ptr-b)
+                  (:some v) v
+                  (:none) 0
+                a $ [] (&+ ptr-a 0)
+                c $ [] (&+ ptr-b 0)
+              and
+                &= @*live-a @*live-b
+                &= (&map:count widened) 4
+                &= kept 77
+                &= got-a 88
+                &= got-b 89
+                &map:includes? (as-dyn widened) 88
+                &map:includes? (as-dyn widened) 89
+                &map:includes? (as-dyn widened) 99
+                not (&= a c)
+          :examples $ []
+          :schema $ quote $ Fn Number Number (-> Bool)
+        'struct-to-map-num $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export struct-to-map-num () (&buf-list:push (&buf-list:new) (&struct:to-map (NumBox :n 42)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'struct-to-map-dyn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export struct-to-map-dyn () (&buf-list:push (&buf-list:new) (&struct:to-map (DynBox :d (assert-type 42 Dynamic))))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'encode-opt-num-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export encode-opt-num-list ()
+            let
+                xs $ assert-type ([] (Some 1) None) (List (Option Number))
+              &buf-list:push (&buf-list:new) (encode-map-as xs (List (Option Number)))
+          :examples $ []
+          :schema $ quote $ Fn (-> BufList)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns typed-guards.main (:require)
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let read_u32 = |store: &Store<StoreLimits>, addr: usize| -> u32 {
+    let mut buf = [0u8; 4];
+    memory.read(store, addr, &mut buf).expect("memory read u32");
+    u32::from_le_bytes(buf)
+  };
+  let read_f64 = |store: &Store<StoreLimits>, addr: usize| -> f64 {
+    let mut buf = [0u8; 8];
+    memory.read(store, addr, &mut buf).expect("memory read f64");
+    f64::from_le_bytes(buf)
+  };
+  let call_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    instance
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .expect(name)
+      .call(&mut *store, ())
+      .expect(name) as usize
+  };
+  let call_boxed_ptr = |store: &mut Store<StoreLimits>, name: &str| -> usize {
+    let buf_ptr = call_ptr(store, name);
+    read_f64(store, buf_ptr + 16) as usize
+  };
+
+  // json-parse produces PureScalar Tag keys (1) and DynamicBoxed values (0) => kv_kind = 1
+  let json_map_ptr = call_boxed_ptr(&mut store, "parsed-json-map");
+  assert_eq!(
+    read_u32(&store, json_map_ptr + 4),
+    1,
+    "json-parse kv_kind must be PureScalar/DynamicBoxed (1)"
+  );
+
+  // Non-heap probes against ExactHeapPtr maps/sets must not trap.
+  let ok = instance
+    .get_typed_func::<(), f64>(&mut store, "probe-str-map-non-heap")
+    .expect("probe-str-map-non-heap")
+    .call(&mut store, ())
+    .expect("non-heap probes must not trap");
+  assert_eq!(ok, 1.0);
+
+  let ptr_a = call_ptr(&mut store, "alloc-live-a") as f64;
+  let ptr_b = call_ptr(&mut store, "alloc-live-b") as f64;
+  assert_ne!(ptr_a, ptr_b);
+  let ok_widen = instance
+    .get_typed_func::<(f64, f64), f64>(&mut store, "map-widening-aliasing-check")
+    .expect("map-widening-aliasing-check")
+    .call(&mut store, (ptr_a, ptr_b))
+    .expect("map widening check");
+  assert_eq!(ok_widen, 1.0);
+
+  let ok_boxed = instance
+    .get_typed_func::<(), f64>(&mut store, "promote-boxed-json-bool-hof")
+    .expect("promote-boxed-json-bool-hof")
+    .call(&mut store, ())
+    .expect("boxed json bool HOF promote");
+  assert_eq!(ok_boxed, 1.0);
+  let pump_churn = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
+  for i in 0..80 {
+    let _ = pump_churn.call(&mut store, i as f64).expect("churn");
+  }
+  let ok_after_compact = instance
+    .get_typed_func::<(), f64>(&mut store, "read-persisted-boxed-bools")
+    .expect("read-persisted-boxed-bools")
+    .call(&mut store, ())
+    .expect("boxed json bools survive compaction");
+  assert_eq!(ok_after_compact, 1.0);
+
+  // Struct->Map keeps Number fields PureScalar (kv_kind=5) while Dynamic keeps DynamicBoxed (kv_kind=1)
+  let sm_num_ptr = call_boxed_ptr(&mut store, "struct-to-map-num");
+  assert_eq!(read_u32(&store, sm_num_ptr + 4), 5, "NumBox to-map kv_kind");
+  let sm_dyn_ptr = call_boxed_ptr(&mut store, "struct-to-map-dyn");
+  assert_eq!(read_u32(&store, sm_dyn_ptr + 4), 1, "DynBox to-map kv_kind");
+
+  // encode-map-as on (List (Option Number)) produces DynamicBoxed (0), not ExactHeapPtr (2)
+  let enc_ptr = call_boxed_ptr(&mut store, "encode-opt-num-list");
+  assert_eq!(
+    read_u32(&store, enc_ptr + 4),
+    0,
+    "encoded List<Option<Number>> elem_kind must be DynamicBoxed"
+  );
+}

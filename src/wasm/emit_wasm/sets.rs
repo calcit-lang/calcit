@@ -1,11 +1,18 @@
 use super::*;
 
 // ===========================================================================
-// Set operations — layout: [count:f64] [elem0:f64] [elem1:f64] ...
+// Set operations — layout: [count:u32 @ 0][elem_kind:u32 @ 4] [elem0:f64 @ 8] ...
 // ===========================================================================
 
 /// `#{} elem0 elem1 ...` — create a set, deduplicating elements in insertion order.
 pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  let elem_kind = if args.is_empty() {
+    ContainerSlotKind::EmptyUntyped
+  } else {
+    args.iter().fold(ContainerSlotKind::EmptyUntyped, |acc, arg| {
+      acc.join(ContainerSlotKind::infer_expr_slot_kind(ctx, arg))
+    })
+  };
   let elem_types = args
     .iter()
     .map(|arg| {
@@ -37,8 +44,11 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
 
   if count <= 1 {
     ctx.emit(Instruction::LocalGet(ptr));
-    ctx.emit(f64_const(count as f64));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32Const(count as i32));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::I32Const(elem_kind as i32));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
 
     for (i, arg) in args.iter().enumerate() {
       ctx.emit(Instruction::LocalGet(ptr));
@@ -47,8 +57,11 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     }
   } else {
     ctx.emit(Instruction::LocalGet(ptr));
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32Const(0));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::I32Const(elem_kind as i32));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
 
     let write_idx = ctx.alloc_i32(0);
     let mut elem_locals = Vec::with_capacity(count);
@@ -64,8 +77,8 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
         emit_list_store_elem(ctx, ptr, write_idx, elem);
         ctx.i32_inc(write_idx);
         ctx.emit(Instruction::LocalGet(ptr));
-        ctx.ptr_to_f64(write_idx);
-        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalGet(write_idx));
+        ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
       } else if compatible_prev.len() == i {
         let found_idx = emit_set_find_structural(ctx, ptr, elem);
         ctx.emit(Instruction::LocalGet(found_idx));
@@ -75,8 +88,8 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
         emit_list_store_elem(ctx, ptr, write_idx, elem);
         ctx.i32_inc(write_idx);
         ctx.emit(Instruction::LocalGet(ptr));
-        ctx.ptr_to_f64(write_idx);
-        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalGet(write_idx));
+        ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
         ctx.emit(Instruction::End);
       } else {
         let is_dup = ctx.alloc_i32(0);
@@ -94,8 +107,8 @@ pub(super) fn emit_set_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
         emit_list_store_elem(ctx, ptr, write_idx, elem);
         ctx.i32_inc(write_idx);
         ctx.emit(Instruction::LocalGet(ptr));
-        ctx.ptr_to_f64(write_idx);
-        ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+        ctx.emit(Instruction::LocalGet(write_idx));
+        ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
         ctx.emit(Instruction::End);
       }
     }
@@ -566,7 +579,10 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
         ctx.emit(Instruction::LocalSet(extra_ptr));
         emit_set_intersection_from_ptrs(ctx, acc_ptr, extra_ptr)
       }
-      SetOpKind::Include => emit_set_include_from_ptrs(ctx, acc_ptr, extra_val)?,
+      SetOpKind::Include => {
+        let add_kind = ContainerSlotKind::infer_expr_slot_kind(ctx, extra);
+        emit_set_include_from_ptrs_typed(ctx, acc_ptr, extra_val, add_kind)?
+      }
       SetOpKind::Exclude => emit_set_exclude_from_ptrs(ctx, acc_ptr, extra_val)?,
     };
     ctx.emit(Instruction::LocalGet(new_dst));
@@ -577,8 +593,11 @@ pub(super) fn emit_set_op_variadic(ctx: &mut WasmGenCtx, args: &[Calcit], kind: 
 }
 /// `&union a b` from pre-loaded i32 pointers. Returns f64 local with result pointer.
 pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
-  let a_count = emit_load_count_i32(ctx, a);
-  let b_count = emit_load_count_i32(ctx, b);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let b_count = emit_load_container_count_i32(ctx, b);
+  let a_kind = emit_load_container_kind_i32(ctx, a);
+  let b_kind = emit_load_container_kind_i32(ctx, b);
+  let out_kind = emit_join_slot_kind_i32(ctx, a_kind, b_kind);
 
   let max_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(a_count));
@@ -588,7 +607,7 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
 
   let total_slots = ctx.i32_offset(max_count, 1);
   // Only the copied prefix from `a` is initialized before scanning `dst` for duplicates from `b`.
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "set", out_kind);
 
   let db = emit_addr_offset(ctx, dst, 8);
   let sb = emit_addr_offset(ctx, a, 8);
@@ -623,8 +642,8 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   emit_list_store_elem(ctx, dst, write_idx, be);
   ctx.i32_inc(write_idx);
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.emit(Instruction::End);
 
   ctx.i32_inc(bi);
@@ -633,8 +652,8 @@ pub(super) fn emit_set_union_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> 
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
@@ -655,10 +674,11 @@ fn emit_set_find_structural(ctx: &mut WasmGenCtx, set_ptr: u32, needle: u32) -> 
 
 /// `&difference a b` from pre-loaded i32 pointers. Returns f64 local with result pointer.
 pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kind = emit_load_container_kind_i32(ctx, a);
 
   let total_slots = ctx.i32_offset(a_count, 1);
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "set", a_kind);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -695,8 +715,8 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
@@ -705,8 +725,15 @@ pub(super) fn emit_set_difference_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32
 }
 
 /// `&include set elem` from pre-loaded i32 set pointer + f64 elem local. Returns f64 result local.
-pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u32) -> Result<u32, String> {
-  let count = emit_load_count_i32(ctx, src);
+pub(super) fn emit_set_include_from_ptrs_typed(
+  ctx: &mut WasmGenCtx,
+  src: u32,
+  elem: u32,
+  add_kind: ContainerSlotKind,
+) -> Result<u32, String> {
+  let count = emit_load_container_count_i32(ctx, src);
+  let src_kind = emit_load_container_kind_i32(ctx, src);
+  let out_kind = emit_join_slot_kind_with_const_i32(ctx, src_kind, add_kind);
   let found_idx = emit_set_find_structural(ctx, src, elem);
 
   let dst = ctx.alloc_local_typed(ValType::I32);
@@ -720,7 +747,7 @@ pub(super) fn emit_set_include_from_ptrs(ctx: &mut WasmGenCtx, src: u32, elem: u
   {
     let nc = ctx.i32_offset(count, 1);
     let ts = ctx.i32_offset(nc, 1);
-    let d = emit_alloc_with_count(ctx, nc, ts, "set");
+    let d = emit_alloc_typed_container_dyn(ctx, nc, ts, "set", out_kind);
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -776,8 +803,9 @@ pub(super) fn emit_set_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 pub(super) fn emit_set_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&set:to-list expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src);
-  let dst = emit_alloc_list(ctx, count);
+  let count = emit_load_container_count_i32(ctx, src);
+  let elem_kind = emit_load_container_kind_i32(ctx, src);
+  let dst = emit_alloc_typed_list_dyn(ctx, count, elem_kind);
   let dst_base = emit_addr_offset(ctx, dst, 8);
   let src_base = emit_addr_offset(ctx, src, 8);
   emit_copy_f64_loop(ctx, dst_base, src_base, count);
@@ -791,7 +819,10 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   expect_arity(2, args, "&include expects 2 args")?;
   let disjoint_append = check_set_include_types(ctx, &args[0], &args[1])?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src);
+  let count = emit_load_container_count_i32(ctx, src);
+  let src_kind = emit_load_container_kind_i32(ctx, src);
+  let add_kind = ContainerSlotKind::infer_expr_slot_kind(ctx, &args[1]);
+  let out_kind = emit_join_slot_kind_with_const_i32(ctx, src_kind, add_kind);
   let elem = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(elem));
@@ -799,7 +830,7 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   if disjoint_append {
     let nc = ctx.i32_offset(count, 1);
     let ts = ctx.i32_offset(nc, 1);
-    let d = emit_alloc_with_count(ctx, nc, ts, "set");
+    let d = emit_alloc_typed_container_dyn(ctx, nc, ts, "set", out_kind);
     let db = emit_addr_offset(ctx, d, 8);
     let sb = emit_addr_offset(ctx, src, 8);
     emit_copy_f64_loop(ctx, db, sb, count);
@@ -822,7 +853,7 @@ pub(super) fn emit_set_include(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     // Not found: append like list
     let nc = ctx.i32_offset(count, 1);
     let ts = ctx.i32_offset(nc, 1);
-    let d = emit_alloc_with_count(ctx, nc, ts, "set");
+    let d = emit_alloc_typed_container_dyn(ctx, nc, ts, "set", out_kind);
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -870,7 +901,8 @@ pub(super) fn emit_set_exclude(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 }
 
 pub(super) fn emit_set_exclude_from_ptrs(ctx: &mut WasmGenCtx, src: u32, target: u32) -> Result<u32, String> {
-  let count = emit_load_count_i32(ctx, src);
+  let count = emit_load_container_count_i32(ctx, src);
+  let elem_kind = emit_load_container_kind_i32(ctx, src);
   let found_idx = emit_set_find_structural(ctx, src, target);
 
   // If not found, return original
@@ -885,7 +917,7 @@ pub(super) fn emit_set_exclude_from_ptrs(ctx: &mut WasmGenCtx, src: u32, target:
   {
     let nc = ctx.i32_offset(count, -1);
     let ts = ctx.i32_offset(nc, 1);
-    let d = emit_alloc_with_count(ctx, nc, ts, "set");
+    let d = emit_alloc_typed_container_dyn(ctx, nc, ts, "set", elem_kind);
     ctx.emit(Instruction::LocalGet(d));
     ctx.emit(Instruction::LocalSet(dst));
 
@@ -956,15 +988,18 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let a = emit_ptr_to_i32(ctx, &args[0])?;
   let b = emit_ptr_to_i32(ctx, &args[1])?;
   if disjoint_concat {
-    let a_count = emit_load_count_i32(ctx, a);
-    let b_count = emit_load_count_i32(ctx, b);
+    let a_count = emit_load_container_count_i32(ctx, a);
+    let b_count = emit_load_container_count_i32(ctx, b);
+    let a_kind = emit_load_container_kind_i32(ctx, a);
+    let b_kind = emit_load_container_kind_i32(ctx, b);
+    let out_kind = emit_join_slot_kind_i32(ctx, a_kind, b_kind);
     let total_count = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalGet(a_count));
     ctx.emit(Instruction::LocalGet(b_count));
     ctx.emit(Instruction::I32Add);
     ctx.emit(Instruction::LocalSet(total_count));
     let total_slots = ctx.i32_offset(total_count, 1);
-    let dst = emit_alloc_with_count(ctx, total_count, total_slots, "set");
+    let dst = emit_alloc_typed_container_dyn(ctx, total_count, total_slots, "set", out_kind);
     let db1 = emit_addr_offset(ctx, dst, 8);
     let sb1 = emit_addr_offset(ctx, a, 8);
     emit_copy_f64_loop(ctx, db1, sb1, a_count);
@@ -999,11 +1034,12 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
 }
 
 fn emit_set_intersection_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kind = emit_load_container_kind_i32(ctx, a);
 
   // Max result size is a_count
   let total_slots = ctx.i32_offset(a_count, 1);
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "set", a_kind);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -1041,8 +1077,8 @@ fn emit_set_intersection_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   let result = ctx.alloc_local();
   ctx.ptr_to_f64(dst);
@@ -1054,7 +1090,8 @@ fn emit_set_intersection_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 
 pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&set:destruct expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src);
+  let count = emit_load_container_count_i32(ctx, src);
+  let elem_kind = emit_load_container_kind_i32(ctx, src);
 
   let result = ctx.alloc_local();
 
@@ -1076,7 +1113,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     let found_idx = emit_set_find_structural(ctx, src, elem0);
     let nc = ctx.i32_offset(count, -1);
     let ts = ctx.i32_offset(nc, 1);
-    let rest_set_ptr = emit_alloc_with_count(ctx, nc, ts, "set");
+    let rest_set_ptr = emit_alloc_typed_container_dyn(ctx, nc, ts, "set", elem_kind);
 
     // Copy elements before found_idx
     let db1 = emit_addr_offset(ctx, rest_set_ptr, 8);

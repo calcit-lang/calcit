@@ -269,14 +269,183 @@ pub(super) fn emit_load_enum_tag_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 
   tag
 }
 
-/// Load the count (first f64 slot) from an i32 pointer, store as i32.
-pub(super) fn emit_load_count_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+/// Load the length/count (first f64 slot) from a String or Buffer pointer, store as i32.
+pub(super) fn emit_load_str_len_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
   let count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(ptr_i32));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(count));
   count
+}
+
+/// Element/entry slot classification stored in container headers (`List`, `Set`, `BufList`, `Map`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[repr(u32)]
+pub(super) enum ContainerSlotKind {
+  DynamicBoxed = 0,
+  PureScalar = 1,
+  ExactHeapPtr = 2,
+  EmptyUntyped = 3,
+}
+
+impl ContainerSlotKind {
+  pub(super) const fn join(self, other: Self) -> Self {
+    match (self, other) {
+      (Self::EmptyUntyped, x) | (x, Self::EmptyUntyped) => x,
+      (Self::PureScalar, Self::PureScalar) => Self::PureScalar,
+      (Self::ExactHeapPtr, Self::ExactHeapPtr) => Self::ExactHeapPtr,
+      _ => Self::DynamicBoxed,
+    }
+  }
+
+  pub(super) const fn pack_kv(key: Self, val: Self) -> u32 {
+    ((key as u32) & 0x3) | (((val as u32) & 0x3) << 2)
+  }
+
+  pub(super) fn from_type_annotation(ty: &Arc<CalcitTypeAnnotation>) -> Self {
+    let expanded = expand_wasm_value_type(ty);
+    match expanded.as_ref() {
+      CalcitTypeAnnotation::Never => Self::EmptyUntyped,
+      CalcitTypeAnnotation::Number
+      | CalcitTypeAnnotation::Numeric(_)
+      | CalcitTypeAnnotation::Bool
+      | CalcitTypeAnnotation::Tag
+      | CalcitTypeAnnotation::Unit
+      | CalcitTypeAnnotation::Nil => Self::PureScalar,
+      CalcitTypeAnnotation::String
+      | CalcitTypeAnnotation::Buffer
+      | CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Tuple(_)
+      | CalcitTypeAnnotation::Set(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Struct(_, _)
+      | CalcitTypeAnnotation::StructValue(_)
+      | CalcitTypeAnnotation::Enum(_, _)
+      | CalcitTypeAnnotation::EnumValue(_)
+      | CalcitTypeAnnotation::AnonymousEnum
+      | CalcitTypeAnnotation::BufList
+      | CalcitTypeAnnotation::Fn(_)
+      | CalcitTypeAnnotation::DynFn
+      | CalcitTypeAnnotation::DynTrait(_)
+      | CalcitTypeAnnotation::Any => Self::ExactHeapPtr,
+      CalcitTypeAnnotation::TypeRef(_, _) if expanded.resolve_to_struct().is_some() || expanded.resolve_to_enum().is_some() => {
+        Self::ExactHeapPtr
+      }
+      _ => Self::DynamicBoxed,
+    }
+  }
+
+  pub(super) fn infer_expr_slot_kind(ctx: &WasmGenCtx, expr: &Calcit) -> Self {
+    match expr {
+      Calcit::Number(_) | Calcit::Bool(_) | Calcit::Tag(_) | Calcit::Nil => Self::PureScalar,
+      Calcit::Str(_) | Calcit::Buffer(_) => Self::ExactHeapPtr,
+      _ => {
+        let ev = infer_wasm_evidence(ctx, expr);
+        let ty = ev.scalar_origin.as_ref().unwrap_or(&ev.annotation);
+        let kind = Self::from_type_annotation(ty);
+        if kind == Self::PureScalar && !super::expr_is_guaranteed_unboxed_scalar(ctx, expr) {
+          Self::DynamicBoxed
+        } else {
+          kind
+        }
+      }
+    }
+  }
+}
+
+/// Load the exact `u32` element/entry count from offset 0 of a container (`List`, `Set`, `Map`, flat map buffer, or `BufList` cap).
+pub(super) fn emit_load_container_count_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalSet(count));
+  count
+}
+
+/// Load the exact `u32` `elem_kind` or `kv_kind` from offset 4 of a container.
+pub(super) fn emit_load_container_kind_i32(ctx: &mut WasmGenCtx, ptr_i32: u32) -> u32 {
+  let kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::LocalSet(kind));
+  kind
+}
+
+/// Store `[count:u32 @ 0][kind:u32 @ 4]` into a container header.
+pub(super) fn emit_store_container_header(ctx: &mut WasmGenCtx, ptr_i32: u32, count_i32: u32, kind_i32: u32) {
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::LocalGet(count_i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::LocalGet(kind_i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+}
+
+/// Store `[count:u32 @ 0][kind:u32 @ 4]` with a constant `kind` into a container header.
+pub(super) fn emit_store_container_header_const(ctx: &mut WasmGenCtx, ptr_i32: u32, count_i32: u32, kind: u32) {
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::LocalGet(count_i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalGet(ptr_i32));
+  ctx.emit(Instruction::I32Const(kind as i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
+}
+
+/// Join two runtime `ContainerSlotKind` i32 locals using lattice rules (`EmptyUntyped (3)` yields to concrete).
+pub(super) fn emit_join_slot_kind_i32(ctx: &mut WasmGenCtx, a_kind_i32: u32, b_kind_i32: u32) -> u32 {
+  let out = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::LocalGet(b_kind_i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::LocalGet(b_kind_i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(b_kind_i32));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(out));
+  out
+}
+
+/// Join a runtime `ContainerSlotKind` local with a static `ContainerSlotKind`.
+pub(super) fn emit_join_slot_kind_with_const_i32(ctx: &mut WasmGenCtx, a_kind_i32: u32, b_kind: ContainerSlotKind) -> u32 {
+  if b_kind == ContainerSlotKind::EmptyUntyped {
+    return a_kind_i32;
+  }
+  let out = ctx.alloc_local_typed(ValType::I32);
+  if b_kind == ContainerSlotKind::DynamicBoxed {
+    ctx.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+    ctx.emit(Instruction::LocalSet(out));
+    return out;
+  }
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(a_kind_i32));
+  ctx.emit(Instruction::I32Const(b_kind as i32));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(b_kind as i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::DynamicBoxed as i32));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(out));
+  out
 }
 
 /// Compute `base_local + byte_offset` and store in a new i32 local.
@@ -336,18 +505,19 @@ pub(super) fn emit_runtime_lookup_i32_to_i32(ctx: &mut WasmGenCtx, helper: &str,
   result
 }
 
-/// Generic count accessor — works for list, map, set (count is always the first f64).
+/// Generic count accessor — works for list, map, set (`count:u32` at offset 0).
 pub(super) fn emit_ds_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("count expects 1 arg".into());
   }
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }
 
-/// Generic empty? check — `count == 0`.
+/// Generic empty? check — `count == 0` (`count:u32` at offset 0).
 pub(super) fn emit_ds_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("empty? expects 1 arg".into());
@@ -356,17 +526,14 @@ pub(super) fn emit_ds_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   ctx.emit(f64_const(0.0));
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::Select);
   Ok(())
 }
 
-/// Allocate a new data-structure with a count header and return its i32 pointer.
-/// `count_i32` is the count local; `slot_count_expr` computes the total f64 slots
-/// (including the count header). Returns the allocated i32 pointer local.
-pub(super) fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_slots_i32: u32, type_tag: &str) -> u32 {
+/// Allocate a container with `[count:u32 @ 0][kind:u32 @ 4]` header (`kind` constant).
+pub(super) fn emit_alloc_typed_container(ctx: &mut WasmGenCtx, count_i32: u32, total_slots_i32: u32, type_tag: &str, kind: u32) -> u32 {
   let size = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(total_slots_i32));
   ctx.emit(Instruction::I32Const(8));
@@ -375,20 +542,40 @@ pub(super) fn emit_alloc_with_count(ctx: &mut WasmGenCtx, count_i32: u32, total_
 
   let ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc_dynamic(ctx, size, ptr, type_tag);
-
-  // Store count
-  ctx.store_i32_as_f64(ptr, count_i32, 0);
+  emit_store_container_header_const(ctx, ptr, count_i32, kind);
   ptr
 }
 
-pub(super) fn emit_alloc_map_with_root(ctx: &mut WasmGenCtx, count_i32: u32, root_i32: u32) -> u32 {
+/// Allocate a container with `[count:u32 @ 0][kind:u32 @ 4]` header (`kind` in an i32 local).
+pub(super) fn emit_alloc_typed_container_dyn(
+  ctx: &mut WasmGenCtx,
+  count_i32: u32,
+  total_slots_i32: u32,
+  type_tag: &str,
+  kind_i32: u32,
+) -> u32 {
+  let size = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(total_slots_i32));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::LocalSet(size));
+
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc_dynamic(ctx, size, ptr, type_tag);
+  emit_store_container_header(ctx, ptr, count_i32, kind_i32);
+  ptr
+}
+
+pub(super) fn emit_alloc_map_with_root_kind(ctx: &mut WasmGenCtx, count_i32: u32, root_i32: u32, kv_kind: u32) -> u32 {
   let ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 16, ptr, "map");
-
-  ctx.store_i32_as_f64(ptr, count_i32, 0);
-
-  ctx.store_i32_as_f64(ptr, root_i32, 8);
-
+  emit_store_container_header_const(ctx, ptr, count_i32, kv_kind);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::LocalGet(root_i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(8)));
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(12)));
   ptr
 }
 
@@ -396,17 +583,29 @@ pub(super) fn emit_alloc_map_with_root(ctx: &mut WasmGenCtx, count_i32: u32, roo
 // High-level list allocation helpers
 // ===========================================================================
 
-/// Allocate a list with `count` (i32 local) elements.
-/// total_slots = count + 1 (one extra for the count header).
-/// Stores `count` into the first f64 slot and returns the i32 base pointer local.
-/// This is the common pattern throughout list-building functions.
-pub(super) fn emit_alloc_list(ctx: &mut WasmGenCtx, count: u32) -> u32 {
+/// Allocate a typed list with `count` (i32 local) elements and constant `ContainerSlotKind`.
+pub(super) fn emit_alloc_typed_list(ctx: &mut WasmGenCtx, count: u32, elem_kind: ContainerSlotKind) -> u32 {
   let total_slots = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  emit_alloc_with_count(ctx, count, total_slots, "list")
+  emit_alloc_typed_container(ctx, count, total_slots, "list", elem_kind as u32)
+}
+
+/// Allocate a typed list with `count` (i32 local) elements and dynamic `elem_kind` i32 local.
+pub(super) fn emit_alloc_typed_list_dyn(ctx: &mut WasmGenCtx, count: u32, elem_kind_i32: u32) -> u32 {
+  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(total_slots));
+  emit_alloc_typed_container_dyn(ctx, count, total_slots, "list", elem_kind_i32)
+}
+
+/// Allocate a list with `count` (i32 local) elements (`DynamicBoxed` default).
+pub(super) fn emit_alloc_list(ctx: &mut WasmGenCtx, count: u32) -> u32 {
+  emit_alloc_typed_list(ctx, count, ContainerSlotKind::DynamicBoxed)
 }
 
 /// Load the f64 element at index `i` (i32 local) from a list pointer `list_ptr` (i32 local).

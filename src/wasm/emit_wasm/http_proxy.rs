@@ -1388,8 +1388,10 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalTee(headers_list_ptr));
   b.emit(Instruction::LocalGet(entries_len));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Store(mem_arg_f64(0)));
+  b.emit(Instruction::I32Store(mem_arg_i32(0)));
+  b.emit(Instruction::LocalGet(headers_list_ptr));
+  b.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  b.emit(Instruction::I32Store(mem_arg_i32(4)));
   b.emit(Instruction::LocalGet(headers_list_ptr));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::LocalSet(headers_f64));
@@ -1976,8 +1978,7 @@ pub(super) fn build_wasi_http_incoming_handler_fn(
   b.emit(Instruction::LocalGet(resp_headers_f64));
   b.emit(Instruction::I32TruncF64U);
   b.emit(Instruction::LocalTee(resp_headers_ptr));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
   b.emit(Instruction::LocalSet(entries_len));
 
   b.emit(Instruction::I32Const(0));

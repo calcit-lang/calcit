@@ -262,6 +262,7 @@ pub(super) struct StructLayouts {
   pub ids: BTreeMap<StructIdentity, u32>,
   pub names: BTreeMap<u32, u32>,
   pub field_tags: HashMap<u32, Vec<u32>>,
+  pub field_slot_kinds: HashMap<u32, Vec<ContainerSlotKind>>,
   pub layouts: HashMap<u32, StructLayout>,
   pub desc_table_base: i32,
   pub max_layout_id: u32,
@@ -423,41 +424,55 @@ pub(super) fn collect_struct_layouts(
 ) -> Result<StructLayouts, String> {
   fn record_kinds(
     identity: StructIdentity,
-    kinds: Vec<StructFieldKind>,
-    field_kinds: &mut BTreeMap<StructIdentity, Vec<StructFieldKind>>,
+    (kinds, slot_kinds): (Vec<StructFieldKind>, Vec<ContainerSlotKind>),
+    field_kinds: &mut BTreeMap<StructIdentity, (Vec<StructFieldKind>, Vec<ContainerSlotKind>)>,
   ) {
     match field_kinds.get_mut(&identity) {
-      Some(existing) if existing.len() == kinds.len() => {
-        for (slot, candidate) in existing.iter_mut().zip(kinds) {
+      Some((existing_kinds, existing_slots)) if existing_kinds.len() == kinds.len() => {
+        for ((slot, candidate), (slot_kind, cand_slot_kind)) in
+          existing_kinds.iter_mut().zip(kinds).zip(existing_slots.iter_mut().zip(slot_kinds))
+        {
           if *slot != candidate {
             *slot = StructFieldKind::BoxedF64;
+            *slot_kind = ContainerSlotKind::DynamicBoxed;
+          } else {
+            *slot_kind = slot_kind.join(cand_slot_kind);
           }
         }
       }
       Some(_) => {}
       None => {
-        field_kinds.insert(identity, kinds);
+        field_kinds.insert(identity, (kinds, slot_kinds));
       }
     }
   }
 
-  fn kinds_from_struct_def(definition: &CalcitStructDef) -> Vec<StructFieldKind> {
+  fn kinds_from_struct_def(definition: &CalcitStructDef) -> (Vec<StructFieldKind>, Vec<ContainerSlotKind>) {
     if definition.field_types.len() == definition.fields.len() {
       let def_ref = definition.definition_ref.as_deref();
-      definition
-        .field_types
-        .iter()
-        .map(|ty| {
-          let qualified = qualify_for_definition_ref(ty, def_ref);
-          StructFieldKind::from_type_annotation(&qualified)
-        })
-        .collect()
+      let mut kinds = Vec::with_capacity(definition.fields.len());
+      let mut slot_kinds = Vec::with_capacity(definition.fields.len());
+      for ty in definition.field_types.iter() {
+        let qualified = qualify_for_definition_ref(ty, def_ref);
+        let field_kind = StructFieldKind::from_type_annotation(&qualified);
+        let slot_kind = match field_kind {
+          StructFieldKind::HeapPtrI32 | StructFieldKind::OptionHeapPtrI32 => ContainerSlotKind::ExactHeapPtr,
+          StructFieldKind::BoxedF64 => ContainerSlotKind::from_type_annotation(&qualified),
+          _ => ContainerSlotKind::PureScalar,
+        };
+        kinds.push(field_kind);
+        slot_kinds.push(slot_kind);
+      }
+      (kinds, slot_kinds)
     } else {
-      vec![StructFieldKind::BoxedF64; definition.fields.len()]
+      (
+        vec![StructFieldKind::BoxedF64; definition.fields.len()],
+        vec![ContainerSlotKind::DynamicBoxed; definition.fields.len()],
+      )
     }
   }
 
-  fn visit(expression: &Calcit, field_kinds: &mut BTreeMap<StructIdentity, Vec<StructFieldKind>>) {
+  fn visit(expression: &Calcit, field_kinds: &mut BTreeMap<StructIdentity, (Vec<StructFieldKind>, Vec<ContainerSlotKind>)>) {
     if let Some(graph) = DataShapeGraph::from_calcit_handle(expression) {
       for node in &graph.nodes {
         if let DataShapeNode::Struct { nominal, .. } = node {
@@ -491,7 +506,7 @@ pub(super) fn collect_struct_layouts(
       _ => {}
     }
   }
-  let mut field_kinds: BTreeMap<StructIdentity, Vec<StructFieldKind>> = BTreeMap::new();
+  let mut field_kinds: BTreeMap<StructIdentity, (Vec<StructFieldKind>, Vec<ContainerSlotKind>)> = BTreeMap::new();
   for (_, _, _, body) in fn_defs {
     for expression in body {
       visit(expression, &mut field_kinds);
@@ -563,16 +578,25 @@ pub(super) fn collect_struct_layouts(
     if let ComponentAbiType::Struct(record) = ty {
       let identity = component_struct_identity(record);
       field_kinds.entry(identity).or_insert_with(|| {
-        record
-          .fields
-          .iter()
-          .map(|(_, field_ty)| StructFieldKind::from_component_type(field_ty))
-          .collect()
+        let mut kinds = Vec::with_capacity(record.fields.len());
+        let mut slot_kinds = Vec::with_capacity(record.fields.len());
+        for (_, field_ty) in &record.fields {
+          let field_kind = StructFieldKind::from_component_type(field_ty);
+          let slot_kind = match field_ty {
+            ComponentAbiType::Bool | ComponentAbiType::Unit | ComponentAbiType::Number | ComponentAbiType::Numeric(_) => {
+              ContainerSlotKind::PureScalar
+            }
+            _ => ContainerSlotKind::ExactHeapPtr,
+          };
+          kinds.push(field_kind);
+          slot_kinds.push(slot_kind);
+        }
+        (kinds, slot_kinds)
       });
     }
   }
   let mut layouts = StructLayouts::default();
-  for (index, (identity, kinds)) in field_kinds.into_iter().enumerate() {
+  for (index, (identity, (kinds, slot_kinds))) in field_kinds.into_iter().enumerate() {
     let id = (index + 1) as u32;
     let tag = *tags
       .get(&identity.name)
@@ -585,6 +609,7 @@ pub(super) fn collect_struct_layouts(
     let layout = StructLayout::compute(&kinds)?;
     layouts.names.insert(id, tag);
     layouts.field_tags.insert(id, fields);
+    layouts.field_slot_kinds.insert(id, slot_kinds);
     layouts.layouts.insert(id, layout);
     layouts.ids.insert(identity, id);
   }
@@ -1524,9 +1549,22 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
     ctx.begin_block_if();
 
     for (field_idx, field_tag_id) in field_tag_ids.iter().enumerate() {
+      let val_slot_kind = ctx
+        .struct_layouts
+        .field_slot_kinds
+        .get(struct_tag_id)
+        .and_then(|slots| slots.get(field_idx))
+        .copied()
+        .unwrap_or_else(|| match layout.fields[field_idx].kind {
+          StructFieldKind::HeapPtrI32 | StructFieldKind::OptionHeapPtrI32 => ContainerSlotKind::ExactHeapPtr,
+          StructFieldKind::BoxedF64 => ContainerSlotKind::DynamicBoxed,
+          _ => ContainerSlotKind::PureScalar,
+        });
+      let add_kv_kind = ContainerSlotKind::pack_kv(ContainerSlotKind::PureScalar, val_slot_kind);
       ctx.emit(Instruction::LocalGet(map_ptr));
       ctx.emit(f64_const(*field_tag_id as f64));
       emit_load_struct_field_as_repr(ctx, record_ptr, layout.fields[field_idx], NativeValRepr::F64);
+      ctx.emit(Instruction::I32Const(add_kv_kind as i32));
       ctx.emit(Instruction::Call(assoc_fn_idx));
       ctx.emit(Instruction::LocalSet(map_ptr));
     }

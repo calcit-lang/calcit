@@ -1239,8 +1239,17 @@ pub(super) fn build_component_list_lift_fn(
     Instruction::I32Add,
     Instruction::LocalTee(list_ptr),
     Instruction::LocalGet(1),
-    Instruction::F64ConvertI32U,
-    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(list_ptr),
+    Instruction::I32Const(if matches!(
+      item_type.as_ref(),
+      ComponentAbiType::Unit | ComponentAbiType::Bool | ComponentAbiType::Number | ComponentAbiType::Numeric(_)
+    ) {
+      ContainerSlotKind::PureScalar
+    } else {
+      ContainerSlotKind::ExactHeapPtr
+    } as i32),
+    Instruction::I32Store(mem_arg_i32(4)),
     Instruction::I32Const(0),
     Instruction::LocalSet(index),
     Instruction::Block(BlockType::Empty),
@@ -1717,16 +1726,8 @@ pub(super) fn build_component_list_lower_fn(
   push_checked_memory_region_const(&mut instructions, list_ptr, 8);
   instructions.extend([
     Instruction::LocalGet(list_ptr),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::LocalTee(value),
-    Instruction::I32TruncF64U,
-    Instruction::LocalTee(count),
-    Instruction::F64ConvertI32U,
-    Instruction::LocalGet(value),
-    Instruction::F64Ne,
-    Instruction::If(BlockType::Empty),
-    Instruction::Unreachable,
-    Instruction::End,
+    Instruction::I32Load(mem_arg_i32(0)),
+    Instruction::LocalSet(count),
     Instruction::LocalGet(count),
     Instruction::I64ExtendI32U,
     Instruction::I64Const(8),

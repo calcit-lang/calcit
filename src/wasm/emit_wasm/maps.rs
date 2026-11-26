@@ -1,9 +1,52 @@
 use super::*;
 
 // ===========================================================================
-// Map operations — outer layout: [count:f64] [root_ptr:f64]
-// Root layout: [count:f64] [k0:f64] [v0:f64] [k1:f64] [v1:f64] ...
+// Map operations — outer layout: [count:u32 @ 0][kv_kind:u32 @ 4][root_ptr:i32 @ 8][reserved:i32 @ 12]
+// Flat buffer layout: [count:u32 @ 0][kv_kind:u32 @ 4][k0:f64 @ 8][v0:f64 @ 16]...
 // ===========================================================================
+
+fn infer_map_key_slot_kind(ctx: &WasmGenCtx, expr: &Calcit) -> ContainerSlotKind {
+  ContainerSlotKind::infer_expr_slot_kind(ctx, expr)
+}
+
+fn emit_extract_kv_kinds(ctx: &mut WasmGenCtx, kv_kind_i32: u32) -> (u32, u32) {
+  let k_kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(kv_kind_i32));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(k_kind));
+  let v_kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(kv_kind_i32));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32ShrU);
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(v_kind));
+  (k_kind, v_kind)
+}
+
+fn emit_pack_kv_kinds(ctx: &mut WasmGenCtx, k_kind_i32: u32, v_kind_i32: u32) -> u32 {
+  let out = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(k_kind_i32));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(v_kind_i32));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Shl);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalSet(out));
+  out
+}
+
+fn emit_join_kv_kinds_i32(ctx: &mut WasmGenCtx, a_kv: u32, b_kv: u32) -> u32 {
+  let (ak, av) = emit_extract_kv_kinds(ctx, a_kv);
+  let (bk, bv) = emit_extract_kv_kinds(ctx, b_kv);
+  let ok = emit_join_slot_kind_i32(ctx, ak, bk);
+  let ov = emit_join_slot_kind_i32(ctx, av, bv);
+  emit_pack_kv_kinds(ctx, ok, ov)
+}
 
 fn normalize_map_key_type(annotation: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   let expanded = expand_wasm_value_type(annotation);
@@ -137,6 +180,17 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
     return Err("&{} expects even number of args (key-value pairs)".into());
   }
   let count = args.len() / 2;
+  let (k_kind, v_kind) = if count == 0 {
+    (ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped)
+  } else {
+    (0..count).fold((ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped), |(ak, av), i| {
+      (
+        ak.join(infer_map_key_slot_kind(ctx, &args[i * 2])),
+        av.join(ContainerSlotKind::infer_expr_slot_kind(ctx, &args[i * 2 + 1])),
+      )
+    })
+  };
+  let kv_kind = ContainerSlotKind::pack_kv(k_kind, v_kind);
   let count_local = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(count as i32));
   ctx.emit(Instruction::LocalSet(count_local));
@@ -148,7 +202,7 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let root = emit_alloc_with_count(ctx, count_local, total_slots, "map");
+  let root = emit_alloc_typed_container(ctx, count_local, total_slots, "map", kv_kind);
 
   for i in 0..count {
     // key at offset 8 + i*16
@@ -167,7 +221,7 @@ pub(super) fn emit_map_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   let actual_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalSet(hashed_root));
   ctx.emit(Instruction::LocalSet(actual_count));
-  let ptr = emit_alloc_map_with_root(ctx, actual_count, hashed_root);
+  let ptr = emit_alloc_map_with_root_kind(ctx, actual_count, hashed_root, kv_kind);
   ctx.ptr_to_f64(ptr);
   Ok(())
 }
@@ -264,6 +318,9 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   let key = ctx.alloc_local();
   let val = ctx.alloc_local();
   for [key_expr, value_expr] in args[1..].as_chunks::<2>().0 {
+    let add_k_kind = infer_map_key_slot_kind(ctx, key_expr);
+    let add_v_kind = ContainerSlotKind::infer_expr_slot_kind(ctx, value_expr);
+    let add_kv_kind = ContainerSlotKind::pack_kv(add_k_kind, add_v_kind);
     emit_expr(ctx, key_expr)?;
     ctx.emit(Instruction::LocalSet(key));
     emit_expr(ctx, value_expr)?;
@@ -271,6 +328,7 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     ctx.emit(Instruction::LocalGet(accumulator));
     ctx.emit(Instruction::LocalGet(key));
     ctx.emit(Instruction::LocalGet(val));
+    ctx.emit(Instruction::I32Const(add_kv_kind as i32));
     ctx.call_rt("__rt_map_assoc");
     ctx.emit(Instruction::LocalSet(accumulator));
   }
@@ -383,7 +441,7 @@ pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
       ctx.emit(Instruction::LocalGet(value));
       ctx.emit(Instruction::I32TruncF64U);
       ctx.emit(Instruction::LocalSet(list));
-      let count = emit_load_count_i32(ctx, list);
+      let count = emit_load_container_count_i32(ctx, list);
       let index = ctx.alloc_i32(0);
       ctx.begin_block();
       ctx.begin_loop();
@@ -450,11 +508,13 @@ pub(super) fn emit_map_to_list(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 pub(super) fn emit_map_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&map:keys")?;
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, map_ptr);
+  let count = emit_load_container_count_i32(ctx, map_ptr);
+  let kv_kind = emit_load_container_kind_i32(ctx, map_ptr);
+  let (key_kind, _) = emit_extract_kv_kinds(ctx, kv_kind);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
   let ts = ctx.i32_offset(count, 1);
-  let dst = emit_alloc_with_count(ctx, count, ts, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, count, ts, "set", key_kind);
 
   let i = ctx.alloc_i32(0);
   ctx.begin_block();
@@ -517,9 +577,17 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   expect_arity(1, args, "keys-non-nil")?;
   let map_ptr = if let Some(pair_args) = extract_literal_map_pairs(&args[0]) {
     let count = pair_args.len() / 2;
+    let k_kind = (0..count).fold(ContainerSlotKind::EmptyUntyped, |acc, i| {
+      acc.join(infer_map_key_slot_kind(ctx, &pair_args[i * 2]))
+    });
+    let kv_kind = if count == 0 {
+      ContainerSlotKind::pack_kv(ContainerSlotKind::EmptyUntyped, ContainerSlotKind::EmptyUntyped)
+    } else {
+      ContainerSlotKind::pack_kv(k_kind, ContainerSlotKind::PureScalar)
+    };
     let count_local = ctx.alloc_i32(count as i32);
     let total_slots = ctx.alloc_i32((count * 2 + 1) as i32);
-    let root = emit_alloc_with_count(ctx, count_local, total_slots, "map");
+    let root = emit_alloc_typed_container(ctx, count_local, total_slots, "map", kv_kind);
     for i in 0..count {
       ctx.emit(Instruction::LocalGet(root));
       emit_expr(ctx, &pair_args[i * 2])?;
@@ -537,7 +605,7 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     let actual_count = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::LocalSet(hashed_root));
     ctx.emit(Instruction::LocalSet(actual_count));
-    emit_alloc_map_with_root(ctx, actual_count, hashed_root)
+    emit_alloc_map_with_root_kind(ctx, actual_count, hashed_root, kv_kind)
   } else {
     let map_type = infer_wasm_static_type(ctx, &args[0]).map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty));
     let Some(CalcitTypeAnnotation::Map(_, val_type)) = map_type.as_deref() else {
@@ -552,7 +620,7 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
         ctx.emit(Instruction::Drop);
         let zero = ctx.alloc_i32(0);
         let one = ctx.alloc_i32(1);
-        let dst = emit_alloc_with_count(ctx, zero, one, "set");
+        let dst = emit_alloc_typed_container(ctx, zero, one, "set", ContainerSlotKind::EmptyUntyped as u32);
         ctx.ptr_to_f64(dst);
         return Ok(());
       }
@@ -575,11 +643,13 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     }
     emit_ptr_to_i32(ctx, &args[0])?
   };
-  let count = emit_load_count_i32(ctx, map_ptr);
+  let count = emit_load_container_count_i32(ctx, map_ptr);
+  let kv_kind = emit_load_container_kind_i32(ctx, map_ptr);
+  let (key_kind, _) = emit_extract_kv_kinds(ctx, kv_kind);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
   let ts = ctx.i32_offset(count, 1);
-  let dst = emit_alloc_with_count(ctx, count, ts, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, count, ts, "set", key_kind);
   let write_idx = ctx.alloc_i32(0);
 
   let i = ctx.alloc_i32(0);
@@ -617,8 +687,8 @@ pub(super) fn emit_map_keys_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::End);
 
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   ctx.ptr_to_f64(dst);
   Ok(())
 }
@@ -629,11 +699,13 @@ pub(super) fn emit_map_vals(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
     return Err("&map:vals expects 1 arg".into());
   }
   let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, map_ptr);
+  let count = emit_load_container_count_i32(ctx, map_ptr);
+  let kv_kind = emit_load_container_kind_i32(ctx, map_ptr);
+  let (_, val_kind) = emit_extract_kv_kinds(ctx, kv_kind);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
   let ts = ctx.i32_offset(count, 1);
-  let dst = emit_alloc_with_count(ctx, count, ts, "list");
+  let dst = emit_alloc_typed_container_dyn(ctx, count, ts, "list", val_kind);
 
   let i = ctx.alloc_i32(0);
   ctx.begin_block();
@@ -673,12 +745,24 @@ pub(super) fn emit_map_to_pair_list(ctx: &mut WasmGenCtx, args: &[Calcit], outer
 }
 
 pub(super) fn emit_map_pair_collection(ctx: &mut WasmGenCtx, map_ptr: u32, outer_tag: &str) -> u32 {
-  let count = emit_load_count_i32(ctx, map_ptr);
+  let count = emit_load_container_count_i32(ctx, map_ptr);
+  let kv_kind = emit_load_container_kind_i32(ctx, map_ptr);
+  let (k_kind, v_kind) = emit_extract_kv_kinds(ctx, kv_kind);
+  let pair_elem_kind = emit_join_slot_kind_i32(ctx, k_kind, v_kind);
   let flat_ptr = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", map_ptr);
 
-  // Outer list: [count, pair_ptr_0, pair_ptr_1, ...]
+  // Outer list/set: `[count:u32 @ 0][ExactHeapPtr:u32 @ 4]`, `[pair_ptr_0, ...]`
   let outer_ts = ctx.i32_offset(count, 1);
-  let outer = emit_alloc_with_count(ctx, count, outer_ts, outer_tag);
+  let outer_kind = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::EmptyUntyped as i32));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalSet(outer_kind));
+  let outer = emit_alloc_typed_container_dyn(ctx, count, outer_ts, outer_tag, outer_kind);
 
   // Loop: for each entry, create a 2-element list [key, value]
   let i = ctx.alloc_i32(0);
@@ -688,12 +772,15 @@ pub(super) fn emit_map_pair_collection(ctx: &mut WasmGenCtx, map_ptr: u32, outer
 
   ctx.loop_exit_if_ge(i, count);
 
-  // Allocate pair: [2, key, value] = 3 f64 slots = 24 bytes
+  // Allocate pair: [count=2:u32 @ 0][pair_elem_kind:u32 @ 4][key:f64 @ 8][value:f64 @ 16] = 24 bytes
   let pair = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 24, pair, "list");
   ctx.emit(Instruction::LocalGet(pair));
-  ctx.emit(f64_const(2.0));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalGet(pair));
+  ctx.emit(Instruction::LocalGet(pair_elem_kind));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
 
   // Load key from map: map_ptr + 8 + i*16
   ctx.emit(Instruction::LocalGet(pair));
@@ -753,9 +840,12 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 }
 
 fn emit_map_merge_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
+  let b_kv = emit_load_container_kind_i32(ctx, b);
+  let out_kv = emit_join_kv_kinds_i32(ctx, a_kv, b_kv);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Over-allocate: at most a_count + b_count entries.
@@ -772,7 +862,7 @@ fn emit_map_merge_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_root = emit_alloc_with_count(ctx, max_count, total_slots, "map");
+  let dst_root = emit_alloc_typed_container_dyn(ctx, max_count, total_slots, "map", out_kv);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -911,8 +1001,8 @@ fn emit_map_merge_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32) -> u32 {
 
   // Patch actual count and convert flat map back to runtime map.
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root)
 }
@@ -960,10 +1050,11 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-new")?;
   // `&map:diff-new a b` returns entries in `a` (args[0]) whose keys are not in `b` (args[1]).
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Over-allocate: max is a_count entries (we iterate over a)
@@ -974,7 +1065,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_root = emit_alloc_with_count(ctx, a_count, total_slots, "map");
+  let dst_root = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "map", a_kv);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -1068,8 +1159,8 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   let dst = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root);
   ctx.ptr_to_f64(dst);
@@ -1083,15 +1174,17 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   }
   check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-keys")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
+  let (a_key_kind, _) = emit_extract_kv_kinds(ctx, a_kv);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Result is a set: over-allocate with a_count
   let total_slots = ctx.i32_offset(a_count, 1);
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "set", a_key_kind);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -1164,8 +1257,8 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   ctx.ptr_to_f64(dst);
   Ok(())
@@ -1178,15 +1271,17 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   }
   check_map_pair_key_types(ctx, &args[0], &args[1], "&map:common-keys")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
+  let (a_key_kind, _) = emit_extract_kv_kinds(ctx, a_kv);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Result is a set: over-allocate with a_count
   let total_slots = ctx.i32_offset(a_count, 1);
-  let dst = emit_alloc_with_count(ctx, a_count, total_slots, "set");
+  let dst = emit_alloc_typed_container_dyn(ctx, a_count, total_slots, "set", a_key_kind);
 
   let write_idx = ctx.alloc_i32(0);
 
@@ -1258,8 +1353,8 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 
   // Patch actual count
   ctx.emit(Instruction::LocalGet(dst));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   ctx.ptr_to_f64(dst);
   Ok(())
@@ -1275,22 +1370,28 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   }
   check_map_pair_key_types(ctx, &args[0], &args[1], "&map:diff-triple")?;
   let a = emit_ptr_to_i32(ctx, &args[0])?;
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
+  let (a_key_kind, a_val_kind) = emit_extract_kv_kinds(ctx, a_kv);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
   let b = emit_ptr_to_i32(ctx, &args[1])?;
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
+  let b_kv = emit_load_container_kind_i32(ctx, b);
+  let (_, b_val_kind) = emit_extract_kv_kinds(ctx, b_kv);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
+  let val_joined = emit_join_slot_kind_i32(ctx, a_val_kind, b_val_kind);
+  let triple_kv_joined = emit_join_slot_kind_i32(ctx, a_key_kind, val_joined);
 
   // --- Allocate result buffers (over-allocated) ---
 
   // drop_keys: set with up to a_count entries
   let drop_slots = ctx.i32_offset(a_count, 1);
-  let drop_keys = emit_alloc_with_count(ctx, a_count, drop_slots, "set");
+  let drop_keys = emit_alloc_typed_container_dyn(ctx, a_count, drop_slots, "set", a_key_kind);
   let drop_write = ctx.alloc_i32(0);
 
   // common_triples: list with up to a_count entries (each entry is a [k,va,vb] list ptr)
   let common_slots = ctx.i32_offset(a_count, 1);
-  let common_list = emit_alloc_with_count(ctx, a_count, common_slots, "list");
+  let common_list = emit_alloc_typed_container(ctx, a_count, common_slots, "list", ContainerSlotKind::ExactHeapPtr as u32);
   let common_write = ctx.alloc_i32(0);
 
   // new_diff: map flat with up to b_count entries
@@ -1301,7 +1402,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(new_diff_slots));
-  let new_diff_flat = emit_alloc_with_count(ctx, b_count, new_diff_slots, "map");
+  let new_diff_flat = emit_alloc_typed_container_dyn(ctx, b_count, new_diff_slots, "map", b_kv);
   let new_diff_write = ctx.alloc_i32(0);
 
   // --- Pass 1: iterate over a ---
@@ -1369,10 +1470,13 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
     // Allocate a 3-element list [ak, av, found_bv] inline (32 bytes = 4 * 8)
     let triple_ptr = ctx.alloc_local_typed(ValType::I32);
     emit_bump_alloc(ctx, 32, triple_ptr, "list");
-    // count = 3
+    // [count=3:u32 @ 0][triple_kv_joined:u32 @ 4]
     ctx.emit(Instruction::LocalGet(triple_ptr));
-    ctx.emit(f64_const(3.0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+    ctx.emit(Instruction::I32Const(3));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+    ctx.emit(Instruction::LocalGet(triple_ptr));
+    ctx.emit(Instruction::LocalGet(triple_kv_joined));
+    ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
     // elem 0 = ak
     ctx.emit(Instruction::LocalGet(triple_ptr));
     ctx.emit(Instruction::LocalGet(ak));
@@ -1427,13 +1531,13 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 
   // Patch drop_keys count
   ctx.emit(Instruction::LocalGet(drop_keys));
-  ctx.ptr_to_f64(drop_write);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(drop_write));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   // Patch common_list count
   ctx.emit(Instruction::LocalGet(common_list));
-  ctx.ptr_to_f64(common_write);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(common_write));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   // --- Pass 2: iterate over b, collect keys not in a → new_diff ---
   let bi = ctx.alloc_i32(0);
@@ -1518,8 +1622,8 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
 
   // Patch new_diff_flat count
   ctx.emit(Instruction::LocalGet(new_diff_flat));
-  ctx.ptr_to_f64(new_diff_write);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(new_diff_write));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
 
   // Convert flat map to proper map
   let new_diff_map = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", new_diff_flat);
@@ -1528,8 +1632,11 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   let result_ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, 32, result_ptr, "list"); // 4 * 8 = 32 bytes
   ctx.emit(Instruction::LocalGet(result_ptr));
-  ctx.emit(f64_const(3.0));
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
+  ctx.emit(Instruction::LocalGet(result_ptr));
+  ctx.emit(Instruction::I32Const(ContainerSlotKind::ExactHeapPtr as i32));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(4)));
   ctx.emit(Instruction::LocalGet(result_ptr));
   ctx.ptr_to_f64(drop_keys);
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
@@ -1550,7 +1657,7 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     return Err("&map:destruct expects 1 arg".into());
   }
   let src = emit_ptr_to_i32(ctx, &args[0])?;
-  let count = emit_load_count_i32(ctx, src);
+  let count = emit_load_container_count_i32(ctx, src);
 
   let result = ctx.alloc_local();
 
@@ -1843,9 +1950,12 @@ pub(super) fn emit_map_merge_non_nil_variadic(ctx: &mut WasmGenCtx, args: &[Calc
 }
 
 fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32, policy: &MergeNonNilPolicy) -> u32 {
-  let a_count = emit_load_count_i32(ctx, a);
+  let a_count = emit_load_container_count_i32(ctx, a);
+  let a_kv = emit_load_container_kind_i32(ctx, a);
   let a_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", a);
-  let b_count = emit_load_count_i32(ctx, b);
+  let b_count = emit_load_container_count_i32(ctx, b);
+  let b_kv = emit_load_container_kind_i32(ctx, b);
+  let out_kv = emit_join_kv_kinds_i32(ctx, a_kv, b_kv);
   let b_flat = emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_linearize", b);
 
   // Over-allocate: at most a_count + b_count entries
@@ -1861,7 +1971,7 @@ fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32, policy
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
-  let dst_root = emit_alloc_with_count(ctx, max_count, total_slots, "map");
+  let dst_root = emit_alloc_typed_container_dyn(ctx, max_count, total_slots, "map", out_kv);
 
   // Copy all entries from `a`, then overlay non-nil entries from `b` according to static value-type evidence.
   let write_idx = ctx.alloc_i32(0);
@@ -2018,8 +2128,8 @@ fn emit_map_merge_non_nil_from_ptrs(ctx: &mut WasmGenCtx, a: u32, b: u32, policy
 
   // Build the result map via __rt_map_from_flat from the flat dst_root buffer
   ctx.emit(Instruction::LocalGet(dst_root));
-  ctx.ptr_to_f64(write_idx);
-  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(write_idx));
+  ctx.emit(Instruction::I32Store(mem_arg_i32(0)));
   emit_runtime_lookup_i32_to_i32(ctx, "__rt_map_from_flat", dst_root)
 }
 
@@ -2132,8 +2242,30 @@ pub(super) fn emit_pairs_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
     }
   }
 
+  let (pair_k_kind, pair_v_kind) = match infer_wasm_static_type(ctx, &args[0])
+    .map(|ty| CalcitTypeAnnotation::expand_schema_alias(&ty))
+    .as_deref()
+  {
+    Some(CalcitTypeAnnotation::List(elem)) | Some(CalcitTypeAnnotation::Set(elem)) => {
+      let elem_exp = CalcitTypeAnnotation::expand_schema_alias(elem);
+      match elem_exp.as_ref() {
+        CalcitTypeAnnotation::Tuple(slots) if slots.len() == 2 => (
+          ContainerSlotKind::from_type_annotation(&slots[0]),
+          ContainerSlotKind::from_type_annotation(&slots[1]),
+        ),
+        CalcitTypeAnnotation::List(inner) => (
+          ContainerSlotKind::from_type_annotation(inner),
+          ContainerSlotKind::from_type_annotation(inner),
+        ),
+        _ => (ContainerSlotKind::DynamicBoxed, ContainerSlotKind::DynamicBoxed),
+      }
+    }
+    _ => (ContainerSlotKind::DynamicBoxed, ContainerSlotKind::DynamicBoxed),
+  };
+  let pair_kv_kind = ContainerSlotKind::pack_kv(pair_k_kind, pair_v_kind);
+
   let xs_ptr = emit_ptr_to_i32(ctx, &args[0])?;
-  let xs_count = emit_load_count_i32(ctx, xs_ptr);
+  let xs_count = emit_load_container_count_i32(ctx, xs_ptr);
   let empty_map_f64 = ctx.alloc_local();
   emit_map_new(ctx, &[])?;
   ctx.emit(Instruction::LocalSet(empty_map_f64));
@@ -2160,7 +2292,7 @@ pub(super) fn emit_pairs_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(pair_ptr));
 
-  let pair_count = emit_load_count_i32(ctx, pair_ptr);
+  let pair_count = emit_load_container_count_i32(ctx, pair_ptr);
   ctx.emit(Instruction::LocalGet(pair_count));
   ctx.emit(Instruction::I32Const(2));
   ctx.emit(Instruction::I32Ne);
@@ -2178,6 +2310,7 @@ pub(super) fn emit_pairs_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::LocalGet(acc));
   ctx.emit(Instruction::LocalGet(k));
   ctx.emit(Instruction::LocalGet(v));
+  ctx.emit(Instruction::I32Const(pair_kv_kind as i32));
   ctx.call_rt("__rt_map_assoc");
   ctx.emit(Instruction::LocalSet(acc));
 
@@ -2202,8 +2335,11 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(ys_ptr));
 
-  let xs_count = emit_load_count_i32(ctx, xs_ptr);
-  let ys_count = emit_load_count_i32(ctx, ys_ptr);
+  let xs_count = emit_load_container_count_i32(ctx, xs_ptr);
+  let ys_count = emit_load_container_count_i32(ctx, ys_ptr);
+  let xs_kind = emit_load_container_kind_i32(ctx, xs_ptr);
+  let ys_kind = emit_load_container_kind_i32(ctx, ys_ptr);
+  let add_kv_kind = emit_pack_kv_kinds(ctx, xs_kind, ys_kind);
 
   // min_count = min(xs_count, ys_count)
   let min_count = ctx.alloc_local_typed(ValType::I32);
@@ -2258,6 +2394,7 @@ pub(super) fn emit_zipmap_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, ys_f64:
   ctx.emit(Instruction::LocalGet(result_i32));
   ctx.emit(Instruction::LocalGet(k));
   ctx.emit(Instruction::LocalGet(v));
+  ctx.emit(Instruction::LocalGet(add_kv_kind));
   ctx.call_rt("__rt_map_assoc");
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::LocalSet(result));

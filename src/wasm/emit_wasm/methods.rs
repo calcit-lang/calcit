@@ -466,7 +466,8 @@ fn emit_list_rest_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(src));
 
-  let old_count = emit_load_count_i32(ctx, src);
+  let old_count = emit_load_container_count_i32(ctx, src);
+  let elem_kind = emit_load_container_kind_i32(ctx, src);
   let new_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(old_count));
   ctx.emit(Instruction::I32Const(1));
@@ -479,7 +480,7 @@ fn emit_list_rest_from_local(ctx: &mut WasmGenCtx, receiver_local: u32) {
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::LocalSet(total_slots));
 
-  let dst = emit_alloc_with_count(ctx, new_count, total_slots, "list");
+  let dst = emit_alloc_typed_container_dyn(ctx, new_count, total_slots, "list", elem_kind);
   let dst_base = emit_addr_offset(ctx, dst, 8);
   let src_base = emit_addr_offset(ctx, src, 16);
   emit_copy_f64_loop(ctx, dst_base, src_base, new_count);
@@ -538,13 +539,13 @@ fn emit_ptr_local_from_receiver(ctx: &mut WasmGenCtx, receiver_local: u32) -> u3
 
 fn emit_list_contains_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = emit_load_count_i32(ctx, ptr_local);
+  let count_local = emit_load_container_count_i32(ctx, ptr_local);
   emit_list_index_in_bounds_from_locals(ctx, count_local, index_local);
 }
 
 fn emit_list_includes_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, target_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = emit_load_count_i32(ctx, ptr_local);
+  let count_local = emit_load_container_count_i32(ctx, ptr_local);
   let result_local = ctx.alloc_local();
   let index_local = ctx.alloc_local_typed(ValType::I32);
 
@@ -619,7 +620,7 @@ fn emit_set_includes_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, targe
 
 fn emit_sequence_extreme_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, use_min: bool) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = emit_load_count_i32(ctx, ptr_local);
+  let count_local = emit_load_container_count_i32(ctx, ptr_local);
   let best_local = ctx.alloc_local();
   let index_local = ctx.alloc_local_typed(ValType::I32);
 
@@ -684,7 +685,7 @@ fn emit_sequence_extreme_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, u
 
 fn emit_sequence_extreme_option_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, use_min: bool) -> Result<(), String> {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = emit_load_count_i32(ctx, ptr_local);
+  let count_local = emit_load_container_count_i32(ctx, ptr_local);
   ctx.emit(Instruction::LocalGet(count_local));
   ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
@@ -883,7 +884,7 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
       ctx.emit(f64_const(1.0));
       return Ok(());
     }
-    Some("list" | "map" | "set" | "string") => {
+    Some("string") => {
       ctx.emit(f64_const(1.0));
       ctx.emit(f64_const(0.0));
       emit_heap_count_from_local(ctx, receiver_local);
@@ -900,7 +901,7 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
       ctx.emit(Instruction::F64ConvertI32U);
       return Ok(());
     }
-    Some("struct") => {
+    Some("list" | "map" | "set" | "struct") => {
       ctx.emit(Instruction::LocalGet(receiver_local));
       ctx.emit(Instruction::I32TruncF64U);
       ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
@@ -933,10 +934,10 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::Else);
 
-  for (tag, is_enum, is_struct) in [
-    (list_tag, false, false),
-    (map_tag, false, false),
-    (set_tag, false, false),
+  for (tag, is_enum, is_u32_header) in [
+    (list_tag, false, true),
+    (map_tag, false, true),
+    (set_tag, false, true),
     (string_tag, false, false),
     (enum_tag, true, false),
     (struct_tag, false, true),
@@ -949,7 +950,7 @@ fn emit_method_empty_question(ctx: &mut WasmGenCtx, receiver_local: u32, static_
     ctx.emit(f64_const(0.0));
     if is_enum {
       emit_enum_header_count_f64(ctx, receiver_local);
-    } else if is_struct {
+    } else if is_u32_header {
       emit_struct_header_count_f64(ctx, receiver_local);
     } else {
       emit_heap_count_from_local(ctx, receiver_local);
@@ -1225,25 +1226,23 @@ fn emit_map_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, key_loca
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(Instruction::LocalGet(key_local));
   ctx.emit(Instruction::LocalGet(val_local));
+  ctx.emit(Instruction::I32Const(super::ContainerSlotKind::pack_kv(
+    super::ContainerSlotKind::DynamicBoxed,
+    super::ContainerSlotKind::DynamicBoxed,
+  ) as i32));
   ctx.emit(Instruction::Call(fn_idx));
   ctx.emit(Instruction::F64ConvertI32U);
 }
 
 fn emit_list_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32, val_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
-  let count_local = super::emit_load_count_i32(ctx, ptr_local);
-  let total_slots = ctx.alloc_local_typed(ValType::I32);
+  let count_local = super::emit_load_container_count_i32(ctx, ptr_local);
   let idx_local = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(index_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(idx_local));
 
-  ctx.emit(Instruction::LocalGet(count_local));
-  ctx.emit(Instruction::I32Const(1));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(total_slots));
-
-  let dst = super::emit_alloc_with_count(ctx, count_local, total_slots, "list");
+  let dst = super::emit_alloc_typed_list(ctx, count_local, super::ContainerSlotKind::DynamicBoxed);
 
   let dst_base = super::emit_addr_offset(ctx, dst, 8);
   let src_base = super::emit_addr_offset(ctx, ptr_local, 8);
@@ -1390,7 +1389,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
       ctx.emit(f64_const(0.0));
       return Ok(());
     }
-    Some("list" | "map" | "set" | "string") => {
+    Some("string") => {
       emit_heap_count_from_local(ctx, receiver_local);
       return Ok(());
     }
@@ -1398,7 +1397,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
       emit_enum_header_count_f64(ctx, receiver_local);
       return Ok(());
     }
-    Some("struct") => {
+    Some("list" | "map" | "set" | "struct") => {
       emit_struct_header_count_f64(ctx, receiver_local);
       return Ok(());
     }
@@ -1427,10 +1426,10 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::Else);
 
-  for (tag, is_enum, is_struct) in [
-    (list_tag, false, false),
-    (map_tag, false, false),
-    (set_tag, false, false),
+  for (tag, is_enum, is_u32_header) in [
+    (list_tag, false, true),
+    (map_tag, false, true),
+    (set_tag, false, true),
     (string_tag, false, false),
     (enum_tag, true, false),
     (struct_tag, false, true),
@@ -1441,7 +1440,7 @@ fn emit_method_count(ctx: &mut WasmGenCtx, receiver_local: u32, static_kind: Opt
     ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
     if is_enum {
       emit_enum_header_count_f64(ctx, receiver_local);
-    } else if is_struct {
+    } else if is_u32_header {
       emit_struct_header_count_f64(ctx, receiver_local);
     } else {
       emit_heap_count_from_local(ctx, receiver_local);
