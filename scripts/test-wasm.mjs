@@ -742,6 +742,7 @@ if (wasmLog[0] === "42") {
 
 // --- Lambda-lifted closures & zero-capture singletons ---
 check("test-closure-lifted-suite()", 1, e["test-closure-lifted-suite"]);
+check("test-compact-enum-and-option-niche()", 1, e["test-compact-enum-and-option-niche"]);
 // Also verify WebAssembly module emits zero CallIndirect/funcref table imports/definitions/exports
 function inspectWasmTables(bytes) {
   let offset = 8; // skip magic + version

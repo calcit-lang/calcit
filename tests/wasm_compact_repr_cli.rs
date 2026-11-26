@@ -1968,3 +1968,733 @@ fn map_equality_checks_key_presence_and_trim_rejects_non_ascii_patterns() {
     );
   }
 }
+
+#[test]
+fn option_niche_zero_alloc_writes_direct_consumers_and_escaping_identity() {
+  let dir = TestDirectory::create("wasm-option-niche");
+  let snapshot = r#"
+{} (:package |opt-niche)
+  :about "|OptionHeapPtrI32 niche optimization test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'opt-niche.main/main!) (:mode :native) (:reload-fn 'opt-niche.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'opt-niche.main
+    %{} 'FileEntry
+      :defs $ {}
+        'NicheNode $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NicheNode (:label String) (:next (Option opt-niche.main/NicheNode))
+          :examples $ []
+          :schema $ quote StructDef
+        'NonNicheBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NonNicheBox (:nested (Option (Option String))) (:num (Option Number)) (:flag (Option Bool)) (:tag-opt (Option Tag)) (:dyn-opt (Option Dynamic))
+          :examples $ []
+          :schema $ quote StructDef
+        '*persisted-niche $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *persisted-niche $ NicheNode :label |init :next None
+          :examples $ []
+          :schema $ quote $ Ref NicheNode
+        '*churn-str $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn-str |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'measure-niche-node-bytes $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export measure-niche-node-bytes ()
+            let
+                a $ NicheNode :label |a :next None
+                b $ NicheNode :label |b :next (Some a)
+              , b
+          :examples $ []
+          :schema $ quote $ Fn (-> NicheNode)
+        'verify-zero-alloc-write-and-direct-consumers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-zero-alloc-write-and-direct-consumers ()
+            let
+                tail $ NicheNode :label |tail :next None
+                mid $ NicheNode :label |mid :next (Some tail)
+                copied $ NicheNode :label |copied :next (:next mid)
+                fallback $ NicheNode :label |fallback :next None
+                m-none $ match (:next tail)
+                  (:none) true
+                  (:some _) false
+                m-some $ match (:next copied)
+                  (:some n) (= (:label n) |tail)
+                  (:none) false
+                p-some $ (:next mid) .some?
+                p-none $ (:next tail) .none?
+                u-label $ :label ((:next mid) .unwrap)
+                uo-none $ :label ((:next tail) .unwrap-or fallback)
+                uo-some $ :label ((:next copied) .unwrap-or fallback)
+              and m-none m-some p-some p-none (= u-label |tail) (= uo-none |fallback) (= uo-some |tail)
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'verify-escaping-identical-none $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-escaping-identical-none ()
+            let
+                node $ NicheNode :label |leaf :next None
+                a $ :next node
+                b $ :next node
+                boxed $ NonNicheBox :nested (Some None) :num (Some 42) :flag (Some true) :tag-opt (Some :ok) :dyn-opt (Some (assert-type |dyn Dynamic))
+                boxed-none $ NonNicheBox :nested None :num None :flag None :tag-opt None :dyn-opt None
+              and
+                not (identical? a b)
+                not (identical? (:next node) (:next node))
+                = a b
+                = a None
+                = (NicheNode :label |leaf :next None) node
+                = (&hash (NicheNode :label |leaf :next None)) (&hash node)
+                = (:num boxed) (Some 42)
+                (:nested boxed) .some?
+                (:nested boxed-none) .none?
+                (:dyn-opt boxed-none) .none?
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'commit-and-verify-niche $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-and-verify-niche ()
+            let
+                tail $ NicheNode :label (&str:concat |ta |il) :next None
+                head $ NicheNode :label (&str:concat |he |ad) :next (Some tail)
+              reset! *persisted-niche head
+              , true
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'read-persisted-niche $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-persisted-niche ()
+            let
+                cur @*persisted-niche
+              and
+                = (:label cur) |head
+                match (:next cur)
+                  (:some tail) (and (= (:label tail) |tail) ((:next tail) .none?))
+                  (:none) false
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'pump-niche-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-niche-churn (n)
+            reset! *churn-str (&str:pad-right (&str:concat |churn- (to-string n)) 32768 |Z)
+            &str:count @*churn-str
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (and (verify-zero-alloc-write-and-direct-consumers) (verify-escaping-identical-none)) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns opt-niche.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset");
+
+  arena_reset.call(&mut store, ()).expect("arena reset");
+  let before = get_i32_global(&mut store, &instance, "__heap_ptr");
+  let _ = instance
+    .get_typed_func::<(), f64>(&mut store, "measure-niche-node-bytes")
+    .expect("measure-niche-node-bytes")
+    .call(&mut store, ())
+    .expect("measure-niche-node-bytes runs");
+  let after_two = get_i32_global(&mut store, &instance, "__heap_ptr");
+  // Two NicheNode allocations: each 8 GC + 8 header + 4 label + 4 next = 24 B => 48 B,
+  // plus 16 B for __rt_turn_end's scratch_roots_head tracking node = 64 B (zero Option heap allocs!).
+  assert_eq!(
+    after_two - before,
+    64,
+    "two NicheNodes + 16B return root node must total 64 bytes without Option heap wrappers"
+  );
+  arena_reset.call(&mut store, ()).expect("arena reset");
+
+  let before_zero = get_i32_global(&mut store, &instance, "__heap_ptr");
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "verify-zero-alloc-write-and-direct-consumers")
+      .expect("verify-zero-alloc-write-and-direct-consumers")
+      .call(&mut store, ())
+      .expect("verify-zero-alloc-write-and-direct-consumers runs"),
+    1.0
+  );
+  let after_zero = get_i32_global(&mut store, &instance, "__heap_ptr");
+  // Result is Bool scalar (`keep_scratch_result` rewinds __heap_ptr on exit), so check runtime semantics;
+  // also check the internal pre-rewind usage when exporting NicheNode directly above (`after_two - before == 48`).
+  assert_eq!(after_zero, before_zero);
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "verify-escaping-identical-none")
+      .expect("verify-escaping-identical-none")
+      .call(&mut store, ())
+      .expect("verify-escaping-identical-none runs"),
+    1.0
+  );
+
+  // Persistent promotion & semi-space compaction with OptionHeapPtrI32.
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "commit-and-verify-niche")
+      .expect("commit-and-verify-niche")
+      .call(&mut store, ())
+      .expect("commit-and-verify-niche runs"),
+    1.0
+  );
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let pump = instance
+    .get_typed_func::<f64, f64>(&mut store, "pump-niche-churn")
+    .expect("pump-niche-churn");
+  let mut compacted = false;
+  for i in 1..=25 {
+    pump.call(&mut store, i as f64).expect("pump churn");
+    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+      compacted = true;
+      break;
+    }
+  }
+  assert!(compacted, "expected persistent heap compaction into semi-space B");
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "read-persisted-niche")
+      .expect("read-persisted-niche")
+      .call(&mut store, ())
+      .expect("read-persisted-niche runs"),
+    1.0
+  );
+}
+
+#[test]
+fn compact_enum_footprint_scalar_address_safety_and_codecs() {
+  let dir = TestDirectory::create("wasm-compact-enum");
+  let snapshot = r#"
+{} (:package |compact-enum)
+  :about "|Compact EnumLayouts footprint, scalar safety, defref compaction, and codecs test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'compact-enum.main/main!) (:mode :native) (:reload-fn 'compact-enum.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'compact-enum.main
+    %{} 'FileEntry
+      :defs $ {}
+        'PackedMsg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum PackedMsg (:Empty) (:Pair Bool Int32 (Option String) UInt8) (:PairAlt Bool Int32 (Option String) UInt8)
+          :examples $ []
+          :schema $ quote EnumDef
+        '*s1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *s1 |
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*s2 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *s2 |
+          :examples $ []
+          :schema $ quote $ Ref String
+        '*pers-msg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *pers-msg $ %:: PackedMsg :Empty
+          :examples $ []
+          :schema $ quote $ Ref PackedMsg
+        '*churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *churn |seed
+          :examples $ []
+          :schema $ quote $ Ref String
+        'alloc-empty-msg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-empty-msg () (%:: PackedMsg :Empty)
+          :examples $ []
+          :schema $ quote $ Fn (-> PackedMsg)
+        'alloc-pair-msg $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export alloc-pair-msg ()
+            %:: PackedMsg :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
+          :examples $ []
+          :schema $ quote $ Fn (-> PackedMsg)
+        'init-strings $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export init-strings ()
+            do
+              reset! *s1 (&str:concat |he |llo)
+              reset! *s2 (&str:concat |he |llo)
+              , true
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'get-s1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export get-s1 () @*s1
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'get-s2 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export get-s2 () @*s2
+          :examples $ []
+          :schema $ quote $ Fn (-> String)
+        'check-scalar-addr-and-enum-ops $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export check-scalar-addr-and-enum-ops (a b)
+            let
+                p1 $ %:: PackedMsg :Pair true a None (assert-type 5 UInt8)
+                p2 $ %:: PackedMsg :Pair true b None (assert-type 5 UInt8)
+                p3 $ %:: PackedMsg :Pair true a (Some @*s1) (assert-type 5 UInt8)
+                p4 $ %:: PackedMsg :Pair true a (Some @*s2) (assert-type 5 UInt8)
+                swapped $ &enum:assoc p3 0 :PairAlt
+                updated $ &enum:assoc p3 3 (Some |hi)
+                m $ &{} p1 10 p2 20
+                edn-text $ format-cirru-edn p3
+                parsed-ok $ match (try-parse-cirru-edn-as edn-text PackedMsg)
+                  (:ok v) (= v p3)
+                  (:err _) false
+                match-ok $ match p3
+                  (:Pair flag num opt small)
+                    and flag (= num a) (opt .some?) (= (opt .unwrap) |hello) (= small (assert-type 5 UInt8))
+                  _ false
+                direct-niche-ok $ (assert-type (&enum:nth p3 3) (Option String)) .some?
+              and
+                not= p1 p2
+                = p1 (%:: PackedMsg :Pair true a None (assert-type 5 UInt8))
+                = p3 p4
+                = (&hash p3) (&hash p4)
+                = (&map:get m p1) (Some 10)
+                = (&map:get m p2) (Some 20)
+                = (&enum:count p3) 5
+                = (assert-type (&enum:nth p3 0) Tag) :Pair
+                = (assert-type (&enum:nth swapped 0) Tag) :PairAlt
+                = (assert-type (&enum:nth swapped 3) (Option String)) (Some |hello)
+                = (assert-type (&enum:nth updated 3) (Option String)) (Some |hi)
+                not (identical? (&enum:nth p1 3) (&enum:nth p1 3))
+                , parsed-ok
+                , match-ok
+                , direct-niche-ok
+          :examples $ []
+          :schema $ quote $ Fn Int32 Int32 (-> Bool)
+        'commit-compact-enum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export commit-compact-enum ()
+            do
+              reset! *pers-msg (%:: PackedMsg :Pair false (assert-type 99 Int32) (Some (&str:concat |wo |rld)) (assert-type 3 UInt8))
+              , true
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'read-compact-enum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export read-compact-enum ()
+            match @*pers-msg
+              (:Pair flag num opt small)
+                and (not flag) (= num 99) (= opt (Some |world)) (= small 3)
+              _ false
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'pump-churn $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export pump-churn (n)
+            reset! *churn (&str:pad-right (&str:concat |churn- (to-string n)) 32768 |Z)
+            &str:count @*churn
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (if (check-scalar-addr-and-enum-ops (assert-type 1 Int32) (assert-type 2 Int32)) 1 0)
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns compact-enum.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let bytes = fs::read(&wasm_path).expect("wasm bytes should read");
+  let _ = parse_wasm_module(&bytes);
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let arena_reset = instance
+    .get_typed_func::<(), ()>(&mut store, "__arena_reset")
+    .expect("__arena_reset");
+
+  let measure = |store: &mut wasmtime::Store<wasmtime::StoreLimits>, name: &str| -> i32 {
+    arena_reset.call(&mut *store, ()).expect("arena reset");
+    let before = get_i32_global(store, &instance, "__heap_ptr");
+    let _ = instance
+      .get_typed_func::<(), f64>(&mut *store, name)
+      .expect(name)
+      .call(&mut *store, ())
+      .expect("alloc succeeds");
+    let after = get_i32_global(store, &instance, "__heap_ptr");
+    arena_reset.call(&mut *store, ()).expect("arena reset");
+    after - before
+  };
+
+  // Module uses defref, so returning a Scratch heap enum adds a 16 B scratch_roots_head node in __rt_turn_end.
+  assert_eq!(
+    measure(&mut store, "alloc-empty-msg"),
+    32,
+    ":Empty enum (8 GC + 8 header = 16 B) + 16 B return root node must be 32 B"
+  );
+  // PackedMsg :Pair: 8 GC + 8 header + 4 Int32 + 4 OptionHeapPtr + 1 Bool + 1 UInt8 = 26 -> 32 B (+ 16 B root = 48 B; legacy 56 + 16 = 72 B).
+  assert_eq!(
+    measure(&mut store, "alloc-pair-msg"),
+    48,
+    "compact :Pair (32 B) + 16 B return root node must pack to 48 B (vs 72 B legacy)"
+  );
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "init-strings")
+      .expect("init-strings")
+      .call(&mut store, ())
+      .expect("init-strings runs"),
+    1.0
+  );
+  let addr1 = instance
+    .get_typed_func::<(), f64>(&mut store, "get-s1")
+    .expect("get-s1")
+    .call(&mut store, ())
+    .expect("get-s1 runs");
+  let addr2 = instance
+    .get_typed_func::<(), f64>(&mut store, "get-s2")
+    .expect("get-s2")
+    .call(&mut store, ())
+    .expect("get-s2 runs");
+  assert_ne!(addr1, addr2);
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(f64, f64), f64>(&mut store, "check-scalar-addr-and-enum-ops")
+      .expect("check-scalar-addr-and-enum-ops")
+      .call(&mut store, (addr1, addr2))
+      .expect("check-scalar-addr-and-enum-ops runs"),
+    1.0
+  );
+
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "commit-compact-enum")
+      .expect("commit-compact-enum")
+      .call(&mut store, ())
+      .expect("commit-compact-enum runs"),
+    1.0
+  );
+  let arena_base = get_i32_global(&mut store, &instance, "__arena_base");
+  let space_b_base = arena_base - SEMI_SPACE_BYTES;
+  let pump = instance.get_typed_func::<f64, f64>(&mut store, "pump-churn").expect("pump-churn");
+  let mut compacted = false;
+  for i in 1..=25 {
+    pump.call(&mut store, i as f64).expect("pump churn");
+    if get_i32_global(&mut store, &instance, "__persistent_ptr") >= space_b_base {
+      compacted = true;
+      break;
+    }
+  }
+  assert!(compacted, "expected persistent heap compaction into semi-space B");
+  assert_eq!(
+    instance
+      .get_typed_func::<(), f64>(&mut store, "read-compact-enum")
+      .expect("read-compact-enum")
+      .call(&mut store, ())
+      .expect("read-compact-enum runs"),
+    1.0
+  );
+}
+
+#[test]
+fn component_abi_cross_layout_enum_equality_and_hash_parity() {
+  let dir = TestDirectory::create("wasm-component-cross-layout");
+  let snapshot = r#"
+{} (:package |cross-layout)
+  :about "|Component ABI cross-layout Enum equality and hash parity test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'cross-layout.main/main!) (:mode :native) (:reload-fn 'cross-layout.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'cross-layout.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Action $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Action (:Noop) (:Apply UInt16 (Option String) Bool)
+          :examples $ []
+          :schema $ quote EnumDef
+        'verify-lifted-parity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify-lifted-parity (lifted expected)
+            let
+                compact-some $ %:: Action :Apply (assert-type 9 UInt16) (Some |hi) true
+                compact-none $ %:: Action :Apply (assert-type 9 UInt16) None false
+                empty-a $ %:: Action :Noop
+              and
+                if (= expected 0)
+                  and (= lifted compact-some) (= (&hash lifted) (&hash compact-some))
+                  if (= expected 1)
+                    and (= lifted compact-none) (= (&hash lifted) (&hash compact-none))
+                    if (= expected 2)
+                      and (= lifted empty-a) (= (&hash lifted) (&hash empty-a))
+                      , false
+                not= compact-some compact-none
+                not= (&hash compact-some) (&hash compact-none)
+          :examples $ []
+          :schema $ quote $ Fn Action UInt8 (-> Bool)
+        'make-compact-action $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export make-compact-action (with-str)
+            if with-str
+              %:: Action :Apply (assert-type 42 UInt16) (Some |ok) true
+              %:: Action :Apply (assert-type 42 UInt16) None false
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Action)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns cross-layout.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "component");
+  let bytes = fs::read(&wasm_path).expect("component core wasm should read");
+  let _ = parse_wasm_module(&bytes);
+
+  let engine = Engine::default();
+  let module = Module::new(&engine, &bytes).expect("component core module loads");
+  let mut store = Store::new(&engine, ());
+  let instance = Instance::new(&mut store, &module, &[]).expect("instantiate component module");
+  let memory = instance.get_memory(&mut store, "memory").expect("memory export");
+  let realloc = instance
+    .get_typed_func::<(i32, i32, i32, i32), i32>(&mut store, "cabi_realloc")
+    .expect("cabi_realloc");
+
+  // Alphabetical variants: 0 = :Apply(UInt16, Option<String>, Bool), 1 = :Noop
+  // Flat params for verify-lifted-parity(Action, UInt8) -> i32:
+  // (discriminant:i32, u16_val:i32, opt_disc:i32, str_ptr:i32, str_len:i32, bool_val:i32, expected:i32)
+  let verify_lifted = instance
+    .get_typed_func::<(i32, i32, i32, i32, i32, i32, i32), i32>(&mut store, "verify-lifted-parity")
+    .expect("verify-lifted-parity");
+
+  let hi_bytes = b"hi";
+  let hi_ptr = realloc.call(&mut store, (0, 0, 1, hi_bytes.len() as i32)).expect("realloc hi");
+  memory.write(&mut store, hi_ptr as usize, hi_bytes).expect("write hi");
+
+  // Lifted :Apply(9, Some("hi"), true) has layout_id == 0, compared against WASM-constructed compact layout_id >= 1.
+  assert_eq!(
+    verify_lifted
+      .call(&mut store, (0, 9, 1, hi_ptr, 2, 1, 0))
+      .expect("call :Apply some"),
+    1
+  );
+  // Lifted :Apply(9, None, false)
+  assert_eq!(verify_lifted.call(&mut store, (0, 9, 0, 0, 0, 0, 1)).expect("call :Apply none"), 1);
+  // Lifted :Noop
+  assert_eq!(verify_lifted.call(&mut store, (1, 0, 0, 0, 0, 0, 2)).expect("call :Noop"), 1);
+  // Mismatched expected variants must be rejected.
+  assert_eq!(
+    verify_lifted
+      .call(&mut store, (1, 0, 0, 0, 0, 0, 0))
+      .expect("call :Noop with :Apply some expected"),
+    0
+  );
+
+  // Lower compact Action (layout_id >= 1) back out through Component ABI export.
+  let make_compact = instance
+    .get_typed_func::<i32, i32>(&mut store, "make-compact-action")
+    .expect("make-compact-action");
+  let post_compact = instance
+    .get_typed_func::<i32, ()>(&mut store, "cabi_post_make-compact-action")
+    .expect("cabi_post_make-compact-action");
+
+  let ret_some = make_compact.call(&mut store, 1).expect("make-compact-action(true)");
+  // Canonical layout for Action: disc@0 (u8), payload@4: u16@4, opt<string>@8 (disc@8, ptr@12, len@16), bool@20 -> total 24 B.
+  let mut buf = [0u8; 24];
+  memory.read(&store, ret_some as usize, &mut buf).expect("read ret_some");
+  assert_eq!(buf[0], 0);
+  assert_eq!(u16::from_le_bytes(buf[4..6].try_into().unwrap()), 42);
+  assert_eq!(buf[8], 1);
+  let out_ptr = u32::from_le_bytes(buf[12..16].try_into().unwrap()) as usize;
+  let out_len = u32::from_le_bytes(buf[16..20].try_into().unwrap()) as usize;
+  let mut out_str = vec![0u8; out_len];
+  memory.read(&store, out_ptr, &mut out_str).expect("read lowered string");
+  assert_eq!(out_str, b"ok");
+  assert_eq!(buf[20], 1);
+  post_compact.call(&mut store, ret_some).expect("post some");
+
+  let ret_none = make_compact.call(&mut store, 0).expect("make-compact-action(false)");
+  memory.read(&store, ret_none as usize, &mut buf).expect("read ret_none");
+  assert_eq!(buf[0], 0);
+  assert_eq!(u16::from_le_bytes(buf[4..6].try_into().unwrap()), 42);
+  assert_eq!(buf[8], 0);
+  assert_eq!(buf[20], 0);
+  post_compact.call(&mut store, ret_none).expect("post none");
+}
+
+#[test]
+fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
+  let dir = TestDirectory::create("wasm-enum-assoc-encode");
+  let snapshot = r#"
+{} (:package |assoc-encode)
+  :about "|Enum assoc non-narrowing fallback and encode-map-as Option<String> test"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'assoc-encode.main/main!) (:mode :native) (:reload-fn 'assoc-encode.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'assoc-encode.main
+    %{} 'FileEntry
+      :defs $ {}
+        'Packet $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Packet (:Frame UInt8 (Option String))
+          :examples $ []
+          :schema $ quote EnumDef
+        'verify! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export verify! ()
+            let
+                p $ %:: Packet :Frame (assert-type 5 UInt8) (Some |abcdefgh)
+                fitted $ &enum:assoc p 1 9
+                legacy-fitted $ :: :Frame 9 (Some |abcdefgh)
+                overflowed $ &enum:assoc p 1 256
+                legacy-overflow $ :: :Frame 256 (Some |abcdefgh)
+                str-replaced $ &enum:assoc p 2 |raw-str
+                legacy-str-replaced $ :: :Frame 5 |raw-str
+                encoded $ encode-map-as p Packet
+                roundtrip $ decode-map-as encoded Packet
+              and
+                &= fitted legacy-fitted
+                = (&hash fitted) (&hash legacy-fitted)
+                &= (:: :v (&enum:nth fitted 1)) (:: :v 9)
+                &= overflowed legacy-overflow
+                = (&hash overflowed) (&hash legacy-overflow)
+                &= (:: :v (&enum:nth overflowed 1)) (:: :v 256)
+                &= str-replaced legacy-str-replaced
+                = (&hash str-replaced) (&hash legacy-str-replaced)
+                = roundtrip p
+          :examples $ []
+          :schema $ quote $ Fn (-> Bool)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns assoc-encode.main
+"#;
+
+  let wasm_path = compile_wasm_with_boundary(&dir, snapshot, "native");
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let verify = instance.get_typed_func::<(), f64>(&mut store, "verify!").expect("verify! export");
+  assert_eq!(verify.call(&mut store, ()).expect("verify! runs"), 1.0);
+}
+
+#[test]
+fn option_niche_branch_keeps_defref_reset_state_branch_local() {
+  let bad_dir = TestDirectory::create("wasm-opt-branch-reset-bad");
+  let bad_snapshot = r#"
+{} (:package |opt-reset-bad)
+  :about "|Option branch must not leak then-arm defatom reset into else arm"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'opt-reset-bad.main/main!) (:mode :native) (:reload-fn 'opt-reset-bad.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'opt-reset-bad.main
+    %{} 'FileEntry
+      :defs $ {}
+        'OptHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptHolder (:slot (Option (Fn Number (-> Number))))
+          :examples $ []
+          :schema $ quote StructDef
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *cb $ fn (x) (hint-fn $ Fn Number (-> Number)) x
+          :examples $ []
+          :schema $ quote $ Ref (Fn Number (-> Number))
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! ()
+            let
+                flag false
+                h $ %{} OptHolder
+                  :slot $ if flag
+                    let ((_ (reset! *cb inc1))) (Some inc1)
+                    Some @*cb
+              , 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns opt-reset-bad.main
+"#;
+  let bad_snapshot_path = bad_dir.0.join("calcit.cirru");
+  fs::write(&bad_snapshot_path, bad_snapshot).expect("bad snapshot writes");
+  let bad_out = bad_dir.0.join("out");
+  fs::create_dir(&bad_out).expect("out dir creates");
+  let bad_compile = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none"])
+    .arg(&bad_snapshot_path)
+    .args(["wasm", "--boundary", "native", "--emit-path"])
+    .arg(&bad_out)
+    .output()
+    .expect("compile runs");
+  assert!(
+    !bad_compile.status.success(),
+    "else-arm reading uninitialized closure defref after then-arm reset must fail"
+  );
+  let stderr = String::from_utf8_lossy(&bad_compile.stderr);
+  assert!(
+    stderr.contains("E_WASM_CLOSURE_SPECIALIZATION"),
+    "expected E_WASM_CLOSURE_SPECIALIZATION, got:\n{stderr}"
+  );
+
+  let good_dir = TestDirectory::create("wasm-opt-branch-reset-good");
+  let good_snapshot = r#"
+{} (:package |opt-reset-good)
+  :about "|Option branch resetting defatom in both arms permits read after conditional"
+  :entries $ {} $ :default
+    {} (:description |) (:init-fn 'opt-reset-good.main/main!) (:mode :native) (:reload-fn 'opt-reset-good.main/reload!)
+      :feature-policy $ {}
+      :modules $ []
+      :type-slots $ {}
+  :files $ {} $ 'opt-reset-good.main
+    %{} 'FileEntry
+      :defs $ {}
+        'OptHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptHolder (:slot (Option (Fn Number (-> Number))))
+          :examples $ []
+          :schema $ quote StructDef
+        'inc1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inc1 (x) (+ x 1)
+          :examples $ []
+          :schema $ quote $ Fn Number (-> Number)
+        '*cb $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *cb $ fn (x) (hint-fn $ Fn Number (-> Number)) x
+          :examples $ []
+          :schema $ quote $ Ref (Fn Number (-> Number))
+        'run! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export run! (flag)
+            let
+                _h $ %{} OptHolder
+                  :slot $ if flag
+                    let ((_ (reset! *cb inc1))) (Some inc1)
+                    let ((_ (reset! *cb inc1))) None
+                f @*cb
+              f 5
+          :examples $ []
+          :schema $ quote $ Fn Bool (-> Number)
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () 0
+          :examples $ []
+          :schema $ quote $ Fn (-> Number)
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns opt-reset-good.main
+"#;
+  let wasm_path = compile_wasm_with_boundary(&good_dir, good_snapshot, "native");
+  let (mut store, instance) = instantiate_core_with_limit(&wasm_path, EIGHT_MIB);
+  let run_fn = instance.get_typed_func::<f64, f64>(&mut store, "run!").expect("run! export");
+  assert_eq!(run_fn.call(&mut store, 1.0).expect("flag=true"), 6.0);
+  assert_eq!(run_fn.call(&mut store, 0.0).expect("flag=false"), 6.0);
+}
