@@ -1195,7 +1195,6 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   root_assoc_idx: u32,
   map_make_idx: u32,
   map_linearize_idx: u32,
-  map_root_from_flat_idx: u32,
 ) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(4);
   let count = b.alloc_i32();
@@ -1212,6 +1211,10 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   let added = b.alloc_i32();
   let new_count = b.alloc_i32();
   let flat = b.alloc_i32();
+  let i = b.alloc_i32();
+  let rebuilt_count = b.alloc_i32();
+  let rk = b.alloc_f64();
+  let rv = b.alloc_f64();
 
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(0)));
@@ -1250,6 +1253,10 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32Load(mem_arg_i32(8)));
   b.emit(Instruction::LocalSet(root));
+  // When widening PureScalar -> DynamicBoxed, re-index under DynamicBoxed value_hash
+  // so lookups remain in the matching buckets, while comparing existing PureScalar keys
+  // with PureScalar equality so two distinct heap-aliased numbers never merge, and
+  // keep the exact rebuilt entry count.
   b.emit(Instruction::LocalGet(count));
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::I32GtU);
@@ -1264,13 +1271,59 @@ pub(in crate::wasm::emit_wasm) fn build_rt_map_assoc(
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::Call(map_linearize_idx));
-  b.emit(Instruction::LocalTee(flat));
-  b.emit(Instruction::LocalGet(new_kv_kind));
-  b.emit(Instruction::I32Store(mem_arg_i32(4)));
-  b.emit(Instruction::LocalGet(flat));
-  b.emit(Instruction::Call(map_root_from_flat_idx));
+  b.emit(Instruction::LocalSet(flat));
+  b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(root));
-  b.emit(Instruction::Drop);
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(rebuilt_count));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Block(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::Loop(wasm_encoder::BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(flat));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalSet(rk));
+  b.emit(Instruction::LocalGet(flat));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(16));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalSet(rv));
+  b.emit(Instruction::LocalGet(root));
+  b.emit(Instruction::LocalGet(rk));
+  b.emit(Instruction::LocalGet(rv));
+  b.emit(Instruction::LocalGet(rk));
+  b.emit(Instruction::Call(value_hash_idx));
+  b.emit(Instruction::I32Const(ContainerSlotKind::PureScalar as i32));
+  b.emit(Instruction::Call(root_assoc_idx));
+  b.emit(Instruction::LocalSet(added));
+  b.emit(Instruction::LocalSet(root));
+  b.emit(Instruction::LocalGet(rebuilt_count));
+  b.emit(Instruction::LocalGet(added));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(rebuilt_count));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(rebuilt_count));
+  b.emit(Instruction::LocalSet(count));
   b.emit(Instruction::End);
   rt_emit_hash_with_kind(&mut b, 1, new_k, hash, scalar_hash_idx, value_hash_idx, heap_value_hash_idx);
   b.emit(Instruction::LocalGet(root));

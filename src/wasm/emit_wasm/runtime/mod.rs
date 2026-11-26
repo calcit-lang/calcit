@@ -991,7 +991,6 @@ pub(super) fn build_runtime_fns(
     map_root_assoc_idx,
     map_make_idx,
     map_linearize_idx,
-    map_root_from_flat_idx,
   ));
 
   let map_get_value_idx = base_index + fns.len() as u32;

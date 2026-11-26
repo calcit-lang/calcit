@@ -3013,17 +3013,21 @@ fn typed_container_safety_guards_json_keys_map_widening_and_encode_kinds() {
         'map-widening-aliasing-check $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export map-widening-aliasing-check (ptr-a ptr-b)
             let
-                base-map $ &{} (&+ ptr-a 0) 77
+                base-map $ &{} 42 77 (&+ ptr-a 0) 88 (&+ ptr-b 0) 89
                 dyn-map $ as-dyn base-map
                 widened $ &map:assoc dyn-map |extra 99
-                kept $ match (&map:get (as-dyn widened) (&+ ptr-a 0))
+                kept $ match (&map:get (as-dyn widened) 42)
                   (:some v) v
                   (:none) 0
                 a $ [] (&+ ptr-a 0)
                 c $ [] (&+ ptr-b 0)
               and
                 &= @*live-a @*live-b
+                &= (&map:count widened) 4
                 &= kept 77
+                &map:includes? (as-dyn widened) 88
+                &map:includes? (as-dyn widened) 89
+                &map:includes? (as-dyn widened) 99
                 not (&= a c)
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Bool)
