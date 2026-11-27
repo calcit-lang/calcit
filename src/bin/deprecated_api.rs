@@ -267,9 +267,11 @@ pub fn collect_deprecated_api_rows(
         .get(namespace.as_ref())
         .and_then(|file| file.defs.get(definition.as_ref()))
         .map(|entry| &entry.code);
+      let written_code = program::written_source_code_for_attached_def(namespace, definition, &entry.code);
+      let inspected_code = written_code.as_ref().unwrap_or(&entry.code);
       let mut uses = vec![];
       collect_uses(
-        &entry.code,
+        inspected_code,
         namespace,
         &file.import_map,
         &targets,
@@ -281,7 +283,7 @@ pub fn collect_deprecated_api_rows(
       // Their macros may have compile-time effects that a metadata query must not trigger.
       if resolver_ready(!targets.is_empty() && !uses.is_empty())
         && let Some(resolved) =
-          source_code.and_then(|source| resolved_function_uses(&entry.code, source, namespace, definition, &targets, &uses))
+          source_code.and_then(|source| resolved_function_uses(inspected_code, source, namespace, definition, &targets, &uses))
       {
         uses = resolved;
       }
@@ -577,5 +579,98 @@ mod tests {
         .iter()
         .all(|usage| usage.target_namespace == "legacy.api" && usage.target_name == "old-api")
     );
+  }
+
+  #[test]
+  fn skips_compiler_generated_impl_traits_while_reporting_handwritten_calls() {
+    let mut snapshot = calcit::load_core_snapshot().expect("embedded core");
+    snapshot.package = "tests".to_owned();
+    let ns = "tests.deprecated-synthetic-impl-traits";
+
+    let parse_one = |src: &str| {
+      cirru_parser::parse(src)
+        .expect("parse expression")
+        .into_iter()
+        .next()
+        .expect("one expression")
+    };
+    let entry = |src: &str| snapshot::CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      code: parse_one(src),
+      schema: Arc::new(calcit::calcit::CalcitTypeAnnotation::Dynamic),
+      tags: Default::default(),
+      ffi: None,
+    };
+
+    snapshot.files.insert(
+      ns.to_owned(),
+      snapshot::FileInSnapShot {
+        ns: snapshot::NsEntry {
+          doc: String::new(),
+          code: parse_one(&format!("ns {ns}")),
+        },
+        defs: HashMap::from([
+          ("ShowTrait".to_owned(), entry("deftrait ShowTrait\n  .show $ Fn Self (-> String)")),
+          (
+            "CanonicalBox".to_owned(),
+            entry("defstruct CanonicalBox (:n Number) (:impls ShowTrait)"),
+          ),
+          (
+            "CanonicalBoxImpl".to_owned(),
+            entry("defimpl CanonicalBox ShowTrait\n  .show $ fn (self) |ok"),
+          ),
+          (
+            "LegacyBox".to_owned(),
+            entry("def LegacyBox $ impl-traits (defstruct LegacyInner (:n Number)) CanonicalBoxImpl"),
+          ),
+        ]),
+      },
+    );
+
+    let targets = deprecated_targets(&snapshot);
+    let program_data = program::extract_program_data(&snapshot).expect("extract program data");
+    let file = program_data.get(ns).expect("test namespace present");
+    let definitions = program_data
+      .iter()
+      .flat_map(|(namespace, f)| f.defs.keys().map(move |def| (namespace.to_string(), def.to_string())))
+      .collect::<HashSet<_>>();
+
+    let canonical = file.defs.get("CanonicalBox").expect("CanonicalBox entry");
+    let written = program::written_source_code_for_attached_def(ns, "CanonicalBox", &canonical.code)
+      .expect("canonical (:impls ...) should recover pre-attachment code");
+    let mut canonical_uses = vec![];
+    collect_uses(
+      &written,
+      ns,
+      &file.import_map,
+      &targets,
+      &definitions,
+      &mut vec![],
+      &mut canonical_uses,
+    );
+    assert!(
+      canonical_uses.is_empty(),
+      "expected 0 uses for CanonicalBox, got {canonical_uses:?}"
+    );
+
+    let legacy = file.defs.get("LegacyBox").expect("LegacyBox entry");
+    assert!(
+      program::written_source_code_for_attached_def(ns, "LegacyBox", &legacy.code).is_none(),
+      "handwritten LegacyBox must not be masked by WRITTEN_CODE"
+    );
+    let mut legacy_uses = vec![];
+    collect_uses(
+      &legacy.code,
+      ns,
+      &file.import_map,
+      &targets,
+      &definitions,
+      &mut vec![],
+      &mut legacy_uses,
+    );
+    assert_eq!(legacy_uses.len(), 1);
+    assert_eq!(legacy_uses[0].target_name, "impl-traits");
   }
 }
