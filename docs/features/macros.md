@@ -17,12 +17,12 @@ Calcit macros extend the language by transforming syntax trees during preprocess
 `if`、`when`、`when-not`、`if-not`、`and`、`or` 的条件在静态检查与运行时都严格要求为 `Bool`；`nil`、`&unit`、`0`、字符串、集合、`Option :none` 与未证明的 `Dynamic` 都会被拒绝（静态报 `E_NON_BOOL_CONDITION`）。
 条件只求值一次，只执行选中的分支：
 
-- `if condition then-expr else-expr`：省略 `else-expr` 时假分支返回 `nil`（仅允许用于无需值的语句位置；需要值请显式返回 `Option :some` / `Option :none`）。
+- `if condition then-expr else-expr`：省略 `else-expr` 时假分支返回 `&unit`（`Unit`，仅允许用于无需值的语句位置；需要值请显式返回 `Option :some` / `Option :none`）。
 - `when`、`when-not` 与两参数 `if-not` 始终返回 `&unit`（`Unit`）；三参数 `if-not` 在条件为 `false` 时求值第二参数、为 `true` 时求值第三参数。
-- `and` 与 `or` 按从左到右短路求值并仅接受和返回 `Bool`。若需做缺省值回退，请使用 `either` 或 `Option .unwrap-or`。
+- `and` 与 `or` 按从左到右短路求值并仅接受和返回 `Bool`。若需做缺省值回退，请使用 `Option .unwrap-or`、`if-let` 或 `match`（旧式 `either` 已标记 `:deprecated`）。
 - 这些规则在 native、JS 与 WASM/WASI 之间一致；JavaScript 生成代码在必要时调用 `assert_bool` 守卫，不使用 JS 自动真假转换。
 
-条件的静态类型已证明为 Number、String、List、Map、Set 等非布尔类型时，检查会报告 `E_CONSTANT_TRUTHY_CONDITION` 并提示改写为 `>`、`=`、`empty?` 或 `blank?`。可空值请先用 `non-nil?` / `nil?` 转为 `Bool`，`Dynamic` 请先用 `(bool? x)` 或 `(= x true)` 收窄。
+条件的静态类型已证明为 Number、String、List、Map、Set 等非布尔类型时，检查会报告 `E_CONSTANT_TRUTHY_CONDITION` 并提示改写为 `>`、`=`、`empty?` 或 `blank?`。可选值优先使用 `Option<T>`（`.some?` / `.none?` / `match`），仅遗留 `nil` 边界再用 `non-nil?` / `nil?` 转为 `Bool`，`Dynamic` 请先用 `(bool? x)` 或 `(= x true)` 收窄。
 
 ```cirru
 assert= |then $ if true |then |else
@@ -30,7 +30,7 @@ assert= |else $ if false |then |else
 assert= false $ if (&= 0 1) true false
 assert= false $ and (&> 2 3) true
 assert= true $ or false (&= 1 1)
-assert= 7 $ either nil 7
+assert= 7 $ .unwrap-or (assert-type (Option :none) (Option Number)) 7
 assert= |fallback $ .unwrap-or (assert-type (Option :none) (Option String)) |fallback
 ```
 

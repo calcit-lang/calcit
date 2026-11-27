@@ -27,6 +27,8 @@ related:
 ## 0.47.0（开发中）核心 `nil` / `?` 收口（#2973）
 
 - **两参数 `if-let` 返回 `&unit`（`Unit`）且移除旧式 `?` 参数**：三参数 `(if-let (x opt) then else)` 行为不变；两参数 `(if-let (x opt) effect)` 仅执行 `then` 的副作用并返回 `&unit`，不再隐式返回 `nil`；`if-let` 参数列表不再包含 `?`，同时编译器也移除了对 `calcit.core/if-let` 的 `?` 例外放行。
+- **`hint-fn` 与 `&inspect-type` 返回 `&unit`（`Unit`）**：两者的返回值与静态推断类型均收口为 `Unit`（JS 端 `hint-fn` 输出 `void 0`），不再返回 `nil`。
+- **`assoc-in` / `update-in` 对非空路径显式拒绝 `nil`、`&get-raw` 缺失改为报错**：`assoc-in` 与 `update-in` 在非空路径下不再将 `nil` 隐式视作 `{}`，与 `assoc` 一致显式报错（请显式传入 `{}` 作为根集合；`update-in nil [] f` 空路径行为保留不变）；内部 `&get-raw` 在 map 缺键或 string 越界时改为显式报错而非返回 `nil`（`&get-in` 与 `dissoc-in` 已同步补充边界保护）。
 - **`\` 短函数宏按实际占位符展开精确元数**：不再生成 `defn %\ (? % %2)` 的旧式 `?` 注入 `nil` 参数，而是依据函数体是否出现 `%2` / `%` 分别展开为 `defn %\ ()`、`defn %\ (%)` 与 `defn %\ (% %2)`；需要省略尾参请改用 `Option` 尾参或显式传参。
 - **`non-nil!` 标为兼容旧入口**：文档明确提示新代码使用 `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
 - **新增非阻断迁移告警与 `:deprecated` 盘点**：针对项目源码中遗留的 `nil` 写法、运行时类型谓词和旧式动态多态风格，预处理会在 `Notes:` 中提示迁移建议（当前不阻断检查，便于逐步收敛）；其中带 `:deprecated` 标签的核心定义还可通过 `calcit analyze weak-types --only deprecated-call` 集中盘点（仅覆盖 `;nil`、`either`、`non-nil!`、`keys-non-nil`、`merge-non-nil`、`&merge-non-nil` 与 `impl-traits` 系列；`nil?`、`non-nil?`、`type-of`、`data-view`、其他运行时谓词及 `%{} _` / `%::` 通过预处理 `Notes:` 提示，不会出现在 `deprecated-call` 报告中）：

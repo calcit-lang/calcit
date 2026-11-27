@@ -2380,8 +2380,8 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           Some(invocation_return_type(&contract, logical_return, false))
         }
         // Hints refine the surrounding function or a local binding, but the
-        // hint expression itself returns Nil; it never wraps a function value.
-        Calcit::Syntax(CalcitSyntax::HintFn, _) => Some(tag_annotation("nil")),
+        // hint expression itself returns Unit; it never wraps a function value.
+        Calcit::Syntax(CalcitSyntax::HintFn, _) => Some(tag_annotation("unit")),
 
         // A quoted symbol literal such as `'b` evaluates to that Symbol value
         // on every backend, so it is literal evidence for `Symbol`.

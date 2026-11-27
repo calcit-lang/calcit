@@ -71,7 +71,7 @@
               &inspect-type s
               &inspect-type debug-id
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let

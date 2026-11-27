@@ -895,7 +895,7 @@ fn gen_call_code(
         }
         // for `&call-spread`, just translate as normal call
         CalcitSyntax::CallSpread => gen_call_code(&body, ns, local_defs, xs, file_imports, tags, return_label),
-        CalcitSyntax::HintFn => Ok(format!("{return_code}null")),
+        CalcitSyntax::HintFn => Ok(format!("{return_code}void 0")),
         CalcitSyntax::AssertType => match body.first() {
           Some(value) => to_js_code(value, ns, local_defs, file_imports, tags, return_label),
           None => Err(String::from("assert-type expected a value")),
@@ -1209,7 +1209,7 @@ fn gen_call_code(
     Calcit::Symbol { sym: s, .. } | Calcit::Registered(s) => {
       match &**s {
         ";" => Ok(format!("(/* {body} */ null)")),
-        "hint-fn" => Ok(format!("{return_code}null")),
+        "hint-fn" => Ok(format!("{return_code}void 0")),
 
         "echo" | "println" => {
           // not core syntax, but treat as macro for better debugging experience
@@ -2578,8 +2578,8 @@ fn gen_js_func(
         _ => false,
       };
       if is_hint {
-        // Strip only enclosing-function metadata. Zero-argument legacy Nil
-        // markers and targeted local hints remain executable Nil expressions.
+        // Strip only enclosing-function metadata. Zero-argument legacy Unit
+        // markers and targeted local hints remain executable Unit expressions.
         if xs.len() == 2 {
           if hinted_async(xs) {
             async_prefix = String::from("async ")

@@ -3385,15 +3385,14 @@ fn generated_assoc_in_step(
     key.to_owned(),
     updated_child,
   ]);
-  let normalized = generated_let(
-    data,
-    generated_if(
-      generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), current.to_owned()]),
-      empty_map(),
-      current.to_owned(),
-      file_ns,
-    ),
-    assoc,
+  let normalized = generated_let(data, current.to_owned(), assoc, file_ns);
+  let non_nil = generated_if(
+    generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), current.to_owned()]),
+    generated_call(vec![
+      Calcit::Proc(CalcitProc::Raise),
+      Calcit::Str(Arc::from("assoc-in does not work on nil; pass {} as the root map")),
+    ]),
+    normalized,
     file_ns,
   );
 
@@ -3405,7 +3404,7 @@ fn generated_assoc_in_step(
         "assoc-in does not traverse Struct fields; use assoc with a direct field key",
       )),
     ]),
-    normalized,
+    non_nil,
     file_ns,
   ))
 }
@@ -3466,12 +3465,12 @@ fn typed_literal_update_path(
   Some(hops)
 }
 
-fn generated_typed_nil_assoc_chain(path: &[Calcit], value: Calcit) -> Calcit {
+fn generated_nested_map_chain(path: &[Calcit], value: Calcit) -> Calcit {
   let Some((key, rest)) = path.split_first() else {
     return value;
   };
   let empty_map = generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
-  let child = generated_typed_nil_assoc_chain(rest, value);
+  let child = generated_nested_map_chain(rest, value);
   generated_call(vec![Calcit::Proc(CalcitProc::NativeMapAssoc), empty_map, key.to_owned(), child])
 }
 
@@ -3523,7 +3522,7 @@ fn generated_mixed_assoc_in_step_inner(
       // `assoc-in` / `update-in` materializes the remaining path as nested Maps
       // rather than indexing into an empty Map with NativeListAssoc.
       let rest_keys = rest.iter().map(|(k, _)| k.to_owned()).collect::<Vec<_>>();
-      let missing_child = generated_typed_nil_assoc_chain(&rest_keys, value.to_owned());
+      let missing_child = generated_nested_map_chain(&rest_keys, value.to_owned());
       let updated_child = generated_if(
         generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
         present_child,
@@ -3734,29 +3733,13 @@ fn try_expand_typed_literal_path_call(
       call_stack,
     ),
     "assoc-in" if args.len() == 3 => {
-      if let Some(path_items) = extract_literal_list_items(path_arg) {
-        if path_items.is_empty() {
-          let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
-          let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
-          let body = generated_let(value_binding.to_owned(), args[2].to_owned(), value_binding, file_ns);
-          return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
-        }
-        let expanded_base = CalcitTypeAnnotation::expand_schema_alias(&base_type);
-        if matches!(expanded_base.as_ref(), CalcitTypeAnnotation::Nil) {
-          let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
-          let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
-          let mut path_bindings = Vec::with_capacity(path_items.len());
-          let mut path_locals = Vec::with_capacity(path_items.len());
-          for key in path_items {
-            let binding = generated_path_symbol("typed_path_key", file_ns, call_stack)?;
-            path_locals.push(binding.to_owned());
-            path_bindings.push((binding, key.to_owned()));
-          }
-          let chain = generated_typed_nil_assoc_chain(&path_locals, value_binding.to_owned());
-          let body = generated_let(value_binding, args[2].to_owned(), chain, file_ns);
-          let body = generated_lets(path_bindings, body, file_ns);
-          return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
-        }
+      if let Some(path_items) = extract_literal_list_items(path_arg)
+        && path_items.is_empty()
+      {
+        let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+        let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
+        let body = generated_let(value_binding.to_owned(), args[2].to_owned(), value_binding, file_ns);
+        return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
       }
       if let Some(hops) = typed_literal_update_path(base_type.as_ref(), path_arg, scope_types, Some(&args[2]), true) {
         let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
@@ -7416,8 +7399,8 @@ fn preprocess_list_call(
               }
             }
           }
-          // Return nil for &inspect-type
-          return Ok(Calcit::Nil);
+          // Return Unit for &inspect-type
+          return Ok(Calcit::Unit);
         }
 
         if !has_spread
