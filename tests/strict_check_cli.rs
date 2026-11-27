@@ -1914,6 +1914,19 @@ fn typed_map_decoder_expands_deftype_aliases_and_bound_slots() {
   assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "check decoder alias");
   assert_success(&run_calcit(&snapshot, &[]), "run decoder alias");
 
+  edit_definition(&snapshot, "Nested", "quote $ deftype Nested (MapOf (MapOf Bool))", false);
+  edit_definition(
+    &snapshot,
+    "main!",
+    "quote $ defn main! () (assert= true (result:ok? (try-decode-map-as ({} (:outer ({} (:inner true)))) app.main/Nested))) (assert= true (result:err? (try-decode-map-as ({} (:outer ({} (:inner |bad)))) app.main/Nested))) &unit",
+    true,
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "check nested generic alias",
+  );
+  assert_success(&run_calcit(&snapshot, &[]), "run nested generic alias");
+
   edit_definition(&snapshot, "Loop", "quote $ deftype Loop (List Loop)", false);
   edit_definition(
     &snapshot,
@@ -1930,6 +1943,27 @@ fn typed_map_decoder_expands_deftype_aliases_and_bound_slots() {
     "{}{}",
     String::from_utf8_lossy(&recursive.stdout),
     String::from_utf8_lossy(&recursive.stderr)
+  );
+  assert!(diagnostic.contains("recursive type alias"), "{diagnostic}");
+
+  edit_definition(
+    &snapshot,
+    "Grow",
+    "quote $ deftype Grow (:generics T) (List (Grow (List T)))",
+    false,
+  );
+  edit_definition(
+    &snapshot,
+    "main!",
+    "quote $ defn main! () (try-decode-map-as ([]) (app.main/Grow Bool)) &unit",
+    true,
+  );
+  let growing = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!growing.status.success(), "growing recursive aliases must be rejected");
+  let diagnostic = format!(
+    "{}{}",
+    String::from_utf8_lossy(&growing.stdout),
+    String::from_utf8_lossy(&growing.stderr)
   );
   assert!(diagnostic.contains("recursive type alias"), "{diagnostic}");
 
