@@ -29,6 +29,10 @@ related:
 - **两参数 `if-let` 返回 `&unit`（`Unit`）且移除旧式 `?` 参数**：三参数 `(if-let (x opt) then else)` 行为不变；两参数 `(if-let (x opt) effect)` 仅执行 `then` 的副作用并返回 `&unit`，不再隐式返回 `nil`；`if-let` 参数列表不再包含 `?`，同时编译器也移除了对 `calcit.core/if-let` 的 `?` 例外放行。
 - **`\` 短函数宏按实际占位符展开精确元数**：不再生成 `defn %\ (? % %2)` 的旧式 `?` 注入 `nil` 参数，而是依据函数体是否出现 `%2` / `%` 分别展开为 `defn %\ ()`、`defn %\ (%)` 与 `defn %\ (% %2)`；需要省略尾参请改用 `Option` 尾参或显式传参。
 - **`non-nil!` 标为兼容旧入口**：文档明确提示新代码使用 `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
+- **新增非阻断迁移告警与 `:deprecated` 盘点**：针对项目源码中遗留的 `nil` 写法、运行时类型谓词和旧式动态多态风格，预处理会在 `Notes:` 中提示迁移建议（当前不阻断检查，便于逐步收敛），并可通过 `calcit analyze weak-types --only deprecated-call` 集中列出：
+  - `W_LEGACY_NIL_USAGE`：`;nil`、`either`、`non-nil!`、`keys-non-nil`、`merge-non-nil`、`&merge-non-nil`（推荐迁移为 `&unit` 或 `Option<T>` + `match` / `if-let` / `.unwrap-or`）。
+  - `W_RUNTIME_TYPE_PREDICATE`：`nil?`、`non-nil?`、`type-of`、`data-view` 与 `bool?` / `number?` / `string?` / `list?` / `map?` / `struct?` / `enum?` 等运行时类型检查（推荐优先使用名义 `defenum`/`defstruct`/`EdnValue`/`JsonValue` 配合 `match`，或 `Any` `any:downcast` 与 `(Dyn Trait)`）。
+  - `W_LEGACY_DYNAMIC_STYLE`：`impl-traits` 系列、`%{} _` 与 `%::` 动态原型构造（推荐顶层 `(:impls …)` + `defimpl`、直接名义构造器或 `(Dyn Trait)`）。
 
 ```cirru
 assert= &unit $ if-let (x None) (println x)

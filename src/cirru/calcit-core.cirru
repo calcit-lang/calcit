@@ -1600,7 +1600,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn EnumDef Impl (& Impl) (-> EnumDef)
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :internal :deprecated
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
           :code $ quote &runtime-implementation
@@ -1653,7 +1653,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Enum Impl (& Impl) (-> Enum)
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :internal :deprecated
         '&enum:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to an enum value."
           :code $ quote &runtime-implementation
@@ -3821,7 +3821,7 @@
           :schema $ quote $ Fn (Map K V) (Map K V)
             -> $ Map K V
             :generics K V
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :internal :deprecated
         '&methods-of $ %{} 'CodeEntry (:doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4560,7 +4560,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :internal :deprecated
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|内部结构体定义构造器。名称后可以跟字段类型及可选默认值、泛型和 where 元数据。用户代码使用 defstruct。"
           :code $ quote &runtime-implementation
@@ -4662,7 +4662,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Struct Impl (& Impl) (-> Struct)
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :internal :deprecated
         '&struct:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to a struct value."
           :code $ quote &runtime-implementation
@@ -4978,7 +4978,7 @@
             assert-type (;nil) (quote Nil)
           :schema $ quote $ Macro (& Syntax)
             -> $ Expr Nil
-          :tags $ #{} :macro
+          :tags $ #{} :macro :deprecated
         '< $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn < (x & ys)
             if
@@ -9558,7 +9558,7 @@
           :schema $ quote $ Macro
             & $ Expr Dynamic
             -> $ Expr Dynamic
-          :tags $ #{} :macro
+          :tags $ #{} :macro :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |returns-first-non-nil)
             :code $ quote $ do
               assert= 1 $ either nil 1
@@ -11965,6 +11965,7 @@
                   raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
+          :tags $ #{} :deprecated
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
           :code $ quote $ defn inc (x) (&+ x 1)
           :examples $ []
@@ -12420,6 +12421,7 @@
           :schema $ quote $ Fn (Map K V)
             -> $ Set K
             :generics K V
+          :tags $ #{} :deprecated
           :tests $ []
             %{} 'TestEntry (:name |omits-nil-map-values)
               :code $ quote $ assert= (#{} :a :b)
@@ -13121,6 +13123,7 @@
             & $ Map K V
             -> $ Map K V
             :generics K V
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |keeps-existing-values-for-nil)
             :code $ quote $ assert=
               {,} :a 1 :b 12 :c 3 :d 14
@@ -13281,7 +13284,7 @@
             if (nil? x) (raise "|expected non nil value") x
           :examples $ []
           :schema $ quote $ Fn T (-> T) (:generics T)
-          :tags $ #{} :control
+          :tags $ #{} :control :deprecated
         'non-nil? $ %{} 'CodeEntry
           :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；Option variant 请使用 .some?/.none?。WASM 会依据静态类型证据 lowering，泛型直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
           :code $ quote $ defn non-nil? (x)
