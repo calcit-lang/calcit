@@ -3323,7 +3323,7 @@ fn core_wasm_closures_promote_and_compact_mixed_captures_across_defref() {
         'churn-heap $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export churn-heap (s)
             reset! *churn s
-            if (non-nil? @*churn) 1 0
+            if (&> (&str:count @*churn) 0) 1 0
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
         'invoke-saved $ %{} 'CodeEntry (:doc |)

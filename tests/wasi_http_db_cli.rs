@@ -127,7 +127,7 @@ fn http_db_sql_only_component_omits_kv_import() {
       "          (:ok hits) (Result :ok (json-response 200 (json-stringify (encode-map-as (ItemsReply :hits hits :items rows) app.main/ItemsReply))))\n",
       "    Result :ok $ plain-response 404 |not-found",
     ),
-    "quote $ Fn HttpRequest (-> (Result HttpResponse String))",
+    "quote $ Fn HttpRequest (-> (Result HttpResponse String)) (:features :state)",
   );
   rm_def(&snapshot, "app.main/kv-get");
   rm_def(&snapshot, "app.main/kv-set");
