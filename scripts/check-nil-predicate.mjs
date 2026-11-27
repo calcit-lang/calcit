@@ -137,22 +137,35 @@ try {
   assert.throws(() => wasm.exports["fail-predicate"](), WebAssembly.RuntimeError);
   console.log("Nil predicate definition tests passed on native / generated JS / core WASM");
 
-  const deadNilSnapshot = join(fixture, "dead-nil.cirru");
-  await copyFile(snapshot, deadNilSnapshot);
-  run(deadNilSnapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
+  const deadSchemaSnapshot = join(fixture, "dead-nil-schema.cirru");
+  await copyFile(snapshot, deadSchemaSnapshot);
+  run(deadSchemaSnapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
     "quote $ defn typed-bool (x)\n  non-nil? x");
-  run(deadNilSnapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
+  run(deadSchemaSnapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
     "quote $ Fn Bool (-> Bool)");
-  run(deadNilSnapshot, "edit", "def", "calcit.nil-predicate/dead-check", "--input-format", "cirru", "--code",
-    "quote $ defn dead-check ()\n  [] (calcit.nil-helper/typed-bool false) (non-nil? 0)");
-  run(deadNilSnapshot, "edit", "schema", "calcit.nil-predicate/dead-check", "--input-format", "cirru", "--code",
-    "quote $ Fn (-> $ List Bool)");
-  const deadNilRejected = spawnSync(binary, [
-    deadNilSnapshot, "--init-fn", "calcit.nil-predicate/dead-check", "--reload-fn", "calcit.nil-predicate/dead-check", "--check-only",
+  run(deadSchemaSnapshot, "edit", "def", "calcit.nil-predicate/dead-schema-check", "--input-format", "cirru", "--code",
+    "quote $ defn dead-schema-check ()\n  calcit.nil-helper/typed-bool false");
+  run(deadSchemaSnapshot, "edit", "schema", "calcit.nil-predicate/dead-schema-check", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Bool)");
+  const deadSchemaRejected = spawnSync(binary, [
+    deadSchemaSnapshot, "--init-fn", "calcit.nil-predicate/dead-schema-check", "--reload-fn", "calcit.nil-predicate/dead-schema-check", "--check-only",
   ], { encoding: "utf8", timeout: 60000 });
-  assert.ifError(deadNilRejected.error);
-  assert.notEqual(deadNilRejected.status, 0, "concrete non-nullable non-nil? checks must fail in project source");
-  assert.match(deadNilRejected.stderr, /E_LEGACY_NIL_USAGE/);
+  assert.ifError(deadSchemaRejected.error);
+  assert.notEqual(deadSchemaRejected.status, 0, "schema-typed concrete non-nil? check must fail in project source");
+  assert.match(deadSchemaRejected.stderr, /E_LEGACY_NIL_USAGE/);
+
+  const deadLiteralSnapshot = join(fixture, "dead-nil-literal.cirru");
+  await copyFile(snapshot, deadLiteralSnapshot);
+  run(deadLiteralSnapshot, "edit", "def", "calcit.nil-predicate/dead-literal-check", "--input-format", "cirru", "--code",
+    "quote $ defn dead-literal-check ()\n  non-nil? 0");
+  run(deadLiteralSnapshot, "edit", "schema", "calcit.nil-predicate/dead-literal-check", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Bool)");
+  const deadLiteralRejected = spawnSync(binary, [
+    deadLiteralSnapshot, "--init-fn", "calcit.nil-predicate/dead-literal-check", "--reload-fn", "calcit.nil-predicate/dead-literal-check", "--check-only",
+  ], { encoding: "utf8", timeout: 60000 });
+  assert.ifError(deadLiteralRejected.error);
+  assert.notEqual(deadLiteralRejected.status, 0, "literal concrete non-nil? check must fail in project source");
+  assert.match(deadLiteralRejected.stderr, /E_LEGACY_NIL_USAGE/);
 
   const openSnapshot = join(fixture, "open.cirru");
   await copyFile(snapshot, openSnapshot);

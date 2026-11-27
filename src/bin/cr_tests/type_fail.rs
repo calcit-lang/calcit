@@ -9462,5 +9462,25 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       !err.contains(snapshot::OPTION_ERASED_ERROR),
       "must not misreport as E_OPTION_ERASED_TO_NIL: {err}"
     );
+
+    // Diagnostic rechecks of a polymorphic let-bound lambda (`f` called with both `nil` and `1`)
+    // must keep body-level W_RUNTIME_TYPE_PREDICATE without publishing E_LEGACY_NIL_USAGE.
+    let poly_lambda_entries = load_snippet_entries("defn main! ()\n  let ((f (fn (x) (non-nil? x))))\n    [] (f nil) (f 1)");
+    run_check_only(&poly_lambda_entries).expect("polymorphic let lambda with non-nil? must pass check-only");
+    let poly_advisories = runner::preprocess::take_advisories();
+    assert!(
+      poly_advisories.iter().all(|a| a.code() != Some(snapshot::LEGACY_NIL_USAGE_ERROR)),
+      "diagnostic recheck must not emit E_LEGACY_NIL_USAGE: {poly_advisories:?}"
+    );
+
+    // Literal spreads that expand to a single concrete argument must be rejected like fixed-arity calls,
+    // while unknown runtime spreads retain non-blocking W_RUNTIME_TYPE_PREDICATE.
+    let literal_spread_entries = load_snippet_entries("defn main! ()\n  [] (nil? & ([] 1)) (non-nil? & ([] |a))");
+    let err = run_check_only(&literal_spread_entries).expect_err("literal spread on concrete type must fail with E_LEGACY_NIL_USAGE");
+    assert!(err.contains("Found 2 legacy nil usage(s)"), "{err}");
+
+    let runtime_spread_entries =
+      load_snippet_entries("defn main! ()\n  let ((xs (assert-type ([] 1) (List Number))))\n    non-nil? & xs");
+    run_check_only(&runtime_spread_entries).expect("runtime spread of unknown length keeps non-blocking advisory");
   });
 }

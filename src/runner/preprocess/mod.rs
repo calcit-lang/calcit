@@ -3900,20 +3900,23 @@ fn preprocess_generated_specialization(
 /// preprocessed is user code again: its own diagnostics must not be suppressed
 /// (and then lost once the compiled definition is cached).
 struct OutsideGeneratedSpecialization {
-  outer: bool,
+  outer_generated: bool,
+  outer_recheck: bool,
 }
 
 impl OutsideGeneratedSpecialization {
   fn enter() -> Self {
     Self {
-      outer: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
+      outer_generated: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
+      outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(false)),
     }
   }
 }
 
 impl Drop for OutsideGeneratedSpecialization {
   fn drop(&mut self) {
-    IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer));
+    IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer_generated));
+    IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
   }
 }
 
@@ -3928,6 +3931,10 @@ thread_local! {
   /// synthetic guards (such as `nil?` on an Option) are not user code and
   /// must not raise blocking diagnostics.
   static IN_GENERATED_SPECIALIZATION: Cell<bool> = const { Cell::new(false) };
+  /// Set while `recheck_let_lambda_call` re-preprocesses an already-checked lambda
+  /// body under one call's argument types (#1655). Suppresses body-level migration
+  /// advisories from leaking into global `ADVISORIES` for polymorphic lambdas.
+  static IN_LET_LAMBDA_RECHECK: Cell<bool> = const { Cell::new(false) };
 }
 
 fn generated_optional_value(value: Calcit, file_ns: &str) -> Calcit {
@@ -7905,14 +7912,7 @@ fn preprocess_known_function_call(
     ));
   }
   if matches!(&head_form, Calcit::Import(_)) {
-    note_legacy_fn_migration(
-      info.as_ref(),
-      &processed_call_args,
-      has_spread,
-      scope_types,
-      call_location.clone(),
-      file_ns,
-    );
+    note_legacy_fn_migration(info.as_ref(), &processed_call_args, scope_types, call_location.clone(), file_ns);
   }
   let mut call_has_type_warnings = false;
   if !has_spread {
@@ -11294,7 +11294,7 @@ fn note_legacy_nil_predicate_migration(
   location: Option<NodeLocation>,
   file_ns: &str,
 ) {
-  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
     return;
   }
   let Some(location) = location else {
@@ -11327,7 +11327,6 @@ fn note_legacy_nil_predicate_migration(
 fn note_legacy_fn_migration(
   info: &CalcitFn,
   processed_args: &CalcitList,
-  has_spread: bool,
   scope_types: &ScopeTypes,
   call_location: Option<NodeLocation>,
   file_ns: &str,
@@ -11336,9 +11335,9 @@ fn note_legacy_fn_migration(
     return;
   }
   if info.name.as_ref() == "non-nil?"
-    && !has_spread
-    && processed_args.len() == 1
-    && let Some(arg) = processed_args.first()
+    && let Ok(expanded) = type_inference::expand_literal_call_arguments(processed_args)
+    && expanded.len() == 1
+    && let Some(arg) = expanded.first()
   {
     note_legacy_nil_predicate_migration(info.name.as_ref(), arg, scope_types, call_location, file_ns);
     return;
@@ -11347,7 +11346,11 @@ fn note_legacy_fn_migration(
 }
 
 fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
-  if def_ns != calcit::CORE_NS || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || def_ns != calcit::CORE_NS
+    || file_ns.starts_with(calcit::CORE_NS)
+    || !should_emit_project_source_lint(file_ns)
+  {
     return;
   }
   let Some(location) = location else {
@@ -11510,8 +11513,9 @@ fn note_legacy_proc_migration(
       .or_else(|| find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns))
   };
   if *proc == CalcitProc::NilQuestion
-    && processed_args.len() == 1
-    && let Some(arg) = processed_args.first()
+    && let Ok(expanded) = type_inference::expand_literal_call_arguments(processed_args)
+    && expanded.len() == 1
+    && let Some(arg) = expanded.first()
   {
     note_legacy_nil_predicate_migration(proc.as_ref(), arg, scope_types, location, file_ns);
     return;
@@ -19063,14 +19067,21 @@ fn recheck_let_lambda_call(
   // The body was traced when it was bound; a re-check must not add a second
   // expression at the same source path.
   let suspended_trace = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(None));
-  struct ResumeTrace(Option<SourceExpressionTrace>);
+  struct ResumeTrace {
+    trace: Option<SourceExpressionTrace>,
+    outer_recheck: bool,
+  }
   impl Drop for ResumeTrace {
     fn drop(&mut self) {
-      let trace = self.0.take();
+      IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
+      let trace = self.trace.take();
       SOURCE_EXPRESSION_TRACE.with(|current| current.replace(trace));
     }
   }
-  let resume_trace = ResumeTrace(suspended_trace);
+  let resume_trace = ResumeTrace {
+    trace: suspended_trace,
+    outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(true)),
+  };
   let rechecked = explicit_open::with_scope_locals(&lambda.scope_locals, || {
     preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack)
   });
