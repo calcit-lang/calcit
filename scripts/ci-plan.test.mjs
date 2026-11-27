@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planRun, selectIntegrationTests } from "./ci-plan.mjs";
+import { needsRustIntegration, planRun, selectIntegrationTests } from "./ci-plan.mjs";
 
 const pr = (changed, extra = {}) => planRun({ event: "pull_request", ref: "refs/pull/1/merge", headRef: "fix/x", title: "fix: x", changed, ...extra });
 const sources = {
@@ -56,4 +56,12 @@ test("integration tests follow the changed files", () => {
   assert.deepEqual(selectIntegrationTests(["src/bin/cli_handlers/fix/apply.rs"], sources), ["fix_cli"]);
   assert.deepEqual(selectIntegrationTests(["tests/fixtures/native-async-exit/src/lib.rs"], sources), ["native_async_exit_cli"]);
   assert.deepEqual(selectIntegrationTests(["src/lib.rs", "src/bin/cli_handlers/mod.rs"], sources), []);
+});
+
+test("needsRustIntegration skips integration job unless full or tests selected", () => {
+  assert.equal(needsRustIntegration(pr(["docs/intro.md"])), false);
+  assert.equal(needsRustIntegration(pr(["src/lib.rs"], { testSources: sources })), false);
+  assert.equal(needsRustIntegration(pr(["tests/edit_cli.rs"], { testSources: sources })), true);
+  assert.equal(needsRustIntegration(pr([], { headRef: "release/0.36.0" })), true);
+  assert.equal(needsRustIntegration(planRun({ event: "push", ref: "refs/heads/main", headMessage: "fix: a (#1)", changed: null })), false);
 });

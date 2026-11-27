@@ -137,6 +137,35 @@ const run = (command, env = process.env) => new Promise((done) => {
   const child = spawn("bash", ["-c", command], { stdio: "inherit", env });
   child.on("close", (status, signal) => done(status === 0 ? null : `${command} failed (${signal ?? `exit ${status}`})`));
 });
+const runBuffered = (command, env = process.env) => new Promise((done) => {
+  const child = spawn("bash", ["-c", command], { stdio: ["ignore", "pipe", "pipe"], env });
+  const chunks = [];
+  child.stdout.on("data", (chunk) => chunks.push(chunk));
+  child.stderr.on("data", (chunk) => chunks.push(chunk));
+  child.on("close", (status, signal) => {
+    done({
+      command,
+      output: Buffer.concat(chunks).toString("utf8"),
+      failure: status === 0 ? null : `${command} failed (${signal ?? `exit ${status}`})`,
+    });
+  });
+});
+const isCoreTestCommand = (command) => /^(?:[A-Z_]+=\S+\s+)*node scripts\/run-core-tests\.mjs(?:\s|$)/.test(command);
+const runParallel = async (commands, concurrency, env = process.env) => {
+  const queue = [...commands];
+  const failures = [];
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const command = queue.shift();
+      const result = await runBuffered(command, env);
+      const newline = result.output.length === 0 || result.output.endsWith("\n") ? "" : "\n";
+      process.stdout.write(`::group::${result.command}\n${result.output}${newline}::endgroup::\n`);
+      if (result.failure) failures.push(result.failure);
+    }
+  });
+  await Promise.all(workers);
+  return failures;
+};
 
 // Known-assertion parts buffer their own output, so they can run beside the sequential steps.
 const knownAssertion = !runKnownAssertion ? Promise.resolve(null) : run(KNOWN_ASSERTION, {
@@ -150,6 +179,25 @@ const knownAssertion = !runKnownAssertion ? Promise.resolve(null) : run(KNOWN_AS
 
 const failures = [];
 for (const { step, commands } of mine) {
+  const firstCoreTest = commands.findIndex(isCoreTestCommand);
+  const canParallelizeCoreTests = firstCoreTest >= 0
+    && commands.slice(firstCoreTest).every(isCoreTestCommand)
+    && commands.length - firstCoreTest > 1;
+  if (canParallelizeCoreTests) {
+    const prefix = commands.slice(0, firstCoreTest);
+    const coreTests = commands.slice(firstCoreTest);
+    console.log(`::group::${step} (${coreTests.length} core-test runs)`);
+    let stepFailure = prefix.length > 0 ? await run(prefix.join(" && ")) : null;
+    console.log(`::endgroup::`);
+    if (!stepFailure) {
+      const concurrency = runKnownAssertion ? 2 : Math.min(3, Math.max(1, availableParallelism()));
+      const subFailures = await runParallel(coreTests, concurrency);
+      if (subFailures.length > 0) stepFailure = subFailures.join("\n");
+    }
+    console.log(`${step} ${stepFailure ? "failed" : "passed"} at ${elapsed()}`);
+    if (stepFailure) failures.push(stepFailure);
+    continue;
+  }
   console.log(`::group::${step}`);
   const failure = await run(commands.join(" && "));
   console.log(`::endgroup::`);
