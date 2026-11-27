@@ -9312,18 +9312,38 @@ fn legacy_nil_runtime_predicate_and_dynamic_style_emit_non_blocking_advisories()
       .collect();
     assert_eq!(nil_notes.len(), 5, "expected 5 W_LEGACY_NIL_USAGE notes, got {notes:?}");
 
-    let pred_notes: Vec<_> = notes
+    let pred_notes: Vec<(Vec<u16>, String)> = notes
       .iter()
       .filter(|a| a.code() == Some("W_RUNTIME_TYPE_PREDICATE"))
-      .map(|a| a.message().to_owned())
+      .map(|a| {
+        assert_eq!(a.location().def.as_ref(), "legacy-case");
+        (a.location().coord.as_ref().to_vec(), a.message().to_owned())
+      })
       .collect();
     // list?, nil?, nil? nil, non-nil?, type-of, type-of 1, data-view -> 7 notes
     // (macro-internal nil? inside `either` and lowered predicates inside `match (data-view raw)` must NOT fire).
     assert_eq!(pred_notes.len(), 7, "expected 7 W_RUNTIME_TYPE_PREDICATE notes, got {pred_notes:?}");
     assert!(
-      pred_notes.iter().any(|msg| msg.contains("`data-view`")),
-      "expected `data-view` W_RUNTIME_TYPE_PREDICATE advisory in {pred_notes:?}"
+      pred_notes.iter().all(|(coord, _)| !coord.starts_with(&[4, 1, 2])),
+      "macro-internal `nil?` inside `either` must not emit W_RUNTIME_TYPE_PREDICATE: {pred_notes:?}"
     );
+    let expected_pred_sites: [(&[u16], &str); 7] = [
+      (&[4, 1, 6, 1], "`list?`"),
+      (&[4, 1, 7, 1], "`nil?`"),
+      (&[4, 1, 8, 1], "`nil?`"),
+      (&[4, 1, 9, 1], "`non-nil?`"),
+      (&[4, 1, 10, 1], "`type-of`"),
+      (&[4, 1, 11, 1], "`type-of`"),
+      (&[4, 1, 12, 1, 1], "`data-view`"),
+    ];
+    for (expected_coord, expected_name) in expected_pred_sites {
+      assert!(
+        pred_notes
+          .iter()
+          .any(|(coord, msg)| coord.as_slice() == expected_coord && msg.contains(expected_name)),
+        "expected W_RUNTIME_TYPE_PREDICATE for {expected_name} at {expected_coord:?}, got {pred_notes:?}"
+      );
+    }
 
     let dyn_notes: Vec<_> = notes
       .iter()

@@ -245,7 +245,13 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     ])
   );
   let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
-  assert!(notes.is_empty(), "{notes:?}");
+  assert_eq!(notes.len(), 4, "{notes:?}");
+  assert!(
+    notes
+      .iter()
+      .all(|note| note["code"] == "W_LEGACY_NIL_USAGE" && note["severity"] == "note"),
+    "{notes:?}"
+  );
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
   assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];
