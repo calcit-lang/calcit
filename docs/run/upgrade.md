@@ -24,7 +24,7 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.47.0（开发中）核心 `nil` / `?` 收口（#2973）
+## 0.47.0 核心 `nil` / `?` 收口、运行时严格化与迁移工具链（#2973）
 
 - **两参数 `if-let` 返回 `&unit`（`Unit`）且移除旧式 `?` 参数**：三参数 `(if-let (x opt) then else)` 行为不变；两参数 `(if-let (x opt) effect)` 仅执行 `then` 的副作用并返回 `&unit`，不再隐式返回 `nil`；`if-let` 参数列表不再包含 `?`，同时编译器也移除了对 `calcit.core/if-let` 的 `?` 例外放行。
 - **`hint-fn` 与 `&inspect-type` 返回 `&unit`（`Unit`）**：两者的返回值与静态推断类型均收口为 `Unit`（JS 端 `hint-fn` 输出 `void 0`），不再返回 `nil`。
