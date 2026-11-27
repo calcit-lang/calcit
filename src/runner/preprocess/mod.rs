@@ -32508,4 +32508,83 @@ mod tests {
     run_if(Calcit::Bool(false), list_nth_x, Calcit::Bool(true))
       .expect_err("hand-written literal `if false` must still check the true branch");
   }
+
+  #[test]
+  fn case_verification_compiles_uncached_helper_with_advisories_and_restores_case_mode() {
+    let _guard = lock_preprocess_test_state();
+    let _drained = take_advisories();
+    struct ProjectNsReset;
+    impl Drop for ProjectNsReset {
+      fn drop(&mut self) {
+        let _ = take_advisories();
+        set_project_namespaces(&HashSet::new());
+      }
+    }
+    let _ns_reset = ProjectNsReset;
+
+    let ns = "tests.cases-helper-advisory";
+    let def = "helper-nil";
+    set_project_namespaces(&HashSet::from([ns.to_owned()]));
+
+    let core = crate::load_core_snapshot().expect("embedded core");
+    let source_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf(def),
+        Cirru::List(vec![Cirru::leaf("x")]),
+        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("x")]),
+      ]),
+      ns,
+      def,
+      vec![],
+    )
+    .expect("parse helper function");
+    let schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Tag)],
+      Arc::new(CalcitTypeAnnotation::Bool),
+    ));
+
+    {
+      let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+      program_code.extend(program::extract_program_data(&core).expect("core source"));
+      program_code.insert(
+        Arc::from(ns),
+        program::ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::from([(
+            Arc::from(def),
+            program::ProgramDefEntry {
+              tags: Default::default(),
+              code: source_code,
+              schema,
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          )]),
+        },
+      );
+    }
+
+    let warnings = RefCell::new(vec![]);
+    let case_mode = CaseBodyVerificationScope::enter();
+    assert!(in_case_body_verification());
+
+    compile_source_def_for_snapshot(ns, def, &warnings, &CallStackList::default())
+      .expect("uncached helper compilation should succeed inside case verification");
+    assert!(
+      in_case_body_verification(),
+      "compiling an uncached helper must restore active case verification mode"
+    );
+    drop(case_mode);
+    assert!(!in_case_body_verification());
+
+    let advisories = take_advisories();
+    assert!(
+      advisories
+        .iter()
+        .any(|warning| warning.code() == Some(crate::snapshot::LEGACY_NIL_USAGE_ERROR) && warning.message().contains("nil?")),
+      "expected uncached helper compiled inside case mode to retain E_LEGACY_NIL_USAGE, got: {advisories:?}"
+    );
+  }
 }
