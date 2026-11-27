@@ -11,13 +11,15 @@ const baseline = readEdn(readFileSync(baselinePath, "utf8"));
 const definition = (data, name) => data.definitions.find(row => row.name.symbol === `calcit.core/${name}`);
 
 test("scalar conversion evidence preserves precise results and distinct display traits", () => {
-  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol", "'Nil"]) {
+  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol"]) {
     const conversion = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === ".to-string");
     assert.ok(conversion, `${receiver} must retain its conversion evidence`);
     assert.deepEqual(conversion.parameters, []);
     assert.equal(conversion.rest, null);
     assert.equal(conversion.returns.quote, "'String");
   }
+  assert.ok(!baseline["method-contracts"].some(row => row.receiver === "'Nil" && row.name === ".to-string"),
+    "Nil must not retain ToString conversion evidence after 0.47.0");
   for (const [name, method] of [["ToString", ".to-string"], ["Debug", ".debug"], ["Show", ".show"]]) {
     const trait = definition(baseline, name).declaration.quote;
     assert.equal(trait[0], "deftrait");
@@ -384,7 +386,7 @@ test("a missing primitive schema requires a matching trait method, not an arbitr
 
 test("a reviewed migration accepts only its exact before and after rows", () => {
   const migrations = readMigrations();
-  const migration = migrations.find(item => item.after.name.symbol === "calcit.core/nil->option");
+  const migration = migrations.find(item => item.after?.name?.symbol === "calcit.core/nil->option");
   assert.ok(migration, "the #2233 nil->option migration must stay registered");
   assert.deepEqual(definition(baseline, "nil->option"), migration.after);
   const replace = (data, row) => ({ ...data, definitions: data.definitions.map(item => item.name.symbol === row.name.symbol ? row : item) });
@@ -396,6 +398,31 @@ test("a reviewed migration accepts only its exact before and after rows", () => 
   const otherChange = structuredClone(baseline);
   definition(otherChange, "str-spaced").schema = migration.after.schema;
   assert.throws(() => assertPreserved(baseline, otherChange, migrations), /changed frozen definitions/);
+});
+
+test("a reviewed removal requires an explicit :after nil migration", () => {
+  const migrations = readMigrations();
+  const nilMethodMigration = migrations.find(item => item.family === "methods" && item.before?.receiver === "'Nil" && item.before?.name === ".to-string");
+  const nilContractMigration = migrations.find(item => item.family === "method-contracts" && item.before?.receiver === "'Nil" && item.before?.name === ".to-string");
+  assert.ok(nilMethodMigration && nilMethodMigration.after === null, "the #2973 Nil .to-string methods removal must stay registered");
+  assert.ok(nilContractMigration && nilContractMigration.after === null, "the #2973 Nil .to-string contract removal must stay registered");
+
+  const withNilToString = structuredClone(baseline);
+  withNilToString.methods.push(nilMethodMigration.before);
+  withNilToString["method-contracts"].push(nilContractMigration.before);
+  assert.throws(() => assertPreserved(withNilToString, baseline), /removed frozen/);
+  const withoutAfterField = migrations.map(item => {
+    if (item !== nilMethodMigration && item !== nilContractMigration) return item;
+    const copy = structuredClone(item);
+    delete copy.after;
+    return copy;
+  });
+  assert.throws(() => assertPreserved(withNilToString, baseline, withoutAfterField), /removed frozen/);
+  assertPreserved(withNilToString, baseline, migrations);
+
+  const withoutStringToString = structuredClone(baseline);
+  withoutStringToString.methods = withoutStringToString.methods.filter(row => !(row.receiver === "'String" && row.name === ".to-string"));
+  assert.throws(() => assertPreserved(baseline, withoutStringToString, migrations), /removed frozen methods/);
 });
 
 test("Git history rejects a baseline-only waiver in both PR and push workflows", async () => {

@@ -1796,11 +1796,11 @@ pub fn invoke_method(name: &str, method_args: &[Calcit], call_stack: &CallStackL
       let impls_value = runner::evaluate_symbol_from_program("&core-any-box-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
-    Unit => {
+    Unit | Nil => {
       let impls_value = runner::evaluate_symbol_from_program("&core-scalar-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
-    Nil | Bool(..) | Tag(..) | Symbol { .. } => {
+    Bool(..) | Tag(..) | Symbol { .. } => {
       let impls_value = runner::evaluate_symbol_from_program("&core-text-scalar-impls", calcit::CORE_NS, None, call_stack)?;
       method_call(&impls_value, v0, name, method_args, call_stack)
     }
@@ -2288,12 +2288,10 @@ fn collect_impls_for_value(
     Calcit::Str(..) => collect_optional_core_impls("&core-string-impls", call_stack),
     Calcit::Set(..) => collect_optional_core_impls("&core-set-impls", call_stack),
     Calcit::Fn { .. } | Calcit::Proc(..) => collect_optional_core_impls("&core-fn-impls", call_stack),
-    Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } => {
-      collect_optional_core_impls("&core-text-scalar-impls", call_stack)
-    }
+    Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } => collect_optional_core_impls("&core-text-scalar-impls", call_stack),
     Calcit::CirruQuote(..) => collect_optional_core_impls("&core-cirru-quote-impls", call_stack),
     Calcit::AnyBox(..) => collect_optional_core_impls("&core-any-box-impls", call_stack),
-    Calcit::Unit => collect_optional_core_impls("&core-scalar-impls", call_stack),
+    Calcit::Unit | Calcit::Nil => collect_optional_core_impls("&core-scalar-impls", call_stack),
     Calcit::Ref(..) => collect_optional_core_impls("&core-ref-impls", call_stack),
     Calcit::Buffer(..) => collect_optional_core_impls("&core-buffer-impls", call_stack),
     Calcit::BufList(..) => collect_optional_core_impls("&core-buf-list-impls", call_stack),

@@ -707,7 +707,7 @@
                 assert-traits u Debug Eq Hash Compare
                 assert-traits t Debug Eq Hash Compare ToString
                 assert-traits b Debug Eq Hash Compare ToString
-                assert-traits n Debug Eq Hash Compare ToString
+                assert-traits n Debug Eq Hash Compare
                 assert-traits buf Debug
               :tags $ #{} :core :unit
             %{} 'TestEntry
@@ -926,7 +926,7 @@
           :schema $ quote Impl
           :tags $ #{} :internal
         '&core-scalar-impls $ %{} 'CodeEntry
-          :doc "|Built-in nominal Debug/Eq/Hash/Compare implementation list for Unit"
+          :doc "|Built-in nominal Debug/Eq/Hash/Compare implementation list for Unit and Nil"
           :code $ quote $ def &core-scalar-impls
             [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
           :examples $ []
@@ -995,7 +995,7 @@
           :schema $ quote Dynamic
           :tags $ #{} :internal
         '&core-text-scalar-impls $ %{} 'CodeEntry
-          :doc "|Nil、Bool、Tag 与 Symbol 的内建实现；与 Unit/CirruQuote 的开放 scalar 列表分离。"
+          :doc "|Bool、Tag 与 Symbol 的内建实现；Nil 与 Unit 使用不包含 ToString 的 &core-scalar-impls。"
           :code $ quote $ def &core-text-scalar-impls
             [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Hash internal/&core-hash-impl) (&impl::new Compare internal/&core-compare-impl)
               &impl::new ToString $ :: :to-string &turn-string
@@ -3249,10 +3249,18 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |reverses-list-order)
-            :code $ quote $ assert= ([] 4 3 2 1)
-              &list:reverse $ [] 1 2 3 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |reverses-list-order)
+              :code $ quote $ assert= ([] 4 3 2 1)
+                &list:reverse $ [] 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-nil-input)
+              :code $ quote $ let
+                  as-dynamic $ fn ()
+                    hint-fn $ Fn (-> Dynamic)
+                    , nil
+                assert= :failed $ try (do (&list:reverse (as-dynamic)) :ok) (fn (_err) :failed)
+              :tags $ #{} :core :unit
         '&list:slice $ %{} 'CodeEntry
           :doc "|internal function for slicing lists\nSyntax: (&list:slice list start end)\nParams: list (list), start (number), end (number)\nReturns: list\nReturns sublist from start to end index"
           :code $ quote &runtime-implementation
@@ -3823,6 +3831,14 @@
             -> $ Map K V
             :generics K V
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-nil-operand)
+            :code $ quote $ let
+                as-dynamic $ fn ()
+                  hint-fn $ Fn (-> Dynamic)
+                  , nil
+              assert= :failed $ try (do (&merge (as-dynamic) (&{} :a 1)) :ok) (fn (_err) :failed)
+              assert= :failed $ try (do (&merge (&{} :a 1) (as-dynamic)) :ok) (fn (_err) :failed)
+            :tags $ #{} :core :unit
         '&merge-non-nil $ %{} 'CodeEntry
           :doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values"
           :code $ quote &runtime-implementation
@@ -4300,11 +4316,17 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic Dynamic (-> String)
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |concatenates-string-and-number-values)
-            :code $ quote $ do
-              assert= |ab $ &str:concat |a |b
-              assert= |12 $ &str:concat 1 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-string-and-number-values)
+              :code $ quote $ do
+                assert= |ab $ &str:concat |a |b
+                assert= |12 $ &str:concat 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-nil-operand)
+              :code $ quote $ do
+                assert= :failed $ try (do (&str:concat |a nil) :ok) (fn (_err) :failed)
+                assert= :failed $ try (do (&str:concat nil |b) :ok) (fn (_err) :failed)
+              :tags $ #{} :core :unit
         '&str:contains? $ %{} 'CodeEntry
           :doc "|String 索引谓词的内部实现，检查 Unicode 标量索引是否有效；应用代码首选 text .contains-index? index。检查子串请用 text .includes? fragment。"
           :code $ quote &runtime-implementation
@@ -4770,7 +4792,7 @@
             -> $ Result JsonValue String
           :tags $ #{} :builtin :internal
         '&turn-string $ %{} 'CodeEntry
-          :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
+          :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Bool、Number、String、Tag、Symbol（0.47.0 起不再接受 nil）。应用代码使用 to-string。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ quote $ Fn Dynamic (-> String)
@@ -6127,12 +6149,12 @@
                   hint-fn $ Fn T (-> String) (:generics T)
                     :where $ T ToString
                   .to-string x
-                xs $ [] (dyn:box 42 ToString) (dyn:box |ok ToString) (dyn:box true ToString) (dyn:box false ToString) (dyn:box :ready ToString) (dyn:box nil ToString)
+                xs $ [] (dyn:box 42 ToString) (dyn:box |ok ToString) (dyn:box true ToString) (dyn:box false ToString) (dyn:box :ready ToString)
                 rendered $ map xs as-text
-              assert= ([] |42 |ok |true |false |ready |) rendered
+              assert= ([] |42 |ok |true |false |ready) rendered
               assert= true $ &= (dyn:box 42 ToString) (dyn:box 42 ToString)
               assert= false $ &= (dyn:box 1 ToString) (dyn:box true ToString)
-              assert= false $ &= (dyn:box 0 ToString) (dyn:box nil ToString)
+              assert= false $ &= (dyn:box 0 ToString) (dyn:box false ToString)
               assert= "|(&dyn ToString)" $ &str $ &list:nth xs 0
               assert= :dyn-trait $ type-of $ &list:nth xs 0
             :tags $ #{} :core :unit
@@ -7015,13 +7037,21 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |drops-last-list-item)
-            :code $ quote $ do
-              assert= ([] 1 2)
-                butlast $ [] 1 2 3
-              assert= ([])
-                butlast $ []
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |drops-last-list-item)
+              :code $ quote $ do
+                assert= ([] 1 2)
+                  butlast $ [] 1 2 3
+                assert= ([])
+                  butlast $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-nil-input)
+              :code $ quote $ let
+                  as-dynamic $ fn ()
+                    hint-fn $ Fn (-> Dynamic)
+                    , nil
+                assert= :failed $ try (do (butlast (as-dynamic)) :ok) (fn (_err) :failed)
+              :tags $ #{} :core :unit
         'case $ %{} 'CodeEntry
           :doc "|Match a value against pattern/result pairs. Raises when no pattern matches instead of returning nil."
           :code $ quote $ defmacro case (item & patterns)
@@ -14773,6 +14803,10 @@
           :schema $ quote $ Fn (List T)
             -> $ List T
             :generics T
+          :tests $ [] $ %{} 'TestEntry (:name |reverses-list-order)
+            :code $ quote $ assert= ([] 4 3 2 1)
+              reverse $ [] 1 2 3 4
+            :tags $ #{} :core :unit
         'round $ %{} 'CodeEntry
           :doc "|公开的舍入函数。round n 接收并返回 Number，沿用既有的最近整数及中点舍入规则；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation
@@ -15051,7 +15085,9 @@
         'str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote $ defn str (x0 & xs)
             if (&list:empty? xs) (&str x0)
-              &str:concat x0 $ str (&list:nth xs 0) & $ &list:rest xs
+              if (&= 1 (&list:count xs))
+                &str:concat x0 (&list:nth xs 0)
+                &str:concat x0 $ str (&list:nth xs 0) & $ &list:rest xs
           :examples $ []
             quote $ assert= |hello $ str |hello
             quote $ assert= |abc $ str |a |b |c
@@ -15064,10 +15100,17 @@
                 assert= |abc $ str |a |b |c
                 assert= |123 $ str 1 2 3
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |omits-nil-and-renders-enums)
+            %{} 'TestEntry (:name |single-arg-nil-and-renders-enums)
               :code $ quote $ do
-                assert= |ac $ str |a nil |c
+                assert= | $ str nil
                 assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-nil-in-multi-arg-str)
+              :code $ quote $ do
+                assert= :failed $ try (do (str |a nil) :ok) (fn (_err) :failed)
+                assert= :failed $ try (do (str nil |a) :ok) (fn (_err) :failed)
+                assert= :failed $ try (do (str |a nil |c) :ok) (fn (_err) :failed)
+                assert= :failed $ try (do (str |a |b nil) :ok) (fn (_err) :failed)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |formats-numbers-like-to-string)
               :code $ quote $ do
@@ -15477,7 +15520,6 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |converts-finite-scalars)
               :code $ quote $ do
-                assert= | $ to-string nil
                 assert= |false $ to-string false
                 assert= |true $ to-string true
                 assert= |ready $ to-string :ready
@@ -15516,12 +15558,10 @@
                 assert= |0.5 $ 0.5 .to-string
                 assert= |false $ false .to-string
                 assert= |ready $ :ready .to-string
-                assert= | $ nil .to-string
                 assert-type (|hello .to-string) String
                 assert-type (0.5 .to-string) String
                 assert-type (false .to-string) String
                 assert-type (:ready .to-string) String
-                assert-type (nil .to-string) String
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |map-entry-tag-method-contract)
               :code $ quote $ do

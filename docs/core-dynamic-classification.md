@@ -139,7 +139,7 @@
 | `calcit.core/&trait::new` | `schema.args.2.item` | unresolved | runtime-internals | retain-reviewed | This definition transports compiler/runtime nominal metadata rather than ordinary application data. |
 | `calcit.core/&try-parse-cirru-edn` | `schema.return.type-arg.0` | intentional-open | open-data-boundaries | retain-reviewed | The parser/decoder boundary accepts open data; callers must decode or narrow before entering nominal business APIs. |
 | `calcit.core/&try-parse-json` | `schema.return.type-arg.0` | intentional-open | open-data-boundaries | retain-reviewed | The parser/decoder boundary accepts open data; callers must decode or narrow before entering nominal business APIs. |
-| `calcit.core/&turn-string` | `schema.args.0` | unresolved | legacy-compatibility-boundaries | retain-reviewed | 内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外的 to-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。 |
+| `calcit.core/&turn-string` | `schema.args.0` | unresolved | legacy-compatibility-boundaries | retain-reviewed | 内部 primitive 仅接受五类内建标量（Bool/Number/String/Tag/Symbol），当前类型语法无法以单一输入类型表达该集合。对外的 to-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。 |
 | `calcit.core/&union-def:new` | `schema.args.1` | unresolved | runtime-internals | retain-reviewed | 联合类型成员以类型语法传入，复用预处理的联合类型成员校验。 |
 | `calcit.core/&union-def:new` | `schema.args.2` | unresolved | runtime-internals | retain-reviewed | 联合类型成员以类型语法传入，复用预处理的联合类型成员校验。 |
 | `calcit.core/&union-def:new` | `schema.rest` | unresolved | runtime-internals | retain-reviewed | 联合类型成员以类型语法传入，复用预处理的联合类型成员校验。 |

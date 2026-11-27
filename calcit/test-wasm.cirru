@@ -2270,7 +2270,7 @@
           :code $ quote $ defwasm-export test-to-string-scalars ()
             if
               and
-                &= (to-string nil) |
+                &= (to-string false) |false
                 &= (to-string true) |true
                 &= (to-string |hello) |hello
                 &= (to-string :ready) |ready
@@ -2292,15 +2292,15 @@
           :tests $ [] $ %{} 'TestEntry (:name |bool-text-parity)
             :code $ quote $ assert= true (test-turn-string-bool)
             :tags $ #{} :core :wasm
-        'test-turn-string-nil-string $ %{} 'CodeEntry (:doc "|验证 nil 和 String 转文本在 WASM 与 native 中一致。")
-          :code $ quote $ defwasm-export test-turn-string-nil-string ()
+        'test-turn-string-string $ %{} 'CodeEntry (:doc "|验证 String 转文本在 WASM 与 native 中一致。")
+          :code $ quote $ defwasm-export test-turn-string-string ()
             and
-              = (to-string nil) |
+              = (to-string |) |
               = (to-string |hello) |hello
           :examples $ []
           :schema $ quote $ Fn (-> Bool)
-          :tests $ [] $ %{} 'TestEntry (:name |nil-string-text-parity)
-            :code $ quote $ assert= true (test-turn-string-nil-string)
+          :tests $ [] $ %{} 'TestEntry (:name |string-text-parity)
+            :code $ quote $ assert= true (test-turn-string-string)
             :tags $ #{} :core :wasm
         'test-turn-string-number $ %{} 'CodeEntry (:doc "|验证整数和小数转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-number ()

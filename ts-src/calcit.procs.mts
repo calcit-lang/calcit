@@ -1346,7 +1346,7 @@ export let _$n_display_stack = (): void => {
 
 export let _$n_list_$o_slice = (xs: CalcitList, from: number, to: number): CalcitSliceList | CalcitList => {
   if (xs === null) {
-    return null;
+    throw new Error("&list:slice expected a list, but received: nil");
   }
   let size = xs.len();
   if (to == null) {
@@ -1366,9 +1366,6 @@ export let _$n_list_$o_concat = (...lists: (CalcitList | CalcitSliceList)[]): Ca
   let result: CalcitSliceList | CalcitList = new CalcitSliceList([]);
   for (let idx = 0; idx < lists.length; idx++) {
     let item = lists[idx];
-    if (item === null) {
-      continue;
-    }
     if (item instanceof CalcitList || item instanceof CalcitSliceList) {
       if (result.isEmpty()) {
         result = item;
@@ -1384,7 +1381,7 @@ export let _$n_list_$o_concat = (...lists: (CalcitList | CalcitSliceList)[]): Ca
 
 export let _$n_list_$o_reverse = (xs: CalcitList): CalcitList => {
   if (xs === null) {
-    return null;
+    throw new Error("&list:reverse expected a list, but received: nil");
   }
   return xs.reverse();
 };
@@ -1446,15 +1443,15 @@ export let integer_$q_ = (a: number) => {
   return Number.isInteger(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {
+  if (a === null || b === null) {
+    throw new Error("&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string");
+  }
   // Optimize string concatenation by avoiding unnecessary toString calls
-  const aStr = a !== null ? toString(a, false) : "";
-  const bStr = b !== null ? toString(b, false) : "";
+  const aStr = toString(a, false);
+  const bStr = toString(b, false);
   return aStr + bStr;
 };
 export let sort = (xs: CalcitList | CalcitSliceList, f: CalcitFn): CalcitSliceList => {
-  if (xs === null) {
-    return null;
-  }
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     let ys = xs.toArray();
     return new CalcitSliceList(ys.sort(f as any));
@@ -1467,12 +1464,6 @@ export let floor = (n: number): number => {
 };
 
 export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitValue => {
-  if (a === null) {
-    return b;
-  }
-  if (b === null) {
-    return a;
-  }
   if (a instanceof CalcitMap || a instanceof CalcitSliceMap) {
     if (b instanceof CalcitMap || b instanceof CalcitSliceMap) {
       return a.merge(b);
@@ -1581,18 +1572,12 @@ export let _$n_include = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
   }
-  if (y === null) {
-    return xs;
-  }
   return xs.include(y);
 };
 
 export let _$n_exclude = (xs: CalcitSet, y: CalcitValue): CalcitSet => {
   if (!(xs instanceof CalcitSet)) {
     throw new Error("Expected a set");
-  }
-  if (y === null) {
-    return xs;
   }
   return xs.exclude(y);
 };
@@ -1921,7 +1906,7 @@ export let quit_$x_ = (code: number): void => {
 
 export let turn_string = (x: CalcitValue): string => {
   if (x === null) {
-    return "";
+    throw new Error("&turn-string does not accept nil; Nil no longer implements ToString, convert Option with `.unwrap-or` or pass an explicit string");
   }
   if (typeof x === "string") {
     return x;
@@ -1963,9 +1948,6 @@ export let ends_with_$q_ = (xs: string, y: string): boolean => {
 };
 
 export let blank_$q_ = (x: string): boolean => {
-  if (x === null) {
-    return true;
-  }
   if (typeof x === "string") {
     return x.trim() === "";
   } else {
@@ -3386,7 +3368,6 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait, includeDefIns
     tag = "&core-ref-methods";
     impls = normalize_builtin_impls(scoped?.ref ?? calcit_builtin_impls.ref);
   } else if (
-    obj === null ||
     typeof obj === "boolean" ||
     obj instanceof CalcitTag ||
     obj instanceof CalcitSymbol
@@ -3399,7 +3380,7 @@ function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait, includeDefIns
   } else if (obj instanceof CalcitAnyBox) {
     tag = "&core-any-box-impls";
     impls = normalize_builtin_impls(scoped?.anyBox ?? calcit_builtin_impls.anyBox);
-  } else if (obj === undefined) {
+  } else if (obj === undefined || obj === null) {
     tag = "&core-scalar-impls";
     impls = normalize_builtin_impls(scoped?.scalar ?? calcit_builtin_impls.scalar);
   } else if (obj instanceof Uint8Array) {

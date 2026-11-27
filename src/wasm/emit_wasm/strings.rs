@@ -118,9 +118,22 @@ pub(super) fn emit_str_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
+fn expr_may_be_nil(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  matches!(expr, Calcit::Nil)
+    || super::infer_wasm_static_type(ctx, expr).is_some_and(|ty| {
+      let expanded = crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty);
+      matches!(expanded.as_ref(), CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(_, _))
+    })
+}
+
 /// `&str:concat a b` — new string with a's bytes followed by b's bytes.
 pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:concat")?;
+  for arg in args {
+    if expr_may_be_nil(ctx, arg) {
+      return Err("&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string".into());
+    }
+  }
   // Evaluate each arg as f64, then convert to string (matching interpreter behavior:
   // non-string args are turned to strings via turn_string).
   emit_expr(ctx, &args[0])?;
@@ -447,6 +460,10 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
 
+  if matches!(&args[0], Calcit::Nil) {
+    return Err("turn-string cannot convert nil to string".into());
+  }
+
   if let Calcit::Tag(tag) = &args[0] {
     let name = tag.to_string();
     let ptr = *ctx
@@ -471,6 +488,9 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
     .as_deref()
   {
+    Some(CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(_, _)) => {
+      return Err("turn-string cannot convert nil to string".into());
+    }
     Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => {
       let f64_to_str_idx = *ctx
         .runtime_fn_index
@@ -820,7 +840,10 @@ pub(super) fn emit_turn_string_from_local_with_type(
     location: None,
     type_info,
   });
-  let _ = emit_turn_string(ctx, std::slice::from_ref(&expr));
+  if emit_turn_string(ctx, std::slice::from_ref(&expr)).is_err() {
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(f64_const(0.0));
+  }
   match prev {
     Some(v) => {
       ctx.locals.insert(sym.as_ref().to_owned(), v);
@@ -851,6 +874,15 @@ pub(super) fn emit_print_string_from_local_with_type(
   type_info: Arc<crate::wasm::host::calcit::CalcitTypeAnnotation>,
 ) -> u32 {
   use crate::wasm::host::calcit::CalcitTypeAnnotation;
+
+  if matches!(
+    CalcitTypeAnnotation::expand_schema_alias(&type_info).as_ref(),
+    CalcitTypeAnnotation::Nil
+  ) {
+    let zero_local = ctx.alloc_i32(0);
+    let (ptr, _) = emit_str_alloc(ctx, zero_local);
+    return ptr;
+  }
 
   if !matches!(type_info.as_ref(), CalcitTypeAnnotation::Tag) {
     return emit_turn_string_from_local_with_type(ctx, v_local, type_info);
@@ -893,27 +925,54 @@ pub(super) fn emit_print_string_from_local_with_type(
   str_i32
 }
 
-/// `str args...` — convert each non-nil arg to string and concatenate all.
+/// `str args...` — convert args to string and concatenate. Single-arg `(str nil)` formats to `""`;
+/// multi-arg `(str a b ...)` follows `&str:concat` and rejects `nil`.
 /// Intercept for the variadic `str` call, bypassing the core library definition.
 pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  // Filter nil args at codegen time (matching interpreter behavior)
-  let non_nil: Vec<&Calcit> = args.iter().filter(|a| !matches!(a, Calcit::Nil)).collect();
-
-  if non_nil.is_empty() {
-    // Return empty string: allocate string with length 0
+  if args.is_empty() {
     let zero_local = ctx.alloc_i32(0);
     let (ptr, _) = emit_str_alloc(ctx, zero_local);
     ctx.ptr_to_f64(ptr);
     return Ok(());
   }
 
+  if args.len() == 1 {
+    if matches!(&args[0], Calcit::Nil) {
+      let zero_local = ctx.alloc_i32(0);
+      let (ptr, _) = emit_str_alloc(ctx, zero_local);
+      ctx.ptr_to_f64(ptr);
+      return Ok(());
+    }
+    if matches!(
+      super::infer_wasm_static_type(ctx, &args[0])
+        .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
+        .as_deref(),
+      Some(CalcitTypeAnnotation::Nil)
+    ) {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      let zero_local = ctx.alloc_i32(0);
+      let (ptr, _) = emit_str_alloc(ctx, zero_local);
+      ctx.ptr_to_f64(ptr);
+      return Ok(());
+    }
+  }
+
+  if args.len() > 1 {
+    for arg in args {
+      if expr_may_be_nil(ctx, arg) {
+        return Err("&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string".into());
+      }
+    }
+  }
+
   // Convert first arg to string, store as i32 ptr
-  emit_turn_string(ctx, std::slice::from_ref(non_nil[0]))?;
+  emit_turn_string(ctx, std::slice::from_ref(&args[0]))?;
   let acc_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::LocalSet(acc_ptr));
 
-  for arg in &non_nil[1..] {
+  for arg in &args[1..] {
     emit_turn_string(ctx, std::slice::from_ref(arg))?;
     let next_ptr = ctx.alloc_local_typed(ValType::I32);
     ctx.emit(Instruction::I32TruncF64U);

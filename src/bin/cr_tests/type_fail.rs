@@ -9032,7 +9032,7 @@ defwasm-export check-all-dyn-edge-cases ()
         (:ok raw) (&hash (assert-type raw Bool))
         (:err _) 0
       num-hash-ok $ &= (&hash 16392) (&hash (assert-type 16392 Number))
-      disjoint-scalars $ and (not (&= (dyn:box false ToString) (dyn:box 0 ToString))) (not (&= (dyn:box true ToString) (dyn:box 1 ToString))) (not (&= (dyn:box nil ToString) (dyn:box 0 ToString)))
+      disjoint-scalars $ and (not (&= (dyn:box false ToString) (dyn:box 0 ToString))) (not (&= (dyn:box true ToString) (dyn:box 1 ToString))) (not (&= (dyn:box nil Debug) (dyn:box 0 Debug)))
       refined-eq $ &= (dyn:box 1 ToString) (dyn:box (assert-type 1 Int32) ToString)
       refined-hash-eq $ &= (&hash (dyn:box 1 ToString)) (&hash (dyn:box (assert-type 1 Int32) ToString))
     if (and (&= spread-res 26) nan-eq num-hash-ok (&= boxed-bool-hash (&hash true)) disjoint-scalars refined-eq refined-hash-eq) 1 0
@@ -9058,6 +9058,56 @@ defn main! ()
 
     let wasm_bytes = fs::read(out_dir.path().join("program.wasm")).expect("program.wasm");
     assert_eq!(call_core_wasm_f64(&wasm_bytes, "check-all-dyn-edge-cases"), 1.0);
+  });
+}
+
+#[test]
+fn str_concat_and_multi_arg_str_reject_nil_in_wasm() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    let _strict = StrictTypesReset::enabled();
+    let _no_audit = ProofAuditReset::disabled();
+
+    for call_expr in ["str prefix nil", "&str:concat prefix nil"] {
+      let code = format!(
+        r#"
+defwasm-export check-nil-str (prefix)
+  hint-fn $ Fn String (-> String)
+  {call_expr}
+
+defn main! ()
+  hint-fn $ Fn (-> Unit)
+  let ((_s (check-nil-str |a))) , &unit
+"#
+      );
+      builtins::effects::init_effects_states();
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(&code).expect("test snippet should parse");
+      annotate_snippet_macros(&mut file);
+      file.defs.get_mut("main!").expect("main! entry").schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![],
+        Arc::new(CalcitTypeAnnotation::Unit),
+      ));
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      run_check_only(&entries).expect("nil str call snippet should preprocess");
+
+      let out_dir = tempfile::tempdir().expect("temp dir");
+      let emit_str = out_dir.path().to_str().expect("utf8 path");
+      let err = calcit::wasm::emit_wasm::emit_wasm_with_world(
+        &entries.init_ns,
+        &entries.init_def,
+        emit_str,
+        calcit::wasm::emit_wasm::WasmTarget::Core,
+        calcit::wasm::emit_wasm::WasmBoundary::Native,
+        calcit::wasm::emit_wasm::WasiWorld::Command,
+      )
+      .expect_err("WASM codegen must reject nil operands in str / &str:concat");
+      assert!(
+        err.contains("&str:concat does not accept nil") && err.contains(".unwrap-or"),
+        "unexpected error for {call_expr}: {err}"
+      );
+    }
   });
 }
 

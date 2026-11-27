@@ -117,7 +117,6 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn call_merge(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 2 {
     match (&xs[0], &xs[1]) {
-      (Calcit::Map(xs), Calcit::Nil) => Ok(Calcit::Map(xs.to_owned())),
       (Calcit::Map(xs), Calcit::Map(ys)) => {
         let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
         for (k, v) in ys {
@@ -505,5 +504,22 @@ pub fn diff_triple(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       format!("&map:diff-triple expected 2 maps, but received: {a} {b}"),
     ),
     (..) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:diff-triple expected 2 arguments, but received:", xs),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::call_merge;
+  use crate::calcit::{Calcit, CalcitErrKind};
+  use rpds::HashTrieMap;
+
+  #[test]
+  fn merge_rejects_nil_operands() {
+    let empty_map = Calcit::Map(HashTrieMap::new_sync());
+    let right_err = call_merge(&[empty_map.clone(), Calcit::Nil]).expect_err("&merge should reject nil right operand");
+    assert_eq!(right_err.kind, CalcitErrKind::Type);
+
+    let left_err = call_merge(&[Calcit::Nil, empty_map]).expect_err("&merge should reject nil left operand");
+    assert_eq!(left_err.kind, CalcitErrKind::Type);
   }
 }

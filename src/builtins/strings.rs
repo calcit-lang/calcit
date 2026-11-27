@@ -8,9 +8,11 @@ use crate::util::number::{f64_to_usize, format_calcit_number};
 
 pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Nil), Some(Calcit::Nil)) => Ok(Calcit::new_str("")),
-    (Some(Calcit::Nil), Some(b)) => Ok(Calcit::Str(b.turn_string().into())),
-    (Some(a), Some(Calcit::Nil)) => Ok(Calcit::Str(a.turn_string().into())),
+    (Some(Calcit::Nil), Some(_)) | (Some(_), Some(Calcit::Nil)) => {
+      let msg = "&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string".to_string();
+      let hint = format_proc_examples_hint(&CalcitProc::NativeStrConcat).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     (Some(Calcit::Str(s1)), Some(Calcit::Str(s2))) => {
       let mut s = String::with_capacity(s1.len() + s2.len());
       s.push_str(s1);
@@ -79,7 +81,12 @@ pub fn call_str(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(Calcit::Nil) => Ok(Calcit::new_str("")),
+    Some(Calcit::Nil) => {
+      let msg = "&turn-string does not accept nil; Nil no longer implements ToString, convert Option with `.unwrap-or` or pass an explicit string"
+        .to_string();
+      let hint = format_proc_examples_hint(&CalcitProc::TurnString).unwrap_or_default();
+      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
+    }
     Some(Calcit::Bool(b)) => Ok(Calcit::Str(b.to_string().into())),
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Tag(s)) => Ok(Calcit::Str(s.arc_str())),
@@ -596,5 +603,21 @@ mod tests {
       format_fixed_half_away(0.1, 54),
       "0.100000000000000005551115123125782702118158340454101563"
     );
+  }
+
+  #[test]
+  fn str_concat_and_turn_string_reject_nil() {
+    let right_err = super::binary_str_concat(&[crate::calcit::Calcit::new_str("a"), crate::calcit::Calcit::Nil])
+      .expect_err("&str:concat should reject nil right operand");
+    assert_eq!(right_err.kind, crate::calcit::CalcitErrKind::Type);
+    assert!(right_err.msg.contains("&str:concat does not accept nil"));
+
+    let left_err = super::binary_str_concat(&[crate::calcit::Calcit::Nil, crate::calcit::Calcit::new_str("b")])
+      .expect_err("&str:concat should reject nil left operand");
+    assert_eq!(left_err.kind, crate::calcit::CalcitErrKind::Type);
+
+    let turn_err = super::turn_string(&[crate::calcit::Calcit::Nil]).expect_err("&turn-string should reject nil");
+    assert_eq!(turn_err.kind, crate::calcit::CalcitErrKind::Type);
+    assert!(turn_err.msg.contains("&turn-string does not accept nil"));
   }
 }
