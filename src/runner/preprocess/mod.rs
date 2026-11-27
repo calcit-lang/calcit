@@ -1021,6 +1021,21 @@ pub fn push_advisory(advisory: LocatedWarning) {
   }
 }
 
+fn advisories_len() -> usize {
+  ADVISORIES.lock().expect("lock advisories").len()
+}
+
+fn rollback_body_advisories(since: usize, ns: &str, def: &str) {
+  let mut list = ADVISORIES.lock().expect("lock advisories");
+  let mut index = 0;
+  list.retain(|advisory| {
+    let location = advisory.location();
+    let retain = index < since || location.ns.as_ref() != ns || location.def.as_ref() != def;
+    index += 1;
+    retain
+  });
+}
+
 /// Takes the advisories collected so far, oldest first.
 pub fn take_advisories() -> Vec<LocatedWarning> {
   MACRO_ERASURE_SITES.lock().expect("lock macro erasure sites").clear();
@@ -18314,6 +18329,7 @@ pub fn preprocess_defn(
       let initial_forms = borrows_capture_refinements.then(|| xs.clone());
       let initial_processed_body = borrows_capture_refinements.then(|| processed_body.clone());
       let initial_warnings = ctx.check_warnings.borrow().len();
+      let initial_advisories = advisories_len();
       let initial_expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len()));
       let initial_usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len));
       let initial_proof_errors =
@@ -18404,6 +18420,7 @@ pub fn preprocess_defn(
           warning_index += 1;
           retain
         });
+        rollback_body_advisories(initial_advisories, info.at_ns.as_ref(), info.at_def.as_ref());
         if let Some(len) = initial_expressions {
           SOURCE_EXPRESSION_TRACE.with(|trace| {
             if let Some(trace) = trace.borrow_mut().as_mut() {

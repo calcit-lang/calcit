@@ -9482,5 +9482,17 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
     let runtime_spread_entries =
       load_snippet_entries("defn main! ()\n  let ((xs (assert-type ([] 1) (List Number))))\n    non-nil? & xs");
     run_check_only(&runtime_spread_entries).expect("runtime spread of unknown length keeps non-blocking advisory");
+
+    // Capture replay when `recur` invalidates an entry-only refinement must roll back
+    // first-pass body advisories so a mutable Dynamic capture passes with a note.
+    let capture_replay_entries = load_snippet_entries(
+      "defn main! ()\n  let ((x (assert-type 1 Dynamic)))\n    if (number? x)\n      let\n          step $ fn (n)\n            non-nil? x\n            if (> n 0)\n              do (set! x nil) (recur (- n 1))\n              , &unit\n        step 1\n      , &unit",
+    );
+    run_check_only(&capture_replay_entries).expect("capture replay must roll back invalidated E_LEGACY_NIL_USAGE");
+    let replay_advisories = runner::preprocess::take_advisories();
+    assert!(
+      replay_advisories.iter().all(|a| a.code() != Some(snapshot::LEGACY_NIL_USAGE_ERROR)),
+      "invalidated first-pass E_LEGACY_NIL_USAGE must not survive capture replay: {replay_advisories:?}"
+    );
   });
 }
