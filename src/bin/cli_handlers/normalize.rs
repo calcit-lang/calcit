@@ -14,6 +14,7 @@ const VIEW_DYNAMIC_METHOD: &str = "dynamic-method";
 const VIEW_DEPRECATED_CALL: &str = "deprecated-call";
 pub(crate) const VIEW_OPTION_NIL_ROUNDTRIP: &str = "option-nil-roundtrip";
 pub(crate) const VIEW_INFERRED_DYNAMIC: &str = "inferred-dynamic";
+pub(crate) const VIEW_LEGACY_MIGRATION: &str = "legacy-migration";
 
 /// Removed entries without a replacement name this instead of a command.
 const NO_REPLACEMENT: &str = "";
@@ -506,6 +507,7 @@ fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
     VIEW_DEPRECATED_CALL,
     VIEW_OPTION_NIL_ROUNDTRIP,
     VIEW_INFERRED_DYNAMIC,
+    VIEW_LEGACY_MIGRATION,
   ];
   let selected = views.iter().copied().filter(|view| kinds.contains(view)).collect::<Vec<_>>();
   match (selected.as_slice(), kinds.len()) {
@@ -544,7 +546,7 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<(ToplevelCa
     ("--ffi-evidence", options.ffi_evidence),
     ("--schema-evidence", options.schema_evidence),
   ];
-  if let Some(view @ (VIEW_OPTION_NIL_ROUNDTRIP | VIEW_INFERRED_DYNAMIC)) = view {
+  if let Some(view @ (VIEW_OPTION_NIL_ROUNDTRIP | VIEW_INFERRED_DYNAMIC | VIEW_LEGACY_MIGRATION)) = view {
     reject_options(view, &evidence_flags)?;
     reject_options(
       view,
@@ -720,6 +722,10 @@ mod tests {
     assert_eq!(normalize_weak_types_view(expected.clone()).unwrap(), (expected.clone(), None));
     let padded = parse(&["analyze", "weak-types", "--only", " option-nil-roundtrip, ", "--ns", "app.main"]);
     assert_eq!(normalize_weak_types_view(padded).unwrap(), (expected, None));
+
+    let migration_expected = parse(&["analyze", "weak-types", "--only", "legacy-migration", "--ns", "app.main"]);
+    let migration_padded = parse(&["analyze", "weak-types", "--only", " legacy-migration, ", "--ns", "app.main"]);
+    assert_eq!(normalize_weak_types_view(migration_padded).unwrap(), (migration_expected, None));
   }
 
   #[test]

@@ -296,6 +296,8 @@ struct CachedStrictCheck {
   /// Records written before the default proof audit read as unaudited, so they rerun once.
   #[serde(default)]
   proof_audit: bool,
+  #[serde(default)]
+  deny_migration_warnings: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1081,6 +1083,7 @@ pub(crate) fn run_incremental_strict_check(
   let strict_types = runner::preprocess::is_strict_types_enabled();
   let warn_dynamic_methods = runner::preprocess::is_warn_dyn_method_enabled();
   let proof_audit = runner::preprocess::default_proof_enabled();
+  let deny_migration_warnings = runner::preprocess::is_deny_migration_warnings_enabled();
 
   let (status, preprocessing_cached, reason) = match closure_revision {
     Ok(revision) => match cache.strict_check.as_ref() {
@@ -1089,7 +1092,8 @@ pub(crate) fn run_incremental_strict_check(
           && cached.core_revision == core_revision
           && cached.strict_types == strict_types
           && cached.warn_dynamic_methods == warn_dynamic_methods
-          && cached.proof_audit == proof_audit =>
+          && cached.proof_audit == proof_audit
+          && cached.deny_migration_warnings == deny_migration_warnings =>
       {
         ("warm".to_owned(), true, None)
       }
@@ -1105,6 +1109,7 @@ pub(crate) fn run_incremental_strict_check(
               } else if cached.strict_types != strict_types
                 || cached.warn_dynamic_methods != warn_dynamic_methods
                 || cached.proof_audit != proof_audit
+                || cached.deny_migration_warnings != deny_migration_warnings
               {
                 "preprocessing-policy-changed".to_owned()
               } else {
@@ -1119,6 +1124,7 @@ pub(crate) fn run_incremental_strict_check(
           strict_types,
           warn_dynamic_methods,
           proof_audit,
+          deny_migration_warnings,
         });
         ("cold".to_owned(), false, reason)
       }

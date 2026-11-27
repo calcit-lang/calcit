@@ -161,7 +161,7 @@
 | `E_LEGACY_DYNAMIC_STYLE` | `src/snapshot.rs` |
 | `E_LEGACY_HINT_FN_TARGET` | `src/runner/preprocess/mod.rs` |
 | `E_LEGACY_IMPL_TRAITS` | `src/runner/preprocess/mod.rs` |
-| `E_LEGACY_NIL_USAGE` | `src/snapshot.rs` |
+| `E_LEGACY_NIL_USAGE` | `src/bin/cli_handlers/fix.rs`<br>`src/snapshot.rs` |
 | `E_LEGACY_OPTIONAL_PARAM` | `src/bin/cli_handlers/fix.rs`<br>`src/runner/preprocess/mod.rs` |
 | `E_LEGACY_OPTIONAL_TYPE` | `src/snapshot.rs` |
 | `E_LEGACY_TRAIT_METHOD_KEY` | `src/runner/preprocess/mod.rs` |

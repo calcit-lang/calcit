@@ -36,6 +36,10 @@ related:
   - `E_LEGACY_NIL_USAGE`（阻断错误）：`;nil`（改用 `&unit` 或 `Option :none`）、`either`（改用 `Option<T>` `.unwrap-or`/`if-let`/`match`）、`non-nil!`（改用 `Option<T>` `.unwrap`/`.unwrap-or`/`match`）、`keys-non-nil` / `merge-non-nil` / `&merge-non-nil`（改用 `Option<V>` 字段或省略缺失键），以及参数静态类型已知为非空具体类型（排除 `Dynamic`、`Nullable`、`Nil`、`TypeVar`、`TypeSlot`、`JsObject`、`Option`、`JsNullish`）的 `nil?` / `non-nil?` 死检查（移除多余判空或使用 `Option<T>`）。带 `:deprecated` 标签的核心定义也可通过 `calcit analyze weak-types --only deprecated-call` 集中盘点。
   - `E_LEGACY_DYNAMIC_STYLE`（阻断错误）：`%{} _`（改用具名 `defstruct` 直接构造器）、`%::`（具名 enum 改用直接构造器 `Enum :variant …`，或先用 `calcit fix --rule named-enum-constructor-v1` 自动改写；匿名 enum 改用 `:: :tag …`），以及局部 `impl-traits` / `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits`（改为顶层 `(:impls …)` + `defimpl`，需要动态多态时改用 `(Dyn Trait)` / `dyn:box`）。
   - **保留为非阻断 Warning（`Notes:`）**：`W_RUNTIME_TYPE_PREDICATE`（针对开放 `Dynamic` / `Nullable` 的 `nil?`/`non-nil?` 以及 `type-of`、`data-view`、`bool?`/`number?`/`string?`/`list?`/`map?`/`struct?`/`enum?` 等运行时谓词）。
+- **迁移盘点、严格阻断与安全 `;nil` 自动修复工具链**：
+  - 使用 `calcit analyze weak-types --only legacy-migration [--summary-only] [--format edn|json]` 集中扫描项目中的全部 `legacy-nil`（`;nil`、`either`、`non-nil!`、`keys-non-nil`、`merge-non-nil`、`&merge-non-nil`）、`legacy-dynamic-style`（`%{} _`、`%::`、局部 `impl-traits` 系列）与 `runtime-type-predicate` 调用点（无需严格编译通过即可盘点）。
+  - 在迁出全部运行时类型谓词的阶段或 CI 中，可传入 `--deny-migration-warnings`（或环境变量 `CALCIT_DENY_MIGRATION_WARNINGS=1`），将 `W_RUNTIME_TYPE_PREDICATE` 提升为阻断错误（覆盖 `--check-only`、`--check-only --ns`、`--incremental`、运行与 `js`/`wasm`/`wasi`）。
+  - 对于可静态证明返回值被丢弃或位于 `Fn ... (-> Unit)` 尾位置的空 `(;nil)`，可使用 `calcit fix --rule legacy-comment-nil-v1` 预览并用 `--apply --expect-revision ...` 安全改写为 `&unit`；携带忽略参数的 `(;nil ...)` 与返回值可能被消费的 `(;nil)` 会保留为 `requires-review`，不会自动删除或误改。
 
 ```cirru
 assert= &unit $ if-let (x None) (println x)

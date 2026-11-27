@@ -20,6 +20,7 @@ use md5::{Digest, Md5};
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
 
 pub(crate) mod inferred_dynamic;
+pub(crate) mod legacy_migration;
 pub(crate) mod option_nil_roundtrip;
 
 /// Analyze compiler-proven absent contracts without changing source declarations.
