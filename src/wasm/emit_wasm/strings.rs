@@ -118,18 +118,19 @@ pub(super) fn emit_str_empty(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
+fn expr_may_be_nil(ctx: &WasmGenCtx, expr: &Calcit) -> bool {
+  matches!(expr, Calcit::Nil)
+    || super::infer_wasm_static_type(ctx, expr).is_some_and(|ty| {
+      let expanded = crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty);
+      matches!(expanded.as_ref(), CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(_, _))
+    })
+}
+
 /// `&str:concat a b` — new string with a's bytes followed by b's bytes.
 pub(super) fn emit_str_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&str:concat")?;
   for arg in args {
-    if matches!(arg, Calcit::Nil)
-      || matches!(
-        super::infer_wasm_static_type(ctx, arg)
-          .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
-          .as_deref(),
-        Some(CalcitTypeAnnotation::Nil)
-      )
-    {
+    if expr_may_be_nil(ctx, arg) {
       return Err("&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string".into());
     }
   }
@@ -487,7 +488,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
     .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
     .as_deref()
   {
-    Some(CalcitTypeAnnotation::Nil) => {
+    Some(CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Nullable(_, _)) => {
       return Err("turn-string cannot convert nil to string".into());
     }
     Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => {
@@ -959,14 +960,7 @@ pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 
   if args.len() > 1 {
     for arg in args {
-      if matches!(arg, Calcit::Nil)
-        || matches!(
-          super::infer_wasm_static_type(ctx, arg)
-            .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
-            .as_deref(),
-          Some(CalcitTypeAnnotation::Nil)
-        )
-      {
+      if expr_may_be_nil(ctx, arg) {
         return Err("&str:concat does not accept nil; convert Option with `.unwrap-or` or pass an explicit string".into());
       }
     }

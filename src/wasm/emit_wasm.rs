@@ -21605,7 +21605,7 @@ mod tests {
       fn_signatures: HashMap::new(),
       has_boxed_json_scalars: true,
       runtime_fn_index: HashMap::new(),
-      tag_index: HashMap::from([("nil".into(), 10), ("bool".into(), 11)]),
+      tag_index: HashMap::from([("nil".into(), 10), ("bool".into(), 11), ("string".into(), 12)]),
       struct_layouts: Default::default(),
       enum_layouts: Default::default(),
       string_pool: HashMap::new(),
@@ -21726,7 +21726,7 @@ mod tests {
           Calcit::Number(1.0),
           Calcit::Number(2.0),
         ]),
-        nullable_str_ty,
+        nullable_str_ty.clone(),
       ),
       (
         "if on Dynamic",
@@ -21745,6 +21745,37 @@ mod tests {
       let err = emit_expr(&mut bad_ctx, &expr).expect_err(label);
       assert!(err.contains("E_NON_BOOL_CONDITION"), "{label}: {err}");
     }
+
+    // String concatenation and conversion also reject Nullable inputs and evaluate non-literal 1-arg Nil.
+    let mut nullable_ctx = WasmGenCtx::new(1, env.clone());
+    nullable_ctx.locals.insert("x".into(), 0);
+    nullable_ctx
+      .local_types
+      .insert("x".into(), WasmTypeEvidence::contract(nullable_str_ty.clone()));
+    let concat_err = super::strings::emit_str_concat(&mut nullable_ctx, &[Calcit::new_str("a"), local_x(nullable_str_ty.clone())])
+      .expect_err("WASM &str:concat must reject Nullable(String)");
+    assert!(concat_err.contains("&str:concat does not accept nil") && concat_err.contains(".unwrap-or"));
+    let str_err = super::strings::emit_str_variadic(&mut nullable_ctx, &[Calcit::new_str("a"), local_x(nullable_str_ty.clone())])
+      .expect_err("WASM multi-arg str must reject Nullable(String)");
+    assert!(str_err.contains("&str:concat does not accept nil") && str_err.contains(".unwrap-or"));
+    let turn_err = super::strings::emit_turn_string(&mut nullable_ctx, &[local_x(nullable_str_ty)])
+      .expect_err("WASM &turn-string must reject Nullable(String)");
+    assert!(turn_err.contains("turn-string cannot convert nil to string"));
+
+    let nil_ty = Arc::new(CalcitTypeAnnotation::Nil);
+    let mut single_nil_ctx = WasmGenCtx::new(1, env.clone());
+    single_nil_ctx.locals.insert("x".into(), 0);
+    single_nil_ctx
+      .local_types
+      .insert("x".into(), WasmTypeEvidence::contract(nil_ty.clone()));
+    super::strings::emit_str_variadic(&mut single_nil_ctx, &[local_x(nil_ty)]).expect("single-arg str on Nil local succeeds");
+    assert!(
+      single_nil_ctx
+        .instructions
+        .windows(2)
+        .any(|pair| matches!(pair, [Instruction::LocalGet(0), Instruction::Drop])),
+      "non-literal 1-arg str expression inferring Nil must evaluate and drop before returning empty string"
+    );
 
     let bytes = build_wasm_module(
       &fns,
