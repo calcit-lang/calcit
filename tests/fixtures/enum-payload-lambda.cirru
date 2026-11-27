@@ -15,7 +15,7 @@
           :code $ quote $ defenum Patch (:mount (Fn Task (-> String))) (:noop)
           :schema $ quote EnumDef
         'anonymous-ctor $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn anonymous-ctor () $ %:: Patch :mount $ fn (t) (:titel t)
+          :code $ quote $ defn anonymous-ctor () $ Patch :mount $ fn (t) (:titel t)
           :schema $ quote $ Fn (-> Patch)
         'named-ctor $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn named-ctor () $ Patch :mount $ fn (t) (:titel t)

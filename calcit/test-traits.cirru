@@ -1798,8 +1798,8 @@
                 PersonB $ impl-traits Person0 MyZapBImpl MyZapAImpl
                 pa $ %{} PersonA $ :name |Alice
                 pb $ %{} PersonB $ :name |Bob
-                ta $ %:: DemoZapA :demo 1
-                tb $ %:: DemoZapB :demo 1
+                ta $ DemoZapA :demo 1
+                tb $ DemoZapB :demo 1
               assert-traits pa MyZapA MyZapB
               assert-traits pb MyZapA MyZapB
               assert-traits ta MyZapA MyZapB
@@ -1866,7 +1866,7 @@
         'test-enum-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test enum impl precedence order")
           :code $ quote $ defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
             let
-                t $ %:: DemoBar :demo 1
+                t $ DemoBar :demo 1
               assert-traits t MyBar
               assert= |bar2 $ t .bar
             println "|  tuple precedence: ✓"
@@ -1913,7 +1913,7 @@
               assert= |true $ &trait-call calcit.core/Debug :debug flag
               assert= true $ &trait-call calcit.core/Eq :eq? flag true
             let
-                t $ %:: DemoZap :demo 1
+                t $ DemoZap :demo 1
               assert-traits t MyZapA MyZapB
               assert= |zapB $ &trait-call MyZapB :zap t
               assert= |zapA $ &trait-call MyZapA :zap t

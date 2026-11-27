@@ -2247,6 +2247,12 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
   let (nil_checks, blocking): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR));
+  let (legacy_nil, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::LEGACY_NIL_USAGE_ERROR));
+  let (legacy_dynamic, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::LEGACY_DYNAMIC_STYLE_ERROR));
   let (effects, blocking): (Vec<_>, Vec<_>) = blocking.into_iter().partition(|error| {
     matches!(
       error.code(),
@@ -2264,6 +2270,24 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} nil-based test(s) on Option values; use `.some?` / `.none?`, `if-let` / `match`, or `.unwrap-or`",
       snapshot::OPTION_NIL_CHECK_ERROR,
       nil_checks.len()
+    ));
+  }
+  if !legacy_nil.is_empty() {
+    eprintln!("\n{} ({} legacy nil usages)", "Errors:".red(), legacy_nil.len());
+    LocatedWarning::print_list(&legacy_nil);
+    summaries.push(format!(
+      "[{}] Found {} legacy nil usage(s) or dead non-nullable nil checks; replace with `&unit`, `Option<T>` (`match`/`if-let`/`.unwrap-or`), or remove the dead nil check",
+      snapshot::LEGACY_NIL_USAGE_ERROR,
+      legacy_nil.len()
+    ));
+  }
+  if !legacy_dynamic.is_empty() {
+    eprintln!("\n{} ({} legacy dynamic prototype styles)", "Errors:".red(), legacy_dynamic.len());
+    LocatedWarning::print_list(&legacy_dynamic);
+    summaries.push(format!(
+      "[{}] Found {} legacy dynamic prototype construction(s) (`%{{}} _` / `%::`); use nominal `defstruct`/`defenum` direct constructors or `::` for anonymous enums",
+      snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
+      legacy_dynamic.len()
     ));
   }
   if !broad.is_empty() {

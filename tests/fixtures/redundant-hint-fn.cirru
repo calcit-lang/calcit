@@ -63,7 +63,7 @@
           :schema $ quote EnumDef
         'h8-enum-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn h8-enum-payload ()
-            %:: Patch :mount $ fn (x)
+            Patch :mount $ fn (x)
               hint-fn $ Fn Task (-> String)
               :title x
           :schema $ quote $ Fn (-> Patch)

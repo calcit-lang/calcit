@@ -1379,7 +1379,13 @@ fn named_constructor_fix_migrates_qualified_quasiquote_templates() {
     }
     assert_success(&run_calcit(&snapshot, &args), "create template constructor fixture");
   }
-  assert_success(&run_calcit(&snapshot, &[]), "original template constructors");
+  let before_run = run_calcit(&snapshot, &[]);
+  assert!(
+    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_LEGACY_DYNAMIC_STYLE"),
+    "original template `%::` must fail with E_LEGACY_DYNAMIC_STYLE before fix:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&before_run.stdout),
+    String::from_utf8_lossy(&before_run.stderr)
+  );
   let preview = |rule: &str| {
     let output = run_calcit(&snapshot, &["fix", "--ns", "app.main", "--rule", rule, "--format", "json"]);
     assert_success(&output, rule);
@@ -1493,7 +1499,13 @@ fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
       "declare core enum fixture schema",
     );
   }
-  assert_success(&run_calcit(&snapshot, &[]), "original core enum constructors");
+  let before_run = run_calcit(&snapshot, &[]);
+  assert!(
+    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_LEGACY_DYNAMIC_STYLE"),
+    "original core enum `%::` must fail with E_LEGACY_DYNAMIC_STYLE before fix:\nstdout:\n{}\nstderr:\n{}",
+    String::from_utf8_lossy(&before_run.stdout),
+    String::from_utf8_lossy(&before_run.stderr)
+  );
   // A namespace definition named like a core enum shadows it, so its `%::` stays.
   assert_success(
     &run_calcit(&snapshot, &["edit", "add-ns", "app.shadow"]),

@@ -17,7 +17,7 @@
           :code $ quote $ defn main! ()
             let
                 input $ {} $ |a 1
-                selected $ filter-map-kv input $ fn (id value) (%:: MapEntryDecision :keep id value)
+                selected $ filter-map-kv input $ fn (id value) (MapEntryDecision :keep id value)
               &map:assoc selected |b |wrong
               , |done
           :examples $ []

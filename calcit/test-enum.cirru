@@ -39,6 +39,15 @@
           :code $ quote $ defenum Result0 (:err String) (:ok)
           :examples $ []
           :schema $ quote EnumDef
+        'Result1 $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Result1 (:err String) (:ok) (:impls ResultTrait)
+          :examples $ []
+          :schema $ quote EnumDef
+        'Result1Impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl Result1 ResultTrait
+            .dummy $ fn $ _x
+          :examples $ []
+          :schema $ quote Impl
         'ResultImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Result0 ResultTrait
             .dummy $ fn $ _x
@@ -204,17 +213,16 @@
           :code $ quote $ defn test-enum-creation ()
             do (println "|Testing enum tuple creation...")
               let
-                  valid-ok $ %:: Result0 :ok
-                  Result1 $ impl-traits Result0 ResultImpl
+                  valid-ok $ Result0 :ok
                 assert= :ok $ &enum:nth valid-ok 0
                 let
-                    ok-impl $ %:: Result1 :ok
+                    ok-impl $ Result1 :ok
                   assert= true $ any? (&enum:impls ok-impl)
                     fn (impl)
                       includes? (str impl) |ResultTrait
-                  assert= "|(%:: 'Result0 :ok)" $ str ok-impl
+                  assert= "|(%:: 'Result1 :ok)" $ str ok-impl
               let
-                  valid-err $ %:: Result0 :err |error-msg
+                  valid-err $ Result0 :err |error-msg
                 assert= :err $ &enum:nth valid-err 0
                 assert= true $ enum? valid-err
               ; Test invalid tag $ should fail - uncomment to see error
@@ -233,17 +241,17 @@
           :code $ quote $ defn test-generic-enum-creation ()
             do (println "|Testing generic enum creation...")
               let
-                  some-num $ %:: Maybe1 :some 1
-                  none-value $ %:: Maybe1 :none
-                  pair-value $ %:: Duo :pair 1 |hi
-                  swapped-value $ %:: Duo :swapped |hi 1
+                  some-num $ Maybe1 :some 1
+                  none-value $ Maybe1 :none
+                  pair-value $ Duo :pair 1 |hi
+                  swapped-value $ Duo :swapped |hi 1
                 assert-type some-num $ Maybe1 Number
                 assert-type none-value $ Maybe1 Dynamic
                 assert-type pair-value $ Duo Number String
                 assert-type swapped-value $ Duo Number String
                 assert= (Some 1)
-                  unwrap-maybe $ %:: Maybe1 :some 1
-                assert= None $ unwrap-maybe $ %:: Maybe1 :none
+                  unwrap-maybe $ Maybe1 :some 1
+                assert= None $ unwrap-maybe $ Maybe1 :none
                 assert= :pair $ &enum:nth pair-value 0
                 assert= 1 $ &enum:nth pair-value 1
                 assert= |hi $ &enum:nth pair-value 2
@@ -269,32 +277,32 @@
                     (:swapped right left)
                       str-spaced |swapped (right .debug) (left .debug)
               println "|Testing generic enum where-bounds..."
-              assert= |1 $ render-maybe $ %:: Maybe1 :some 1
+              assert= |1 $ render-maybe $ Maybe1 :some 1
               assert= |none $ render-maybe $ assert-type (Maybe1 :none) (Maybe1 Number)
               assert= (str-spaced |pair |1 |hi)
-                render-duo $ %:: Duo :pair 1 |hi
+                render-duo $ Duo :pair 1 |hi
               assert= (str-spaced |swapped |hi |1)
-                render-duo $ %:: Duo :swapped |hi 1
+                render-duo $ Duo :swapped |hi 1
               println "|✓ Generic enum where-bounds passed"
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match ()
             let
-                result-ok $ %:: Result0 :ok
+                result-ok $ Result0 :ok
                 v $ match result-ok
                   (:ok) :matched-ok
                   (:err msg) msg
               assert= :matched-ok v
             let
-                result-err $ %:: Result0 :err |some-error
+                result-err $ Result0 :err |some-error
                 v $ match result-err
                   (:ok) :matched-ok
                   (:err msg) msg
               assert= |some-error v
             ; Test exhaustive match with wildcard
             let
-                result-ok $ %:: Result0 :ok
+                result-ok $ Result0 :ok
                 v $ match result-ok
                   (:ok) :ok-branch
                   _ :default-branch
@@ -302,7 +310,7 @@
             ; A lowering that rebinds its argument re-reads an indexed match
             let
                 picked $ get
-                  match (%:: Result0 :err |some-error)
+                  match (Result0 :err |some-error)
                     (:ok)
                       {} $ :a 1
                     (:err msg)
@@ -316,7 +324,7 @@
           :code $ quote $ defn test-match-validation ()
             do (println "|Testing match runtime validation...")
               let
-                  result $ %:: Result0 :ok
+                  result $ Result0 :ok
                   v $ match result
                     (:ok) :ok
                     _ :unknown
@@ -326,8 +334,8 @@
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-unreachable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-unreachable ()
-            assert= |ok $ result-label $ %:: Result0 :ok
-            assert= |boom $ result-label $ %:: Result0 :err |boom
+            assert= |ok $ result-label $ Result0 :ok
+            assert= |boom $ result-label $ Result0 :err |boom
             let
                 n 3
                 doubled $ if (> n 0) (* n 2) (unreachable!)
@@ -347,9 +355,9 @@
               let
                   box $ %{} ShownBox $ :value 1
                 let
-                    some-value $ %:: ShownMaybe :some 1
+                    some-value $ ShownMaybe :some 1
                   let
-                      none-value $ %:: ShownMaybe :none
+                      none-value $ ShownMaybe :none
                     assert-type box $ ShownBox Number
                     assert-type some-value $ ShownMaybe Number
                     assert= |1 $ match some-value

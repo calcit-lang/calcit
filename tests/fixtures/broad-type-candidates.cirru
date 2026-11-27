@@ -28,7 +28,7 @@
           :schema $ quote StructDef
         'comp-button $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defcomp comp-button (d!)
-            d! $ %:: Op :reset
+            d! $ Op :reset
           :examples $ []
           :schema $ quote $ Fn
             Fn Enum $ -> Unit
@@ -45,19 +45,19 @@
           :schema $ quote $ Fn Enum (-> Unit)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
-            dispatch! $ %:: Op :add 1
-            dispatch! $ %:: Op :reset
-            mixed! $ %:: Op :reset
-            mixed! $ %:: Msg :text |a
+            dispatch! $ Op :add 1
+            dispatch! $ Op :reset
+            mixed! $ Op :reset
+            mixed! $ Msg :text |a
             show-point $ %{} Point $ :x 1
-            partly-anonymous! $ %:: Op :reset
+            partly-anonymous! $ Op :reset
             partly-anonymous! $ :: :ping
             on-click dispatch!
             on-shadowed dispatch!
             comp-button dispatch!
-            spread-op! $ %:: Op :reset
+            spread-op! $ Op :reset
             let
-                ops $ [] (%:: Op :add 1)
+                ops $ [] (Op :add 1)
               spread-op! & ops
             , &unit
           :examples $ []
@@ -68,8 +68,8 @@
           :schema $ quote $ Fn Enum (-> Unit)
         'on-click $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn on-click (d!)
-            d! $ %:: Op :add 1
-            d! $ %:: Op :reset
+            d! $ Op :add 1
+            d! $ Op :reset
             , &unit
           :examples $ []
           :schema $ quote $ Fn
@@ -77,12 +77,12 @@
             -> Unit
         'on-shadowed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn on-shadowed (d!)
-            d! $ %:: Op :reset
+            d! $ Op :reset
             let
                 d! $ fn (m)
                   hint-fn $ Fn Enum (-> Unit)
                   , &unit
-              d! $ %:: Msg :text |a
+              d! $ Msg :text |a
           :examples $ []
           :schema $ quote $ Fn
             Fn Enum $ -> Unit
