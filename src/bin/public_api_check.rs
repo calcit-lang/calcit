@@ -417,6 +417,7 @@ pub fn run(
           | snapshot::OPTION_NIL_CHECK_ERROR
           | snapshot::LEGACY_NIL_USAGE_ERROR
           | snapshot::LEGACY_DYNAMIC_STYLE_ERROR
+          | snapshot::RUNTIME_TYPE_PREDICATE_WARNING
       )
     );
     match row {

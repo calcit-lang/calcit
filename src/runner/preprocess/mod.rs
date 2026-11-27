@@ -545,6 +545,8 @@ fn contextual_literal_type(expr: &Calcit, expected: &Arc<CalcitTypeAnnotation>) 
 #[cfg(not(test))]
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
+static DENY_MIGRATION_WARNINGS: AtomicBool = AtomicBool::new(false);
+#[cfg(not(test))]
 static STRICT_TYPES: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
@@ -658,6 +660,8 @@ thread_local! {
   static IN_CASE_BODY_VERIFICATION: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
+  #[cfg(test)]
+  static TEST_DENY_MIGRATION_WARNINGS: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_STRICT_TYPES: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
@@ -1067,7 +1071,8 @@ pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
         | crate::snapshot::LEGACY_NIL_USAGE_ERROR
         | crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR
     )
-  ) || advisory.code().is_some_and(effect_features::is_blocking_code)
+  ) || (is_deny_migration_warnings_enabled() && advisory.code() == Some(crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING))
+    || advisory.code().is_some_and(effect_features::is_blocking_code)
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
@@ -1615,6 +1620,20 @@ fn warn_dyn_method_enabled() -> bool {
 
 pub fn is_warn_dyn_method_enabled() -> bool {
   warn_dyn_method_enabled()
+}
+
+pub fn set_deny_migration_warnings(enabled: bool) {
+  #[cfg(not(test))]
+  DENY_MIGRATION_WARNINGS.store(enabled, Ordering::SeqCst);
+  #[cfg(test)]
+  TEST_DENY_MIGRATION_WARNINGS.with(|deny| deny.set(enabled));
+}
+
+pub fn is_deny_migration_warnings_enabled() -> bool {
+  #[cfg(not(test))]
+  return DENY_MIGRATION_WARNINGS.load(Ordering::Relaxed);
+  #[cfg(test)]
+  TEST_DENY_MIGRATION_WARNINGS.with(Cell::get)
 }
 
 pub fn set_strict_types(enabled: bool) {
@@ -25020,6 +25039,43 @@ mod tests {
     fn drop(&mut self) {
       set_warn_dyn_method(self.prev);
     }
+  }
+
+  struct DenyMigrationWarningsGuard {
+    prev: bool,
+  }
+
+  impl DenyMigrationWarningsGuard {
+    fn new(enabled: bool) -> Self {
+      let prev = is_deny_migration_warnings_enabled();
+      set_deny_migration_warnings(enabled);
+      Self { prev }
+    }
+  }
+
+  impl Drop for DenyMigrationWarningsGuard {
+    fn drop(&mut self) {
+      set_deny_migration_warnings(self.prev);
+    }
+  }
+
+  #[test]
+  fn deny_migration_warnings_promotes_runtime_type_predicates_to_blocking() {
+    let predicate = LocatedWarning::new_with_detail(
+      "[Warn] runtime type check `type-of` relies on dynamic inspection".to_owned(),
+      NodeLocation::new("app.main".into(), "inspect".into(), Arc::from(vec![3])),
+      Some(crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING.to_owned()),
+      None,
+    );
+    let _guard = DenyMigrationWarningsGuard::new(false);
+    let (blocking, notes) = split_blocking_advisories(vec![predicate.clone()]);
+    assert!(blocking.is_empty(), "runtime type predicate should stay a note by default");
+    assert_eq!(notes.len(), 1);
+
+    set_deny_migration_warnings(true);
+    let (blocking, notes) = split_blocking_advisories(vec![predicate]);
+    assert_eq!(blocking.len(), 1, "runtime type predicate should block when denied");
+    assert!(notes.is_empty());
   }
 
   struct StrictTypesGuard {

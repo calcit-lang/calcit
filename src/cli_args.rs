@@ -49,6 +49,9 @@ pub struct ToplevelCalcit {
   /// keep strict diagnostics but skip the default assertion-proof audit
   #[argh(switch)]
   pub no_proof_audit: bool,
+  /// treat advisory migration warnings (W_RUNTIME_TYPE_PREDICATE) as blocking errors
+  #[argh(switch, long = "deny-migration-warnings")]
+  pub deny_migration_warnings: bool,
   /// print FFI dylib calls and callbacks for debugging native crashes
   #[argh(switch)]
   pub trace_ffi: bool,
@@ -448,7 +451,7 @@ pub struct WeakTypesCommand {
   /// namespace prefix scope filter
   #[argh(option)]
   pub ns_prefix: Option<String>,
-  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce,data-dynamic (opt-in, not in the default report); or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip, inferred-dynamic
+  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce,data-dynamic (opt-in, not in the default report); or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip, inferred-dynamic, legacy-migration
   #[argh(option)]
   pub only: Option<String>,
   /// with --only coverage, coverage levels to include, comma-separated: none,partial,full

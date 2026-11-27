@@ -11590,3 +11590,173 @@ fn redundant_hint_fn_rule_reports_and_removes_only_hints_the_context_repeats() {
   assert_success(&recheck, "inferred callbacks still check");
   assert!(!String::from_utf8_lossy(&recheck.stderr).contains("W_REDUNDANT_HINT_FN"));
 }
+
+#[test]
+fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |demo)
+  :entries $ {}
+    :default $ {} (:init-fn 'demo.clean/main!) (:mode :native) (:reload-fn 'demo.clean/main!) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |demo.clean $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.clean))
+      :defs $ {}
+        |effect! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote
+            defn effect! ()
+              ;nil
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote
+            defn main! ()
+              ;nil
+              when true
+                ;nil
+              if-let (x None)
+                ;nil
+              effect!
+    |demo.review $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.review))
+      :defs $ {}
+        |keep-review $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Dynamic)))
+          :code $ quote
+            defn keep-review ()
+              ;nil |keep-comment
+              quote (;nil)
+              if true
+                ;nil
+              ;nil
+        |review-two-arg-if $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Dynamic)))
+          :code $ quote
+            defn review-two-arg-if ()
+              if true
+                ;nil
+    |demo.mixed $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.mixed))
+      :defs $ {}
+        |partial! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Number)))
+          :code $ quote
+            defn partial! ()
+              ;nil
+              ;nil |keep-comment
+              , 1
+"#,
+  )
+  .expect("write legacy-comment-nil snapshot");
+  let before = fs::read(&snapshot).unwrap();
+
+  // Review namespace has 2 machine-applicable? Wait: in keep-review `if true (;nil)` is discarded statement (safe!),
+  // while `;nil |keep-comment`, tail `;nil` in keep-review, and tail `if true (;nil)` in review-two-arg-if stay requires-review.
+  let review_preview = run_calcit(
+    &snapshot,
+    &["fix", "--rule", "legacy-comment-nil-v1", "--ns", "demo.review", "--format", "json"],
+  );
+  assert_success(&review_preview, "preview review-only comment nil");
+  let review_report = parse_stdout(&review_preview);
+  let review_suggestions = review_report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(review_suggestions.len(), 4, "{review_report}");
+  let keep_if = review_suggestions
+    .iter()
+    .find(|item| item["definition"] == "demo.review/keep-review" && item["path"] == "code@5.2")
+    .expect("2-arg if in discarded statement position");
+  assert_eq!(keep_if["applicability"], "machine-applicable");
+  assert_eq!(
+    review_suggestions
+      .iter()
+      .filter(|item| item["applicability"] == "requires-review" && item["replacement"].is_null())
+      .count(),
+    3,
+    "keep-comment, tail `;nil`, and 2-arg `if` in Value tail stay requires-review: {review_report}"
+  );
+
+  // Mixed namespace rewrites only the proven empty discarded `;nil`, leaving `;nil |keep-comment`.
+  let mixed_preview = run_calcit(
+    &snapshot,
+    &["fix", "--rule", "legacy-comment-nil-v1", "--ns", "demo.mixed", "--format", "json"],
+  );
+  assert_success(&mixed_preview, "preview mixed comment nil");
+  let mixed_report = parse_stdout(&mixed_preview);
+  let mixed_suggestions = mixed_report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(mixed_suggestions.len(), 2, "{mixed_report}");
+  assert_eq!(
+    mixed_suggestions
+      .iter()
+      .filter(|item| item["applicability"] == "machine-applicable")
+      .count(),
+    1
+  );
+  assert_eq!(
+    mixed_suggestions
+      .iter()
+      .filter(|item| item["applicability"] == "requires-review")
+      .count(),
+    1
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "fix",
+        "--rule",
+        "legacy-comment-nil-v1",
+        "--ns",
+        "demo.mixed",
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        mixed_report["revision"].as_str().unwrap(),
+      ],
+    ),
+    "apply mixed namespace partial fix",
+  );
+  let after_mixed = fs::read_to_string(&snapshot).unwrap();
+  assert!(after_mixed.contains(";nil |keep-comment"), "{after_mixed}");
+
+  // Clean namespace dry-run EDN/JSON parity before apply.
+  let clean_base = ["fix", "--rule", "legacy-comment-nil-v1", "--ns", "demo.clean"];
+  let clean_json = run_calcit(&snapshot, &[&clean_base[..], &["--format", "json"]].concat());
+  assert_success(&clean_json, "preview clean JSON");
+  let clean_report = parse_stdout(&clean_json);
+  let clean_edn = run_calcit(&snapshot, &[&clean_base[..], &["--format", "edn"]].concat());
+  assert_success(&clean_edn, "preview clean EDN");
+  let edn_text = String::from_utf8_lossy(&clean_edn.stdout);
+  cirru_edn::parse(&edn_text).expect("valid EDN report");
+  assert!(edn_text.contains("|legacy-comment-nil-v1"), "{edn_text}");
+  assert!(edn_text.contains("|&unit"), "{edn_text}");
+
+  let clean_suggestions = clean_report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(clean_suggestions.len(), 4, "{clean_report}");
+  assert!(
+    clean_suggestions
+      .iter()
+      .all(|item| item["applicability"] == "machine-applicable" && item["replacement"]["value"] == "&unit")
+  );
+  assert_ne!(before, fs::read(&snapshot).unwrap());
+
+  // Apply clean fixes with revision guard, verify idempotent and strict `--check-only` passes.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "fix",
+        "--rule",
+        "legacy-comment-nil-v1",
+        "--ns",
+        "demo.clean",
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        clean_report["revision"].as_str().unwrap(),
+      ],
+    ),
+    "apply clean comment nil fixes",
+  );
+  let repeat_clean = run_calcit(&snapshot, &[&clean_base[..], &["--format", "json"]].concat());
+  assert_success(&repeat_clean, "repeat clean fix check");
+  assert!(parse_stdout(&repeat_clean)["data"]["suggestions"].as_array().unwrap().is_empty());
+
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "demo.clean passes strict check-only");
+}

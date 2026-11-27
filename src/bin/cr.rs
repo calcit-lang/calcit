@@ -124,6 +124,10 @@ fn run_weak_types(
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
   configure_analysis_entry_type_slots(snapshot)?;
+  if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_LEGACY_MIGRATION) {
+    let _output_guard = ProgramOutputGuard::new(true, false);
+    return type_coverage::legacy_migration::run(options, snapshot);
+  }
   if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_OPTION_NIL_ROUNDTRIP) {
     let _output_guard = ProgramOutputGuard::new(true, false);
     return type_coverage::option_nil_roundtrip::run(options, snapshot);
@@ -510,6 +514,8 @@ fn run_cli() -> Result<(), String> {
   // programs, such as the repository's check-all in CI.
   let proof_audit_env_off = std::env::var("CALCIT_PROOF_AUDIT").is_ok_and(|value| value == "0");
   runner::preprocess::set_default_proof_audit(!(cli_args.no_proof_audit || proof_audit_env_off));
+  let deny_migration_env = std::env::var("CALCIT_DENY_MIGRATION_WARNINGS").is_ok_and(|value| value == "1");
+  runner::preprocess::set_deny_migration_warnings(cli_args.deny_migration_warnings || deny_migration_env);
 
   if cli_args.keep_going && !cli_args.check_only {
     return Err("`--keep-going` requires `--check-only`.".to_owned());
@@ -2253,6 +2259,9 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
   let (legacy_dynamic, blocking): (Vec<_>, Vec<_>) = blocking
     .into_iter()
     .partition(|error| error.code() == Some(snapshot::LEGACY_DYNAMIC_STYLE_ERROR));
+  let (runtime_predicates, blocking): (Vec<_>, Vec<_>) = blocking
+    .into_iter()
+    .partition(|error| error.code() == Some(snapshot::RUNTIME_TYPE_PREDICATE_WARNING));
   let (effects, blocking): (Vec<_>, Vec<_>) = blocking.into_iter().partition(|error| {
     matches!(
       error.code(),
@@ -2288,6 +2297,19 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
       "[{}] Found {} legacy dynamic style usage(s) (`%{{}} _` / `%::` / local `impl-traits`); declare top-level `defstruct`/`defenum` with `(:impls …)` + `defimpl`, use `(Dyn Trait)` / `dyn:box`, or `::` for anonymous enums",
       snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
       legacy_dynamic.len()
+    ));
+  }
+  if !runtime_predicates.is_empty() {
+    eprintln!(
+      "\n{} ({} runtime type predicate warnings denied)",
+      "Errors:".red(),
+      runtime_predicates.len()
+    );
+    LocatedWarning::print_list(&runtime_predicates);
+    summaries.push(format!(
+      "[{}] Found {} runtime type predicate(s) denied by `--deny-migration-warnings`; prefer closed nominal `defenum`/`defstruct`/`Option<T>` with `match` or `Any`/`(Dyn Trait)`",
+      snapshot::RUNTIME_TYPE_PREDICATE_WARNING,
+      runtime_predicates.len()
     ));
   }
   if !broad.is_empty() {

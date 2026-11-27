@@ -45,7 +45,7 @@ pub use edit::handle_edit_command;
 pub use ffi::handle_ffi_command;
 pub(crate) use fix::handle_fix_command;
 pub use normalize::{AnalyzeView, deprecated_type_policy_flag_hint, normalize_consolidated_views, removed_command_error};
-pub(crate) use normalize::{VIEW_INFERRED_DYNAMIC, VIEW_OPTION_NIL_ROUNDTRIP};
+pub(crate) use normalize::{VIEW_INFERRED_DYNAMIC, VIEW_LEGACY_MIGRATION, VIEW_OPTION_NIL_ROUNDTRIP};
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::{

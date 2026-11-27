@@ -3738,3 +3738,80 @@ fn dual_entry_browser_and_node_all_defs_checks_each_target_and_rejects_cross_tar
   let missing_stdout = String::from_utf8_lossy(&rejected_missing.stdout);
   assert!(missing_stdout.contains("demo.server/missing-reload!"), "{missing_stdout}");
 }
+
+#[test]
+fn deny_migration_warnings_promotes_runtime_type_predicates_and_invalidates_incremental_cache() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |demo)
+  :entries $ {}
+    :default $ {} (:init-fn 'demo.main/main!) (:mode :js) (:reload-fn 'demo.main/main!) (:target :browser) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |demo.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.main))
+      :defs $ {}
+        |is-tag? $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn Dynamic (-> Bool)))
+          :code $ quote
+            defn is-tag? (x)
+              tag? x
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote
+            defn main! ()
+              let ((_ (is-tag? :ok)))
+                , &unit
+"#,
+  )
+  .expect("write snapshot");
+
+  // Default check-only passes with a non-blocking W_RUNTIME_TYPE_PREDICATE note.
+  let default_check = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&default_check, "default check-only allows W_RUNTIME_TYPE_PREDICATE note");
+  let default_stderr = String::from_utf8_lossy(&default_check.stderr);
+  assert!(default_stderr.contains("W_RUNTIME_TYPE_PREDICATE"), "{default_stderr}");
+
+  // Warm incremental cache while default policy passes.
+  let warm_cold = run_calcit(&snapshot, &["--check-only", "--incremental"]);
+  assert_success(&warm_cold, "initial incremental check");
+
+  // --deny-migration-warnings promotes W_RUNTIME_TYPE_PREDICATE to blocking across check paths.
+  let denied_cli = run_calcit(&snapshot, &["--deny-migration-warnings", "--check-only"]);
+  assert!(!denied_cli.status.success(), "--deny-migration-warnings must reject tag?");
+  let denied_stderr = String::from_utf8_lossy(&denied_cli.stderr);
+  assert!(denied_stderr.contains("W_RUNTIME_TYPE_PREDICATE"), "{denied_stderr}");
+  assert!(denied_stderr.contains("--deny-migration-warnings"), "{denied_stderr}");
+
+  let denied_incremental = run_calcit(&snapshot, &["--deny-migration-warnings", "--check-only", "--incremental"]);
+  assert!(
+    !denied_incremental.status.success(),
+    "toggling --deny-migration-warnings must invalidate incremental pass cache"
+  );
+
+  let denied_ns = run_calcit(&snapshot, &["--deny-migration-warnings", "--check-only", "--ns", "demo.main"]);
+  assert!(
+    !denied_ns.status.success(),
+    "--check-only --ns must reject W_RUNTIME_TYPE_PREDICATE when denied"
+  );
+
+  let denied_wasm = run_calcit(&snapshot, &["--deny-migration-warnings", "wasm", "--check-only"]);
+  assert!(
+    !denied_wasm.status.success(),
+    "wasm --check-only must reject W_RUNTIME_TYPE_PREDICATE when denied"
+  );
+
+  let denied_env = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("CALCIT_DENY_MIGRATION_WARNINGS", "1")
+    .args(["--tips-level", "none"])
+    .arg(&snapshot)
+    .args(["--check-only", "--keep-going", "--format", "json"])
+    .output()
+    .expect("run calcit with CALCIT_DENY_MIGRATION_WARNINGS=1");
+  assert!(
+    !denied_env.status.success(),
+    "CALCIT_DENY_MIGRATION_WARNINGS=1 must fail keep-going check"
+  );
+  let keep_going_stdout = String::from_utf8_lossy(&denied_env.stdout);
+  assert!(keep_going_stdout.contains("W_RUNTIME_TYPE_PREDICATE"), "{keep_going_stdout}");
+}

@@ -144,6 +144,7 @@ fn weak_types_views_offer_edn_equivalent_to_json() {
     ("calcit/test.cirru", "dynamic-method"),
     ("calcit/test-wasm.cirru", "dynamic-method"),
     ("tests/fixtures/option-nil-roundtrip.cirru", "option-nil-roundtrip"),
+    ("tests/fixtures/option-nil-roundtrip.cirru", "legacy-migration"),
   ] {
     let args = |format| vec!["analyze", "weak-types", "--only", view, "--format", format];
     let json = run_calcit(Path::new(snapshot), &args("json"));
@@ -178,6 +179,9 @@ fn weak_types_views_reject_options_they_cannot_honor() {
       "--coverage-level",
       "full",
     ][..],
+    &["analyze", "weak-types", "--only", "legacy-migration,code-nil"][..],
+    &["analyze", "weak-types", "--only", "legacy-migration", "--incremental"][..],
+    &["analyze", "weak-types", "--only", "legacy-migration", "--intent", "unresolved"][..],
   ] {
     let output = run_calcit(snapshot, args);
     assert!(!output.status.success(), "{args:?} should be rejected");
@@ -1553,4 +1557,82 @@ fn non_utf8_arguments_are_reported_without_a_panic() {
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(stderr.contains("Invalid utf8"), "{stderr}");
   assert!(!stderr.contains("panicked"), "{stderr}");
+}
+
+#[test]
+fn legacy_migration_view_inventories_all_categories_without_requiring_strict_compile() {
+  let project = TempProject::create("legacy-migration-view");
+  let snapshot = project.snapshot();
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |demo)
+  :entries $ {}
+    :default $ {} (:init-fn 'demo.main/main!) (:mode :native) (:reload-fn 'demo.main/main!) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |demo.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.main))
+      :defs $ {}
+        |Point $ %{} :CodeEntry (:doc |) (:schema $ quote StructDef)
+          :code $ quote (defstruct Point (:x Number))
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote
+            defn main! ()
+              ;nil
+              let ((v (either nil 1)) (anon (%{} _ (:a 1))) (pt (%{} Point (:x 1))))
+                when (tag? v)
+                  let ((kept (filter ([] 1) non-nil?)))
+                    , &unit
+              impl-traits pt Show
+              quote $ type-of v
+"#,
+  )
+  .expect("write legacy migration snapshot");
+  let before = fs::read(&snapshot).unwrap();
+
+  let json_out = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--only", "legacy-migration", "--format", "json"],
+  );
+  assert!(json_out.status.success(), "{}", String::from_utf8_lossy(&json_out.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&json_out.stdout).expect("single JSON report");
+  assert_eq!(report["data"]["view"], "legacy-migration");
+  assert_eq!(report["data"]["summary"]["definitions"], 1);
+  assert_eq!(report["data"]["summary"]["by_category"]["legacy_nil"], 2);
+  assert_eq!(report["data"]["summary"]["by_category"]["legacy_dynamic_style"], 2);
+  assert_eq!(report["data"]["summary"]["by_category"]["runtime_type_predicate"], 2);
+  assert_eq!(report["data"]["summary"]["findings"], 6);
+  assert_eq!(report["data"]["findings"].as_array().unwrap().len(), 6);
+
+  let edn_out = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--only", "legacy-migration", "--format", "edn"],
+  );
+  assert!(edn_out.status.success(), "{}", String::from_utf8_lossy(&edn_out.stderr));
+  let edn = cirru_edn::parse(&String::from_utf8_lossy(&edn_out.stdout)).expect("single EDN report");
+  assert_eq!(normalize_report(&edn_to_json(&edn)), normalize_report(&report));
+
+  let summary_out = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--only",
+      "legacy-migration",
+      "--summary-only",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(summary_out.status.success());
+  let summary_report: serde_json::Value = serde_json::from_slice(&summary_out.stdout).unwrap();
+  assert_eq!(summary_report["data"]["summary"]["findings"], 6);
+  assert!(summary_report["data"]["findings"].as_array().unwrap().is_empty());
+
+  let human_out = run_calcit(&snapshot, &["analyze", "weak-types", "--only", "legacy-migration"]);
+  assert!(human_out.status.success());
+  let human_stdout = String::from_utf8_lossy(&human_out.stdout);
+  assert!(human_stdout.contains("# Legacy Migration Inventory"), "{human_stdout}");
+  assert!(human_stdout.contains("legacy-nil=2"), "{human_stdout}");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "legacy-migration view must stay read-only");
 }

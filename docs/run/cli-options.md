@@ -319,6 +319,9 @@ programs that deliberately exercise open `Dynamic` idioms, such as Calcit's own
 the same effect for every command of a run; Calcit's own CI check-all uses it for
 its fixture programs.
 
+`--deny-migration-warnings`（或环境变量 `CALCIT_DENY_MIGRATION_WARNINGS=1`）会将迁移建议级诊断 `W_RUNTIME_TYPE_PREDICATE` 提升为阻断错误，覆盖 `--check-only`（含 `--ns` / `--incremental`）、直接运行与 `js` / `wasm` / `wasi`；用于核对已清零 `nil?`/`non-nil?`、`type-of`、`data-view` 与运行时谓词的仓库。
+`calcit analyze weak-types --only legacy-migration [--summary-only] [--format edn|json]` 提供只读的静态源码盘点（汇总 `legacy-nil`、`legacy-dynamic-style` 与 `runtime-type-predicate`），`calcit fix --rule legacy-comment-nil-v1` 可安全将丢弃位置或 `Unit` 尾位置的空 `(;nil)` 自动改写为 `&unit`。
+
 ```bash
 calcit calcit.cirru --no-proof-audit --check-only
 ```
