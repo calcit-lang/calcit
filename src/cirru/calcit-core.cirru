@@ -6121,11 +6121,31 @@
         '\ $ %{} 'CodeEntry (:doc "|Short anonymous function macro supporting `%` and `%2` placeholders without legacy `?` nil-injecting parameters.")
           :code $ quote $ defmacro \ (& xs)
             if (&list:empty? xs) (raise "|\\ expects function body")
-            if (contains-symbol? xs '%2)
-              quasiquote $ defn %\ (% %2) ~xs
-              if (contains-symbol? xs '%)
-                quasiquote $ defn %\ (%) ~xs
-                quasiquote $ defn %\ () ~xs
+            loop
+                pending xs
+                has-first? false
+                has-second? false
+              if (&list:empty? pending)
+                if has-second?
+                  quasiquote $ defn %\ (% %2) ~xs
+                  if has-first?
+                    quasiquote $ defn %\ (%) ~xs
+                    quasiquote $ defn %\ () ~xs
+                &let
+                  node $ &list:nth pending 0
+                  &let
+                    rest-nodes $ &list:rest pending
+                    if (list? node)
+                      if
+                        &list-match-internal node false (head _tail)
+                          or (&= head '\) (&= head 'calcit.core/\)
+                            &= head 'quote
+                            &= head 'calcit.core/quote
+                        recur rest-nodes has-first? has-second?
+                        recur (&list:concat node rest-nodes) has-first? has-second?
+                      recur rest-nodes
+                        or has-first? $ &= node '%
+                        or has-second? $ &= node '%2
           :examples $ []
             quote $ assert= 3 $ (\ + 1 %) 2
             quote $ assert= 5 $ (\ + % %2) 2 3
@@ -6137,6 +6157,7 @@
               assert= 7 $ (\ + 3 4)
               assert= 5 $ (\ + 2 %) 3
               assert= 9 $ (\ + % %2) 4 5
+              assert= ([] ([] 1 2)) $ map ([] ([] 2 1)) $ \ sort % $ \ - % %2
             :tags $ #{} :core :unit
         'abs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn abs (x)
