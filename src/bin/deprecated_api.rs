@@ -584,7 +584,8 @@ mod tests {
   #[test]
   fn skips_compiler_generated_impl_traits_while_reporting_handwritten_calls() {
     let mut snapshot = calcit::load_core_snapshot().expect("embedded core");
-    snapshot.package = "app".to_owned();
+    snapshot.package = "tests".to_owned();
+    let ns = "tests.deprecated-synthetic-impl-traits";
 
     let parse_one = |src: &str| {
       cirru_parser::parse(src)
@@ -604,11 +605,11 @@ mod tests {
     };
 
     snapshot.files.insert(
-      "app.main".to_owned(),
+      ns.to_owned(),
       snapshot::FileInSnapShot {
         ns: snapshot::NsEntry {
           doc: String::new(),
-          code: parse_one("ns app.main"),
+          code: parse_one(&format!("ns {ns}")),
         },
         defs: HashMap::from([
           ("ShowTrait".to_owned(), entry("deftrait ShowTrait\n  .show $ Fn Self (-> String)")),
@@ -628,16 +629,48 @@ mod tests {
       },
     );
 
-    let options = DeprecatedCommand {
-      ns: Some("app.main".to_owned()),
-      ns_prefix: None,
-      format: "json".to_owned(),
-      deps: false,
-      summary_only: false,
-    };
-    let rows = collect_deprecated_api_rows(&options, &snapshot).expect("collect deprecated rows");
-    assert_eq!(rows.len(), 1, "expected only handwritten LegacyBox, got {rows:?}");
-    assert_eq!(rows[0].definition, "LegacyBox");
-    assert_eq!(rows[0].uses[0].target_name, "impl-traits");
+    let targets = deprecated_targets(&snapshot);
+    let program_data = program::extract_program_data(&snapshot).expect("extract program data");
+    let file = program_data.get(ns).expect("test namespace present");
+    let definitions = program_data
+      .iter()
+      .flat_map(|(namespace, f)| f.defs.keys().map(move |def| (namespace.to_string(), def.to_string())))
+      .collect::<HashSet<_>>();
+
+    let canonical = file.defs.get("CanonicalBox").expect("CanonicalBox entry");
+    let written = program::written_source_code_for_attached_def(ns, "CanonicalBox", &canonical.code)
+      .expect("canonical (:impls ...) should recover pre-attachment code");
+    let mut canonical_uses = vec![];
+    collect_uses(
+      &written,
+      ns,
+      &file.import_map,
+      &targets,
+      &definitions,
+      &mut vec![],
+      &mut canonical_uses,
+    );
+    assert!(
+      canonical_uses.is_empty(),
+      "expected 0 uses for CanonicalBox, got {canonical_uses:?}"
+    );
+
+    let legacy = file.defs.get("LegacyBox").expect("LegacyBox entry");
+    assert!(
+      program::written_source_code_for_attached_def(ns, "LegacyBox", &legacy.code).is_none(),
+      "handwritten LegacyBox must not be masked by WRITTEN_CODE"
+    );
+    let mut legacy_uses = vec![];
+    collect_uses(
+      &legacy.code,
+      ns,
+      &file.import_map,
+      &targets,
+      &definitions,
+      &mut vec![],
+      &mut legacy_uses,
+    );
+    assert_eq!(legacy_uses.len(), 1);
+    assert_eq!(legacy_uses[0].target_name, "impl-traits");
   }
 }

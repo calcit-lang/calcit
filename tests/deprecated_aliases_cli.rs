@@ -1712,4 +1712,44 @@ fn deprecated_call_skips_synthetic_top_level_impl_traits() {
     legacy_report["data"]["summary"]["calls"], 1,
     "handwritten `impl-traits` must still report in deprecated-call: {legacy_report}"
   );
+
+  // Handwritten top-level `impl-traits` without `(:impls ...)` must still be flagged too.
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |app)
+  :entries $ {}
+    :default $ {} (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns app.main))
+      :defs $ {}
+        |Show $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
+          :code $ quote $ deftrait Show
+            .show $ Fn Self (-> String)
+        |LegacyImpl $ %{} :CodeEntry (:doc |) (:schema $ quote Dynamic)
+          :code $ quote $ defimpl LegacyInner Show
+            .show $ fn (self) |ok
+        |LegacyBox $ %{} :CodeEntry (:doc |) (:schema $ quote StructDef)
+          :code $ quote $ def LegacyBox $ impl-traits (defstruct LegacyInner (:n Number)) LegacyImpl
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote $ defn main! () &unit
+"#,
+  )
+  .expect("write handwritten top-level impl-traits snapshot");
+
+  let top_legacy_out = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
+  );
+  assert!(
+    top_legacy_out.status.success(),
+    "{}",
+    String::from_utf8_lossy(&top_legacy_out.stderr)
+  );
+  let top_legacy_report: serde_json::Value = serde_json::from_slice(&top_legacy_out.stdout).expect("single JSON report");
+  assert_eq!(
+    top_legacy_report["data"]["summary"]["calls"], 1,
+    "handwritten top-level `impl-traits` must still report in deprecated-call: {top_legacy_report}"
+  );
 }
