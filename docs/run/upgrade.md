@@ -24,6 +24,18 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.47.0（开发中）核心 `nil` / `?` 收口（#2973）
+
+- **两参数 `if-let` 返回 `&unit`（`Unit`）且移除旧式 `?` 参数**：三参数 `(if-let (x opt) then else)` 行为不变；两参数 `(if-let (x opt) effect)` 仅执行 `then` 的副作用并返回 `&unit`，不再隐式返回 `nil`；`if-let` 参数列表不再包含 `?`，同时编译器也移除了对 `calcit.core/if-let` 的 `?` 例外放行。
+- **`\` 短函数宏按实际占位符展开精确元数**：不再生成 `defn %\ (? % %2)` 的旧式 `?` 注入 `nil` 参数，而是依据函数体是否出现 `%2` / `%` 分别展开为 `defn %\ ()`、`defn %\ (%)` 与 `defn %\ (% %2)`；需要省略尾参请改用 `Option` 尾参或显式传参。
+- **`non-nil!` 标为兼容旧入口**：文档明确提示新代码使用 `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
+
+```cirru
+assert= &unit $ if-let (x None) (println x)
+assert= 5 $ (\ + 2 %) 3
+, true
+```
+
 ## 0.46.0 静态内核（Phase 1–4）收口与 WASM/WASI 运行时升级（#2931）
 
 本版本将静态内核规划（Phase 1–4，对应 Milestones #95–#98）合并作为 `0.46.0` 一并发布，统一 Native / JS / WASM 三端核心语义、补齐可控动态原语并移除 WASM/WASI 运行时的保守扫描与固定容量限制：

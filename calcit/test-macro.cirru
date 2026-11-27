@@ -138,6 +138,8 @@
               + 1 2
               , 0
             assert= 2 $ if-let (a None) 1 2
+            assert= &unit $ if-let (a None) 1
+            assert= &unit $ if-let (a $ Some 10) a
             assert= None $ when-let (a None) 1 2
             assert= (Some 2)
               when-let
@@ -164,17 +166,20 @@
               [] ([] 0 |0) ([] 1 |1) ([] 2 |2)
             inside-eval:
               assert=
+                macroexpand-all $ quote $ \ + 1 2
+                macroexpand-all $ quote $ defn %\ () (calcit.core/+ 1 2)
+              assert=
                 macroexpand-all $ quote $ \ + 2 %
-                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ 2 %)
+                macroexpand-all $ quote $ defn %\ (%) (calcit.core/+ 2 %)
               ; assert=
                 macroexpand-all $ quote $ \ x
-                quasiquote $ ~defn %\ (? % %2) (x)
+                quasiquote $ ~defn %\ (%) (x)
               assert=
                 macroexpand-all $ quote $ \ + x %
-                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x %)
+                macroexpand-all $ quote $ defn %\ (%) (calcit.core/+ x %)
               assert=
                 macroexpand-all $ quote $ \ + x % %2
-                macroexpand-all $ quote $ defn %\ (? % %2) (calcit.core/+ x % %2)
+                macroexpand-all $ quote $ defn %\ (% %2) (calcit.core/+ x % %2)
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-misc $ %{} 'CodeEntry (:doc |)

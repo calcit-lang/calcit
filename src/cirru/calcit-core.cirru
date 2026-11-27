@@ -6118,14 +6118,26 @@
             -> $ List T
             :generics T
           :tags $ #{} :builtin :internal
-        '\ $ %{} 'CodeEntry (:doc |)
+        '\ $ %{} 'CodeEntry (:doc "|Short anonymous function macro supporting `%` and `%2` placeholders without legacy `?` nil-injecting parameters.")
           :code $ quote $ defmacro \ (& xs)
             if (&list:empty? xs) (raise "|\\ expects function body")
-            quasiquote $ defn %\ (? % %2) ~xs
+            if (contains-symbol? xs '%2)
+              quasiquote $ defn %\ (% %2) ~xs
+              if (contains-symbol? xs '%)
+                quasiquote $ defn %\ (%) ~xs
+                quasiquote $ defn %\ () ~xs
           :examples $ []
+            quote $ assert= 3 $ (\ + 1 %) 2
+            quote $ assert= 5 $ (\ + % %2) 2 3
           :schema $ quote $ Macro (& Syntax)
             -> $ Expr Fn
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |emits-exact-arity-without-optional-params)
+            :code $ quote $ do
+              assert= 7 $ (\ + 3 4)
+              assert= 5 $ (\ + 2 %) 3
+              assert= 9 $ (\ + % %2) 4 5
+            :tags $ #{} :core :unit
         'abs $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn abs (x)
             if (&< x 0) (&- 0 x) x
@@ -6682,7 +6694,7 @@
               if (struct? data)
                 raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
                 &let
-                  d $ either data $ &{}
+                  d $ if (nil? data) (&{}) data
                   &let
                     updated $ assoc-in
                       if (contains? d p0) (&get-raw d p0) (&{})
@@ -11825,35 +11837,54 @@
                   fn (_e) true
               :tags $ #{} :core :truthiness :unit
         'if-let $ %{} 'CodeEntry
-          :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
-          :code $ quote $ defmacro if-let (pair then ? else)
+          :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the optional explicit none branch without calling unwrap. With 2 arguments, evaluates then for effects and returns &unit (Unit)."
+          :code $ quote $ defmacro if-let (pair then & rest-branches)
             if
               not $ and (list? pair)
                 &= 2 $ count pair
               raise $ str-spaced "|expected a pair, got:" pair
+            if
+              &> (&list:count rest-branches) 1
+              raise $ str-spaced "|if-let expects (pair then) or (pair then else), got:" rest-branches
             &let
               x $ &list:nth pair 0
               if
                 not $ symbol? x
                 raise $ str-spaced "|expected a symbol for var name, got:" x
-              quasiquote $ option:fold
-                ~ $ &list:nth pair 1
-                fn () ~else
-                fn (~x) ~then
+              if (&list:empty? rest-branches)
+                quasiquote $ option:fold
+                  ~ $ &list:nth pair 1
+                  fn () &unit
+                  fn (~x)
+                    &let () ~then &unit
+                &let
+                  else-branch $ &list:nth rest-branches 0
+                  quasiquote $ option:fold
+                    ~ $ &list:nth pair 1
+                    fn () ~else-branch
+                    fn (~x) ~then
           :examples $ []
             quote $ assert= |found $ if-let
               v $ Some |found
               , v |missing
             quote $ assert= |missing $ if-let (v None) v |missing
+            quote $ assert= &unit $ if-let (_ None) (raise |unselected)
           :schema $ quote $ Macro SyntaxList (Expr Dynamic)
+            & $ Expr Dynamic
             -> $ Expr Dynamic
-            :optional $ Expr Dynamic
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |binds-open-option-payload)
-            :code $ quote $ let
-                present $ assert-type (Some 1) (Option Dynamic)
-              assert= 1 $ if-let (value present) value 0
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |binds-open-option-payload)
+              :code $ quote $ let
+                  present $ assert-type (Some 1) (Option Dynamic)
+                assert= 1 $ if-let (value present) value 0
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |two-arg-returns-unit-without-nil)
+              :code $ quote $ do
+                assert= &unit $ if-let (value None) (raise |unselected)
+                assert= &unit $ if-let (value $ Some 1) value
+                assert-type (if-let (value $ Some 1) value) Unit
+              :tags $ #{} :core :unit
         'if-not $ %{} 'CodeEntry
           :doc "|Negated conditional macro: requires a Bool condition. With 3 arguments, evaluates else when true and then when false; with 2 arguments, evaluates then when false and returns &unit (Unit)."
           :code $ quote $ defmacro if-not (condition true-branch & rest-branches)
@@ -13227,7 +13258,7 @@
             quote $ assert= false $ nil? 0
           :schema $ quote $ Fn T (-> Bool) (:generics T)
           :tags $ #{} :builtin :internal
-        'non-nil! $ %{} 'CodeEntry (:doc |)
+        'non-nil! $ %{} 'CodeEntry (:doc "|Legacy runtime assertion that raises when a value is nil and otherwise returns it unchanged. New code should use Option<T> with match, if-let, .unwrap-or, or .unwrap instead of nil.")
           :code $ quote $ defn non-nil! (x)
             if (nil? x) (raise "|expected non nil value") x
           :examples $ []
@@ -16168,7 +16199,7 @@
                 let
                     current $ if (nil? data) None $ get data p0
                   &let
-                    receiver $ either data $ {}
+                    receiver $ if (nil? data) ({}) data
                     &let
                       updated $ if (empty? ps) (f current)
                         update-in
