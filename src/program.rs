@@ -1979,3 +1979,9 @@ pub fn clear_runtime_caches_for_changes(changes: &snapshot::ChangesDict, reload_
 
   Ok(())
 }
+
+/// Return the original written code when `extract_program_data` synthesized a
+/// top-level `calcit.core/impl-traits` wrapper for `(:impls …)`.
+pub fn written_source_code_for_attached_def(ns: &str, def: &str, code: &Calcit) -> Option<Calcit> {
+  impl_attach::written_source_code(ns, def, code)
+}

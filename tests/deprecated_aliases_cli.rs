@@ -1636,3 +1636,80 @@ fn legacy_migration_view_inventories_all_categories_without_requiring_strict_com
   assert!(human_stdout.contains("legacy-nil=2"), "{human_stdout}");
   assert_eq!(fs::read(&snapshot).unwrap(), before, "legacy-migration view must stay read-only");
 }
+
+#[test]
+fn deprecated_call_skips_synthetic_top_level_impl_traits() {
+  let project = TempProject::create("deprecated-call-synthetic-impl-traits");
+  let snapshot = project.snapshot();
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |app)
+  :entries $ {}
+    :default $ {} (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns app.main))
+      :defs $ {}
+        |Show $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
+          :code $ quote $ deftrait Show
+            .show $ Fn Self (-> String)
+        |Box $ %{} :CodeEntry (:doc |) (:schema $ quote StructDef)
+          :code $ quote $ defstruct Box (:n Number) (:impls Show)
+        |BoxImpl $ %{} :CodeEntry (:doc |) (:schema $ quote Dynamic)
+          :code $ quote $ defimpl Box Show
+            .show $ fn (self) |ok
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote $ defn main! () &unit
+"#,
+  )
+  .expect("write snapshot");
+
+  let canonical_out = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
+  );
+  assert!(canonical_out.status.success(), "{}", String::from_utf8_lossy(&canonical_out.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&canonical_out.stdout).expect("single JSON report");
+  assert_eq!(
+    report["data"]["summary"]["calls"], 0,
+    "canonical (:impls ...) must not trigger deprecated-call on synthetic impl-traits: {report}"
+  );
+
+  // Handwritten local `impl-traits` inside a function must still be flagged.
+  fs::write(
+    &snapshot,
+    r#"
+{} (:package |app)
+  :entries $ {}
+    :default $ {} (:init-fn 'app.main/main!) (:mode :native) (:reload-fn 'app.main/main!) (:modules $ []) (:type-slots $ {})
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns app.main))
+      :defs $ {}
+        |Show $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
+          :code $ quote $ deftrait Show
+            .show $ Fn Self (-> String)
+        |legacy! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote
+            defn legacy! ()
+              let ((LocalBox (defstruct LocalBox (:n Number))) (LocalImpl (defimpl LocalBox Show (.show (fn (self) |ok)))))
+                impl-traits LocalBox LocalImpl
+              , &unit
+        |main! $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Unit)))
+          :code $ quote $ defn main! () (legacy!)
+"#,
+  )
+  .expect("write handwritten impl-traits snapshot");
+
+  let legacy_out = run_calcit(
+    &snapshot,
+    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
+  );
+  assert!(legacy_out.status.success(), "{}", String::from_utf8_lossy(&legacy_out.stderr));
+  let legacy_report: serde_json::Value = serde_json::from_slice(&legacy_out.stdout).expect("single JSON report");
+  assert_eq!(
+    legacy_report["data"]["summary"]["calls"], 1,
+    "handwritten `impl-traits` must still report in deprecated-call: {legacy_report}"
+  );
+}

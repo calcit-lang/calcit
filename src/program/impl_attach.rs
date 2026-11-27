@@ -1723,3 +1723,14 @@ pub(crate) fn is_hand_written_top_level_impl_traits(ns: &str, def: &str, code: &
     .is_some_and(|(_, generated)| generated == code);
   !generated
 }
+
+/// Return the pre-attachment definition code when `code` is a compiler-generated
+/// `(:impls …)` wrapper recorded for `(ns, def)`.
+pub(crate) fn written_source_code(ns: &str, def: &str, code: &Calcit) -> Option<Calcit> {
+  let key: DefKey = (Arc::from(ns), Arc::from(def));
+  WRITTEN_CODE
+    .lock()
+    .expect("lock written type code")
+    .get(&key)
+    .and_then(|(written, generated)| (generated == code).then(|| written.clone()))
+}
