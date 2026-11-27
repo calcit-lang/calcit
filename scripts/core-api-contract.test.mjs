@@ -411,6 +411,13 @@ test("a reviewed removal requires an explicit :after nil migration", () => {
   withNilToString.methods.push(nilMethodMigration.before);
   withNilToString["method-contracts"].push(nilContractMigration.before);
   assert.throws(() => assertPreserved(withNilToString, baseline), /removed frozen/);
+  const withoutAfterField = migrations.map(item => {
+    if (item !== nilMethodMigration && item !== nilContractMigration) return item;
+    const copy = structuredClone(item);
+    delete copy.after;
+    return copy;
+  });
+  assert.throws(() => assertPreserved(withNilToString, baseline, withoutAfterField), /removed frozen/);
   assertPreserved(withNilToString, baseline, migrations);
 
   const withoutStringToString = structuredClone(baseline);

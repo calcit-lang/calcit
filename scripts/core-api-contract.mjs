@@ -289,7 +289,7 @@ export function assertPreserved(previous, current, migrations = []) {
       const frozenContract = contract(old, family, names, variables);
       if (!row) {
         const reviewedRemoval = migrations.some(migration => migration.family === family
-          && migration.after == null
+          && migration.after === null
           && isDeepStrictEqual(contract(migration.before, family, names, variables), frozenContract));
         assert.ok(reviewedRemoval, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
         continue;

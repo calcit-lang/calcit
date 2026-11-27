@@ -935,19 +935,26 @@ pub(super) fn emit_str_variadic(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     return Ok(());
   }
 
-  if args.len() == 1
-    && (matches!(&args[0], Calcit::Nil)
-      || matches!(
-        super::infer_wasm_static_type(ctx, &args[0])
-          .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
-          .as_deref(),
-        Some(CalcitTypeAnnotation::Nil)
-      ))
-  {
-    let zero_local = ctx.alloc_i32(0);
-    let (ptr, _) = emit_str_alloc(ctx, zero_local);
-    ctx.ptr_to_f64(ptr);
-    return Ok(());
+  if args.len() == 1 {
+    if matches!(&args[0], Calcit::Nil) {
+      let zero_local = ctx.alloc_i32(0);
+      let (ptr, _) = emit_str_alloc(ctx, zero_local);
+      ctx.ptr_to_f64(ptr);
+      return Ok(());
+    }
+    if matches!(
+      super::infer_wasm_static_type(ctx, &args[0])
+        .map(|ty| crate::wasm::host::calcit::CalcitTypeAnnotation::expand_schema_alias(&ty))
+        .as_deref(),
+      Some(CalcitTypeAnnotation::Nil)
+    ) {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Drop);
+      let zero_local = ctx.alloc_i32(0);
+      let (ptr, _) = emit_str_alloc(ctx, zero_local);
+      ctx.ptr_to_f64(ptr);
+      return Ok(());
+    }
   }
 
   if args.len() > 1 {
