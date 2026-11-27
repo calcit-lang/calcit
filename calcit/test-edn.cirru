@@ -18,6 +18,9 @@
           :code $ quote $ def A-typed-person (parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Top)" Person)
           :examples $ []
           :schema $ quote Dynamic
+        'BooleanFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype BooleanFields (MapOf Bool)
+          :examples $ []
         'Box $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Box (:generics T) (:value T)
           :examples $ []
@@ -26,6 +29,9 @@
           :code $ quote $ defenum DemoEnum (:ok) (:err String)
           :examples $ []
           :schema $ quote EnumDef
+        'MapOf $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftype MapOf (:generics T) (Map Tag T)
+          :examples $ []
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person (:name String) (:age Number)
           :examples $ []
@@ -226,6 +232,16 @@
               assert= true $ .err? $ try-decode-map-as
                 parse-cirru-edn "|%:: :DemoEnum :err 42" $ {} $ :DemoEnum DemoEnum
                 , DemoEnum
+              , &unit
+            do
+              assert= true $ result:ok? $ try-decode-map-as
+                {} $ :show? true
+                , BooleanFields
+              assert= true $ result:err? $ try-decode-map-as
+                {} $ :show? |bad
+                , BooleanFields
+              assert= true $ result:ok? $ try-parse-cirru-edn-as "|{} (:show? true)" BooleanFields
+              assert= true $ result:err? $ try-parse-cirru-edn-as "|{} (:show? |bad)" BooleanFields
               , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

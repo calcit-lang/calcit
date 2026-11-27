@@ -243,6 +243,7 @@ struct GraphBuilder {
   nodes: Vec<Option<DataShapeNode>>,
   nominal_nodes: HashMap<String, usize>,
   resolving_aliases: HashSet<String>,
+  alias_arguments: Vec<(usize, HashSet<String>, String)>,
   resolving_slots: HashSet<String>,
   allow_dynamic: bool,
   allow_ffi_resource: bool,
@@ -293,6 +294,7 @@ impl DataShapeGraph {
       nodes: vec![],
       nominal_nodes: HashMap::new(),
       resolving_aliases: HashSet::new(),
+      alias_arguments: Vec::new(),
       resolving_slots: HashSet::new(),
       allow_dynamic,
       allow_ffi_resource,
@@ -683,6 +685,21 @@ impl GraphBuilder {
   }
 
   fn build_type(&mut self, target: &CalcitTypeAnnotation, default_ns: &str) -> Result<usize, DataShapeError> {
+    let address = std::ptr::from_ref(target) as usize;
+    // Substitution preserves argument Arcs. An argument is evaluated in the
+    // caller's alias context, not in the declaration that received it. This
+    // permits finite F<F<T>> while still rejecting recursion in F's body.
+    if let Some((_, context, caller_ns)) = self.alias_arguments.iter().rev().find(|(argument, _, _)| *argument == address) {
+      let caller_ns = caller_ns.clone();
+      let previous = std::mem::replace(&mut self.resolving_aliases, context.clone());
+      let result = self.build_type_inner(target, &caller_ns);
+      self.resolving_aliases = previous;
+      return result;
+    }
+    self.build_type_inner(target, default_ns)
+  }
+
+  fn build_type_inner(&mut self, target: &CalcitTypeAnnotation, default_ns: &str) -> Result<usize, DataShapeError> {
     match target {
       CalcitTypeAnnotation::Never => Err(unsupported_type("inferred uninhabited payload has no decodable value")),
       CalcitTypeAnnotation::Nil => Ok(self.push(DataShapeNode::Nil)),
@@ -837,22 +854,46 @@ impl GraphBuilder {
       return self.build_union(union_def, ns, def);
     }
 
-    let schema = program::lookup_def_schema(&ns, &def);
-    if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
-      && !matches!(schema.as_ref(), CalcitTypeAnnotation::TypeRef(schema_name, _) if schema_name.as_ref() == name)
-    {
-      if !args.is_empty() {
+    let alias = if let Some(alias) = super::type_annotation::type_alias_declaration(&format!("{ns}/{def}")) {
+      if alias.generics.len() != args.len() {
         return Err(DataShapeError::new(format!(
-          "cannot apply generic arguments to type alias `{ns}/{def}`"
+          "type alias `{ns}/{def}` expects {} type arguments, got {}",
+          alias.generics.len(),
+          args.len()
         )));
       }
+      Some(alias.expand(&ns, args))
+    } else {
+      let schema = program::lookup_def_schema(&ns, &def);
+      if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+        || matches!(schema.as_ref(), CalcitTypeAnnotation::TypeRef(schema_name, _) if schema_name.as_ref() == name)
+      {
+        None
+      } else {
+        if !args.is_empty() {
+          return Err(DataShapeError::new(format!(
+            "cannot apply generic arguments to type alias `{ns}/{def}`"
+          )));
+        }
+        Some(schema)
+      }
+    };
+    if let Some(alias) = alias {
       let alias_key = format!("{ns}/{def}");
+      let argument_context = self.resolving_aliases.clone();
       if !self.resolving_aliases.insert(alias_key.clone()) {
         return Err(DataShapeError::new(format!(
           "recursive type alias `{alias_key}`; recursive data must use a nominal struct or enum"
         )));
       }
-      let result = self.build_type(schema.as_ref(), &ns);
+      let argument_base = self.alias_arguments.len();
+      self.alias_arguments.extend(
+        args
+          .iter()
+          .map(|arg| (Arc::as_ptr(arg) as usize, argument_context.clone(), default_ns.to_owned())),
+      );
+      let result = self.build_type(alias.as_ref(), &ns);
+      self.alias_arguments.truncate(argument_base);
       self.resolving_aliases.remove(&alias_key);
       return result;
     }
