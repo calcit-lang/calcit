@@ -3936,6 +3936,7 @@ fn preprocess_generated_specialization(
 struct OutsideGeneratedSpecialization {
   outer_generated: bool,
   outer_recheck: bool,
+  outer_case_verification: bool,
 }
 
 impl OutsideGeneratedSpecialization {
@@ -3943,6 +3944,7 @@ impl OutsideGeneratedSpecialization {
     Self {
       outer_generated: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
       outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(false)),
+      outer_case_verification: IN_CASE_BODY_VERIFICATION.with(|flag| flag.replace(false)),
     }
   }
 }
@@ -3951,6 +3953,7 @@ impl Drop for OutsideGeneratedSpecialization {
   fn drop(&mut self) {
     IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer_generated));
     IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
+    IN_CASE_BODY_VERIFICATION.with(|flag| flag.set(self.outer_case_verification));
   }
 }
 
@@ -11381,7 +11384,11 @@ fn note_legacy_nil_predicate_migration(
   location: Option<NodeLocation>,
   file_ns: &str,
 ) {
-  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || is_core_or_replay_ns(file_ns) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || in_case_body_verification()
+    || is_core_or_replay_ns(file_ns)
+    || !should_emit_project_source_lint(file_ns)
+  {
     return;
   }
   let Some(location) = location else {
@@ -11434,6 +11441,7 @@ fn note_legacy_fn_migration(
 
 fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
   if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || in_case_body_verification()
     || def_ns != calcit::CORE_NS
     || is_core_or_replay_ns(file_ns)
     || !should_emit_project_source_lint(file_ns)

@@ -9097,3 +9097,98 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
     );
   });
 }
+
+#[test]
+fn cases_body_verification_suppresses_branch_only_migration_advisories_and_preserves_called_helper_errors() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let _ = runner::preprocess::take_advisories();
+
+    let case_schema = |arg: CalcitTypeAnnotation| {
+      Arc::new(CalcitFnTypeAnnotation {
+        open_reason: Default::default(),
+        cases: Default::default(),
+        guard: None,
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![Arc::new(arg)],
+        return_type: Arc::new(CalcitTypeAnnotation::Number),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })
+    };
+
+    let measure_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: calcit::calcit::FnOpenReasonNote(Some(calcit::calcit::FnOpenReason::Reflect)),
+      cases: Arc::new(vec![case_schema(CalcitTypeAnnotation::Nil), case_schema(CalcitTypeAnnotation::Tag)]),
+      guard: None,
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+
+    // 1. Verifying `:cases` must not emit E_LEGACY_NIL_USAGE for `(nil? x)` on narrowed `Tag`,
+    //    and must not duplicate W_RUNTIME_TYPE_PREDICATE across every case specialization.
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(
+      "defn measure (x)\n  cond\n    (nil? x) 0\n    (tag? x) 7\n    true 1\ndefn main! ()\n  &+ (measure nil) (measure :ok)",
+    )
+    .expect("snippet parses");
+    annotate_snippet_macros(&mut file);
+    file.defs.get_mut("measure").expect("measure").schema = measure_schema;
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
+    let warnings = RefCell::new(Vec::new());
+    let (init_res, reload_res) = compile_entries(&entries, &warnings);
+    assert!(
+      init_res.is_ok() && reload_res.is_none_or(|res| res.is_ok()),
+      "polymorphic :cases with nil? must compile"
+    );
+    let (blocking, notes) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+    assert!(
+      blocking.is_empty(),
+      ":cases verification must not emit false blocking advisories: {blocking:?}"
+    );
+    let predicate_count = notes
+      .iter()
+      .filter(|a| a.code() == Some(snapshot::RUNTIME_TYPE_PREDICATE_WARNING))
+      .count();
+    assert_eq!(
+      predicate_count, 2,
+      "expected root pass notes once (nil? and tag?), without per-case duplication: {notes:?}"
+    );
+
+    // 2. Compiling an unrelated project helper during a `:cases` branch check still reports its own errors.
+    let helper_cases_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      open_reason: calcit::calcit::FnOpenReasonNote(Some(calcit::calcit::FnOpenReason::Reflect)),
+      cases: Arc::new(vec![case_schema(CalcitTypeAnnotation::Tag)]),
+      guard: None,
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let mut helper_snapshot = snapshot::Snapshot::default();
+    let mut helper_file = snapshot::create_file_from_snippet(
+      "defn helper-tag ()\n  if (nil? :a) 1 2\ndefn dispatch (x)\n  cond\n    (tag? x) (helper-tag)\n    true 0\ndefn main! ()\n  dispatch :ok",
+    )
+    .expect("helper snippet parses");
+    annotate_snippet_macros(&mut helper_file);
+    helper_file.defs.get_mut("dispatch").expect("dispatch").schema = helper_cases_schema;
+    helper_snapshot.files.insert("app.main".to_owned(), helper_file);
+    let helper_entries = prepare_snapshot_entries(helper_snapshot);
+    let err = run_check_only(&helper_entries).expect_err("called helper compiled during :cases check must still report dead nil?");
+    assert!(err.contains(snapshot::LEGACY_NIL_USAGE_ERROR), "{err}");
+  });
+}
