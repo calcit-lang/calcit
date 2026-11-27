@@ -6995,7 +6995,7 @@ fn preprocess_list_call(
           );
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
           if let Calcit::Proc(proc) = call_head {
-            note_legacy_proc_migration(proc, head, &args, call_location.clone(), file_ns);
+            note_legacy_proc_migration(proc, xs, head, &args, call_location.clone(), call_stack, file_ns);
           }
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
@@ -11232,6 +11232,41 @@ fn calcit_head_matches_core_name(node: &Calcit, target_name: &str) -> bool {
   }
 }
 
+fn find_list_ptr_coord(node: &Calcit, target: &Arc<CalcitList>, target_head: &str, coord: &mut Vec<u16>) -> Option<Vec<u16>> {
+  let Calcit::List(items) = node else {
+    return None;
+  };
+  if Arc::ptr_eq(items, target) && calcit_head_matches_core_name(node, target_head) {
+    return Some(coord.clone());
+  }
+  for (idx, child) in items.iter().enumerate() {
+    let Ok(index) = u16::try_from(idx) else {
+      continue;
+    };
+    coord.push(index);
+    if let Some(found) = find_list_ptr_coord(child, target, target_head, coord) {
+      return Some(found);
+    }
+    coord.pop();
+  }
+  None
+}
+
+fn find_list_location_in_call_stack(
+  xs: &Arc<CalcitList>,
+  target_head: &str,
+  call_stack: &CallStackList,
+  file_ns: &str,
+) -> Option<NodeLocation> {
+  let frame = call_stack
+    .0
+    .iter()
+    .find(|frame| matches!(frame.kind, StackKind::Fn) && frame.ns.as_ref() == file_ns && frame.def.as_ref() != GENERATED_DEF)?;
+  let mut coord = vec![];
+  find_list_ptr_coord(&frame.code, xs, target_head, &mut coord)
+    .map(|found| NodeLocation::new(frame.ns.clone(), frame.def.clone(), Arc::from(found)))
+}
+
 fn find_proc_call_location_in_source(proc_name: &str, processed_args: &CalcitList, file_ns: &str) -> Option<NodeLocation> {
   let arg_location = processed_args.iter().find_map(|arg| {
     find_calcit_location_matching(arg, |location| {
@@ -11260,9 +11295,11 @@ fn find_proc_call_location_in_source(proc_name: &str, processed_args: &CalcitLis
 
 fn note_legacy_proc_migration(
   proc: &CalcitProc,
+  xs: &Arc<CalcitList>,
   head: &Calcit,
   processed_args: &CalcitList,
   call_location: Option<NodeLocation>,
+  call_stack: &CallStackList,
   file_ns: &str,
 ) {
   if file_ns.starts_with(calcit::CORE_NS)
@@ -11287,7 +11324,9 @@ fn note_legacy_proc_migration(
     }
     source_match.or(call_location)
   } else {
-    call_location.or_else(|| find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns))
+    call_location
+      .or_else(|| find_list_location_in_call_stack(xs, proc.as_ref(), call_stack, file_ns))
+      .or_else(|| find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns))
   };
   note_legacy_migration_core_call(calcit::CORE_NS, proc.as_ref(), location, file_ns);
 }
@@ -15958,6 +15997,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
     chain = generated_if(test, bind_payload(binding, body), chain, file_ns);
   }
 
+  note_legacy_migration_core_call(calcit::CORE_NS, "data-view", derive_list_call_expr_location(call), file_ns);
   let lowered = generated_let(value_sym, call[1].to_owned(), chain, file_ns);
   let _tail = tail_context::TailScope::forward();
   Ok(Some(preprocess_expr(
