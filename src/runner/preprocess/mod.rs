@@ -1021,6 +1021,21 @@ pub fn push_advisory(advisory: LocatedWarning) {
   }
 }
 
+fn advisories_len() -> usize {
+  ADVISORIES.lock().expect("lock advisories").len()
+}
+
+fn rollback_body_advisories(since: usize, ns: &str, def: &str) {
+  let mut list = ADVISORIES.lock().expect("lock advisories");
+  let mut index = 0;
+  list.retain(|advisory| {
+    let location = advisory.location();
+    let retain = index < since || location.ns.as_ref() != ns || location.def.as_ref() != def;
+    index += 1;
+    retain
+  });
+}
+
 /// Takes the advisories collected so far, oldest first.
 pub fn take_advisories() -> Vec<LocatedWarning> {
   MACRO_ERASURE_SITES.lock().expect("lock macro erasure sites").clear();
@@ -1049,6 +1064,8 @@ pub fn is_blocking_advisory(advisory: &LocatedWarning) -> bool {
         | crate::snapshot::OPTION_NIL_CHECK_ERROR
         | crate::snapshot::UNBOUND_TYPE_SLOT_ERROR
         | crate::snapshot::OPEN_WITHOUT_REASON_ERROR
+        | crate::snapshot::LEGACY_NIL_USAGE_ERROR
+        | crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR
     )
   ) || advisory.code().is_some_and(effect_features::is_blocking_code)
 }
@@ -3898,20 +3915,23 @@ fn preprocess_generated_specialization(
 /// preprocessed is user code again: its own diagnostics must not be suppressed
 /// (and then lost once the compiled definition is cached).
 struct OutsideGeneratedSpecialization {
-  outer: bool,
+  outer_generated: bool,
+  outer_recheck: bool,
 }
 
 impl OutsideGeneratedSpecialization {
   fn enter() -> Self {
     Self {
-      outer: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
+      outer_generated: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
+      outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(false)),
     }
   }
 }
 
 impl Drop for OutsideGeneratedSpecialization {
   fn drop(&mut self) {
-    IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer));
+    IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer_generated));
+    IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
   }
 }
 
@@ -3926,6 +3946,10 @@ thread_local! {
   /// synthetic guards (such as `nil?` on an Option) are not user code and
   /// must not raise blocking diagnostics.
   static IN_GENERATED_SPECIALIZATION: Cell<bool> = const { Cell::new(false) };
+  /// Set while `recheck_let_lambda_call` re-preprocesses an already-checked lambda
+  /// body under one call's argument types (#1655). Suppresses body-level migration
+  /// advisories from leaking into global `ADVISORIES` for polymorphic lambdas.
+  static IN_LET_LAMBDA_RECHECK: Cell<bool> = const { Cell::new(false) };
 }
 
 fn generated_optional_value(value: Calcit, file_ns: &str) -> Calcit {
@@ -5887,7 +5911,6 @@ fn preprocess_list_call(
       // helper too, but its call head is not the helper name.
       if matches!(&head_form, Calcit::Import(_)) {
         warn_on_direct_option_helper_call(&info, head, file_ns, check_warnings);
-        note_legacy_migration_core_call(&info.def_ns, info.name.as_ref(), call_location.clone(), file_ns);
       }
       preprocess_known_function_call(
         info,
@@ -6978,7 +7001,19 @@ fn preprocess_list_call(
           );
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
           if let Calcit::Proc(proc) = call_head {
-            note_legacy_proc_migration(proc, xs, head, &args, call_location.clone(), call_stack, file_ns);
+            note_legacy_proc_migration(
+              proc,
+              xs,
+              head,
+              &args,
+              &processed_args,
+              ProcCallSite {
+                call_location: call_location.clone(),
+                call_stack,
+                scope_types,
+                file_ns,
+              },
+            );
           }
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
@@ -7890,6 +7925,9 @@ fn preprocess_known_function_call(
       call_stack,
       call_location.clone(),
     ));
+  }
+  if matches!(&head_form, Calcit::Import(_)) {
+    note_legacy_fn_migration(info.as_ref(), &processed_call_args, scope_types, call_location.clone(), file_ns);
   }
   let mut call_has_type_warnings = false;
   if !has_spread {
@@ -11111,21 +11149,21 @@ fn note_percent_struct_literal(info: &CalcitMacro, head: &Calcit, args: &CalcitL
 fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, String)> {
   match name {
     ";nil" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
-      "[Warn] legacy `;nil` returns nil; replace it with `&unit` (for no-value statements) or `Option :none` (for absence)".to_owned(),
+      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
+      "[Error] legacy `;nil` returns nil; replace it with `&unit` (for no-value statements) or `Option :none` (for absence)".to_owned(),
     )),
     "either" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
-      "[Warn] legacy `either` branches on nil; migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`".to_owned(),
+      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
+      "[Error] legacy `either` branches on nil; migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`".to_owned(),
     )),
     "non-nil!" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
-      "[Warn] legacy `non-nil!` asserts against nil at runtime; migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`"
+      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
+      "[Error] legacy `non-nil!` asserts against nil at runtime; migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`"
         .to_owned(),
     )),
     "keys-non-nil" | "merge-non-nil" | "&merge-non-nil" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
-      format!("[Warn] legacy `{name}` treats nil map values as absent; store `Option<V>` or omit absent keys instead"),
+      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
+      format!("[Error] legacy `{name}` treats nil map values as absent; store `Option<V>` or omit absent keys instead"),
     )),
     "nil?" | "non-nil?" => Some((
       crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING,
@@ -11147,21 +11185,187 @@ fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, 
       ),
     )),
     "%::" => Some((
-      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
-      "[Warn] `%::` constructs a dynamic enum prototype; prefer a closed nominal `defenum` with direct constructors (`Enum :variant …`)"
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
+      "[Error] `%::` constructs a dynamic enum prototype; prefer a closed nominal `defenum` with direct constructors (`Enum :variant …`)"
         .to_owned(),
     )),
     "%{} _" => Some((
-      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
-      "[Warn] `%{} _` constructs an anonymous struct prototype; prefer a closed nominal `defstruct` with direct constructors (`Struct :field value`)"
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
+      "[Error] `%{} _` constructs an anonymous struct prototype; prefer a closed nominal `defstruct` with direct constructors (`Struct :field value`)"
         .to_owned(),
     )),
     _ => None,
   }
 }
 
+fn is_concrete_non_nullable_type_inner(ty: &CalcitTypeAnnotation, visited_unions: &mut HashSet<String>) -> bool {
+  match ty {
+    CalcitTypeAnnotation::Bool
+    | CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Symbol
+    | CalcitTypeAnnotation::Tag
+    | CalcitTypeAnnotation::Unit
+    | CalcitTypeAnnotation::List(_)
+    | CalcitTypeAnnotation::Tuple(_)
+    | CalcitTypeAnnotation::Map(_, _)
+    | CalcitTypeAnnotation::Set(_)
+    | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::BufList
+    | CalcitTypeAnnotation::CirruQuote
+    | CalcitTypeAnnotation::Ref(_)
+    | CalcitTypeAnnotation::StructValue(_)
+    | CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::StructDef(_)
+    | CalcitTypeAnnotation::EnumValue(_)
+    | CalcitTypeAnnotation::Enum(_, _)
+    | CalcitTypeAnnotation::EnumDef(_)
+    | CalcitTypeAnnotation::AnonymousEnum
+    | CalcitTypeAnnotation::Fn(_)
+    | CalcitTypeAnnotation::DynFn
+    | CalcitTypeAnnotation::Method
+    | CalcitTypeAnnotation::Macro(_)
+    | CalcitTypeAnnotation::Trait(_)
+    | CalcitTypeAnnotation::TraitSet(_)
+    | CalcitTypeAnnotation::DynTrait(_)
+    | CalcitTypeAnnotation::FfiResource
+    | CalcitTypeAnnotation::Any => true,
+    CalcitTypeAnnotation::Custom(value) => {
+      matches!(value.as_ref(), Calcit::Trait(_) | Calcit::Impl(_))
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "struct")
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "struct-def")
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "enum-def")
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "union-def")
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "trait")
+        || CalcitTypeAnnotation::custom_keyword_matches(value, "impl")
+    }
+    CalcitTypeAnnotation::Never
+    | CalcitTypeAnnotation::Dynamic
+    | CalcitTypeAnnotation::Nil
+    | CalcitTypeAnnotation::Nullable(_, _)
+    | CalcitTypeAnnotation::TypeVar(_)
+    | CalcitTypeAnnotation::TypeSlot(_)
+    | CalcitTypeAnnotation::Variadic(_)
+    | CalcitTypeAnnotation::Syntax(_)
+    | CalcitTypeAnnotation::JsObject => false,
+    CalcitTypeAnnotation::TypeRef(name, _) => {
+      if ty.resolve_to_enum().is_some() || ty.resolve_to_struct().is_some() || ty.resolve_to_fn().is_some() {
+        return true;
+      }
+      if let Some(union_def) = ty.resolve_to_union() {
+        if !visited_unions.insert(name.as_ref().to_owned()) {
+          return true;
+        }
+        return union_def.checked_members().is_ok_and(|members| {
+          !members.is_empty()
+            && members
+              .iter()
+              .all(|m| is_concrete_non_nullable_type_inner(m.annotation.as_ref(), visited_unions))
+        });
+      }
+      false
+    }
+  }
+}
+
+fn is_concrete_non_nullable_type(ty: &CalcitTypeAnnotation) -> bool {
+  is_concrete_non_nullable_type_inner(ty, &mut HashSet::new())
+}
+
+enum NilPredicateTarget {
+  AlreadyHandledBySpecificDiagnostic,
+  ConcreteNonNullable(Arc<CalcitTypeAnnotation>),
+  OpenOrNullable,
+}
+
+fn classify_nil_predicate_target(arg: &Calcit, scope_types: &ScopeTypes) -> NilPredicateTarget {
+  if let Calcit::Symbol { sym, .. } | Calcit::Local(CalcitLocal { sym, .. }) = arg
+    && DATA_VIEW_GUARD_LOCALS.with(|locals| locals.borrow().contains(sym))
+  {
+    return NilPredicateTarget::AlreadyHandledBySpecificDiagnostic;
+  }
+  let Some(raw) = resolve_type_value(arg, scope_types) else {
+    return NilPredicateTarget::OpenOrNullable;
+  };
+  if matches!(raw.as_ref(), CalcitTypeAnnotation::Nullable(_, calcit::NullableOrigin::JsHost)) {
+    return NilPredicateTarget::AlreadyHandledBySpecificDiagnostic;
+  }
+  let expanded = CalcitTypeAnnotation::expand_schema_alias(&raw);
+  if nominal_enum_type_name(raw.as_ref()).is_some() || nominal_enum_type_name(expanded.as_ref()).is_some() {
+    return NilPredicateTarget::AlreadyHandledBySpecificDiagnostic;
+  }
+  if is_concrete_non_nullable_type(expanded.as_ref()) {
+    NilPredicateTarget::ConcreteNonNullable(expanded)
+  } else {
+    NilPredicateTarget::OpenOrNullable
+  }
+}
+
+fn note_legacy_nil_predicate_migration(
+  name: &str,
+  arg: &Calcit,
+  scope_types: &ScopeTypes,
+  location: Option<NodeLocation>,
+  file_ns: &str,
+) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+    return;
+  }
+  let Some(location) = location else {
+    return;
+  };
+  if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
+    return;
+  }
+  match classify_nil_predicate_target(arg, scope_types) {
+    NilPredicateTarget::AlreadyHandledBySpecificDiagnostic => {}
+    NilPredicateTarget::ConcreteNonNullable(ty) => {
+      let always_result = name == "non-nil?";
+      let message = format!(
+        "[Error] `{name}` on non-nullable type `{}` is always {always_result}; remove the dead nil check or model absence with `Option<T>`",
+        ty.to_brief_string()
+      );
+      push_advisory(LocatedWarning::new_with_detail(
+        message,
+        location,
+        Some(crate::snapshot::LEGACY_NIL_USAGE_ERROR.to_owned()),
+        None,
+      ));
+    }
+    NilPredicateTarget::OpenOrNullable => {
+      note_legacy_migration_core_call(calcit::CORE_NS, name, Some(location), file_ns);
+    }
+  }
+}
+
+fn note_legacy_fn_migration(
+  info: &CalcitFn,
+  processed_args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_location: Option<NodeLocation>,
+  file_ns: &str,
+) {
+  if info.def_ns.as_ref() != calcit::CORE_NS {
+    return;
+  }
+  if info.name.as_ref() == "non-nil?"
+    && let Ok(expanded) = type_inference::expand_literal_call_arguments(processed_args)
+    && expanded.len() == 1
+    && let Some(arg) = expanded.first()
+  {
+    note_legacy_nil_predicate_migration(info.name.as_ref(), arg, scope_types, call_location, file_ns);
+    return;
+  }
+  note_legacy_migration_core_call(&info.def_ns, info.name.as_ref(), call_location, file_ns);
+}
+
 fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
-  if def_ns != calcit::CORE_NS || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || def_ns != calcit::CORE_NS
+    || file_ns.starts_with(calcit::CORE_NS)
+    || !should_emit_project_source_lint(file_ns)
+  {
     return;
   }
   let Some(location) = location else {
@@ -11276,15 +11480,27 @@ fn find_proc_call_location_in_source(proc_name: &str, processed_args: &CalcitLis
   None
 }
 
+struct ProcCallSite<'a> {
+  call_location: Option<NodeLocation>,
+  call_stack: &'a CallStackList,
+  scope_types: &'a ScopeTypes,
+  file_ns: &'a str,
+}
+
 fn note_legacy_proc_migration(
   proc: &CalcitProc,
   xs: &Arc<CalcitList>,
   head: &Calcit,
+  raw_args: &CalcitList,
   processed_args: &CalcitList,
-  call_location: Option<NodeLocation>,
-  call_stack: &CallStackList,
-  file_ns: &str,
+  site: ProcCallSite<'_>,
 ) {
+  let ProcCallSite {
+    call_location,
+    call_stack,
+    scope_types,
+    file_ns,
+  } = site;
   if file_ns.starts_with(calcit::CORE_NS)
     || !should_emit_project_source_lint(file_ns)
     || legacy_migration_advisory_for_core_name(proc.as_ref()).is_none()
@@ -11292,7 +11508,7 @@ fn note_legacy_proc_migration(
     return;
   }
   let location = if *proc == CalcitProc::NativeNamedEnumNew {
-    let source_match = find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns);
+    let source_match = find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns);
     let written_percent_enum = source_match.is_some()
       || matches!(
         head,
@@ -11309,8 +11525,16 @@ fn note_legacy_proc_migration(
   } else {
     call_location
       .or_else(|| find_list_location_in_call_stack(xs, proc.as_ref(), call_stack, file_ns))
-      .or_else(|| find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns))
+      .or_else(|| find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns))
   };
+  if *proc == CalcitProc::NilQuestion
+    && let Ok(expanded) = type_inference::expand_literal_call_arguments(processed_args)
+    && expanded.len() == 1
+    && let Some(arg) = expanded.first()
+  {
+    note_legacy_nil_predicate_migration(proc.as_ref(), arg, scope_types, location, file_ns);
+    return;
+  }
   note_legacy_migration_core_call(calcit::CORE_NS, proc.as_ref(), location, file_ns);
 }
 
@@ -18105,6 +18329,7 @@ pub fn preprocess_defn(
       let initial_forms = borrows_capture_refinements.then(|| xs.clone());
       let initial_processed_body = borrows_capture_refinements.then(|| processed_body.clone());
       let initial_warnings = ctx.check_warnings.borrow().len();
+      let initial_advisories = advisories_len();
       let initial_expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len()));
       let initial_usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len));
       let initial_proof_errors =
@@ -18195,6 +18420,7 @@ pub fn preprocess_defn(
           warning_index += 1;
           retain
         });
+        rollback_body_advisories(initial_advisories, info.at_ns.as_ref(), info.at_def.as_ref());
         if let Some(len) = initial_expressions {
           SOURCE_EXPRESSION_TRACE.with(|trace| {
             if let Some(trace) = trace.borrow_mut().as_mut() {
@@ -18858,14 +19084,21 @@ fn recheck_let_lambda_call(
   // The body was traced when it was bound; a re-check must not add a second
   // expression at the same source path.
   let suspended_trace = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(None));
-  struct ResumeTrace(Option<SourceExpressionTrace>);
+  struct ResumeTrace {
+    trace: Option<SourceExpressionTrace>,
+    outer_recheck: bool,
+  }
   impl Drop for ResumeTrace {
     fn drop(&mut self) {
-      let trace = self.0.take();
+      IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
+      let trace = self.trace.take();
       SOURCE_EXPRESSION_TRACE.with(|current| current.replace(trace));
     }
   }
-  let resume_trace = ResumeTrace(suspended_trace);
+  let resume_trace = ResumeTrace {
+    trace: suspended_trace,
+    outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(true)),
+  };
   let rechecked = explicit_open::with_scope_locals(&lambda.scope_locals, || {
     preprocess_expr(&lambda.form, &lambda.scope_defs, &mut types, file_ns, &warnings, call_stack)
   });

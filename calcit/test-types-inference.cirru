@@ -1524,8 +1524,8 @@
                   {} (|a 1) (|b 2) (|c 3)
                   fn (k v)
                     if (> v 1)
-                      %:: MapEntryDecision :keep (str k |!) (* v 10)
-                      %:: MapEntryDecision :drop
+                      MapEntryDecision :keep (str k |!) (* v 10)
+                      MapEntryDecision :drop
               assert-type output $ Map String Number
               &inspect-type output
           :examples $ []
@@ -2015,14 +2015,14 @@
             let
                 addr $ Address :city |sh
                 person $ Person :name |n :age 20 :address addr
-                job $ Job :title |dev :status $ %:: Status :ok 1
+                job $ Job :title |dev :status $ Status :ok 1
               assert-type person $ :: Person
               assert-type job $ :: Job
               &inspect-type person
               &inspect-type job
               let
-                  wrapped $ %:: PersonWrap :person person
-                  outcome $ %:: Outcome :status $ %:: Status :ok 2
+                  wrapped $ PersonWrap :person person
+                  outcome $ Outcome :status $ Status :ok 2
                 assert-type wrapped PersonWrap
                 assert-type outcome Outcome
                 &inspect-type wrapped
@@ -2106,16 +2106,16 @@
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-option)
-            :code $ quote $ assert= false
-              test-types-inference.shadow/foreign-option-is-nil $ test-types-inference.shadow/Option :none
+            :code $ quote $ assert= true
+              test-types-inference.shadow/foreign-option-is-none $ test-types-inference.shadow/Option :none
             :tags $ #{} :unit
         'Result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
           :schema $ quote EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-result)
-            :code $ quote $ assert= false
-              test-types-inference.shadow/foreign-result-is-nil $ test-types-inference.shadow/Result :ok 1
+            :code $ quote $ assert= true
+              test-types-inference.shadow/foreign-result-is-ok $ test-types-inference.shadow/Result :ok 1
             :tags $ #{} :unit
         'ShadowFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ShadowFields
@@ -2125,14 +2125,20 @@
             :other-result test-types-inference.shadow/Result
           :examples $ []
           :schema $ quote StructDef
-        'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn foreign-option-is-nil (value)
+        'foreign-option-is-none $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn foreign-option-is-none (value)
             assert-type value $ Option Number
-            nil? value
+            match value
+              (:none) true
+              (:some _) false
           :examples $ []
           :schema $ quote $ Fn (Option Number) (-> Bool)
-        'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
+        'foreign-result-is-ok $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn foreign-result-is-ok (value)
+            assert-type value 'Result
+            match value
+              (:ok _) true
+              (:err _) false
           :examples $ []
           :schema $ quote $ Fn Result (-> Bool)
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)

@@ -51,10 +51,10 @@
         'accept-members $ %{} 'CodeEntry
           :doc "|Named members fit and the result keeps the concrete type."
           :code $ quote $ defn accept-members ()
-            needs-color $ same-enum $ %:: Color :red
+            needs-color $ same-enum $ Color :red
             needs-point $ same-struct $ %{} Point (:x 1) (:y 2)
-            count-both (%:: Color :red) (%:: Color :green)
-            forward $ %:: Color :green
+            count-both (Color :red) (Color :green)
+            forward $ Color :green
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
@@ -88,7 +88,7 @@
           :schema $ quote $ Fn Dynamic (-> Unit)
         'reject-enum-for-struct $ %{} 'CodeEntry (:doc "|An enum does not fit a struct family bound.")
           :code $ quote $ defn reject-enum-for-struct ()
-            same-struct $ %:: Color :red
+            same-struct $ Color :red
             , &unit
           :examples $ []
           :schema $ quote $ Fn (-> Unit)

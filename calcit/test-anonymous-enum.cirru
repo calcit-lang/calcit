@@ -23,7 +23,7 @@
             assert= :many $ try-size $ :: :dyn 1 2 3 4
             assert= :many $ try-size $ :: :dyn 1 2 3 4 5
             let
-                ok $ %:: Result :ok 1
+                ok $ Result :ok 1
               assert= (Some Result) (enum-definition ok)
               assert= "|(%:: 'Result :ok 1)" $ str ok
               assert= true $ &enum-def:has-variant? Result :ok

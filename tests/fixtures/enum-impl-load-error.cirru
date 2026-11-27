@@ -27,7 +27,7 @@
           :examples $ []
           :schema $ quote $ Fn app.core/%Atom (-> Number)
         'make-atom $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn make-atom () (%:: %Atom :atom 1)
+          :code $ quote $ defn make-atom () (%Atom :atom 1)
           :examples $ []
           :schema $ quote $ Fn (-> app.core/%Atom)
       :ns $ %{} 'NsEntry (:doc |)

@@ -221,7 +221,12 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   let mut codes = Vec::new();
   collect_codes(&strict_report["data"]["definitions"], &mut codes);
   assert!(!codes.is_empty(), "the kept erasures should be reported as errors");
-  assert!(codes.iter().all(|code| code == "E_OPTION_ERASED_TO_NIL"), "{codes:?}");
+  assert!(
+    codes
+      .iter()
+      .all(|code| matches!(code.as_str(), "E_OPTION_ERASED_TO_NIL" | "E_LEGACY_NIL_USAGE")),
+    "{codes:?}"
+  );
   let failed = strict_report["data"]["definitions"]
     .as_array()
     .expect("definitions array")
@@ -229,13 +234,13 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     .filter(|item| item["status"] == "failed")
     .map(|item| item["definition"].as_str().unwrap())
     .collect::<std::collections::BTreeSet<_>>();
-  // Exactly the erasing definitions fail; the non-erasing ones (and the
-  // `nil-macro-match` replay, which package.json runs on native and JS) pass.
+  // Both Option erasures and legacy `;nil`/`either` definitions fail strict check.
   assert_eq!(
     failed,
     std::collections::BTreeSet::from([
       "app.other/unwrap-value",
       "app.roundtrip/match-value",
+      "app.roundtrip/nil-macro-match",
       "app.roundtrip/nil-macro-prefix",
       "app.roundtrip/nil-macro-receiver",
       "app.roundtrip/read-field",
@@ -245,13 +250,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     ])
   );
   let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
-  assert_eq!(notes.len(), 4, "{notes:?}");
-  assert!(
-    notes
-      .iter()
-      .all(|note| note["code"] == "W_LEGACY_NIL_USAGE" && note["severity"] == "note"),
-    "{notes:?}"
-  );
+  assert!(notes.is_empty(), "legacy nil usages moved to blocking errors: {notes:?}");
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
   assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];

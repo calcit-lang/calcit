@@ -174,7 +174,7 @@
             assert= false $ = (:: :t 1) (:: :t 1 2)
             let
                 a $ :: :a 1
-                b $ %:: Demo :a 1
+                b $ Demo :a 1
               assert= true $ any? (&enum:impls b)
                 fn (impl)
                   includes? (str impl) |DemoGetTrait
@@ -204,9 +204,9 @@
                 *a $ ref 1
               assert= 1 $ .deref *a
               assert= 1 $ &atom:deref *a
-            assert= 1 $ .deref $ %:: AtomBox :atom 1
-            assert= 1 $ .deref $ %:: AtomBox :atom 1
-            assert= 2 $ .deref $ %:: AtomBox :atom 2
+            assert= 1 $ .deref $ AtomBox :atom 1
+            assert= 1 $ .deref $ AtomBox :atom 1
+            assert= 2 $ .deref $ AtomBox :atom 2
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'test-buffer $ %{} 'CodeEntry (:doc |)
@@ -245,14 +245,13 @@
             assert-detect fn? &=
             inside-eval: $ assert-detect macro? cond
             assert-detect set? $ #{} 1 2 3
-            assert= 1 $ either nil 1
-            assert= 2 $ either 2 1
-            assert= nil $ either nil nil
-            assert= false $ either false true
-            assert= false $ either nil false true
-            assert= true $ either nil true
-            assert= true $ either nil nil true
-            assert= 2 $ either 2 $ raise "|should not be called"
+            assert= 1 $ .unwrap-or None 1
+            assert= 2 $ .unwrap-or (Some 2) 1
+            assert= false $ .unwrap-or (Some false) true
+            assert= true $ .unwrap-or None true
+            assert= 2 $ match (Some 2)
+              (:some v) v
+              (:none) (raise "|should not be called")
             assert= 2 $ def x 2
             assert= false $ and true true false
             assert= false $ and true false true
@@ -284,7 +283,7 @@
               {,} :a $ [] 1
               [] :a 1
             assert= false $ .ok? $ get-in ([] 1 2 3) ([] :a)
-            assert= 1 $ non-nil! 1
+            assert= 1 $ .unwrap (Some 1)
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-display-stack $ %{} 'CodeEntry (:doc |)
@@ -388,7 +387,7 @@
         'test-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing method")
             let
-                a0 $ %:: NumBox :number 0
+                a0 $ NumBox :number 0
                 _ $ do (assert-type a0 NumBox)
                   let
                       a0-tuple a0
@@ -404,7 +403,7 @@
                 let
                     a2 $ .inc a1
                   assert-traits a2 NumTrait calcit.core/Debug
-                  assert= (%:: NumBox :number 2) a2
+                  assert= (NumBox :number 2) a2
                   assert= |1 $ .show a1
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
@@ -431,7 +430,7 @@
               assert= 2 @*local
               assert= (type-of *local) (type-of *ref-demo)
             let
-                v $ %:: ValueBox :value 1
+                v $ ValueBox :value 1
               assert-type v ValueBox
               assert= 2 $ .deref v
               assert= (Some 1) (nth v 1)

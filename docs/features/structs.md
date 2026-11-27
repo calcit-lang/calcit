@@ -522,7 +522,9 @@ Use `_` as the definition marker when a short-lived struct does not need a named
 
 ### Creating an Anonymous Struct
 
-```cirru
+默认严格检查已将 `%{} _` 升级为阻断错误 `E_LEGACY_DYNAMIC_STYLE`；新代码请声明 `defstruct` 并使用直接构造器（或显式开放 `Map`）：
+
+```cirru.no-check
 %{} _ (:name |John) (:age 30)
 
 ; => $ %{} _ (:age 30) (:name |John)

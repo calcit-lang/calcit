@@ -10,6 +10,23 @@
   :files $ {} $ 'test-types.main
     %{} 'FileEntry
       :defs $ {}
+        'CoherentResult $ %{} 'CodeEntry (:doc "|Enum with top-level coherent impls")
+          :code $ quote $ defenum CoherentResult (:ok Number) (:err String) (:impls EnumMetadata ResultTrait)
+          :examples $ []
+          :schema $ quote EnumDef
+        'CoherentResultEnumImpl $ %{} 'CodeEntry (:doc "|Trait impl for CoherentResult enum metadata")
+          :code $ quote $ defimpl CoherentResult EnumMetadata
+            .dummy $ fn $ self
+          :examples $ []
+          :schema $ quote Impl
+        'CoherentResultImpl $ %{} 'CodeEntry (:doc "|Trait impl for CoherentResult result tests")
+          :code $ quote $ defimpl CoherentResult ResultTrait
+            .describe $ fn (self)
+              match self
+                (:ok value) (str "|ok " value)
+                (:err msg) (str "|err " msg)
+          :examples $ []
+          :schema $ quote Impl
         'EnumImpl $ %{} 'CodeEntry (:doc "|Trait impl for enum metadata")
           :code $ quote $ defimpl Result EnumMetadata
             .dummy $ fn $ self
@@ -261,21 +278,20 @@
               &+ final-result 5
           :examples $ []
           :schema $ quote $ Fn Number Number (-> Number)
-        'test-defstruct-defenum $ %{} 'CodeEntry (:doc "|Smoke test for defstruct/defenum and %:: tuples")
+        'test-defstruct-defenum $ %{} 'CodeEntry (:doc "|Smoke test for defstruct/defenum and direct enum constructors")
           :code $ quote $ defn test-defstruct-defenum ()
             assert= :struct-def $ type-of Person
             assert= :enum-def $ type-of Result
             assert= :struct-def $ type-of $ impl-traits Person StructImpl
             let
                 enum-with-impls $ impl-traits Result EnumImpl
-                enum-with-result-impls $ impl-traits enum-with-impls ResultImpl
-                ok $ %:: enum-with-result-impls :ok 1
+                ok $ CoherentResult :ok 1
               assert= :enum-def $ type-of enum-with-impls
               assert= true $ any? (&enum:impls ok)
                 fn (impl)
                   = (impl-origin impl) (Some ResultTrait)
-              assert= (Some enum-with-result-impls) (enum-definition ok)
-              assert= "|(%:: 'Result :ok 1)" $ str ok
+              assert= (Some CoherentResult) (enum-definition ok)
+              assert= "|(%:: 'CoherentResult :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)

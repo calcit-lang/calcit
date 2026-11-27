@@ -1647,7 +1647,7 @@
                 value $ Some 1
               assert= (Some Option) (&enum:definition value)
               assert-type (&enum:definition value) (Option EnumDef)
-              assert= None $ &enum:definition $ %:: _ :anonymous 1
+              assert= None $ &enum:definition $ :: :anonymous 1
             :tags $ #{} :nominal-definition-proof :unit
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
@@ -5010,6 +5010,12 @@
           :schema $ quote $ Macro (& Syntax)
             -> $ Expr Nil
           :tags $ #{} :macro :deprecated
+          :tests $ [] $ %{} 'TestEntry (:name |ignores-body-and-returns-nil)
+            :code $ quote $ do
+              assert= nil $ ;nil
+              assert= nil $ ;nil (raise |must-not-run) :ignored
+              assert= nil $ calcit.core/;nil :ignored
+            :tags $ #{} :core :macro :unit
         '< $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn < (x & ys)
             if

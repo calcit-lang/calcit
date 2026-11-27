@@ -410,7 +410,7 @@ Runtime type validation is enforced at instance creation — passing the wrong t
 
 ## Automatic Anonymous-to-Named Enum Rewrite
 
-When a function parameter is typed as an enum, the preprocessor can rewrite an anonymous enum (`%:: _`) to the expected named definition.
+When a function parameter is typed as an enum, the preprocessor can rewrite an anonymous enum (`::`) to the expected named definition.
 
 ```cirru
 let
@@ -422,7 +422,7 @@ let
         (:err msg) :err
         _ :unknown
   ; The anonymous enum is rewritten to the expected named enum:
-  assert= :ok $ takes-result (%:: _ :ok)
+  assert= :ok $ takes-result (:: :ok)
   ; Equivalent to:
   assert= :ok $ takes-result (Result0 :ok)
 ```
@@ -430,7 +430,7 @@ let
 Requirements for the rewrite to trigger:
 
 - The function schema must reference a named enum or a union containing named enums; a bound type slot can supply this context.
-- The argument at the call site must be an anonymous enum literal (`%:: _`) with a literal tag.
+- The argument at the call site must be an anonymous enum literal (`::`) with a literal tag (`%:: _` triggers `E_LEGACY_DYNAMIC_STYLE`).
 - The relevant definitions must be resolvable at preprocess time. For a union, exactly one member enum must declare that tag; overlapping tags are not guessed, even when payload arities differ.
 
 The constructed variant's payload arity and types are checked. If no unique target is available, the literal is left unchanged; the ordinary argument type check can then reject it.

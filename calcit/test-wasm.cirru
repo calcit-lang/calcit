@@ -603,11 +603,11 @@
                 n0 $ NicheLink :label |tail :next None
                 n1 $ NicheLink :label |head :next $ Some n0
                 n2 $ NicheLink :label |copy :next $ :next n1
-                p1 $ %:: CompactPacket :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
-                p2 $ %:: CompactPacket :Pair true (assert-type 42 Int32)
+                p1 $ CompactPacket :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
+                p2 $ CompactPacket :Pair true (assert-type 42 Int32)
                   Some $ &str:concat |o |k
                   assert-type 7 UInt8
-                p-empty $ %:: CompactPacket :Empty
+                p-empty $ CompactPacket :Empty
                 niche-ok $ and
                     :next n0
                     , .none?
@@ -1003,8 +1003,8 @@
                 output $ filter-map-kv (&{} :a 1 :b 2 :c 3)
                   fn (k v)
                     if (&> v 1)
-                      %:: MapEntryDecision :keep k $ &* v 10
-                      %:: MapEntryDecision :drop
+                      MapEntryDecision :keep k $ &* v 10
+                      MapEntryDecision :drop
               &+ (&map:count output)
                 .unwrap $ &map:get output :c
           :examples $ []

@@ -3248,12 +3248,15 @@ fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<
 pub const LEGACY_TYPE_SYNTAX_WARNING: &str = "W_LEGACY_TYPE_SYNTAX";
 /// `%{} Struct` where the direct constructor applies (#2654); a non-blocking note.
 pub const PERCENT_STRUCT_LITERAL_WARNING: &str = "W_PERCENT_STRUCT_LITERAL";
-/// Legacy `nil`-oriented helpers (`either`, `;nil`, `non-nil!`, `keys-non-nil`, `merge-non-nil`).
-pub const LEGACY_NIL_USAGE_WARNING: &str = "W_LEGACY_NIL_USAGE";
+/// Legacy `nil`-oriented helpers (`either`, `;nil`, `non-nil!`, `keys-non-nil`, `merge-non-nil`)
+/// and `nil?`/`non-nil?` checks on concrete non-nullable types.
+pub const LEGACY_NIL_USAGE_ERROR: &str = "E_LEGACY_NIL_USAGE";
 /// Runtime type/nil predicates (`nil?`, `non-nil?`, `list?`, `type-of`, ...) that bypass static pattern matching.
 pub const RUNTIME_TYPE_PREDICATE_WARNING: &str = "W_RUNTIME_TYPE_PREDICATE";
-/// Legacy dynamic styles (`impl-traits`, `%{} _`, `%::`) replaced by nominal `(:impls …)` / `defenum` / `(Dyn Trait)`.
+/// Legacy dynamic styles (`impl-traits`) replaced by nominal `(:impls …)` / `(Dyn Trait)`.
 pub const LEGACY_DYNAMIC_STYLE_WARNING: &str = "W_LEGACY_DYNAMIC_STYLE";
+/// Legacy dynamic prototype construction (`%{} _`, `%::`) replaced by nominal `defstruct`/`defenum` direct constructors.
+pub const LEGACY_DYNAMIC_STYLE_ERROR: &str = "E_LEGACY_DYNAMIC_STYLE";
 pub const LEGACY_TYPE_SYNTAX_CODE: &str = "E_LEGACY_TYPE_SYNTAX";
 
 /// One-line Cirru for diagnostics: nested lists in parentheses, a trailing

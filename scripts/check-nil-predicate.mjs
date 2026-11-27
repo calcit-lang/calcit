@@ -16,22 +16,37 @@ const canonicalTests = core[":files"]["'calcit.core"].defs["'non-nil?"].tests;
 assert.deepEqual(canonicalTests.map(test => test.name).sort(), [
   "distinguishes-nil-from-values-and-option-variants", "typed-callers-preserve-non-nil-semantics",
 ]);
-// #2653: a direct `non-nil?` on an Option literal is E_OPTION_NIL_CHECK in
-// a project namespace, so the replay drops those two assertions and checks
-// the same runtime answer through the generic helpers below.
-// The literal is spelled `Option :some x` / `Option :none` or, since 0.41,
-// `Some x` / `None` (#2683).
+// #2653 / 0.47.0 (#2973): in a project namespace, `non-nil?` on Option literals
+// fails with E_OPTION_NIL_CHECK and `non-nil?` on concrete non-nullable types
+// fails with E_LEGACY_NIL_USAGE, so the project-namespace replay drops those
+// direct assertions and concrete `typed-bool`/`typed-number` bindings while
+// verifying generic helpers and checking concrete rejection explicitly below.
 const isOptionLiteral = arg => arg === "None"
   || (Array.isArray(arg) && (arg[0] === "Option" || arg[0] === "Some" || arg[0] === "None"));
-const isDirectOptionNilCheck = form => Array.isArray(form) && form[0] === "assert="
-  && Array.isArray(form[2]) && form[2][0] === "non-nil?" && isOptionLiteral(form[2][1]);
+const isDirectProjectRejectedNilCheck = form => Array.isArray(form) && form[0] === "assert="
+  && Array.isArray(form[2]) && form[2][0] === "non-nil?" && form[2][1] !== "nil";
+const isConcreteTypedCallerLet = form => Array.isArray(form) && form[0] === "let"
+  && Array.isArray(form[1])
+  && form[1].some(binding => Array.isArray(binding) && (binding[0] === "typed-bool" || binding[0] === "typed-number"));
 const tests = canonicalTests.map(test => {
   const code = test.code.__edn_quote;
-  return { ...test, code: { __edn_quote: code.filter(form => !isDirectOptionNilCheck(form)) } };
+  return {
+    ...test,
+    code: {
+      __edn_quote: code.filter(form => !isDirectProjectRejectedNilCheck(form) && !isConcreteTypedCallerLet(form)),
+    },
+  };
 });
-assert.equal(tests.flatMap(test => test.code.__edn_quote).filter(isDirectOptionNilCheck).length, 0);
-assert.equal(canonicalTests.flatMap(test => test.code.__edn_quote).filter(isDirectOptionNilCheck).length, 2,
-  "the canonical test still asserts `non-nil?` on both Option variants");
+assert.equal(tests.flatMap(test => test.code.__edn_quote).filter(isDirectProjectRejectedNilCheck).length, 0);
+assert.equal(tests.flatMap(test => test.code.__edn_quote).filter(isConcreteTypedCallerLet).length, 0);
+assert.equal(
+  canonicalTests
+    .flatMap(test => test.code.__edn_quote)
+    .filter(form => Array.isArray(form) && form[0] === "assert=" && Array.isArray(form[2]) && form[2][0] === "non-nil?" && isOptionLiteral(form[2][1]))
+    .length,
+  2,
+  "the canonical test still asserts `non-nil?` on both Option variants",
+);
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
@@ -65,10 +80,6 @@ try {
   run(snapshot, "query", "config");
   run(snapshot, "edit", "add-ns", "calcit.nil-predicate");
   run(snapshot, "edit", "add-ns", "calcit.nil-helper");
-  run(snapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
-    "quote $ defn typed-bool (x)\n  non-nil? x");
-  run(snapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
-    "quote $ Fn Bool (-> Bool)");
   run(snapshot, "edit", "def", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
     "quote $ defn generic (x)\n  non-nil? x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
@@ -79,7 +90,6 @@ try {
     "quote $ Fn T (-> Bool) (:generics T)");
 
   const extraAssertions = [
-    ["assert=", "true", ["calcit.nil-helper/typed-bool", "false"]],
     ["assert=", "true", ["calcit.nil-helper/generic", "false"]],
     ["assert=", "true", ["calcit.nil-helper/generic", "0"]],
     ["assert=", "false", ["calcit.nil-helper/generic", "nil"]],
@@ -126,6 +136,36 @@ try {
   wasm.exports["run-tests"]();
   assert.throws(() => wasm.exports["fail-predicate"](), WebAssembly.RuntimeError);
   console.log("Nil predicate definition tests passed on native / generated JS / core WASM");
+
+  const deadSchemaSnapshot = join(fixture, "dead-nil-schema.cirru");
+  await copyFile(snapshot, deadSchemaSnapshot);
+  run(deadSchemaSnapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
+    "quote $ defn typed-bool (x)\n  non-nil? x");
+  run(deadSchemaSnapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
+    "quote $ Fn Bool (-> Bool)");
+  run(deadSchemaSnapshot, "edit", "def", "calcit.nil-predicate/dead-schema-check", "--input-format", "cirru", "--code",
+    "quote $ defn dead-schema-check ()\n  calcit.nil-helper/typed-bool false");
+  run(deadSchemaSnapshot, "edit", "schema", "calcit.nil-predicate/dead-schema-check", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Bool)");
+  const deadSchemaRejected = spawnSync(binary, [
+    deadSchemaSnapshot, "--init-fn", "calcit.nil-predicate/dead-schema-check", "--reload-fn", "calcit.nil-predicate/dead-schema-check", "--check-only",
+  ], { encoding: "utf8", timeout: 60000 });
+  assert.ifError(deadSchemaRejected.error);
+  assert.notEqual(deadSchemaRejected.status, 0, "schema-typed concrete non-nil? check must fail in project source");
+  assert.match(deadSchemaRejected.stderr, /E_LEGACY_NIL_USAGE/);
+
+  const deadLiteralSnapshot = join(fixture, "dead-nil-literal.cirru");
+  await copyFile(snapshot, deadLiteralSnapshot);
+  run(deadLiteralSnapshot, "edit", "def", "calcit.nil-predicate/dead-literal-check", "--input-format", "cirru", "--code",
+    "quote $ defn dead-literal-check ()\n  non-nil? 0");
+  run(deadLiteralSnapshot, "edit", "schema", "calcit.nil-predicate/dead-literal-check", "--input-format", "cirru", "--code",
+    "quote $ Fn (-> Bool)");
+  const deadLiteralRejected = spawnSync(binary, [
+    deadLiteralSnapshot, "--init-fn", "calcit.nil-predicate/dead-literal-check", "--reload-fn", "calcit.nil-predicate/dead-literal-check", "--check-only",
+  ], { encoding: "utf8", timeout: 60000 });
+  assert.ifError(deadLiteralRejected.error);
+  assert.notEqual(deadLiteralRejected.status, 0, "literal concrete non-nil? check must fail in project source");
+  assert.match(deadLiteralRejected.stderr, /E_LEGACY_NIL_USAGE/);
 
   const openSnapshot = join(fixture, "open.cirru");
   await copyFile(snapshot, openSnapshot);

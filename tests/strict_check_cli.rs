@@ -2669,10 +2669,6 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
       "let ((xs $ assert-type ([] false) (List Bool)) (ys $ assert-type ([] 0) (List Number))) (&= xs ys)",
       "E_WASM_NIL_TYPE_EVIDENCE",
     ),
-    (
-      "let ((m $ assert-type (&{} :a 1) (Map Tag Dynamic))) (merge-non-nil (&{} :a 2) m)",
-      "E_WASM_NIL_TYPE_EVIDENCE",
-    ),
     ("&= (&{} :a 0) (&{} :a false)", "E_WASM_NIL_TYPE_EVIDENCE"),
     ("&= (&{} :a 0 :b |x) (&{} :a false :b |x)", "E_WASM_NIL_TYPE_EVIDENCE"),
     (
@@ -2968,7 +2964,7 @@ fn dynamic_bound_type_slots_fail_the_check() {
     &run_calcit(&snapshot, &["config", "set-type-slot", "dispatch-op", "app.main/Op"]),
     "bind the slot to a named type",
   );
-  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted $ %:: Op :ping)", true);
+  edit_definition(&snapshot, "main!", "quote $ defn main! () (slotted $ Op :ping)", true);
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "check with a named slot binding");
 }
 

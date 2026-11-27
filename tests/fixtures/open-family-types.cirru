@@ -77,24 +77,24 @@
               :code $ quote $ let
                   holder $ %{} Holder (:callback inc)
                     :item $ %{} Point $ :x 1
-                    :op $ %:: Op :reset
+                    :op $ Op :reset
                   changed $ .assoc holder :callback dec
                 assert= 0 $ call-any (:callback changed) 1
                 assert= true $ same-struct? (:item holder)
                   %{} Point $ :x 3
-                assert= (%:: Op :reset) (:op holder)
+                assert= (Op :reset) (:op holder)
               :tags $ #{} :open-family :unit
             %{} 'TestEntry (:name |dynamic-writes-check-the-family)
               :code $ quote $ let
                   holder $ %{} Holder (:callback inc)
                     :item $ %{} Point $ :x 1
-                    :op $ %:: Op :reset
+                    :op $ Op :reset
                 assert= true $ struct? $ checked-assoc holder :callback dec
                 assert= nil $ checked-assoc holder :callback 1
                 assert= nil $ checked-assoc holder :item 1
                 assert= nil $ checked-assoc holder :op 1
                 assert= true $ struct? $ checked-assoc holder :item $ %{} Point $ :x 2
-                assert= true $ struct? $ checked-assoc holder :op $ %:: Op :reset
+                assert= true $ struct? $ checked-assoc holder :op $ Op :reset
               :tags $ #{} :open-family :unit
             %{} 'TestEntry (:name |enum-callbacks-stay-compatible)
               :code $ quote $ let

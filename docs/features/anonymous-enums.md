@@ -13,16 +13,16 @@ parent: core/features
 # Anonymous Enums
 
 Anonymous enums are short-lived tagged values that do not need a named
-`defenum` declaration. Use `_` in the definition position:
+`defenum` declaration. Use `::` for anonymous enum construction (`%:: _` is rejected with `E_LEGACY_DYNAMIC_STYLE`):
 
 ```cirru
 let
-    value $ %:: _ :point 10 20
+    value $ :: :point 10 20
   println value
   ; => $ %:: _ :point 10 20
 ```
 
-The `_` marker makes the missing definition explicit. The old “tuple” name and
+The `_` marker in printed output makes the missing definition explicit. The old “tuple” name and
 `&tuple:*` native APIs have been removed; diagnostics point to their `enum`
 replacements.
 
@@ -33,7 +33,7 @@ the variant tag and payload values begin at index `1`.
 
 ```cirru
 let
-    value $ %:: _ :point 10 20
+    value $ :: :point 10 20
   assert= :point $ &enum:nth value 0
   assert= 10 $ &enum:nth value 1
   assert= 3 $ &enum:count value
@@ -49,7 +49,7 @@ available for exhaustiveness analysis:
 
 ```cirru
 let
-    value $ %:: _ :point 10 20
+    value $ :: :point 10 20
   assert= 30 $ match value
     (:point x y) (+ x y)
     _ 0
@@ -72,7 +72,7 @@ let
 ## Named Conversion
 
 When the expected function parameter type is a named enum, the preprocessor can
-rewrite `%:: _ :variant ...` to that named definition. A union or bound type
+rewrite `:: :variant ...` to that named definition. A union or bound type
 slot can also supply the context when exactly one member enum has that variant.
 Variant and payload validation then use the target `defenum` declaration;
 overlapping variant names are not resolved by guessing.

@@ -2568,7 +2568,7 @@ impl CalcitTypeAnnotation {
     }
   }
 
-  fn custom_keyword_matches(custom: &Calcit, keyword: &str) -> bool {
+  pub(crate) fn custom_keyword_matches(custom: &Calcit, keyword: &str) -> bool {
     match custom {
       Calcit::Tag(tag) => tag.ref_str().trim_start_matches(':') == keyword,
       _ => false,

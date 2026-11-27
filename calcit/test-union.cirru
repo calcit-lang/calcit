@@ -23,12 +23,12 @@
             :code $ quote $ do
               assert= |accepted $ try
                 do
-                  %:: CellPatch :set $ erased-cells $ segment-raw ([] 1 2)
+                  CellPatch :set $ erased-cells $ segment-raw ([] 1 2)
                   , |accepted
                 fn (e) |rejected
               assert= |rejected $ try
                 do
-                  %:: CellPatch :set $ erased-cells $ segment-raw ([] 1 |bad)
+                  CellPatch :set $ erased-cells $ segment-raw ([] 1 |bad)
                   , |accepted
                 fn (e) |rejected
             :tags $ #{} :union :unit
@@ -113,7 +113,7 @@
             :code $ quote $ assert= |accepted
               try
                 do
-                  %:: LoopBox :hold $ erased-loop $ self-holding-ref
+                  LoopBox :hold $ erased-loop $ self-holding-ref
                   , |accepted
                 fn (e) |rejected
             :tags $ #{} :union :unit
