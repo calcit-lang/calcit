@@ -142,13 +142,19 @@ let
       {} (:a 1) (:b 2)
       {} (:b 3) (:c 4)
       {} (:d 5)
-    result2 $ &merge-non-nil
-      {} (:a 1) (:b nil)
-      {} (:b 2) (:c 3)
+    result2 $ filter-map-kv
+      assert-type
+        {} (:a (Some 1)) (:b None) (:c (Some 3))
+        Map Tag $ Option Number
+      fn (k v)
+        hint-fn $ Fn Tag (Option Number) (-> (MapEntryDecision Tag Number))
+        match v
+          (:some n) (MapEntryDecision :keep k n)
+          (:none) (MapEntryDecision :drop)
   println result1
   ; => {} (:a 1) (:b 3) (:c 4) (:d 5)
   println result2
-  ; => {} (:a 1) (:b 2) (:c 3)
+  ; => {} (:a 1) (:c 3)
 ```
 
 ## String Manipulation
@@ -348,7 +354,7 @@ match action
     js/console.log |Updated
   :unmount $ do
     js/console.log |Unmounted
-  _ nil
+  _ &unit
 ```
 
 The first argument is the value to match, followed by pattern-result pairs and an optional final `_` branch. Useful for lifecycle hooks, event handling, and state machine transitions. `case-default` was removed in 0.31.0; write the default as the final `_` branch, or use `cond` when a pattern is an expression.

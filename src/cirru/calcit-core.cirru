@@ -2280,6 +2280,12 @@
                       &< y0 $ &list:count base
                     recur (&get-raw base y0) ys
                     , None
+                (string? base)
+                  if (number? y0)
+                    match (&str:nth base y0)
+                      (:some value) (recur value ys)
+                      (:none) None
+                    &get-raw base y0
                 true $ recur (&get-raw base y0) ys
           :examples $ []
           :schema $ quote $ Fn Dynamic (List K)
@@ -2320,6 +2326,9 @@
                 &get-in ([] false 0) ([] 0)
               assert= (Some 0)
                 &get-in ([] false 0) ([] 1)
+              assert= (Some |b)
+                &get-in |abc ([] 1)
+              assert= None $ &get-in |abc ([] 9)
             :tags $ #{} :core :unit
         '&get-os $ %{} 'CodeEntry
           :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
@@ -2336,12 +2345,12 @@
               (map? base)
                 match (&map:get base k)
                   (:some value) value
-                  (:none) nil
+                  (:none) (raise "|&get-raw key not found in map")
               (string? base)
                 if (number? k)
                   match (&str:nth base k)
                     (:some value) value
-                    (:none) nil
+                    (:none) (raise "|&get-raw string index out of bounds")
                   raise "|&get-raw expected a Number index for string"
               (enum? base)
                 if (number? k) (&enum:nth base k) (raise "|&get-raw expected a Number index for enum")
@@ -2465,7 +2474,7 @@
         '&inspect-type $ %{} 'CodeEntry (:doc "|预处理阶段打印表达式的推断类型。")
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ quote $ Fn Dynamic Tag (-> Dynamic) (:open :reflect)
+          :schema $ quote $ Fn Dynamic Tag (-> Unit) (:open :reflect)
           :tags $ #{} :builtin :internal
         '&json:pretty-at $ %{} 'CodeEntry
           :doc "|Internal recursive pretty-printer for closed JsonValue with 2-space indentation."
@@ -6711,19 +6720,19 @@
             &list-match-internal path v (p0 ps)
               if (struct? data)
                 raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
-                &let
-                  d $ if (nil? data) (&{}) data
+                if (nil? data)
+                  raise "|assoc-in does not work on nil; pass {} as the root map"
                   &let
                     updated $ assoc-in
-                      if (contains? d p0) (&get-raw d p0) (&{})
+                      if (contains? data p0) (&get-raw data p0) (&{})
                       , ps v
                     cond
-                        map? d
-                        .assoc d p0 updated
-                      (list? d)
-                        if (number? p0) (.assoc d p0 updated) (raise "|assoc on a list expected a Number index")
-                      (enum? d)
-                        if (number? p0) (&enum:assoc d p0 updated) (raise "|assoc on an enum expected a Number index")
+                        map? data
+                        .assoc data p0 updated
+                      (list? data)
+                        if (number? p0) (.assoc data p0 updated) (raise "|assoc on a list expected a Number index")
+                      (enum? data)
+                        if (number? p0) (&enum:assoc data p0 updated) (raise "|assoc on an enum expected a Number index")
                       true $ raise "|assoc expected a List, Map, Struct or Enum"
           :examples $ []
             quote $ assert=
@@ -6740,7 +6749,7 @@
               assoc-in (&{}) ([] :x :y :z) 3
           :schema $ quote $ Fn Dynamic (List K) Dynamic (-> Dynamic) (:generics K) (:open :intrinsic)
           :tests $ []
-            %{} 'TestEntry (:name |assocs-nested-maps-lists-and-nil-base)
+            %{} 'TestEntry (:name |assocs-nested-maps-lists-and-rejects-nil-base)
               :code $ quote $ do
                 assert=
                   &{} :a $ &{} :b 10
@@ -6754,9 +6763,11 @@
                     &{} :a $ [] 1 2 3
                     [] :a 1
                     , 10
-                assert=
-                  &{} :a $ &{} :b $ &{} :c 10
-                  assoc-in nil ([] :a :b :c) 10
+                assert= "|assoc-in does not work on nil; pass {} as the root map" $ try
+                  do
+                    assoc-in nil ([] :a :b :c) 10
+                    , |ok
+                  fn (message) message
                 assert= 9 $ assoc-in (&{}) ([]) 9
                 assert=
                   &{} 7 $ &{} 0 42
@@ -9350,24 +9361,31 @@
                 if
                   &= 1 $ &list:count path
                   dissoc data p0
-                  assoc data p0 $ dissoc-in (&get-raw data p0) ps
+                  if (contains? data p0)
+                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
+                    , data
           :examples $ []
           :schema $ quote $ Fn Dynamic (List K) (-> Dynamic) (:generics K) (:open :intrinsic)
-          :tests $ [] $ %{} 'TestEntry (:name |dissocs-nested-maps-and-list-indexes)
-            :code $ quote $ do
-              assert=
-                &{} :a $ &{} :b $ &{}
-                dissoc-in
-                  &{} :a $ &{} :b $ &{} :c 2
-                  [] :a :b :c
-              assert=
-                &{} :a $ [] 1 3
-                dissoc-in
-                  &{} :a $ [] 1 2 3
-                  [] :a 1
-              assert= (&{} :a 1)
-                dissoc-in (&{} :a 1) ([])
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |dissocs-nested-maps-and-list-indexes)
+              :code $ quote $ do
+                assert=
+                  &{} :a $ &{} :b $ &{}
+                  dissoc-in
+                    &{} :a $ &{} :b $ &{} :c 2
+                    [] :a :b :c
+                assert=
+                  &{} :a $ [] 1 3
+                  dissoc-in
+                    &{} :a $ [] 1 2 3
+                    [] :a 1
+                assert= (&{} :a 1)
+                  dissoc-in (&{} :a 1) ([])
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |ignores-missing-intermediate-map-key)
+              :code $ quote $ assert= (&{} :a 1)
+                dissoc-in (&{} :a 1) ([] :missing :nested)
+              :tags $ #{} :core :unit
         'distinct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn distinct (x) (&list:distinct x)
           :examples $ []
@@ -11296,7 +11314,7 @@
               assert= (wrap-hash o) (.hash o)
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n0.32.0 已删除两参数形式 (hint-fn f schema)，写出时报 E_LEGACY_HINT_FN_TARGET；把类型移到定义 f 的函数体内。\n限制：错误 wrapper、参数数量、旧子句写法会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
+          :doc "|优先在拥有源码的 fn/defn 函数体内使用 (hint-fn schema)，由编译器检查函数实现的参数和返回合同。类型直接写在 hint-fn 后面，不需要 quote：`hint-fn $ Fn 参数… (-> 返回)`，可带 :generics、:where、:async、:features 子句；只标记异步时写 `hint-fn Async`。旧的 Map 写法和带 quote 的写法仍可读取，`calcit edit format` 会改写为这种写法。\n表达式本身返回 &unit（Unit），不创建、包装或返回函数；需要传递回调时直接传递函数值，并将 hint-fn 写在该函数体中。\n0.32.0 已删除两参数形式 (hint-fn f schema)，写出时报 E_LEGACY_HINT_FN_TARGET；把类型移到定义 f 的函数体内。\n限制：错误 wrapper、参数数量、旧子句写法会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
             quote $ let
@@ -11309,8 +11327,8 @@
                   hint-fn $ Fn T (-> T) (:generics T)
                   , value
               assert= |text $ same |text
-              assert= (Some nil)
-                same $ Some nil
+              assert= (Some 42)
+                same $ Some 42
           :schema $ quote Dynamic
           :tags $ #{} :async :builtin :internal :syntax
           :tests $ []
@@ -11401,11 +11419,11 @@
                 assert= true $ fn? forward
                 , forward
               :tags $ #{} :async-return-boundary
-            %{} 'TestEntry (:name |metadata-is-nil)
+            %{} 'TestEntry (:name |metadata-is-unit)
               :code $ quote $ let
                   metadata $ hint-fn $ Fn Number (-> Number)
-                assert-type metadata Nil
-                assert= nil metadata
+                assert-type metadata Unit
+                assert= &unit metadata
               :tags $ #{} :hint-value-boundary
             %{} 'TestEntry (:name |hinted-body-is-callable)
               :code $ quote $ let
@@ -16217,22 +16235,22 @@
               p0 ps
               if (struct? data)
                 raise "|update-in does not traverse Struct fields; use update with a direct field key"
-                let
-                    current $ if (nil? data) None $ get data p0
-                  &let
-                    receiver $ if (nil? data) ({}) data
+                if (nil? data)
+                  raise "|update-in does not work on nil; pass {} as the root map"
+                  let
+                      current $ get data p0
                     &let
                       updated $ if (empty? ps) (f current)
                         update-in
                           option:unwrap-or current $ {}
                           , ps f
                       cond
-                          map? receiver
-                          .assoc receiver p0 updated
-                        (list? receiver)
-                          if (number? p0) (.assoc receiver p0 updated) (raise "|assoc on a list expected a Number index")
-                        (enum? receiver)
-                          if (number? p0) (&enum:assoc receiver p0 updated) (raise "|assoc on an enum expected a Number index")
+                          map? data
+                          .assoc data p0 updated
+                        (list? data)
+                          if (number? p0) (.assoc data p0 updated) (raise "|assoc on a list expected a Number index")
+                        (enum? data)
+                          if (number? p0) (&enum:assoc data p0 updated) (raise "|assoc on an enum expected a Number index")
                         true $ raise "|assoc expected a List, Map, Struct or Enum"
           :examples $ []
             quote $ assert=
@@ -16311,6 +16329,12 @@
                       Map Number $ List Number
                     [] 7 0
                     fn (value) (assert= None value) 42
+                assert= "|update-in does not work on nil; pass {} as the root map" $ try
+                  do
+                    update-in nil ([] :a)
+                      fn (value) value
+                    , |ok
+                  fn (message) message
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |checked-open-path-keeps-numeric-boundary)
               :code $ quote $ let

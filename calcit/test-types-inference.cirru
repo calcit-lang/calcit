@@ -1529,7 +1529,7 @@
               assert-type output $ Map String Number
               &inspect-type output
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-fn-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-inference ()
             let
@@ -1542,7 +1542,7 @@
                 , Number
               &inspect-type f
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |type-predicates-evaluate-once-in-order)
               :code $ quote $ let
@@ -1862,7 +1862,7 @@
               &inspect-type nested-miss
               &inspect-type nil-nested
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-list-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-list-inference ()
             let
@@ -1883,7 +1883,7 @@
                 assert-type rest-xs $ List Number
                 &inspect-type rest-xs
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |method-infers-list-accumulator-context)
               :code $ quote $ do
@@ -1966,7 +1966,7 @@
                 assert-type m5 $ Map String Number
                 &inspect-type m5
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-ref-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-ref-inference ()
             let
@@ -1978,7 +1978,7 @@
                 &inspect-type r
                 &inspect-type x
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-set-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-set-inference ()
             let
@@ -1989,7 +1989,7 @@
                 &inspect-type s
                 &inspect-type xs
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-struct-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-inference ()
             let
@@ -2009,7 +2009,7 @@
                 &inspect-type top-name-v
                 &inspect-type city-v
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'test-type-ref-combos $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-type-ref-combos ()
             let
@@ -2028,7 +2028,7 @@
                 &inspect-type wrapped
                 &inspect-type outcome
           :examples $ []
-          :schema $ quote $ Fn (-> Nil)
+          :schema $ quote $ Fn (-> Unit)
         'unit-value-as-annotation $ %{} 'CodeEntry
           :doc "||Calcit::Unit used as a type annotation resolves to Unit, not an opaque Custom value (#1553, #1554)."
           :code $ quote $ defn unit-value-as-annotation ()

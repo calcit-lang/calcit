@@ -2660,7 +2660,7 @@ pub fn register_calcit_builtin_impls(_xs: &[Calcit]) -> Result<Calcit, CalcitErr
 }
 
 pub fn no_op() -> Result<Calcit, CalcitErr> {
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn get_os(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
