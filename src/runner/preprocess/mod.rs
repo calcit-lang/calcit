@@ -17151,9 +17151,6 @@ pub fn preprocess_defn(
       if strict_types_enabled()
         && should_emit_project_source_lint(ctx.file_ns)
         && !generated_by_macro
-        // This core macro retains legacy omission sugar until its contract
-        // is redesigned; functions use ordinary trailing Option parameters.
-        && !(ctx.file_ns == calcit::CORE_NS && def_name.as_ref() == "if-let")
         && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(

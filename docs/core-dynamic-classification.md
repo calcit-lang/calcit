@@ -244,7 +244,7 @@
 | `calcit.core/hint-fn` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/if` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/if-let` | `schema.inputs.1.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
-| `calcit.core/if-let` | `schema.inputs.2.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
+| `calcit.core/if-let` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/if-let` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/if-not` | `schema.inputs.1.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/if-not` | `schema.rest.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |

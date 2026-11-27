@@ -9526,7 +9526,7 @@ mod tests {
       ("when", 1, 0, true),
       ("when-not", 1, 0, true),
       ("if-not", 2, 0, true),
-      ("if-let", 2, 1, false),
+      ("if-let", 2, 0, true),
       ("when-let", 1, 0, true),
     ] {
       let CalcitTypeAnnotation::Macro(signature) = core_file.defs[def_name].schema.as_ref() else {
@@ -9593,12 +9593,12 @@ mod tests {
               crate::calcit::MacroSyntaxType::Expr(inner)
             ] if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
+          assert!(signature.optional_inputs.is_empty());
           assert!(matches!(
-            signature.optional_inputs.as_slice(),
-            [crate::calcit::MacroSyntaxType::Expr(inner)]
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
               if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
-          assert!(signature.rest_input.is_none());
         }
         "when-let" => {
           assert!(matches!(
