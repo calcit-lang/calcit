@@ -9817,7 +9817,7 @@ fn method_callback_proof_matches(
   receiver_type: &CalcitTypeAnnotation,
   expected_arg: &CalcitTypeAnnotation,
   actual_arg: &CalcitTypeAnnotation,
-  bindings: &HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   scope_types: &ScopeTypes,
 ) -> bool {
   let generic_callback = matches!(actual_arg, CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty());
@@ -9846,10 +9846,57 @@ fn method_callback_proof_matches(
     return false;
   }
   let result = proof.prove(actual_arg, &expected);
-  if generic_callback || universal_expected_callback {
+  let matched = if generic_callback || universal_expected_callback {
     result.is_proven()
   } else {
     !result.is_mismatch()
+  };
+  if matched {
+    for generic in signature_generics {
+      if !bindings.contains_key(generic)
+        && let Some(resolved) = proof.result(&CalcitTypeAnnotation::TypeVar(generic.clone()))
+      {
+        bindings.insert(generic.clone(), resolved);
+      }
+    }
+  }
+  matched
+}
+
+#[allow(clippy::too_many_arguments)]
+fn method_arg_matches_with_bindings(
+  signature_generics: &[Arc<str>],
+  expected_receiver: Option<&Arc<CalcitTypeAnnotation>>,
+  receiver_type: &CalcitTypeAnnotation,
+  expected_type: &CalcitTypeAnnotation,
+  actual_type: &CalcitTypeAnnotation,
+  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  scope_types: &ScopeTypes,
+) -> bool {
+  let universal_expected_callback = expected_type
+    .resolve_to_nonoptional_fn()
+    .is_some_and(|expected| !expected.generics.is_empty());
+  if universal_expected_callback {
+    method_callback_proof_matches(
+      signature_generics,
+      expected_receiver,
+      receiver_type,
+      expected_type,
+      actual_type,
+      bindings,
+      scope_types,
+    )
+  } else {
+    actual_type.compatible_with_bindings(expected_type, bindings)
+      || method_callback_proof_matches(
+        signature_generics,
+        expected_receiver,
+        receiver_type,
+        expected_type,
+        actual_type,
+        bindings,
+        scope_types,
+      )
   }
 }
 
@@ -9975,18 +10022,17 @@ fn check_struct_method_args(
         continue;
       }
       if let Some(actual_type) = resolve_type_value(arg, scope_types)
-        && !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-        && !method_callback_proof_matches(
+        && !method_arg_matches_with_bindings(
           &signature.generics,
           signature.arg_types.first(),
           type_value.as_ref(),
           expected_type.as_ref(),
           actual_type.as_ref(),
-          &bindings,
+          &mut bindings,
           scope_types,
         )
       {
-        let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
+        let expected_str = expected_type.substitute_free_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
         gen_check_warning_code_at(
           format!(
@@ -10173,32 +10219,15 @@ fn check_struct_method_args(
       } else {
         fn_info.generics.as_ref().clone()
       };
-      let universal_expected_callback = expected_type
-        .resolve_to_nonoptional_fn()
-        .is_some_and(|expected| !expected.generics.is_empty());
-      let matches = if universal_expected_callback {
-        method_callback_proof_matches(
-          &method_generics,
-          fn_info.arg_types.first(),
-          type_value.as_ref(),
-          expected_type.as_ref(),
-          actual_type.as_ref(),
-          &bindings,
-          scope_types,
-        )
-      } else {
-        actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-          || method_callback_proof_matches(
-            &method_generics,
-            fn_info.arg_types.first(),
-            type_value.as_ref(),
-            expected_type.as_ref(),
-            actual_type.as_ref(),
-            &bindings,
-            scope_types,
-          )
-      };
-      if !matches {
+      if !method_arg_matches_with_bindings(
+        &method_generics,
+        fn_info.arg_types.first(),
+        type_value.as_ref(),
+        expected_type.as_ref(),
+        actual_type.as_ref(),
+        &mut bindings,
+        scope_types,
+      ) {
         let expected_str = expected_type.substitute_free_type_vars(&bindings).describe();
         let actual_str = actual_type.as_ref().describe();
         let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {
@@ -11322,6 +11351,10 @@ fn classify_nil_predicate_target(arg: &Calcit, scope_types: &ScopeTypes) -> NilP
   }
 }
 
+fn is_core_or_replay_ns(ns: &str) -> bool {
+  calcit::is_bundled_core_ns(ns) || ns == "calcit.core-test-replay"
+}
+
 fn note_legacy_nil_predicate_migration(
   name: &str,
   arg: &Calcit,
@@ -11329,7 +11362,7 @@ fn note_legacy_nil_predicate_migration(
   location: Option<NodeLocation>,
   file_ns: &str,
 ) {
-  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || is_core_or_replay_ns(file_ns) || !should_emit_project_source_lint(file_ns) {
     return;
   }
   let Some(location) = location else {
@@ -11383,7 +11416,7 @@ fn note_legacy_fn_migration(
 fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
   if IN_LET_LAMBDA_RECHECK.with(Cell::get)
     || def_ns != calcit::CORE_NS
-    || file_ns.starts_with(calcit::CORE_NS)
+    || is_core_or_replay_ns(file_ns)
     || !should_emit_project_source_lint(file_ns)
   {
     return;
@@ -11394,15 +11427,14 @@ fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<No
   if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
     return;
   }
-  if matches!(
-    name,
-    "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits"
-  ) {
+  if name == "impl-traits" {
     // Top-level `(:impls …)` declarations wrap definitions in an internal `impl-traits` call
-    // at root coord `[]`; skip compiler-synthesized attachment while keeping user calls warned.
+    // at root coord `[]`; skip compiler-synthesized attachment while keeping handwritten calls warned.
     let synthetic_top_level_impls = location.coord.is_empty()
-      && program::lookup_def_code(&location.ns, &location.def)
-        .is_some_and(|code| !program::impl_attach::is_hand_written_top_level_impl_traits(&location.ns, &location.def, &code));
+      && program::lookup_def_code(&location.ns, &location.def).is_some_and(|code| {
+        program::impl_attach::code_is_top_level_impl_traits(&code)
+          && !program::impl_attach::is_hand_written_top_level_impl_traits(&location.ns, &location.def, &code)
+      });
     if synthetic_top_level_impls {
       return;
     }
@@ -11521,7 +11553,7 @@ fn note_legacy_proc_migration(
     scope_types,
     file_ns,
   } = site;
-  if file_ns.starts_with(calcit::CORE_NS)
+  if is_core_or_replay_ns(file_ns)
     || !should_emit_project_source_lint(file_ns)
     || legacy_migration_advisory_for_core_name(proc.as_ref()).is_none()
   {

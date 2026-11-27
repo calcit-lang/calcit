@@ -88,6 +88,7 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     *program_data = program::extract_program_data(&snapshot)?;
   }
 
+  drop(runner::preprocess::take_advisories());
   let check_warnings = RefCell::new(vec![]);
   runner::preprocess::ensure_ns_def_compiled(
     host::calcit::CORE_NS,
@@ -103,7 +104,6 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     }
   }
 
-  drop(runner::preprocess::take_advisories());
   if options.check_only {
     run_check_only(&entries, target, options.boundary, options.world)
   } else {
@@ -138,6 +138,7 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     codegen::emit_wasm::check_wasi_component(&entries.init_ns, &entries.init_def, world)?;
   }
+  reject_preprocess_warnings(&check_warnings)?;
 
   let duration = Instant::now().duration_since(started_time);
   println!(

@@ -310,23 +310,17 @@ Usage: `&trait-call Trait :method receiver & args`
 Example with two traits sharing the same method name:
 
 ```cirru.no-check
+deftrait MyZapA $ .zap $ Fn Self (-> String)
+deftrait MyZapB $ .zap $ Fn Self (-> String)
+defstruct Person (:name String) (:impls MyZapA MyZapB)
+defimpl Person MyZapA $ .zap $ fn (_x) |zapA
+defimpl Person MyZapB $ .zap $ fn (_x) |zapB
+
 let
-    MyZapA $ deftrait MyZapA
-      .zap $ Fn Self (-> String)
-    MyZapB $ deftrait MyZapB
-      .zap $ Fn Self (-> String)
-    Person0 $ defstruct Person (:name String)
-    MyZapAImpl $ defimpl Person0 MyZapA
-      .zap $ fn (_x) |zapA
-    MyZapBImpl $ defimpl Person0 MyZapB
-      .zap $ fn (_x) |zapB
-    Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ Person :name |Alice
-  ; strict checking rejects this ambiguous call
-  p .zap
-  ; explicitly pick a "trait’s" implementation
-  &trait-call MyZapA :zap p
-  &trait-call MyZapB :zap p
+  ; explicitly pick a trait implementation (`p .zap` would be rejected as ambiguous)
+  assert= |zapA $ &trait-call MyZapA :zap p
+  assert= |zapB $ &trait-call MyZapB :zap p
 ```
 
 ## Debugging / introspection

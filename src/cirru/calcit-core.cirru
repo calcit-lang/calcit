@@ -8024,7 +8024,7 @@
                 and (list? entry)
                   not $ empty? entry
                   &= :impls $ &list:nth entry 0
-              raise "|`(:impls …)` attaches implementations only to a top-level struct or enum definition; inside a function, attach them with `impl-traits`"
+              raise "|`(:impls …)` attaches implementations only to a top-level struct or enum definition; move the type definition and its `defimpl` to the top level, or box an implementing value with `(Dyn Trait)` (`dyn:box`)"
             if (data-definition-clause? entries :generics)
               &let
                 generics $ &list:rest $ &list:nth entries 0
@@ -8626,7 +8626,7 @@
                 _ 0
             :tags $ #{} :core :unit
         'defimpl $ %{} 'CodeEntry
-          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: at the top level, the type lists the trait with `(:impls Trait …)` and the compiler attaches this implementation, found in the type's or the trait's namespace. Inside a function, `Type` is the local struct/enum and the returned impl is attached with `impl-traits`. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
+          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: declare the type and its `defimpl` at the top level and list the trait in `(:impls Trait …)` so the compiler attaches it automatically from the type's or trait's namespace; local `impl-traits` attachment fails in project code with `E_LEGACY_DYNAMIC_STYLE`, and `(Dyn Trait)` (`dyn:box`) only boxes values whose type already implements the trait. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
             if
               not $ symbol? name
