@@ -9280,3 +9280,97 @@ defn main! ()
     );
   });
 }
+
+#[test]
+fn legacy_nil_runtime_predicate_and_dynamic_style_emit_non_blocking_advisories() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "def ShowTrait $ deftrait ShowTrait\n  .show $ Fn Self (-> String)\n\ndefstruct Box (:value Number) (:impls ShowTrait)\n\ndefimpl Box ShowTrait\n  .show $ fn (self) (str (:value self))\n\ndefenum Choice (:some Number) (:none)\n\ndefn legacy-case (raw m other)\n  hint-fn $ Fn Dynamic (Map Tag Dynamic) (Map Tag Dynamic) (-> Dynamic)\n  let\n      DynBox $ defstruct DynBox (:value Number)\n      dyn-impl $ defimpl DynBox ShowTrait\n        .show $ fn (self) (str (:value self))\n      a $ either raw 1\n      b $ non-nil! raw\n      ks $ keys-non-nil m\n      mg $ merge-non-nil m other\n      is-list $ list? raw\n      is-nil $ nil? raw\n      is-lit-nil $ nil? nil\n      is-non-nil $ non-nil? raw\n      kind $ type-of raw\n      lit-kind $ type-of 1\n      viewed $ match (data-view raw)\n        (:number n) n\n        _ 0\n      anon $ %{} _ (:x 1)\n      proto $ %:: Choice :none\n      dyn $ impl-traits DynBox dyn-impl\n    ;nil a b ks mg is-list is-nil is-lit-nil is-non-nil kind lit-kind viewed anon proto dyn\n\ndefn modern-case (opt)\n  hint-fn $ Fn (Option Number) (-> Number)\n  let\n      b $ Box :value 2\n      c $ Choice :some (:value b)\n    match opt\n      (:some n) (+ n (:value b))\n      (:none) 0\n\ndefn main! ()\n  [] (legacy-case 1 ({} (:a 2)) ({} (:b 3))) (modern-case (Option :some 3))",
+    );
+
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "legacy-case", &warnings, &CallStackList::default())
+      .expect("legacy patterns should emit non-blocking advisories");
+    let legacy_advisories = runner::preprocess::take_advisories();
+
+    assert!(
+      warnings.borrow().iter().all(|warning| !matches!(
+        warning.code(),
+        Some("W_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "W_LEGACY_DYNAMIC_STYLE")
+      )),
+      "migration advisories must stay non-blocking warnings, got {:?}",
+      warnings.borrow()
+    );
+    let (blocking, notes) = runner::preprocess::split_blocking_advisories(legacy_advisories);
+    assert!(blocking.is_empty(), "expected zero blocking advisories, got {blocking:?}");
+
+    let nil_notes: Vec<_> = notes
+      .iter()
+      .filter(|a| a.code() == Some("W_LEGACY_NIL_USAGE"))
+      .map(|a| a.message().to_owned())
+      .collect();
+    assert_eq!(nil_notes.len(), 5, "expected 5 W_LEGACY_NIL_USAGE notes, got {notes:?}");
+
+    let pred_notes: Vec<(Vec<u16>, String)> = notes
+      .iter()
+      .filter(|a| a.code() == Some("W_RUNTIME_TYPE_PREDICATE"))
+      .map(|a| {
+        assert_eq!(a.location().def.as_ref(), "legacy-case");
+        (a.location().coord.as_ref().to_vec(), a.message().to_owned())
+      })
+      .collect();
+    // list?, nil?, nil? nil, non-nil?, type-of, type-of 1, data-view -> 7 notes
+    // (macro-internal nil? inside `either` and lowered predicates inside `match (data-view raw)` must NOT fire).
+    assert_eq!(pred_notes.len(), 7, "expected 7 W_RUNTIME_TYPE_PREDICATE notes, got {pred_notes:?}");
+    assert!(
+      pred_notes.iter().all(|(coord, _)| !coord.starts_with(&[4, 1, 2])),
+      "macro-internal `nil?` inside `either` must not emit W_RUNTIME_TYPE_PREDICATE: {pred_notes:?}"
+    );
+    let expected_pred_sites: [(&[u16], &str); 7] = [
+      (&[4, 1, 6, 1], "`list?`"),
+      (&[4, 1, 7, 1], "`nil?`"),
+      (&[4, 1, 8, 1], "`nil?`"),
+      (&[4, 1, 9, 1], "`non-nil?`"),
+      (&[4, 1, 10, 1], "`type-of`"),
+      (&[4, 1, 11, 1], "`type-of`"),
+      (&[4, 1, 12, 1, 1], "`data-view`"),
+    ];
+    for (expected_coord, expected_name) in expected_pred_sites {
+      assert!(
+        pred_notes
+          .iter()
+          .any(|(coord, msg)| coord.as_slice() == expected_coord && msg.contains(expected_name)),
+        "expected W_RUNTIME_TYPE_PREDICATE for {expected_name} at {expected_coord:?}, got {pred_notes:?}"
+      );
+    }
+
+    let dyn_notes: Vec<_> = notes
+      .iter()
+      .filter(|a| a.code() == Some("W_LEGACY_DYNAMIC_STYLE"))
+      .map(|a| a.message().to_owned())
+      .collect();
+    assert_eq!(dyn_notes.len(), 3, "expected 3 W_LEGACY_DYNAMIC_STYLE notes, got {dyn_notes:?}");
+
+    let modern_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "modern-case", &modern_warnings, &CallStackList::default())
+      .expect("modern Option/nominal match case should preprocess cleanly");
+    let modern_advisories = runner::preprocess::take_advisories();
+    assert!(
+      modern_warnings.borrow().iter().all(|warning| !matches!(
+        warning.code(),
+        Some("W_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "W_LEGACY_DYNAMIC_STYLE")
+      )),
+      "unexpected migration warnings: {:?}",
+      modern_warnings.borrow()
+    );
+    assert!(
+      modern_advisories.iter().all(|a| !matches!(
+        a.code(),
+        Some("W_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "W_LEGACY_DYNAMIC_STYLE")
+      )),
+      "canonical Box/Choice/Option/match code must not emit legacy migration warnings: {modern_advisories:?}"
+    );
+  });
+}

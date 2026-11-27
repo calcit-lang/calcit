@@ -5467,6 +5467,12 @@ fn preprocess_list_call(
   // constructor. Lower it before macro arguments are preprocessed so `_`
   // cannot be mistaken for a normal unresolved symbol.
   if has_anonymous_definition_marker && is_constructor_named("%{}") {
+    note_legacy_migration_core_call(
+      calcit::CORE_NS,
+      "%{} _",
+      head.get_location().or_else(|| call_location.clone()),
+      file_ns,
+    );
     let mut items = vec![Calcit::Proc(CalcitProc::NativeLooseStruct)];
     for entry in args.iter().skip(1) {
       let Calcit::List(pair) = entry else {
@@ -5499,6 +5505,15 @@ fn preprocess_list_call(
   if has_anonymous_definition_marker
     && (matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew)) || is_constructor_named("%::"))
   {
+    note_legacy_migration_core_call(
+      calcit::CORE_NS,
+      "%::",
+      head
+        .get_location()
+        .or(call_location)
+        .or_else(|| find_proc_call_location_in_source("%::", &args, file_ns)),
+      file_ns,
+    );
     let mut items = vec![Calcit::Proc(CalcitProc::NativeEnum)];
     items.extend(args.iter().skip(1).cloned());
     return preprocess_expr(
@@ -5865,6 +5880,7 @@ fn preprocess_list_call(
     Some(Calcit::Macro { id: macro_id, info }) => {
       if matches!(&head_form, Calcit::Import(_)) {
         note_percent_struct_literal(&info, head, &args, scope_defs, file_ns);
+        note_legacy_migration_core_call(&info.def_ns, info.name.as_ref(), head.get_location(), file_ns);
       }
       preprocess_macro_call(
         &info,
@@ -5888,6 +5904,7 @@ fn preprocess_list_call(
       // helper too, but its call head is not the helper name.
       if matches!(&head_form, Calcit::Import(_)) {
         warn_on_direct_option_helper_call(&info, head, file_ns, check_warnings);
+        note_legacy_migration_core_call(&info.def_ns, info.name.as_ref(), call_location.clone(), file_ns);
       }
       preprocess_known_function_call(
         info,
@@ -6977,6 +6994,9 @@ fn preprocess_list_call(
             check_warnings,
           );
           warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, call_stack);
+          if let Calcit::Proc(proc) = call_head {
+            note_legacy_proc_migration(proc, xs, head, &args, call_location.clone(), call_stack, file_ns);
+          }
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
             &processed_args,
@@ -11103,6 +11123,212 @@ fn note_percent_struct_literal(info: &CalcitMacro, head: &Calcit, args: &CalcitL
     Some(crate::snapshot::PERCENT_STRUCT_LITERAL_WARNING.to_owned()),
     None,
   ));
+}
+
+fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, String)> {
+  match name {
+    ";nil" => Some((
+      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
+      "[Warn] legacy `;nil` returns nil; replace it with `&unit` (for no-value statements) or `Option :none` (for absence)".to_owned(),
+    )),
+    "either" => Some((
+      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
+      "[Warn] legacy `either` branches on nil; migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`".to_owned(),
+    )),
+    "non-nil!" => Some((
+      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
+      "[Warn] legacy `non-nil!` asserts against nil at runtime; migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`"
+        .to_owned(),
+    )),
+    "keys-non-nil" | "merge-non-nil" | "&merge-non-nil" => Some((
+      crate::snapshot::LEGACY_NIL_USAGE_WARNING,
+      format!("[Warn] legacy `{name}` treats nil map values as absent; store `Option<V>` or omit absent keys instead"),
+    )),
+    "nil?" | "non-nil?" => Some((
+      crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING,
+      format!(
+        "[Warn] runtime nil check `{name}` is a legacy dynamic pattern; migrate to `Option<T>` (`match`, `if-let`, `.some?`/`.none?`) or `js-nullish?` at JS FFI boundaries"
+      ),
+    )),
+    "type-of" | "data-view" | "bool?" | "number?" | "string?" | "tag?" | "symbol?" | "list?" | "map?" | "set?" | "fn?" | "struct?" | "enum?"
+    | "tuple?" | "buffer?" | "buf-list?" | "ref?" | "struct-def?" | "enum-def?" => Some((
+      crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING,
+      format!(
+        "[Warn] runtime type check `{name}` relies on dynamic inspection; prefer closed nominal `defenum`/`defstruct`/`EdnValue`/`JsonValue` with `match`, or `Any` (`any:downcast`) / `(Dyn Trait)`"
+      ),
+    )),
+    "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits" => Some((
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
+      format!(
+        "[Warn] `{name}` attaches traits dynamically; declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism"
+      ),
+    )),
+    "%::" => Some((
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
+      "[Warn] `%::` constructs a dynamic enum prototype; prefer a closed nominal `defenum` with direct constructors (`Enum :variant …`)"
+        .to_owned(),
+    )),
+    "%{} _" => Some((
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
+      "[Warn] `%{} _` constructs an anonymous struct prototype; prefer a closed nominal `defstruct` with direct constructors (`Struct :field value`)"
+        .to_owned(),
+    )),
+    _ => None,
+  }
+}
+
+fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
+  if def_ns != calcit::CORE_NS || file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+    return;
+  }
+  let Some(location) = location else {
+    return;
+  };
+  if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
+    return;
+  }
+  if matches!(
+    name,
+    "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits"
+  ) {
+    // Top-level `(:impls …)` declarations wrap definitions in an internal `impl-traits` call
+    // at root coord `[]`; skip compiler-synthesized attachment while keeping user calls warned.
+    let synthetic_top_level_impls = location.coord.is_empty()
+      && program::lookup_def_code(&location.ns, &location.def)
+        .is_some_and(|code| !program::impl_attach::is_hand_written_top_level_impl_traits(&location.ns, &location.def, &code));
+    if synthetic_top_level_impls {
+      return;
+    }
+  }
+  let Some((code, message)) = legacy_migration_advisory_for_core_name(name) else {
+    return;
+  };
+  push_advisory(LocatedWarning::new_with_detail(message, location, Some(code.to_owned()), None));
+}
+
+fn lookup_calcit_at_coord<'a>(root: &'a Calcit, coord: &[u16]) -> Option<&'a Calcit> {
+  let mut cursor = root;
+  for &index in coord {
+    let Calcit::List(items) = cursor else {
+      return None;
+    };
+    cursor = items.get(index as usize)?;
+  }
+  Some(cursor)
+}
+
+fn calcit_head_matches_core_name(node: &Calcit, target_name: &str) -> bool {
+  let Calcit::List(items) = node else {
+    return false;
+  };
+  match items.first() {
+    Some(Calcit::Proc(proc)) => proc.as_ref() == target_name,
+    Some(Calcit::Symbol { sym, .. }) => {
+      let name = sym.as_ref();
+      name == target_name || name.strip_prefix("calcit.core/") == Some(target_name)
+    }
+    Some(Calcit::Import(import)) => import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == target_name,
+    _ => false,
+  }
+}
+
+fn find_list_ptr_coord(node: &Calcit, target: &Arc<CalcitList>, target_head: &str, coord: &mut Vec<u16>) -> Option<Vec<u16>> {
+  let Calcit::List(items) = node else {
+    return None;
+  };
+  if Arc::ptr_eq(items, target) && calcit_head_matches_core_name(node, target_head) {
+    return Some(coord.clone());
+  }
+  for (idx, child) in items.iter().enumerate() {
+    let Ok(index) = u16::try_from(idx) else {
+      continue;
+    };
+    coord.push(index);
+    if let Some(found) = find_list_ptr_coord(child, target, target_head, coord) {
+      return Some(found);
+    }
+    coord.pop();
+  }
+  None
+}
+
+fn find_list_location_in_call_stack(
+  xs: &Arc<CalcitList>,
+  target_head: &str,
+  call_stack: &CallStackList,
+  file_ns: &str,
+) -> Option<NodeLocation> {
+  let frame = call_stack
+    .0
+    .iter()
+    .find(|frame| matches!(frame.kind, StackKind::Fn) && frame.ns.as_ref() == file_ns && frame.def.as_ref() != GENERATED_DEF)?;
+  let mut coord = vec![];
+  find_list_ptr_coord(&frame.code, xs, target_head, &mut coord)
+    .map(|found| NodeLocation::new(frame.ns.clone(), frame.def.clone(), Arc::from(found)))
+}
+
+fn find_proc_call_location_in_source(proc_name: &str, processed_args: &CalcitList, file_ns: &str) -> Option<NodeLocation> {
+  let arg_location = processed_args.iter().find_map(|arg| {
+    find_calcit_location_matching(arg, |location| {
+      location.def.as_ref() != GENERATED_DEF && location.ns.as_ref() != calcit::CORE_NS
+    })
+    .filter(|location| location.ns.as_ref() == file_ns)
+  })?;
+  let def_code = program::lookup_def_code(&arg_location.ns, &arg_location.def)?;
+  // `Calcit::Proc` carries no location of its own; walking up the operand coordinate
+  // finds the exact source call naming `proc_name` while ignoring macro-synthesized
+  // checks such as `nil?` inside `either` or direct `Enum :variant` constructors.
+  for prefix_len in (0..arg_location.coord.len()).rev() {
+    let candidate_coord = &arg_location.coord[..prefix_len];
+    if let Some(node) = lookup_calcit_at_coord(&def_code, candidate_coord)
+      && calcit_head_matches_core_name(node, proc_name)
+    {
+      return Some(NodeLocation::new(
+        arg_location.ns.clone(),
+        arg_location.def.clone(),
+        Arc::new(candidate_coord.to_vec()),
+      ));
+    }
+  }
+  None
+}
+
+fn note_legacy_proc_migration(
+  proc: &CalcitProc,
+  xs: &Arc<CalcitList>,
+  head: &Calcit,
+  processed_args: &CalcitList,
+  call_location: Option<NodeLocation>,
+  call_stack: &CallStackList,
+  file_ns: &str,
+) {
+  if file_ns.starts_with(calcit::CORE_NS)
+    || !should_emit_project_source_lint(file_ns)
+    || legacy_migration_advisory_for_core_name(proc.as_ref()).is_none()
+  {
+    return;
+  }
+  let location = if *proc == CalcitProc::NativeNamedEnumNew {
+    let source_match = find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns);
+    let written_percent_enum = source_match.is_some()
+      || matches!(
+        head,
+        Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "%::" | "calcit.core/%::")
+      )
+      || matches!(
+        head,
+        Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%::"
+      );
+    if !written_percent_enum {
+      return;
+    }
+    source_match.or(call_location)
+  } else {
+    call_location
+      .or_else(|| find_list_location_in_call_stack(xs, proc.as_ref(), call_stack, file_ns))
+      .or_else(|| find_proc_call_location_in_source(proc.as_ref(), processed_args, file_ns))
+  };
+  note_legacy_migration_core_call(calcit::CORE_NS, proc.as_ref(), location, file_ns);
 }
 
 fn warn_on_direct_option_helper_call(info: &CalcitFn, head: &Calcit, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
@@ -15771,6 +15997,7 @@ fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> 
     chain = generated_if(test, bind_payload(binding, body), chain, file_ns);
   }
 
+  note_legacy_migration_core_call(calcit::CORE_NS, "data-view", derive_list_call_expr_location(call), file_ns);
   let lowered = generated_let(value_sym, call[1].to_owned(), chain, file_ns);
   let _tail = tail_context::TailScope::forward();
   Ok(Some(preprocess_expr(
@@ -23662,6 +23889,7 @@ mod tests {
   #[test]
   fn generated_path_guards_suppress_only_their_synthetic_warnings() {
     let _guard = lock_preprocess_test_state();
+    let _ = take_advisories();
     let option_number = Arc::new(CalcitTypeAnnotation::TypeRef(
       Arc::from("calcit.core/Option"),
       Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
