@@ -188,7 +188,6 @@ pub fn butlast(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:butlast expected a list, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::Nil),
     Calcit::List(ys) => {
       if ys.is_empty() {
         Ok(Calcit::List(ys.clone()))
@@ -321,7 +320,6 @@ pub fn reverse(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:reverse expected a list, but received:", xs);
   }
   match &xs[0] {
-    Calcit::Nil => Ok(Calcit::Nil),
     Calcit::List(ys) => Ok(Calcit::from(ys.reverse())),
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:reverse expected a list, but received: {a}")),
   }
@@ -1060,5 +1058,14 @@ mod tests {
     let stalled = range(&[Calcit::Number(1e20), Calcit::Number(1e20 - 1e6), Calcit::Number(-1.0)])
       .expect_err("range should reject steps that cannot advance at the current magnitude");
     assert!(stalled.to_string().contains("step does not advance"));
+  }
+
+  #[test]
+  fn butlast_and_reverse_reject_nil() {
+    let butlast_err = super::butlast(&[Calcit::Nil]).expect_err("butlast should reject nil");
+    assert_eq!(butlast_err.kind, crate::calcit::CalcitErrKind::Type);
+
+    let reverse_err = super::reverse(&[Calcit::Nil]).expect_err("reverse should reject nil");
+    assert_eq!(reverse_err.kind, crate::calcit::CalcitErrKind::Type);
   }
 }

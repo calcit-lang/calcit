@@ -1011,3 +1011,21 @@
           :args $ [] 'T
           :generics $ [] 'T
           :return $ :: 'Option 'T
+    {} (:family |methods) (:version |0.47.0) (:issue |#2973)
+      :reason "|Nil_no_longer_implements_ToString_in_0.47.0_breaking_cleanup"
+      :before $ {}
+        :failure "|返回空_String，不把_nil_伪装为其他值"
+        :name |.to-string
+        :provenance 'calcit.core/&turn-string
+        :receiver |'Nil
+        :features $ []
+        :runtime-arity $ {} (:max 1) (:min 1)
+        :schema $ quote $ {} (:kind :fn) (:return 'String)
+          :args $ [] 'Dynamic
+      :after nil
+    {} (:family |method-contracts) (:version |0.47.0) (:issue |#2973)
+      :reason "|Nil_no_longer_implements_ToString_in_0.47.0_breaking_cleanup"
+      :before $ {} (:name |.to-string) (:receiver |'Nil) (:rest nil)
+        :parameters $ []
+        :returns $ quote 'String
+      :after nil

@@ -9032,7 +9032,7 @@ defwasm-export check-all-dyn-edge-cases ()
         (:ok raw) (&hash (assert-type raw Bool))
         (:err _) 0
       num-hash-ok $ &= (&hash 16392) (&hash (assert-type 16392 Number))
-      disjoint-scalars $ and (not (&= (dyn:box false ToString) (dyn:box 0 ToString))) (not (&= (dyn:box true ToString) (dyn:box 1 ToString))) (not (&= (dyn:box nil ToString) (dyn:box 0 ToString)))
+      disjoint-scalars $ and (not (&= (dyn:box false ToString) (dyn:box 0 ToString))) (not (&= (dyn:box true ToString) (dyn:box 1 ToString))) (not (&= (dyn:box nil Debug) (dyn:box 0 Debug)))
       refined-eq $ &= (dyn:box 1 ToString) (dyn:box (assert-type 1 Int32) ToString)
       refined-hash-eq $ &= (&hash (dyn:box 1 ToString)) (&hash (dyn:box (assert-type 1 Int32) ToString))
     if (and (&= spread-res 26) nan-eq num-hash-ok (&= boxed-bool-hash (&hash true)) disjoint-scalars refined-eq refined-hash-eq) 1 0

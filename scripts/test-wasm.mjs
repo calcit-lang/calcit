@@ -368,7 +368,7 @@ check("test-struct-edn-identity()", 1, e["test-struct-edn-identity"]);
 check("test-turn-string-bool()", 1, e["test-turn-string-bool"]);
 check("test-turn-string-tag()", 1, e["test-turn-string-tag"]);
 check("test-turn-string-number()", 1, e["test-turn-string-number"]);
-check("test-turn-string-nil-string()", 1, e["test-turn-string-nil-string"]);
+check("test-turn-string-string()", 1, e["test-turn-string-string"]);
 check("test-struct-get-name()", 1, e["test-struct-get-name"]);
 check("test-struct-eq()", 1, e["test-struct-eq"]);
 check("test-struct-to-map()", 3, e["test-struct-to-map"]);

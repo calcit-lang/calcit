@@ -278,18 +278,25 @@ export function assertPreserved(previous, current, migrations = []) {
       const row = (current[family] ?? []).find(row => family === "definitions"
         ? row.name.symbol === old.name.symbol
         : row.receiver === old.receiver && row.name === old.name);
-      assert.ok(row, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
       const before = family === "method-contracts" ? sourceMethod(previous, old) : null;
-      const after = family === "method-contracts" ? sourceMethod(current, row) : null;
+      const after = row && family === "method-contracts" ? sourceMethod(current, row) : null;
       // Call syntax is generated in its implementation's source namespace.
       // User origins, source schemas, declarations and lexical type variables
       // retain exact comparison; this does not waive a changed nominal type.
-      const names = before?.provenance?.symbol.startsWith("calcit.core/") && after?.provenance?.symbol.startsWith("calcit.core/")
+      const names = before?.provenance?.symbol.startsWith("calcit.core/") && (!after || after.provenance?.symbol.startsWith("calcit.core/"))
         ? nominalNames : new Map();
       const variables = new Set(genericNames(before?.schema?.quote));
-      const currentContract = contract(row, family, names, variables);
       const frozenContract = contract(old, family, names, variables);
+      if (!row) {
+        const reviewedRemoval = migrations.some(migration => migration.family === family
+          && migration.after == null
+          && isDeepStrictEqual(contract(migration.before, family, names, variables), frozenContract));
+        assert.ok(reviewedRemoval, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
+        continue;
+      }
+      const currentContract = contract(row, family, names, variables);
       const reviewed = migrations.some(migration => migration.family === family
+        && migration.after != null
         && isDeepStrictEqual(contract(migration.before, family, names, variables), frozenContract)
         && isDeepStrictEqual(contract(migration.after, family, names, variables), currentContract));
       if (!reviewed) assert.deepEqual(currentContract, frozenContract, `changed frozen ${family}: ${JSON.stringify(old.name)}`);
