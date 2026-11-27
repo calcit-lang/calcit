@@ -103,6 +103,7 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     }
   }
 
+  drop(runner::preprocess::take_advisories());
   if options.check_only {
     run_check_only(&entries, target, options.boundary, options.world)
   } else {
@@ -149,11 +150,17 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
 }
 
 fn reject_preprocess_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>) -> Result<(), String> {
+  let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  check_warnings.borrow_mut().extend(blocking);
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     eprintln!("\n{} ({} errors)", "Errors:".red(), warnings.len());
     LocatedWarning::print_list(&warnings);
     return Err(format!("Found {} errors during preprocessing", warnings.len()));
+  }
+  if !advisories.is_empty() {
+    eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
+    LocatedWarning::print_list(&advisories);
   }
 
   Ok(())

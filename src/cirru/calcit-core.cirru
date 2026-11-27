@@ -713,46 +713,32 @@
             %{} 'TestEntry
               :name |struct-def-trait-dispatch-ignores-instance-impls
               :code $ quote $ let
-                  CustomMarker $ deftrait CustomMarker $ .cmark
-                    Fn Self $ -> Number
-                  BoxBase $ defstruct BoxBase $ :x Number
-                  BoxHash $ impl-traits BoxBase $ defimpl BoxBase Hash
-                    .hash $ fn (self) 7
-                  BoxMark $ impl-traits BoxBase $ defimpl BoxBase CustomMarker
-                    .cmark $ fn (self) 9
-                  EnumBase $ defenum EnumBase $ :a Number
-                  EnumHash $ impl-traits EnumBase $ defimpl EnumBase Hash
-                    .hash $ fn (self) 11
-                  EnumMark $ impl-traits EnumBase $ defimpl EnumBase CustomMarker
-                    .cmark $ fn (self) 13
-                  box-inst $ BoxMark :x 1
-                  enum-inst $ EnumMark :a 1
-                assert= (hash BoxHash) (BoxHash .hash)
-                assert= (hash EnumHash) (EnumHash .hash)
-                assert= (hash BoxHash) (&trait-call Hash :hash BoxHash)
-                assert= (hash EnumHash) (&trait-call Hash :hash EnumHash)
-                assert= true $ &= BoxHash $ assert-traits BoxHash Debug
-                assert= true $ &= BoxHash $ assert-traits BoxHash Eq
-                assert= true $ &= BoxHash $ assert-traits BoxHash Hash
-                assert= true $ &= EnumHash $ assert-traits EnumHash Hash
-                assert= true $ &= box-inst $ assert-traits box-inst CustomMarker
-                assert= true $ &= enum-inst $ assert-traits enum-inst CustomMarker
-                assert= 9 $ &trait-call CustomMarker :cmark box-inst
-                assert= 13 $ &trait-call CustomMarker :cmark enum-inst
+                  fs-path $ FsPath :value |demo.txt
+                  opt-some $ Some 1
+                assert= (hash FsPath) (FsPath .hash)
+                assert= (hash Option) (Option .hash)
+                assert= (hash FsPath) (&trait-call Hash :hash FsPath)
+                assert= (hash Option) (&trait-call Hash :hash Option)
+                assert= true $ &= FsPath $ assert-traits FsPath Debug
+                assert= true $ &= FsPath $ assert-traits FsPath Eq
+                assert= true $ &= FsPath $ assert-traits FsPath Hash
+                assert= true $ &= Option $ assert-traits Option Hash
+                assert= true $ &= fs-path $ assert-traits fs-path FsPathOps
+                assert= true $ &= opt-some $ assert-traits opt-some OptionOps
                 assert= true $ includes?
-                  map (&methods-of BoxMark) &str
-                  , |.cmark
+                  map (&methods-of FsPath) &str
+                  , |.read-text
                 assert= true $ includes?
-                  map (&methods-of EnumMark) &str
-                  , |.cmark
+                  map (&methods-of Option) &str
+                  , |.some?
                 assert= true $ >
-                  count $ &trait-call Debug :debug BoxMark
+                  count $ &trait-call Debug :debug FsPath
                   , 0
                 assert= true $ try
-                  do (assert-traits BoxMark CustomMarker) false
+                  do (assert-traits FsPath FsPathOps) false
                   fn (_err) true
                 assert= true $ try
-                  do (assert-traits EnumMark CustomMarker) false
+                  do (assert-traits Option OptionOps) false
                   fn (_err) true
               :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")

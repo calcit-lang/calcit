@@ -15,7 +15,7 @@
           :examples $ []
           :schema $ quote EnumDef
         'DocPerson0 $ %{} 'CodeEntry (:doc "|Doc smoke struct")
-          :code $ quote $ defstruct DocPerson (:name String)
+          :code $ quote $ defstruct DocPerson (:name String) (:impls DocTrait)
           :examples $ []
           :schema $ quote StructDef
         'DocTrait $ %{} 'CodeEntry (:doc "|Doc smoke trait")
@@ -29,7 +29,7 @@
           :examples $ []
           :schema $ quote Impl
         'main! $ %{} 'CodeEntry (:doc "|Run docs smoke cases")
-          :code $ quote $ defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
+          :code $ quote $ defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-assert-traits-local) (println "|Doc smoke cases passed")
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
@@ -39,8 +39,7 @@
         'test-assert-traits-local $ %{} 'CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote $ defn test-assert-traits-local ()
             let
-                DocPerson $ impl-traits DocPerson0 DocTraitImpl
-                p $ %{} DocPerson $ :name |Alice
+                p $ DocPerson0 :name |Alice
               assert= p $ assert-traits p DocTrait
               assert= "|doc Alice" $ p .label
           :examples $ []
@@ -48,39 +47,6 @@
         'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
             assert= (Some DocTrait) (impl-origin DocTraitImpl)
-          :examples $ []
-          :schema $ quote $ Fn (-> Unit)
-        'test-impl-traits-struct-enum-only $ %{} 'CodeEntry
-          :doc "|impl-traits only accepts struct/enum definitions"
-          :code $ quote $ defn test-impl-traits-struct-enum-only ()
-            let
-                DocPerson $ impl-traits DocPerson0 DocTraitImpl
-                DocEnum $ impl-traits DocEnum0 DocTraitImpl
-              assert= true $ struct-def? DocPerson
-              assert= true $ enum-def? DocEnum
-            let
-                msg $ try
-                  do
-                    impl-traits (%:: DocEnum0 :ok |done) DocTraitImpl
-                    , |NO_ERROR
-                  fn (e) (str e)
-              assert= false $ &= msg |NO_ERROR
-              inside-eval:
-                assert= true $ includes? msg |Expected:
-                assert= true $ includes? msg |Actual:
-                assert= true $ includes? msg |Fix:
-          :examples $ []
-          :schema $ quote $ Fn (-> Unit)
-        'test-native-impl-new-dot-method $ %{} 'CodeEntry (:doc "|&impl::new accepts .method field keys")
-          :code $ quote $ defn test-native-impl-new-dot-method ()
-            let
-                DotImpl $ &impl::new DocTrait $ :: .label
-                  fn (x) (assert-type x DocPerson0)
-                    str-spaced |native-dot $ :name x
-                DotPerson $ impl-traits DocPerson0 DotImpl
-                p $ %{} DotPerson $ :name |Bob
-              assert= (Some DocTrait) (impl-origin DotImpl)
-              assert= "|native-dot Bob" $ p .label
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
       :ns $ %{} 'NsEntry (:doc |)

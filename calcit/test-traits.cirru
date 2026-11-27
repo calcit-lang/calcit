@@ -352,8 +352,6 @@
                 assert= false $ = left-impl right-impl
                 assert= 0 $ &compare left-impl same-impl
                 assert= 1 $ &compare right-impl left-impl
-                assert= true $ &= (impl-traits Item left-impl) (impl-traits Item same-impl)
-                assert= false $ &= (impl-traits Item left-impl) (impl-traits Item right-impl)
               :tags $ #{} :trait :unit
             %{} 'TestEntry (:name |orders-definition-kinds-like-native)
               :code $ quote $ let
@@ -370,10 +368,6 @@
         :code $ quote $ ns test-traits.identity
     'test-traits.main $ %{} 'FileEntry
       :defs $ {}
-        '*branch-import-order $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defref *branch-import-order 0
-          :examples $ []
-          :schema $ quote $ Ref Number
         'AliasFirst $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum AliasFirst (:item Number) (:impls AliasFirstOps)
           :examples $ []
@@ -442,6 +436,85 @@
               , 22
           :examples $ []
           :schema $ quote Impl
+        'BoxCount $ %{} 'CodeEntry (:doc "|Struct with CountTraitA/CountTraitB")
+          :code $ quote $ defstruct BoxCount (:n Number) (:impls CountTraitA CountTraitB)
+          :examples $ []
+          :schema $ quote StructDef
+        'BoxCount-CountA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl BoxCount CountTraitA
+            .count $ fn (self)
+              hint-fn $ Fn BoxCount $ -> Number
+              , 11
+          :examples $ []
+          :schema $ quote Impl
+        'BoxCount-CountB $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl BoxCount CountTraitB
+            .count $ fn (self)
+              hint-fn $ Fn BoxCount $ -> Number
+              , 22
+          :examples $ []
+          :schema $ quote Impl
+        'BoxZap $ %{} 'CodeEntry (:doc "|Struct with MyZapA/MyZapB")
+          :code $ quote $ defstruct BoxZap (:name String) (:impls MyZapA MyZapB)
+          :examples $ []
+          :schema $ quote StructDef
+        'BoxZap-MyZapA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl BoxZap MyZapA (.zap myzap:a)
+          :examples $ []
+          :schema $ quote Impl
+        'ChoiceContains $ %{} 'CodeEntry (:doc "|Enum with ContainsTraitA/ContainsTraitB")
+          :code $ quote $ defenum ChoiceContains (:n Number) (:impls ContainsTraitA ContainsTraitB)
+          :examples $ []
+          :schema $ quote EnumDef
+        'ChoiceContains-ContainsA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ChoiceContains ContainsTraitA
+            .contains? $ fn (self _idx)
+              hint-fn $ Fn ChoiceContains Number $ -> Bool
+              , false
+          :examples $ []
+          :schema $ quote Impl
+        'ChoiceContains-ContainsB $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ChoiceContains ContainsTraitB
+            .contains? $ fn (self _idx)
+              hint-fn $ Fn ChoiceContains Number $ -> Bool
+              , true
+          :examples $ []
+          :schema $ quote Impl
+        'ContainsBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ContainsBox (:value Tag) (:impls CustomContains)
+          :examples $ []
+          :schema $ quote StructDef
+        'ContainsBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ContainsBox CustomContains $ .contains?
+            fn (self field) (&= field :virtual)
+          :examples $ []
+          :schema $ quote Impl
+        'ContainsProbe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum ContainsProbe (:item Number) (:impls ContainsProbeOps)
+          :examples $ []
+          :schema $ quote EnumDef
+        'ContainsProbeImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ContainsProbe ContainsProbeOps $ .contains?
+            fn (self key)
+              hint-fn $ Fn AnyEnum Number $ -> Number
+              , 1
+          :examples $ []
+          :schema $ quote Impl
+        'ContainsProbeOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ContainsProbeOps $ .contains?
+            Fn AnyEnum Number $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+        'ContainsTraitA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ContainsTraitA $ .contains?
+            Fn Self Number $ -> Bool
+          :examples $ []
+          :schema $ quote Trait
+        'ContainsTraitB $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ContainsTraitB $ .contains?
+            Fn Self Number $ -> Bool
+          :examples $ []
+          :schema $ quote Trait
         'CoreShowImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Person0 calcit.core/Show (.show core-show:show)
           :examples $ []
@@ -450,6 +523,21 @@
           :code $ quote $ defimpl Person0 calcit.core/ToString (.to-string core-show:show)
           :examples $ []
           :schema $ quote Impl
+        'CountTraitA $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait CountTraitA $ .count
+            Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+        'CountTraitB $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait CountTraitB $ .count
+            Fn Self $ -> Number
+          :examples $ []
+          :schema $ quote Trait
+        'CustomContains $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait CustomContains $ .contains?
+            Fn Self Tag $ -> Bool
+          :examples $ []
+          :schema $ quote Trait
         'Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
           :code $ quote $ defenum Demo (:demo Dynamic)
           :examples $ []
@@ -465,27 +553,7 @@
           :tests $ [] $ %{} 'TestEntry
             :name |runtime-ambiguous-method-rejects-dynamic-shadowing
             :code $ quote $ let
-                CountTraitA $ deftrait CountTraitA $ .count
-                  Fn Self $ -> Number
-                CountTraitB $ deftrait CountTraitB $ .count
-                  Fn Self $ -> Number
-                Box0 $ defstruct Box0 $ :n Number
-                impl-struct-a $ defimpl Box0 CountTraitA $ .count
-                  fn (self) 11
-                impl-struct-b $ defimpl Box0 CountTraitB $ .count
-                  fn (self) 22
-                BoxCount $ impl-traits Box0 impl-struct-a impl-struct-b
                 struct-val $ BoxCount :n 0
-                ContainsTraitA $ deftrait ContainsTraitA $ .contains?
-                  Fn Self Number $ -> Bool
-                ContainsTraitB $ deftrait ContainsTraitB $ .contains?
-                  Fn Self Number $ -> Bool
-                Choice0 $ defenum Choice0 $ :n Number
-                impl-enum-a $ defimpl Choice0 ContainsTraitA $ .contains?
-                  fn (self _idx) false
-                impl-enum-b $ defimpl Choice0 ContainsTraitB $ .contains?
-                  fn (self _idx) true
-                ChoiceContains $ impl-traits Choice0 impl-enum-a impl-enum-b
                 enum-val $ ChoiceContains :n 0
                 call-struct-count $ fn (x)
                   hint-fn $ Fn AnyStruct $ -> Number
@@ -540,31 +608,26 @@
           :code $ quote $ defimpl DemoZapB MyZapB (.zap myzap:b)
           :examples $ []
           :schema $ quote Impl
+        'EmptyProbe $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum EmptyProbe (:item Number) (:impls EmptyProbeOps)
+          :examples $ []
+          :schema $ quote EnumDef
+        'EmptyProbeImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl EmptyProbe EmptyProbeOps $ .empty?
+            fn (self)
+              hint-fn $ Fn AnyEnum $ -> Number
+              , 1
+          :examples $ []
+          :schema $ quote Impl
+        'EmptyProbeOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait EmptyProbeOps $ .empty?
+            Fn AnyEnum $ -> Number
+          :examples $ []
+          :schema $ quote Trait
         'EmptyStructProbe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct EmptyStructProbe
           :examples $ []
           :schema $ quote StructDef
-        'ExplicitContainsFalseImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl OpenContainsBase ExplicitContainsOps
-            .contains? $ fn (self index)
-              hint-fn $ Fn Self Number (-> Bool) (:generics Self)
-              println |explicit-contains-false-body
-              , false
-          :examples $ []
-          :schema $ quote Impl
-        'ExplicitContainsOps $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait ExplicitContainsOps
-            .contains? $ Fn Self Number (-> Bool) (:generics Self)
-          :examples $ []
-          :schema $ quote Trait
-        'ExplicitContainsTrueImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl OpenContainsBase ExplicitContainsOps
-            .contains? $ fn (self index)
-              hint-fn $ Fn Self Number (-> Bool) (:generics Self)
-              println |explicit-contains-true-body
-              , true
-          :examples $ []
-          :schema $ quote Impl
         'Greeter $ %{} 'CodeEntry
           :doc "|Struct carrying both a required trait impl and its child"
           :code $ quote $ defstruct Greeter (:name String) (:impls Labeled Greeting)
@@ -583,9 +646,8 @@
                 assert= "|hello Ada" $ &trait-call descriptor :greeting receiver
               :tags $ #{} :trait-metadata :unit
             %{} 'TestEntry (:name |imported-descriptor-call)
-              :code $ quote $ let
-                  Prototype $ impl-traits Greeter MetadataGreetingImpl
-                assert= |hello-from-metadata $ &trait-call metadata/GreetingAlias :greeting $ Prototype :name |Ada
+              :code $ quote $ assert= |hello-from-metadata
+                &trait-call metadata/GreetingAlias :greeting $ MetadataGreeter :name |Ada
               :tags $ #{} :trait-metadata :unit
         'GreetingImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl Greeter Greeting
@@ -597,21 +659,6 @@
                 raise "|GreetingImpl requires Greeter"
           :examples $ []
           :schema $ quote Impl
-          :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
-            :code $ quote $ let
-                Other $ impl-traits
-                  defstruct Greeter $ :name String
-                  , LabeledImpl GreetingImpl
-                OtherEnum $ impl-traits
-                  defenum OtherGreeter $ :foreign
-                  , LabeledImpl GreetingImpl
-              assert= "|GreetingImpl requires Greeter" $ try
-                .greeting $ Other :name |Ada
-                fn (message) message
-              assert= "|GreetingImpl requires Greeter" $ try
-                .greeting $ OtherEnum :foreign
-                fn (message) message
-            :tags $ #{} :struct-origin :unit
         'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
           :code $ quote $ deftrait Labeled
             .label $ Fn Self $ -> String
@@ -625,23 +672,12 @@
                 raise "|LabeledImpl requires Greeter"
           :examples $ []
           :schema $ quote Impl
-          :tests $ [] $ %{} 'TestEntry (:name |rejects-unrelated-receivers-before-field-use)
-            :code $ quote $ let
-                Other $ impl-traits
-                  defstruct Greeter $ :name String
-                  , LabeledImpl GreetingImpl
-                OtherEnum $ impl-traits
-                  defenum OtherGreeter $ :foreign
-                  , LabeledImpl GreetingImpl
-              assert= "|LabeledImpl requires Greeter" $ try
-                .label $ Other :name |Ada
-                fn (message) message
-              assert= "|LabeledImpl requires Greeter" $ try
-                .label $ OtherEnum :foreign
-                fn (message) message
-            :tags $ #{} :struct-origin :unit
+        'MetadataGreeter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct MetadataGreeter (:name String) (:impls metadata/Greeting)
+          :examples $ []
+          :schema $ quote StructDef
         'MetadataGreetingImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl Greeter metadata/Greeting
+          :code $ quote $ defimpl MetadataGreeter metadata/Greeting
             .greeting $ fn (_value) |hello-from-metadata
           :examples $ []
           :schema $ quote Impl
@@ -665,8 +701,12 @@
           :code $ quote $ defimpl Person0 MyFoo (.foo myfoo:foo)
           :examples $ []
           :schema $ quote Impl
-        'MyFooImpl2 $ %{} 'CodeEntry (:doc "|Trait impl for override test")
-          :code $ quote $ defimpl Person0 MyFoo (.foo myfoo:foo2)
+        'PersonFoo2 $ %{} 'CodeEntry (:doc "|Struct with second MyFoo implementation")
+          :code $ quote $ defstruct PersonFoo2 (:name String) (:impls MyFoo)
+          :examples $ []
+          :schema $ quote StructDef
+        'MyFooImpl2 $ %{} 'CodeEntry (:doc "|Trait impl for second MyFoo struct")
+          :code $ quote $ defimpl PersonFoo2 MyFoo (.foo myfoo:foo2)
           :examples $ []
           :schema $ quote Impl
         'MyZapA $ %{} 'CodeEntry (:doc "|Trait A for cross-trait method conflict test")
@@ -684,46 +724,20 @@
           :schema $ quote Trait
         'MyZapBImpl $ %{} 'CodeEntry
           :doc "|Trait B impl for cross-trait method conflict test"
-          :code $ quote $ defimpl Person0 MyZapB (.zap myzap:b)
+          :code $ quote $ defimpl BoxZap MyZapB (.zap myzap:b)
           :examples $ []
           :schema $ quote Impl
-        'OpenContainsBase $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defenum OpenContainsBase (:item Number)
-          :examples $ []
-          :schema $ quote EnumDef
-        'OpenContainsFalseImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl OpenContainsBase OpenContainsOps
-            .contains? $ fn (self index)
-              hint-fn $ Fn AnyEnum Number $ -> Bool
-              println |open-contains-false-body
-              , false
-          :examples $ []
-          :schema $ quote Impl
-        'OpenContainsOps $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait OpenContainsOps
-            .contains? $ Fn AnyEnum Number $ -> Bool
-          :examples $ []
-          :schema $ quote Trait
-        'OpenContainsTrueImpl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defimpl OpenContainsBase OpenContainsOps (.contains? open-contains-true)
-          :examples $ []
-          :schema $ quote Impl
-        'OpenEnumBox $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct OpenEnumBox (:value AnyEnum)
-          :examples $ []
-          :schema $ quote StructDef
         'Person0 $ %{} 'CodeEntry (:doc "|Struct used in trait tests")
-          :code $ quote $ defstruct Person0 (:name String)
+          :code $ quote $ defstruct Person0 (:name String) (:impls MyFoo calcit.core/Show calcit.core/ToString MyZapA)
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |preserves-nominal-method-input-after-attachment)
             :code $ quote $ let
-                FooPerson $ impl-traits Person0 MyFooImpl
-                ShowPerson $ impl-traits Person0 CoreShowImpl
-                OverridePerson $ impl-traits Person0 MyFooImpl2
-              assert= "|foo Alice" $ .foo $ FooPerson :name |Alice
-              assert= |Person:Alice $ .show $ ShowPerson :name |Alice
-              assert= "|foo2 Alice" $ .foo $ OverridePerson :name |Alice
+                foo-person $ Person0 :name |Alice
+                foo2-person $ PersonFoo2 :name |Alice
+              assert= "|foo Alice" $ .foo foo-person
+              assert= |Person:Alice $ .show foo-person
+              assert= "|foo2 Alice" $ .foo foo2-person
             :tags $ #{} :nominal-impl :trait :unit
         'RestBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct RestBox (:value Number) (:impls RestBoxOps)
@@ -809,6 +823,37 @@
             .find $ Fn test-traits.main/ResultBox String $ -> (Option Number)
           :examples $ []
           :schema $ quote Trait
+        'ReviewContains $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum ReviewContains (:item Number) (:impls ReviewContainsOps)
+          :examples $ []
+          :schema $ quote EnumDef
+        'ReviewContainsImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ReviewContains ReviewContainsOps $ .contains?
+            fn (self key)
+              hint-fn $ Fn AnyEnum Number $ -> Bool
+              , false
+          :examples $ []
+          :schema $ quote Impl
+        'ReviewContainsOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ReviewContainsOps $ .contains?
+            Fn AnyEnum Number $ -> Bool
+          :examples $ []
+          :schema $ quote Trait
+        'SelfInferredEnum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum SelfInferredEnum (:num Number) (:impls SelfInferredOps)
+          :examples $ []
+          :schema $ quote EnumDef
+        'SelfInferredEnumImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SelfInferredEnum SelfInferredOps
+            .sum-xy $ fn (self)
+              match self
+                (:num n) n
+            .shift-xy $ fn (self delta)
+              match self
+                (:num n)
+                  SelfInferredEnum :num $ + n delta
+          :examples $ []
+          :schema $ quote Impl
         'SelfInferredOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait SelfInferredOps
             .sum-xy $ Fn Self $ -> Number
@@ -816,44 +861,18 @@
           :examples $ []
           :schema $ quote Trait
         'SelfInferredPoint $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct SelfInferredPoint (:x Number) (:y Number)
+          :code $ quote $ defstruct SelfInferredPoint (:x Number) (:y Number) (:impls SelfInferredOps)
           :examples $ []
           :schema $ quote StructDef
           :tests $ [] $ %{} 'TestEntry (:name |infers-self-in-defimpl-inline-lambda)
             :code $ quote $ let
-                Point $ impl-traits SelfInferredPoint SelfInferredPointImpl
-                p $ Point :x 3 :y 4
+                p $ SelfInferredPoint :x 3 :y 4
+                picked $ SelfInferredEnum :num 10
+                shifted-choice $ .shift-xy picked 5
               assert= 7 $ .sum-xy p
               assert= (SelfInferredPoint :x 13 :y 14) (.shift-xy p 10)
-              let
-                  LocalBox $ defstruct LocalBox $ :v Number
-                  local-impl $ defimpl LocalBox SelfInferredOps
-                    .sum-xy $ fn (self) (:v self)
-                    .shift-xy $ fn (self delta)
-                      LocalBox :v $ + (:v self) delta
-                  LocalBoxWithImpl $ impl-traits LocalBox local-impl
-                  boxed $ LocalBoxWithImpl :v 5
-                  shifted $ .shift-xy boxed 3
-                assert= 5 $ .sum-xy boxed
-                assert= 6 $ + 1 $ .sum-xy boxed
-                assert= 8 $ :v shifted
-                assert= (LocalBox :v 8) shifted
-              let
-                  LocalChoice $ defenum LocalChoice $ :num Number
-                  choice-impl $ defimpl LocalChoice SelfInferredOps
-                    .sum-xy $ fn (self)
-                      match self $
-                        :num n
-                        , n
-                    .shift-xy $ fn (self delta)
-                      match self $
-                        :num n
-                        LocalChoice :num $ + n delta
-                  LocalChoiceWithImpl $ impl-traits LocalChoice choice-impl
-                  picked $ LocalChoiceWithImpl :num 10
-                  shifted-choice $ .shift-xy picked 5
-                assert= 15 $ + 5 $ .sum-xy picked
-                assert= (LocalChoice :num 15) shifted-choice
+              assert= 15 $ + 5 $ .sum-xy picked
+              assert= (SelfInferredEnum :num 15) shifted-choice
             :tags $ #{} :trait :unit
         'SelfInferredPointImpl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defimpl SelfInferredPoint SelfInferredOps
@@ -895,169 +914,6 @@
             assert= 0 value
           :examples $ []
           :schema $ quote $ Fn Number (-> Unit)
-        'branch-leading-number $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def branch-leading-number
-            do
-              reset! *branch-import-order $ +
-                * (deref *branch-import-order) 10
-                , 1
-              , 0
-          :examples $ []
-          :schema $ quote Number
-        'branch-open-argument $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn branch-open-argument (flag)
-            open-enum-public
-              if flag (explicit-trait-false 1) (explicit-trait-true 1)
-              , 0
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= false (branch-open-argument true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-argument false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-direct-public $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn branch-open-direct-public (flag)
-            let
-                FalseItem $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
-                TrueItem $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
-                value $ if flag (FalseItem :item 1) (TrueItem :item 1)
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= false (branch-open-direct-public true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-direct-public false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-effects $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn branch-open-effects (flag)
-            open-enum-public
-              if
-                do (println |branch-condition) flag
-                do (println |branch-false-impl) (explicit-trait-false 1)
-                do (println |branch-true-impl) (explicit-trait-true 1)
-              do (println |branch-key) 0
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool) (:features :io)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= false (branch-open-effects true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-effects false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-import-order $ %{} 'CodeEntry
-          :doc "|前导具名值先记录 1，后续实现分支条件再记录 2，最终必须为 12；此专用 Ref 不在测试入口重置，兼容 JS 顶层初始化及 native 惰性值求值。"
-          :code $ quote $ defn branch-open-import-order ()
-            let
-                result $ open-enum-after-number branch-leading-number $ if
-                  do
-                    reset! *branch-import-order $ +
-                      * (deref *branch-import-order) 10
-                      , 2
-                    , true
-                  explicit-trait-false 1
-                  explicit-trait-true 1
-              and (= result false)
-                = (deref *branch-import-order) 12
-          :examples $ []
-          :schema $ quote $ Fn (-> Bool) (:features :state)
-          :tests $ [] $ %{} 'TestEntry (:name |leading-import-before-impl-join)
-            :code $ quote $ assert= true (branch-open-import-order)
-            :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-method $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn branch-open-method (flag)
-            let
-                value $ if flag (explicit-trait-false 1) (explicit-trait-true 1)
-              open-enum-method value 0
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= false (branch-open-method true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-method false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-payload $ %{} 'CodeEntry
-          :doc "|验证 Struct/Option 构造器的实参元数据及分支载荷数据，分别读取两种载体中的数值。该辅助用例覆盖载荷保存和读取；具备调用点证据的 trait 实现身份分派由 branch-open-method、branch-open-public 和 recur-switch-contains? 等回归覆盖。开放 Enum 字段的自定义 trait 证据传播属于不同验收范围。"
-          :code $ quote $ defn branch-open-payload (flag)
-            let
-                box $ OpenEnumBox :value $ if flag (explicit-trait-false 1) (explicit-trait-true 2)
-                wrapped $ Some $ if flag (explicit-trait-false 1) (explicit-trait-true 2)
-                expected $ if flag 1 2
-                check-value $ fn (value)
-                  hint-fn $ Fn AnyEnum $ -> Bool
-                  let
-                      item $ .unwrap $ get value 1
-                    if (number? item) (= item expected) false
-              and
-                check-value $ :value box
-                check-value $ .unwrap wrapped
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= true (branch-open-payload true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-payload false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'branch-open-public $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn branch-open-public (flag)
-            let
-                value $ if flag (explicit-trait-false 1) (explicit-trait-true 1)
-              open-enum-public value 0
-          :examples $ []
-          :schema $ quote $ Fn Bool (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |false-impl)
-              :code $ quote $ assert= false (branch-open-public true)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-            %{} 'TestEntry (:name |true-impl)
-              :code $ quote $ assert= true (branch-open-public false)
-              :tags $ #{} :impl-origin-portable :open-branch-impl-evidence :trait
-        'closure-recur-same $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn closure-recur-same (index)
-            let
-                check $ fn (value n)
-                  hint-fn $ Fn AnyEnum Number $ -> Bool
-                  if (> n 0)
-                    recur value $ - n 1
-                    contains? value 0
-              check (explicit-trait-false 1) index
-          :examples $ []
-          :schema $ quote $ Fn Number (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |no-iteration)
-              :code $ quote $ assert= false (closure-recur-same 0)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
-            %{} 'TestEntry (:name |two-iterations)
-              :code $ quote $ assert= false (closure-recur-same 2)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
-        'closure-recur-switch $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn closure-recur-switch (index)
-            let
-                check $ fn (value n)
-                  hint-fn $ Fn AnyEnum Number $ -> Bool
-                  if (> n 0)
-                    recur (explicit-trait-true 1) (- n 1)
-                    contains? value 0
-              check (explicit-trait-false 1) index
-          :examples $ []
-          :schema $ quote $ Fn Number (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |no-iteration)
-              :code $ quote $ assert= false (closure-recur-switch 0)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
-            %{} 'TestEntry (:name |two-iterations)
-              :code $ quote $ assert= true (closure-recur-switch 2)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
         'compare-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn compare-with-trait (a b) (a .compare b)
           :examples $ []
@@ -1090,60 +946,14 @@
               describe-greeting $ Greeter :name |Ada
               , "|hello Ada / Ada"
             :tags $ #{} :trait-bound :unit
-        'explicit-bounded-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn explicit-bounded-contains? (value key) (&trait-call ExplicitContainsOps :contains? value key)
-          :examples $ []
-          :schema $ quote $ Fn T Number (-> Bool) (:generics T)
-            :where $ T ExplicitContainsOps
         'explicit-core-contains? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-core-contains? (value key) (&trait-call Contains :contains? value key)
           :examples $ []
           :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'explicit-nominal-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn explicit-nominal-contains? (value key)
-            decode-map-as (&trait-call ExplicitContainsOps :contains? value key) 'Bool
-          :examples $ []
-          :schema $ quote $ Fn OpenContainsBase Number (-> Bool)
         'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
           :examples $ []
           :schema $ quote $ Fn RestBox (List Number) (-> Number)
-        'explicit-trait-false $ %{} 'CodeEntry
-          :doc "|Builds an OpenContainsBase value carrying ExplicitContainsFalseImpl; same nominal type as explicit-trait-true."
-          :code $ quote $ defn explicit-trait-false (item)
-            let
-                T $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
-              T :item item
-          :examples $ []
-          :schema $ quote $ Fn Number (-> OpenContainsBase)
-        'explicit-trait-true $ %{} 'CodeEntry
-          :doc "|Builds an OpenContainsBase value carrying ExplicitContainsTrueImpl; same nominal type as explicit-trait-false."
-          :code $ quote $ defn explicit-trait-true (item)
-            let
-                T $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
-              T :item item
-          :examples $ []
-          :schema $ quote $ Fn Number (-> OpenContainsBase)
-        'loop-switch $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn loop-switch (index)
-            let
-                FalseItem $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
-                TrueItem $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
-              loop
-                  value $ FalseItem :item 1
-                  n index
-                if (> n 0)
-                  recur (TrueItem :item 1) (- n 1)
-                  contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn Number (-> Bool)
-          :tests $ []
-            %{} 'TestEntry (:name |no-iteration)
-              :code $ quote $ assert= false (loop-switch 0)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
-            %{} 'TestEntry (:name |two-iterations)
-              :code $ quote $ assert= true (loop-switch 2)
-              :tags $ #{} :impl-origin-portable :recur-closure-impl-evidence :trait
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...")
             ; Test Debug trait - all types should have it
@@ -1191,10 +1001,6 @@
               assert= false $ enum-empty? None
               assert= 3 $ count $ [] 1 2 3
             :tags $ #{} :builtin-init-unit :unit
-        'make-explicit-trait-value $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn make-explicit-trait-value () (explicit-trait-false 1)
-          :examples $ []
-          :schema $ quote $ Fn (-> OpenContainsBase)
         'mybar:bar1 $ %{} 'CodeEntry (:doc "|method implementation for MyBarImpl/:bar")
           :code $ quote $ defn mybar:bar1 (_x) |bar1
           :examples $ []
@@ -1224,7 +1030,7 @@
           :code $ quote $ defn myfoo:foo2 (p)
             str "|foo2 " $ :name p
           :examples $ []
-          :schema $ quote $ Fn Person0 (-> String)
+          :schema $ quote $ Fn PersonFoo2 (-> String)
         'myzap:a $ %{} 'CodeEntry (:doc "|method implementation for MyZapA/:zap")
           :code $ quote $ defn myzap:a (_x) |zapA
           :examples $ []
@@ -1245,178 +1051,6 @@
               assert= |zapB actual
               assert= :string $ type-of actual
             :tags $ #{} :result-contract-2386 :trait
-        'open-contains-false $ %{} 'CodeEntry
-          :doc "|Builds an OpenContainsBase value carrying OpenContainsFalseImpl."
-          :code $ quote $ defn open-contains-false (item)
-            let
-                T $ impl-traits OpenContainsBase OpenContainsFalseImpl
-              T :item item
-          :examples $ []
-          :schema $ quote $ Fn Number (-> OpenContainsBase)
-        'open-contains-true $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-contains-true (self index) (println |open-contains-true-body) true
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
-        'open-contains-true-value $ %{} 'CodeEntry
-          :doc "|Builds an OpenContainsBase value carrying OpenContainsTrueImpl."
-          :code $ quote $ defn open-contains-true-value (item)
-            let
-                T $ impl-traits OpenContainsBase OpenContainsTrueImpl
-              T :item item
-          :examples $ []
-          :schema $ quote $ Fn Number (-> OpenContainsBase)
-        'open-enum-after-number $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-enum-after-number (index value) (open-enum-public value index)
-          :examples $ []
-          :schema $ quote $ Fn Number AnyEnum (-> Bool) (:open :reflect)
-        'open-enum-forward $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-enum-forward (value index) (open-enum-public value index)
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-          :tests $ [] $ %{} 'TestEntry (:name |forwarded-nominal-impl-is-called)
-            :code $ quote $ assert= false
-              open-enum-forward (open-contains-false 1) 0
-            :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-        'open-enum-method $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-enum-method (value index)
-            let
-                result $ .contains? value index
-              if (bool? result) result $ raise |Open-contains-method-must-return-Bool
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-          :tests $ []
-            %{} 'TestEntry (:name |last-false-impl-is-called)
-              :code $ quote $ assert= false
-                open-enum-method (open-contains-false 1) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |last-true-impl-is-called)
-              :code $ quote $ assert= true
-                open-enum-method (open-contains-true-value 1) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |receiver-key-and-method-run-in-order)
-              :code $ quote $ assert= false
-                open-enum-method
-                  do (println |open-method-receiver) (open-contains-false 1)
-                  do (println |open-method-key) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-        'open-enum-public $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-enum-public (value index) (contains? value index)
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-          :tests $ []
-            %{} 'TestEntry (:name |last-false-impl-is-called)
-              :code $ quote $ assert= false
-                open-enum-public (open-contains-false 1) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |last-true-impl-is-called)
-              :code $ quote $ assert= true
-                open-enum-public (open-contains-true-value 1) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |receiver-key-and-method-run-in-order)
-              :code $ quote $ assert= false
-                open-enum-public
-                  do (println |open-public-receiver) (open-contains-false 1)
-                  do (println |open-public-key) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |default-option-impl-is-called)
-              :code $ quote $ assert= true
-                open-enum-public (Some 1) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |factory-return-contract-keeps-impl)
-              :code $ quote $ assert= false
-                open-enum-public (open-make-contains-value) 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |identity-return-contract-keeps-impl)
-              :code $ quote $ assert= false
-                open-enum-public
-                  open-pass-contains-value $ open-contains-false 1
-                  , 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |nested-identity-return-contract-keeps-impl)
-              :code $ quote $ assert= false
-                open-enum-public
-                  open-pass-contains-value $ open-pass-contains-value $ open-contains-false 1
-                  , 0
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-            %{} 'TestEntry (:name |nested-method-argument-is-not-recursive)
-              :code $ quote $ assert= false
-                open-enum-public (open-contains-false 1)
-                  if
-                    open-enum-public (open-contains-false 1) 0
-                    , 0 1
-              :tags $ #{} :impl-origin-portable :open-method-evidence :trait
-        'open-make-contains-value $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-make-contains-value () (println |open-make-contains-value) (open-contains-false 1)
-          :examples $ []
-          :schema $ quote $ Fn (-> OpenContainsBase) (:features :io)
-        'open-pass-contains-value $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-pass-contains-value (value) value
-          :examples $ []
-          :schema $ quote $ Fn OpenContainsBase (-> OpenContainsBase)
-        'recur-construct-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-construct-contains? (value index)
-            if (> index 0)
-              recur (explicit-trait-false index) (- index 1)
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-method-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-method-contains? (value index)
-            if (> index 0)
-              recur value $ - index 1
-              .contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-nested-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-nested-contains? (value index)
-            assert= false $ recur-public-contains? value 2
-            if (> index 0)
-              recur value $ - index 1
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-option-variant? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-option-variant? (value index)
-            if (> index 0)
-              recur None $ - index 1
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-public-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-public-contains? (value index)
-            if (> index 0)
-              recur value $ - index 1
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-sequence-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-sequence-contains? (value index)
-            assert= 0 $ loop
-                value 1
-              if (> value 0)
-                recur $ - value 1
-                , value
-            if (> index 0)
-              recur
-                do (println |recur-receiver) value
-                do (println |recur-index) (- index 1)
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:features :io) (:open :reflect)
-        'recur-swap-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-swap-contains? (left right index)
-            if (> index 0)
-              recur right left $ - index 1
-              contains? left 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum AnyEnum Number (-> Bool) (:open :reflect)
-        'recur-switch-contains? $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn recur-switch-contains? (value index)
-            if (> index 0)
-              recur (explicit-trait-true 1) (- index 1)
-              contains? value 0
-          :examples $ []
-          :schema $ quote $ Fn AnyEnum Number (-> Bool) (:open :reflect)
         'retain-trait-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn retain-trait-metadata ()
             let
@@ -1463,10 +1097,7 @@
                 st $ #{} 1 2 3
                 s |hello
                 opt $ Some 1
-                Person $ impl-traits Person0 MyFooImpl
-                p $ %{} Person $ :name |Alice
-                ZapPerson $ impl-traits Person0 MyZapAImpl
-                zp $ %{} ZapPerson $ :name |Bob
+                p $ Person0 :name |Alice
                 flag true
                 keyword :demo
                 nothing nil
@@ -1484,14 +1115,14 @@
               assert= p $ assert-traits p MyFoo
               ; Structs satisfy the built-in Debug trait through the shared struct impls.
               assert= p $ assert-traits p calcit.core/Debug
-              ; Person has no implementation of the unrelated MyBar trait.
+              ; Person0 has no implementation of the unrelated MyBar trait.
               assert= :true $ try
                 do (assert-traits p MyBar) :false
                 fn (e) (do :true)
               ; A same-named method from MyZapA must not satisfy the distinct MyZapB trait.
-              assert= zp $ assert-traits zp MyZapA
+              assert= p $ assert-traits p MyZapA
               assert= :true $ try
-                do (assert-traits zp MyZapB) :false
+                do (assert-traits p MyZapB) :false
                 fn (e) (do :true)
               assert= flag $ assert-traits flag calcit.core/Debug calcit.core/Eq
               assert= keyword $ assert-traits keyword calcit.core/Debug calcit.core/Eq
@@ -1584,28 +1215,12 @@
                 assert= 3 $ deref seen
               :tags $ #{} :empty-dispatch-boundary :trait :unit
             %{} 'TestEntry (:name |empty-rejects-non-bool-and-nil)
-              :code $ quote $ let
-                  EmptyProbeOps $ deftrait EmptyProbeOps $ .empty?
-                    Fn AnyEnum $ -> Number
-                  EmptyProbe0 $ defenum EmptyProbe $ :item Number
-                  EmptyProbeImpl $ defimpl EmptyProbe0 EmptyProbeOps $ .empty?
-                    fn (self)
-                      hint-fn $ Fn AnyEnum $ -> Number
-                      , 1
-                  EmptyProbe $ impl-traits EmptyProbe0 EmptyProbeImpl
+              :code $ quote $ do
                 assert= true $ throws? $ empty? (EmptyProbe :item 1)
                 assert= true $ throws? $ empty? nil
               :tags $ #{} :empty-dispatch-boundary :trait :unit
             %{} 'TestEntry (:name |contains-rejects-non-bool-and-open-key)
               :code $ quote $ let
-                  ContainsProbeOps $ deftrait ContainsProbeOps $ .contains?
-                    Fn AnyEnum Number $ -> Number
-                  ContainsProbe0 $ defenum ContainsProbe $ :item Number
-                  ContainsProbeImpl $ defimpl ContainsProbe0 ContainsProbeOps $ .contains?
-                    fn (self key)
-                      hint-fn $ Fn AnyEnum Number $ -> Number
-                      , 1
-                  ContainsProbe $ impl-traits ContainsProbe0 ContainsProbeImpl
                   has-open-index $ fn (value key)
                     hint-fn $ Fn AnyEnum Dynamic $ -> Bool
                     contains? value key
@@ -1635,14 +1250,6 @@
               :tags $ #{} :contains-dispatch-boundary :trait :unit
             %{} 'TestEntry (:name |contains-keeps-open-enum-impl)
               :code $ quote $ let
-                  ReviewContainsOps $ deftrait ReviewContainsOps $ .contains?
-                    Fn AnyEnum Number $ -> Bool
-                  ReviewContains0 $ defenum ReviewContains $ :item Number
-                  ReviewContainsImpl $ defimpl ReviewContains0 ReviewContainsOps $ .contains?
-                    fn (self key)
-                      hint-fn $ Fn AnyEnum Number $ -> Bool
-                      , false
-                  ReviewContains $ impl-traits ReviewContains0 ReviewContainsImpl
                   via-method $ fn (value)
                     hint-fn $ Fn AnyEnum $ -> Bool
                     .contains? value 0
@@ -1674,54 +1281,6 @@
                 assert= true $ check-empty $ EmptyStructProbe
                 assert= false $ check-empty $ Person0 :name |Ada
               :tags $ #{} :struct-empty-input-evidence :unit
-            %{} 'TestEntry (:name |default-recur-method)
-              :code $ quote $ assert= true
-                recur-method-contains? (Some 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |custom-recur-method)
-              :code $ quote $ assert= false
-                recur-method-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |default-recur-public)
-              :code $ quote $ assert= true
-                recur-public-contains? (Some 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |custom-recur-public)
-              :code $ quote $ assert= false
-                recur-public-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |long-loop)
-              :code $ quote $ assert= false
-                recur-public-contains? (explicit-trait-false 1) 10000
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |same-impl-new-payload)
-              :code $ quote $ assert= false
-                recur-construct-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |nested-loop-and-effects)
-              :code $ quote $ assert= false
-                recur-sequence-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |nested-static-loop)
-              :code $ quote $ assert= false
-                recur-nested-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |same-impl-new-variant)
-              :code $ quote $ assert= true
-                recur-option-variant? (Some 1) 2
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |parallel-swap-same-impl)
-              :code $ quote $ assert= false
-                recur-swap-contains? (explicit-trait-false 1) (explicit-trait-false 2) 1
-              :tags $ #{} :impl-origin-portable :recur-impl-evidence :trait
-            %{} 'TestEntry (:name |changed-impl)
-              :code $ quote $ assert= true
-                recur-switch-contains? (explicit-trait-false 1) 2
-              :tags $ #{} :recur-impl-changing :trait
-            %{} 'TestEntry (:name |parallel-swap-changed-impl)
-              :code $ quote $ assert= false
-                recur-swap-contains? (explicit-trait-true 1) (explicit-trait-false 1) 1
-              :tags $ #{} :recur-impl-changing :trait
             %{} 'TestEntry (:name |contains-field-and-index-bounds)
               :code $ quote $ let
                   p $ Person0 :name |Ada
@@ -1792,20 +1351,14 @@
         'test-cross-trait-method-conflict $ %{} 'CodeEntry (:doc "|Test method conflict across traits")
           :code $ quote $ defn test-cross-trait-method-conflict () (println "|Testing cross-trait method conflict...")
             let
-                ; two different traits provide the same method name "`:zap`"
-                ; impl-traits appends impls, so later ones override earlier ones
-                PersonA $ impl-traits Person0 MyZapAImpl MyZapBImpl
-                PersonB $ impl-traits Person0 MyZapBImpl MyZapAImpl
-                pa $ %{} PersonA $ :name |Alice
-                pb $ %{} PersonB $ :name |Bob
+                pa $ %{} BoxZap $ :name |Alice
                 ta $ DemoZapA :demo 1
                 tb $ DemoZapB :demo 1
               assert-traits pa MyZapA MyZapB
-              assert-traits pb MyZapA MyZapB
               assert-traits ta MyZapA MyZapB
               assert-traits tb MyZapA MyZapB
               assert= |zapB $ &trait-call MyZapB :zap pa
-              assert= |zapA $ &trait-call MyZapA :zap pb
+              assert= |zapA $ &trait-call MyZapA :zap pa
               assert= |zapB $ &trait-call MyZapB :zap ta
               assert= |zapA $ &trait-call MyZapA :zap tb
             println "|  cross-trait conflict: ✓"
@@ -1826,8 +1379,7 @@
             assert= "|({} (:a 1))" $ str $ {} (:a 1)
             ; assert= "|(#{} 1 2)" $ str $ #{} 1 2
             let
-                Person $ impl-traits Person0 CoreShowImpl
-                p $ %{} Person $ :name |Alice
+                p $ %{} Person0 $ :name |Alice
               assert-traits p calcit.core/Show
               assert= |Person:Alice $ p .show
             println "|  Debug trait: ✓"
@@ -1837,8 +1389,7 @@
           :code $ quote $ defn test-deftrait () (println "|Testing deftrait macro...")
             assert= :trait $ type-of MyFoo
             let
-                Person $ impl-traits Person0 MyFooImpl
-                p $ %{} Person $ :name |Alice
+                p $ %{} Person0 $ :name |Alice
               assert= "|foo Alice" $ p .foo
               println "|  deftrait: ✓"
           :examples $ []
@@ -1891,8 +1442,7 @@
         'test-explicit-trait-call $ %{} 'CodeEntry (:doc "|Test explicit trait-call for disambiguation")
           :code $ quote $ defn test-explicit-trait-call () (println "|Testing explicit trait-call...")
             let
-                Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
-                p $ %{} Person $ :name |Alice
+                p $ %{} BoxZap $ :name |Alice
               assert-traits p MyZapA MyZapB
               ; strict dispatch requires the nominal trait origin to be explicit
               assert= |zapB $ &trait-call MyZapB :zap p
@@ -1900,8 +1450,7 @@
               assert= |zapA $ &trait-call MyZapA :zap p
               assert= |zapB $ &trait-call MyZapB :zap p
             let
-                SinglePerson $ impl-traits Person0 MyZapAImpl
-                p $ %{} SinglePerson $ :name |Bob
+                p $ %{} Person0 $ :name |Bob
               assert= |zapA $ &trait-call MyZapA :zap p
               assert= :true $ try
                 do (&trait-call MyZapB :zap p) :false
@@ -1967,34 +1516,6 @@
                 assert= true $ explicit-core-contains? (Some 1) 1.5
                 assert= false $ explicit-core-contains? (Some 1) 2
               :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
-            %{} 'TestEntry (:name |explicit-origin-not-method-name)
-              :code $ quote $ let
-                  value $ explicit-trait-false 1
-                assert= true $ &trait-call Contains :contains? value 0
-                assert= false $ &trait-call ExplicitContainsOps :contains? value 0
-              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
-            %{} 'TestEntry (:name |same-nominal-data-different-impl)
-              :code $ quote $ do
-                assert= false $ explicit-nominal-contains? (explicit-trait-false 1) 0
-                assert= true $ explicit-nominal-contains? (explicit-trait-true 1) 0
-              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
-            %{} 'TestEntry (:name |bounded-receiver-keeps-impl)
-              :code $ quote $ let
-                  FalseItem $ impl-traits OpenContainsBase ExplicitContainsFalseImpl
-                  TrueItem $ impl-traits OpenContainsBase ExplicitContainsTrueImpl
-                assert= false $ explicit-bounded-contains? (FalseItem :item 1) 0
-                assert= true $ explicit-bounded-contains? (TrueItem :item 1) 0
-              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
-            %{} 'TestEntry (:name |factory-return-keeps-impl)
-              :code $ quote $ assert= false
-                &trait-call ExplicitContainsOps :contains? (make-explicit-trait-value) 0
-              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
-            %{} 'TestEntry (:name |identity-return-keeps-impl)
-              :code $ quote $ assert= false
-                &trait-call ExplicitContainsOps :contains?
-                  open-pass-contains-value $ explicit-trait-false 1
-                  , 0
-              :tags $ #{} :explicit-trait-identity-2342 :impl-origin-portable
             %{} 'TestEntry (:name |finite-nested-trait-call)
               :code $ quote $ assert= true
                 &trait-call Contains :contains? (Some 1)
@@ -2005,9 +1526,7 @@
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let
-                ; strict mode keeps one implementation per nominal trait origin
-                Person $ impl-traits Person0 MyFooImpl2
-                p $ %{} Person $ :name |Alice
+                p $ %{} PersonFoo2 $ :name |Alice
               assert= "|foo2 Alice" $ p .foo
             println "|  precedence: ✓"
           :examples $ []
@@ -2031,13 +1550,12 @@
               ; "`&inspect-methods`" returns the original value unchanged
               assert= xs $ &inspect-methods xs |list
             let
-                Person $ impl-traits Person0 MyFooImpl
-                p $ %{} Person $ :name |Alice
+                p $ %{} Person0 $ :name |Alice
                 ms2 $ &methods-of p
               assert= true $ includes? ms2 .foo
               assert= p $ &inspect-methods p |struct
             let
-                ms3 $ &methods-of $ impl-traits Person0 MyFooImpl
+                ms3 $ &methods-of Person0
                 ms4 $ &methods-of DemoBar
                 ms5 $ &methods-of MyFoo
               assert= true $ includes? ms3 .foo
@@ -2128,13 +1646,7 @@
         'test-qualified-contains-boundary $ %{} 'CodeEntry (:doc "|验证同名 trait 方法在显式调用与 Contains 泛型约束下保持各自来源。")
           :code $ quote $ defn test-qualified-contains-boundary ()
             let
-                CustomContains $ deftrait CustomContains $ .contains?
-                  Fn Self Tag $ -> Bool
-                Box0 $ defstruct Box $ :value Tag
-                CustomContainsImpl $ defimpl Box0 CustomContains $ .contains?
-                  fn (self field) (&= field :virtual)
-                Box $ impl-traits Box0 CustomContainsImpl
-                box $ %{} Box $ :value :x
+                box $ %{} ContainsBox $ :value :x
               and (&trait-call CustomContains :contains? box :virtual)
                 not $ &trait-call CustomContains :contains? box :value
                 &trait-call Contains :contains? box :value
@@ -2148,8 +1660,7 @@
         'test-to-string-custom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-to-string-custom ()
             let
-                Person $ impl-traits Person0 CoreToStringImpl
-                p $ %{} Person $ :name |Alice
+                p $ %{} Person0 $ :name |Alice
               assert= |Person:Alice $ to-string p
               to-string p
           :examples $ []
@@ -2166,108 +1677,6 @@
               assert= g $ assert-traits g Labeled
           :examples $ []
           :schema $ quote $ Fn (-> Unit)
-          :tests $ []
-            %{} 'TestEntry (:name |local-requires-parent-satisfied)
-              :code $ quote $ let
-                  LocalParent $ deftrait LocalParent $ .label
-                    Fn Self $ -> String
-                  LocalChild $ deftrait LocalChild (requires LocalParent)
-                    .greet $ Fn Self $ -> String
-                  Box0 $ defstruct Box0 $ :name String
-                  p-impl $ defimpl Box0 LocalParent $ .label
-                    fn (x) (:name x)
-                  c-impl $ defimpl Box0 LocalChild $ .greet
-                    fn (x)
-                      str |hi: $ :name x
-                  Box $ impl-traits Box0 p-impl c-impl
-                  v $ Box :name |Ada
-                assert= v $ assert-traits v LocalChild
-                assert= v $ assert-traits v LocalParent
-                assert= |Ada $ .label v
-                assert= |hi:Ada $ .greet v
-              :tags $ #{} :trait :unit
-            %{} 'TestEntry (:name |decorated-typeref-runtime-requires)
-              :code $ quote $ let
-                  p-impl $ defimpl Person0 Labeled $ .label
-                    fn (x) (:name x)
-                  c-impl $ defimpl Person0 Greeting $ .greeting
-                    fn (x)
-                      str |hi: $ :name x
-                  attach-greeting $ fn (p)
-                    hint-fn $ Fn Person0 $ -> Person0
-                    &struct:impl-traits p c-impl
-                  decorated $ attach-greeting $ &struct:impl-traits (Person0 :name |Ada) p-impl
-                  err-msg $ try
-                    do
-                      attach-greeting $ Person0 :name |Bob
-                      , |ok
-                    fn (msg) msg
-                assert= decorated $ assert-traits decorated Labeled
-                assert= decorated $ assert-traits decorated Greeting
-                assert= true $ .includes? err-msg "|requires an impl of trait"
-              :tags $ #{} :trait :unit
-            %{} 'TestEntry
-              :name |nested-and-let-decorated-typeref-runtime-requires
-              :code $ quote $ let
-                  p-impl $ defimpl Person0 Labeled $ .label
-                    fn (x) (:name x)
-                  b-impl $ defimpl Person0 MyBar $ .bar
-                    fn (x)
-                      hint-fn $ Fn Person0 $ -> String
-                      str |bar: $ :name x
-                  c-impl $ defimpl Person0 Greeting $ .greeting
-                    fn (x)
-                      str |hi: $ :name x
-                  attach-nested $ fn (p)
-                    hint-fn $ Fn Person0 $ -> Person0
-                    let
-                        res $ &struct:impl-traits (&struct:impl-traits p b-impl) c-impl
-                      assert=
-                        str |bar: $ :name res
-                        .bar res
-                      assert=
-                        str |hi: $ :name res
-                        .greeting res
-                      , res
-                  attach-let $ fn (p)
-                    hint-fn $ Fn Person0 $ -> Person0
-                    let
-                        p1 $ &struct:impl-traits p b-impl
-                        res $ &struct:impl-traits p1 c-impl
-                      assert=
-                        str |bar: $ :name res
-                        .bar res
-                      assert=
-                        str |hi: $ :name res
-                        .greeting res
-                      , res
-                  nested-ok $ attach-nested $ &struct:impl-traits (Person0 :name |Ada) p-impl
-                  let-ok $ attach-let $ &struct:impl-traits (Person0 :name |Eve) p-impl
-                  nested-err $ try
-                    do
-                      attach-nested $ Person0 :name |Bob
-                      , |ok
-                    fn (msg) msg
-                  let-err $ try
-                    do
-                      attach-let $ Person0 :name |Bob
-                      , |ok
-                    fn (msg) msg
-                assert= nested-ok $ assert-traits nested-ok Labeled
-                assert= nested-ok $ assert-traits nested-ok MyBar
-                assert= nested-ok $ assert-traits nested-ok Greeting
-                assert= |Ada $ &trait-call Labeled :label nested-ok
-                assert= |bar:Ada $ &trait-call MyBar :bar nested-ok
-                assert= |hi:Ada $ &trait-call Greeting :greeting nested-ok
-                assert= let-ok $ assert-traits let-ok Labeled
-                assert= let-ok $ assert-traits let-ok MyBar
-                assert= let-ok $ assert-traits let-ok Greeting
-                assert= |Eve $ &trait-call Labeled :label let-ok
-                assert= |bar:Eve $ &trait-call MyBar :bar let-ok
-                assert= |hi:Eve $ &trait-call Greeting :greeting let-ok
-                assert= true $ .includes? nested-err "|requires an impl of trait"
-                assert= true $ .includes? let-err "|requires an impl of trait"
-              :tags $ #{} :trait :unit
         'throws-at-expansion? $ %{} 'CodeEntry
           :doc "|Evaluate macro rejection during expansion and emit only its boolean result for shared backend replay."
           :code $ quote $ defmacro throws-at-expansion? (form)
@@ -2430,14 +1839,6 @@
                     .unwrap $ struct-definition live
                     .unwrap $ struct-definition parsed
                   raise |expected-struct
-              :tags $ #{} :struct-definition-equality :unit
-            %{} 'TestEntry (:name |preserves-generics-through-impl-decoration)
-              :code $ quote $ let
-                  marker $ deftrait Marker
-                  left $ defstruct ComparedRecord (:generics T) (:value Number)
-                  right $ defstruct ComparedRecord (:generics T U) (:value Number)
-                  implementation $ defimpl left marker
-                assert= false $ = (impl-traits left implementation) (impl-traits right implementation)
               :tags $ #{} :struct-definition-equality :unit
             %{} 'TestEntry (:name |preserves-equivalent-trait-bound-forms)
               :code $ quote $ let
@@ -2712,10 +2113,7 @@
               :tags $ #{} :struct-origin :unit
             %{} 'TestEntry (:name |preserves-alias-decoration-and-field-update)
               :code $ quote $ let
-                  Marker $ deftrait OriginMarker
-                  Implementation $ defimpl test-traits.struct-left/PointAlias Marker
-                  Decorated $ impl-traits test-traits.struct-left/PointAlias Implementation
-                  point $ Decorated :x 2
+                  point $ test-traits.struct-left/PointAlias :x 2
                 assert= true $ &struct:matches? point test-traits.struct-left/Point
                 assert= 3 $ test-traits.struct-left/read-origin-point point
                 assert= 5 $ test-traits.struct-left/read-origin-point $ .assoc point :x 4

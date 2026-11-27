@@ -9821,11 +9821,16 @@ fn method_callback_proof_matches(
   scope_types: &ScopeTypes,
 ) -> bool {
   let generic_callback = matches!(actual_arg, CalcitTypeAnnotation::Fn(actual) if !actual.generics.is_empty());
+  let universal_expected_callback = expected_arg
+    .resolve_to_nonoptional_fn()
+    .is_some_and(|expected| !expected.generics.is_empty());
   let empty_receiver_callback = receiver_type.contains_never() && expected_arg.resolve_to_nonoptional_fn().is_some();
-  if (!generic_callback && !empty_receiver_callback) || expected_arg.resolve_to_nonoptional_fn().is_none() {
+  if (!generic_callback && !universal_expected_callback && !empty_receiver_callback)
+    || expected_arg.resolve_to_nonoptional_fn().is_none()
+  {
     return false;
   }
-  let expected = expected_arg.substitute_type_vars(bindings);
+  let expected = expected_arg.substitute_free_type_vars(bindings);
   let mut expected_inputs = Vec::with_capacity(2);
   let mut actual_inputs = Vec::with_capacity(2);
   if let Some(exp_recv) = expected_receiver {
@@ -9841,7 +9846,7 @@ fn method_callback_proof_matches(
     return false;
   }
   let result = proof.prove(actual_arg, &expected);
-  if generic_callback {
+  if generic_callback || universal_expected_callback {
     result.is_proven()
   } else {
     !result.is_mismatch()
@@ -10168,8 +10173,11 @@ fn check_struct_method_args(
       } else {
         fn_info.generics.as_ref().clone()
       };
-      if !actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-        && !method_callback_proof_matches(
+      let universal_expected_callback = expected_type
+        .resolve_to_nonoptional_fn()
+        .is_some_and(|expected| !expected.generics.is_empty());
+      let matches = if universal_expected_callback {
+        method_callback_proof_matches(
           &method_generics,
           fn_info.arg_types.first(),
           type_value.as_ref(),
@@ -10178,8 +10186,20 @@ fn check_struct_method_args(
           &bindings,
           scope_types,
         )
-      {
-        let expected_str = expected_type.substitute_type_vars(&bindings).describe();
+      } else {
+        actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+          || method_callback_proof_matches(
+            &method_generics,
+            fn_info.arg_types.first(),
+            type_value.as_ref(),
+            expected_type.as_ref(),
+            actual_type.as_ref(),
+            &bindings,
+            scope_types,
+          )
+      };
+      if !matches {
+        let expected_str = expected_type.substitute_free_type_vars(&bindings).describe();
         let actual_str = actual_type.as_ref().describe();
         let migration = if method_name.as_ref() == "apply" && matches!(type_value.as_ref(), CalcitTypeAnnotation::List(_)) {
           type_checking::LIST_APPLY_MIGRATION_HINT
@@ -11179,9 +11199,9 @@ fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, 
       ),
     )),
     "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits" => Some((
-      crate::snapshot::LEGACY_DYNAMIC_STYLE_WARNING,
+      crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
       format!(
-        "[Warn] `{name}` attaches traits dynamically; declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism"
+        "[Error] `{name}` attaches traits dynamically; declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism"
       ),
     )),
     "%::" => Some((

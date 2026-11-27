@@ -11,59 +11,17 @@ const run = (...args) => execFileSync(binary, args, {
 });
 const traitSnapshot = resolve("calcit/test-traits.cirru");
 
-// Duplicate-trait source negatives, rejected before execution or codegen.
+// Legacy local `impl-traits` attachment and duplicate top-level impl negatives,
+// rejected before execution or codegen.
 export function traitRejectionCases() {
-  const duplicateStruct = (impls, effect = false) => `let
-    Person $ impl-traits Person0 ${impls}
-    p $ %{} Person $ :name |Alice${effect ? "\n    counter $ ref 0" : ""}
-  assert= true $ try
-    do
-      &trait-call MyFoo :foo p${effect ? " $ reset! counter $ + @counter 1" : ""}
-      , false
-    fn (error)
-      hint-fn $ {}
-        :args $ [] 'String
-        :return 'Bool
-      &str:includes? error |duplicate${effect ? "\n  assert= 1 @counter" : ""}`;
-  const duplicateEnum = impls => `let
-    Person $ impl-traits Demo0 ${impls}
-    p $ %:: Person :demo 1
-  assert= true $ try
-    do (&trait-call MyBar :bar p) false
-    fn (error)
-      hint-fn $ {}
-        :args $ [] 'String
-        :return 'Bool
-      &str:includes? error |duplicate`;
-  const staleOrigin = `let
-    make-trait $ fn ()
-      hint-fn $ {}
-        :args $ []
-        :return 'Trait
-      deftrait FreshShow $ .render AnyFn
-    old-trait $ make-trait
-    next-trait $ make-trait
-    old-impl $ defimpl Person0 old-trait $ .render
-      fn (self) |old
-    Person $ impl-traits Person0 old-impl
-    p $ %{} Person $ :name |Alice
-  assert= |old $ &trait-call old-trait :render p
-  assert= true $ try
-    do (&trait-call next-trait :render p) false
-    fn (error)
-      hint-fn $ {}
-        :args $ [] 'String
-        :return 'Bool
-      &str:includes? error "|cannot find impl"`;
-  return [
-    ["duplicate-origin-runtime", duplicateStruct("MyFooImpl MyFooImpl2")],
-    ["duplicate-origin-reversed", duplicateStruct("MyFooImpl2 MyFooImpl")],
-    ["duplicate-origin-repeated", duplicateStruct("MyFooImpl MyFooImpl")],
-    ["duplicate-enum-origin", duplicateEnum("MyBarImpl MyBarImpl2")],
-    ["duplicate-enum-reversed", duplicateEnum("MyBarImpl2 MyBarImpl")],
-    ["duplicate-arguments-once", duplicateStruct("MyFooImpl MyFooImpl2", true)],
-    ["fresh-origin-rejects-stale-impl", staleOrigin, /E_UNPROVEN_TRAIT_CALL/],
+  const legacyAttachmentCases = [
+    ["legacy-impl-traits", "let ((Person (impl-traits PlainPerson MyFooImpl))) (%{} Person (:name |Alice))", /E_LEGACY_DYNAMIC_STYLE/],
+    ["legacy-struct-def-impl-traits", "&struct-def:impl-traits PlainPerson MyFooImpl", /E_LEGACY_DYNAMIC_STYLE/],
+    ["legacy-enum-def-impl-traits", "&enum-def:impl-traits Demo0 MyBarImpl", /E_LEGACY_DYNAMIC_STYLE/],
+    ["legacy-struct-impl-traits", "&struct:impl-traits (PlainPerson :name |Alice) MyFooImpl", /E_LEGACY_DYNAMIC_STYLE/],
+    ["legacy-enum-impl-traits", "&enum:impl-traits (Demo0 :demo 1) MyBarImpl", /E_LEGACY_DYNAMIC_STYLE/],
   ];
+  return legacyAttachmentCases;
 }
 
 async function checkTraitBoundaries() {
@@ -93,9 +51,12 @@ async function checkTraitBoundaries() {
       rejected = true;
     }
     assert.ok(rejected, "legacy Map .add must not satisfy the nominal Add trait bound");
+    run(snapshot, "edit", "rm-def", "test-traits.main/invalid-map-add-trait");
 
     // These original source negatives now belong to compile rejection, not
     // attached runtime tests. Keep every target gate; host tests cover effects.
+    run(snapshot, "edit", "def", "test-traits.main/PlainPerson", "--input-format", "cirru", "--code",
+      "quote $ defstruct PlainPerson (:name String)");
     const sourceNegatives = traitRejectionCases();
     const setRuntimeBody = code => {
       // The private rejection entry returns Number 1, not the source routine's Unit.
@@ -110,7 +71,7 @@ async function checkTraitBoundaries() {
     };
     const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
       "--reload-fn", "test-traits.main/test-explicit-trait-call"];
-    for (const [name, code, diagnostic = /E_DUPLICATE_TRAIT_IMPL/] of sourceNegatives) {
+    for (const [name, code, diagnostic] of sourceNegatives) {
       setRuntimeBody(code);
       for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
         assert.throws(() => run(snapshot, ...selection, ...mode), error => {
@@ -118,6 +79,23 @@ async function checkTraitBoundaries() {
           return true;
         }, `${name}: strict selection must reject before execution or codegen`);
       }
+    }
+    // Duplicate top-level impls on a statically coherent type are rejected at compile/codegen boundaries.
+    run(snapshot, "edit", "def", "test-traits.main/DupPerson", "--input-format", "cirru", "--code",
+      "quote $ defstruct DupPerson (:name String) (:impls MyFoo)");
+    run(snapshot, "edit", "def", "test-traits.main/DupPersonImpl1", "--input-format", "cirru", "--code",
+      "quote $ defimpl DupPerson MyFoo (.foo (fn (self) |a))");
+    run(snapshot, "edit", "def", "test-traits.main/DupPersonImpl2", "--input-format", "cirru", "--code",
+      "quote $ defimpl DupPerson MyFoo (.foo (fn (self) |b))");
+    setRuntimeBody("&trait-call MyFoo :foo (DupPerson :name |Alice)");
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+      assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+        assert.match(`${error.stdout ?? ""}\n${error.stderr ?? ""}`, /E_DUPLICATE_TRAIT_IMPL/);
+        return true;
+      }, "duplicate top-level defimpl must reject across every target");
+    }
+    for (const defName of ["DupPerson", "DupPersonImpl1", "DupPersonImpl2"]) {
+      run(snapshot, "edit", "rm-def", `test-traits.main/${defName}`);
     }
     // Public deftrait accepts declarations, not a third default-body element.
     // Native's internal defaults field is not a user-facing source feature.
