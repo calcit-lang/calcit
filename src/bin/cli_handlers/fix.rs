@@ -4619,43 +4619,124 @@ struct LegacyCommentNilCandidate {
   path: Vec<usize>,
   arg_count: usize,
   position: NilExprPosition,
+  inside_unproven_macro: bool,
 }
 
+fn is_comment_form(node: &Cirru) -> bool {
+  matches!(
+    node,
+    Cirru::List(items) if matches!(items.first().and_then(leaf_value), Some(";" | "calcit.core/;"))
+  )
+}
+
+fn last_executable_index(items: &[Cirru], start: usize) -> Option<usize> {
+  (start..items.len()).rev().find(|&idx| !is_comment_form(&items[idx]))
+}
+
+fn collect_nil_fix_binding_names(node: &Cirru, target: &mut HashSet<String>) {
+  match node {
+    Cirru::Leaf(name) => {
+      let name = name.as_ref();
+      if !matches!(name, "&" | "?" | "[]" | "{}") && !name.starts_with([':', '|', '"', '\'']) {
+        target.insert(name.to_owned());
+      }
+    }
+    Cirru::List(items) => {
+      for item in items {
+        collect_nil_fix_binding_names(item, target);
+      }
+    }
+  }
+}
+
+fn resolve_fix_core_head<'a>(head: Option<&'a str>, shadowed: &HashSet<String>) -> Option<&'a str> {
+  let name = head?;
+  if let Some(qualified) = name.strip_prefix("calcit.core/") {
+    Some(qualified)
+  } else if name.contains('/') || shadowed.contains(name) {
+    None
+  } else {
+    Some(name)
+  }
+}
+
+fn namespace_shadowed_names(snapshot: &Snapshot, namespace: &str) -> Result<HashSet<String>, String> {
+  let mut shadowed = HashSet::new();
+  let Some(file) = snapshot.files.get(namespace) else {
+    return Ok(shadowed);
+  };
+  shadowed.extend(file.defs.keys().cloned());
+  let imports = program::extract_import_map(&file.ns.code, namespace)?;
+  for (local, rule) in imports {
+    let aliases_same_core = matches!(
+      rule.as_ref(),
+      program::ImportRule::NsReferDef(ns, def)
+        if ns.as_ref() == calcit::calcit::CORE_NS && def.as_ref() == local.as_ref()
+    );
+    if !aliases_same_core {
+      shadowed.insert(local.to_string());
+    }
+  }
+  Ok(shadowed)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn collect_legacy_comment_nil_paths(
   node: &Cirru,
   path: &mut Vec<usize>,
   position: NilExprPosition,
   root_returns_unit: bool,
+  allow_rewrite: bool,
+  shadowed: &HashSet<String>,
+  local_shadowed: &HashSet<String>,
+  is_macro_head: &mut impl FnMut(&str) -> bool,
   output: &mut Vec<LegacyCommentNilCandidate>,
 ) {
   let Cirru::List(items) = node else {
     return;
   };
   let head = items.first().and_then(leaf_value);
-  let core_head = head.map(|name| name.strip_prefix("calcit.core/").unwrap_or(name));
+  let core_head = resolve_fix_core_head(head, shadowed);
 
   match core_head {
-    Some("quote" | "quasiquote" | "defmacro" | ";") => (),
+    Some("quote" | "quasiquote" | "cirru-quote" | "defmacro" | ";") => (),
     Some(";nil") => {
       output.push(LegacyCommentNilCandidate {
         path: path.clone(),
         arg_count: items.len().saturating_sub(1),
         position,
+        inside_unproven_macro: !allow_rewrite,
       });
     }
     Some("do") => {
+      let last_exec = last_executable_index(items, 1);
       for (index, child) in items.iter().enumerate().skip(1) {
-        let child_pos = if index + 1 < items.len() {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
           NilExprPosition::Discarded
         } else {
           position
         };
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, child_pos, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("let") => {
+      let mut inner_shadowed = shadowed.clone();
+      let mut inner_local_shadowed = local_shadowed.clone();
       if let Some(Cirru::List(bindings)) = items.get(1) {
         for (bind_idx, binding) in bindings.iter().enumerate() {
           if let Cirru::List(pair) = binding
@@ -4664,44 +4745,167 @@ fn collect_legacy_comment_nil_paths(
             path.push(1);
             path.push(bind_idx);
             path.push(1);
-            collect_legacy_comment_nil_paths(value, path, NilExprPosition::Value, root_returns_unit, output);
+            collect_legacy_comment_nil_paths(
+              value,
+              path,
+              NilExprPosition::Value,
+              root_returns_unit,
+              allow_rewrite,
+              &inner_shadowed,
+              &inner_local_shadowed,
+              is_macro_head,
+              output,
+            );
             path.pop();
             path.pop();
             path.pop();
           }
+          if let Cirru::List(pair) = binding
+            && let Some(binder) = pair.first()
+          {
+            collect_nil_fix_binding_names(binder, &mut inner_shadowed);
+            collect_nil_fix_binding_names(binder, &mut inner_local_shadowed);
+          }
         }
       }
+      let last_exec = last_executable_index(items, 2);
       for (index, child) in items.iter().enumerate().skip(2) {
-        let child_pos = if index + 1 < items.len() {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
           NilExprPosition::Discarded
         } else {
           position
         };
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, child_pos, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          &inner_shadowed,
+          &inner_local_shadowed,
+          is_macro_head,
+          output,
+        );
+        path.pop();
+      }
+    }
+    Some("&let") => {
+      let mut inner_shadowed = shadowed.clone();
+      let mut inner_local_shadowed = local_shadowed.clone();
+      if let Some(Cirru::List(pair)) = items.get(1) {
+        if let Some(value) = pair.get(1) {
+          path.push(1);
+          path.push(1);
+          collect_legacy_comment_nil_paths(
+            value,
+            path,
+            NilExprPosition::Value,
+            root_returns_unit,
+            allow_rewrite,
+            shadowed,
+            local_shadowed,
+            is_macro_head,
+            output,
+          );
+          path.pop();
+          path.pop();
+        }
+        if let Some(binder) = pair.first() {
+          collect_nil_fix_binding_names(binder, &mut inner_shadowed);
+          collect_nil_fix_binding_names(binder, &mut inner_local_shadowed);
+        }
+      }
+      let last_exec = last_executable_index(items, 2);
+      for (index, child) in items.iter().enumerate().skip(2) {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
+          NilExprPosition::Discarded
+        } else {
+          position
+        };
+        path.push(index);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          &inner_shadowed,
+          &inner_local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("let[]" | "let{}") => {
-      if let Some(value) = items.get(2) {
+      if let Some(value) = items.get(2)
+        && !is_comment_form(value)
+      {
         path.push(2);
-        collect_legacy_comment_nil_paths(value, path, NilExprPosition::Value, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          value,
+          path,
+          NilExprPosition::Value,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
+      let mut inner_shadowed = shadowed.clone();
+      let mut inner_local_shadowed = local_shadowed.clone();
+      if let Some(binding_pattern) = items.get(1) {
+        collect_nil_fix_binding_names(binding_pattern, &mut inner_shadowed);
+        collect_nil_fix_binding_names(binding_pattern, &mut inner_local_shadowed);
+      }
+      let last_exec = last_executable_index(items, 3);
       for (index, child) in items.iter().enumerate().skip(3) {
-        let child_pos = if index + 1 < items.len() {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
           NilExprPosition::Discarded
         } else {
           position
         };
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, child_pos, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          &inner_shadowed,
+          &inner_local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("defn") => {
+      let mut inner_shadowed = shadowed.clone();
+      let mut inner_local_shadowed = local_shadowed.clone();
+      if let Some(params) = items.get(2) {
+        collect_nil_fix_binding_names(params, &mut inner_shadowed);
+        collect_nil_fix_binding_names(params, &mut inner_local_shadowed);
+      }
+      let last_exec = last_executable_index(items, 3);
       for (index, child) in items.iter().enumerate().skip(3) {
-        let child_pos = if index + 1 < items.len() {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
           NilExprPosition::Discarded
         } else if path.is_empty() && root_returns_unit {
           NilExprPosition::UnitTail
@@ -4709,151 +4913,323 @@ fn collect_legacy_comment_nil_paths(
           NilExprPosition::Value
         };
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, child_pos, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          &inner_shadowed,
+          &inner_local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("fn") => {
+      let mut inner_shadowed = shadowed.clone();
+      let mut inner_local_shadowed = local_shadowed.clone();
+      if let Some(params) = items.get(1) {
+        collect_nil_fix_binding_names(params, &mut inner_shadowed);
+        collect_nil_fix_binding_names(params, &mut inner_local_shadowed);
+      }
+      let last_exec = last_executable_index(items, 2);
       for (index, child) in items.iter().enumerate().skip(2) {
-        let child_pos = if index + 1 < items.len() {
+        if is_comment_form(child) {
+          continue;
+        }
+        let child_pos = if Some(index) < last_exec {
           NilExprPosition::Discarded
         } else {
           NilExprPosition::Value
         };
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, child_pos, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          child_pos,
+          root_returns_unit,
+          allow_rewrite,
+          &inner_shadowed,
+          &inner_local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("when" | "when-not") => {
-      if let Some(cond) = items.get(1) {
-        path.push(1);
-        collect_legacy_comment_nil_paths(cond, path, NilExprPosition::Value, root_returns_unit, output);
+      let mut args = items.iter().enumerate().skip(1).filter(|(_, child)| !is_comment_form(child));
+      if let Some((cond_idx, cond)) = args.next() {
+        path.push(cond_idx);
+        collect_legacy_comment_nil_paths(
+          cond,
+          path,
+          NilExprPosition::Value,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
-      for (index, child) in items.iter().enumerate().skip(2) {
+      for (index, child) in args {
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, NilExprPosition::Discarded, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          NilExprPosition::Discarded,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
     Some("if") => {
-      if let Some(cond) = items.get(1) {
-        path.push(1);
-        collect_legacy_comment_nil_paths(cond, path, NilExprPosition::Value, root_returns_unit, output);
-        path.pop();
-      }
-      for (index, branch) in items.iter().enumerate().skip(2) {
+      let exec_args: Vec<(usize, &Cirru)> = items
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, child)| !is_comment_form(child))
+        .collect();
+      for (arg_pos, (index, branch)) in exec_args.into_iter().enumerate() {
+        let branch_pos = if arg_pos == 1 || arg_pos == 2 {
+          position
+        } else {
+          NilExprPosition::Value
+        };
         path.push(index);
         collect_legacy_comment_nil_paths(
           branch,
           path,
-          if index <= 3 { position } else { NilExprPosition::Value },
+          branch_pos,
           root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
           output,
         );
         path.pop();
       }
     }
     Some("if-not") => {
-      if let Some(cond) = items.get(1) {
-        path.push(1);
-        collect_legacy_comment_nil_paths(cond, path, NilExprPosition::Value, root_returns_unit, output);
+      let exec_args: Vec<(usize, &Cirru)> = items
+        .iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(_, child)| !is_comment_form(child))
+        .collect();
+      let two_arg = exec_args.len() == 2;
+      for (arg_pos, (index, branch)) in exec_args.into_iter().enumerate() {
+        let branch_pos = if arg_pos == 0 {
+          NilExprPosition::Value
+        } else if two_arg && arg_pos == 1 {
+          NilExprPosition::Discarded
+        } else if arg_pos <= 2 {
+          position
+        } else {
+          NilExprPosition::Value
+        };
+        path.push(index);
+        collect_legacy_comment_nil_paths(
+          branch,
+          path,
+          branch_pos,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
-      }
-      if items.len() == 3 {
-        if let Some(then_branch) = items.get(2) {
-          path.push(2);
-          collect_legacy_comment_nil_paths(then_branch, path, NilExprPosition::Discarded, root_returns_unit, output);
-          path.pop();
-        }
-      } else {
-        for (index, branch) in items.iter().enumerate().skip(2) {
-          path.push(index);
-          collect_legacy_comment_nil_paths(
-            branch,
-            path,
-            if index <= 3 { position } else { NilExprPosition::Value },
-            root_returns_unit,
-            output,
-          );
-          path.pop();
-        }
       }
     }
     Some("if-let") => {
-      if let Some(Cirru::List(pair)) = items.get(1)
-        && let Some(value) = pair.get(1)
-      {
-        path.push(1);
-        path.push(1);
-        collect_legacy_comment_nil_paths(value, path, NilExprPosition::Value, root_returns_unit, output);
-        path.pop();
-        path.pop();
-      }
-      if items.len() == 3 {
-        if let Some(then_branch) = items.get(2) {
-          path.push(2);
-          collect_legacy_comment_nil_paths(then_branch, path, NilExprPosition::Discarded, root_returns_unit, output);
-          path.pop();
-        }
-      } else {
-        for (index, branch) in items.iter().enumerate().skip(2) {
-          path.push(index);
+      let mut then_shadowed = shadowed.clone();
+      let mut then_local_shadowed = local_shadowed.clone();
+      if let Some(Cirru::List(pair)) = items.get(1) {
+        if let Some(value) = pair.get(1) {
+          path.push(1);
+          path.push(1);
           collect_legacy_comment_nil_paths(
-            branch,
+            value,
             path,
-            if index <= 3 { position } else { NilExprPosition::Value },
+            NilExprPosition::Value,
             root_returns_unit,
+            allow_rewrite,
+            shadowed,
+            local_shadowed,
+            is_macro_head,
             output,
           );
           path.pop();
+          path.pop();
         }
+        if let Some(binder) = pair.first() {
+          collect_nil_fix_binding_names(binder, &mut then_shadowed);
+          collect_nil_fix_binding_names(binder, &mut then_local_shadowed);
+        }
+      }
+      let exec_branches: Vec<(usize, &Cirru)> = items
+        .iter()
+        .enumerate()
+        .skip(2)
+        .filter(|(_, child)| !is_comment_form(child))
+        .collect();
+      let two_arg = exec_branches.len() == 1;
+      for (branch_idx, (index, branch)) in exec_branches.into_iter().enumerate() {
+        let (branch_pos, branch_shadowed, branch_local_shadowed) = if branch_idx == 0 {
+          (
+            if two_arg { NilExprPosition::Discarded } else { position },
+            &then_shadowed,
+            &then_local_shadowed,
+          )
+        } else if branch_idx == 1 {
+          (position, shadowed, local_shadowed)
+        } else {
+          (NilExprPosition::Value, shadowed, local_shadowed)
+        };
+        path.push(index);
+        collect_legacy_comment_nil_paths(
+          branch,
+          path,
+          branch_pos,
+          root_returns_unit,
+          allow_rewrite,
+          branch_shadowed,
+          branch_local_shadowed,
+          is_macro_head,
+          output,
+        );
+        path.pop();
       }
     }
     Some("cond") => {
       for (clause_idx, clause) in items.iter().enumerate().skip(1) {
+        if is_comment_form(clause) {
+          continue;
+        }
         let Cirru::List(pair) = clause else {
           continue;
         };
         path.push(clause_idx);
         for (item_idx, item) in pair.iter().enumerate() {
+          if is_comment_form(item) {
+            continue;
+          }
           let item_pos = if item_idx == 1 { position } else { NilExprPosition::Value };
           path.push(item_idx);
-          collect_legacy_comment_nil_paths(item, path, item_pos, root_returns_unit, output);
+          collect_legacy_comment_nil_paths(
+            item,
+            path,
+            item_pos,
+            root_returns_unit,
+            allow_rewrite,
+            shadowed,
+            local_shadowed,
+            is_macro_head,
+            output,
+          );
           path.pop();
         }
         path.pop();
       }
     }
     Some("match") => {
-      if let Some(scrutinee) = items.get(1) {
+      if let Some(scrutinee) = items.get(1)
+        && !is_comment_form(scrutinee)
+      {
         path.push(1);
-        collect_legacy_comment_nil_paths(scrutinee, path, NilExprPosition::Value, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          scrutinee,
+          path,
+          NilExprPosition::Value,
+          root_returns_unit,
+          allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
       for (clause_idx, clause) in items.iter().enumerate().skip(2) {
+        if is_comment_form(clause) {
+          continue;
+        }
         let Cirru::List(clause_items) = clause else {
           continue;
         };
+        let mut clause_shadowed = shadowed.clone();
+        let mut clause_local_shadowed = local_shadowed.clone();
+        if let Some(pattern) = clause_items.first() {
+          collect_nil_fix_binding_names(pattern, &mut clause_shadowed);
+          collect_nil_fix_binding_names(pattern, &mut clause_local_shadowed);
+        }
+        let last_exec = last_executable_index(clause_items, 1);
         path.push(clause_idx);
         for (expr_idx, expr) in clause_items.iter().enumerate().skip(1) {
-          let expr_pos = if expr_idx + 1 < clause_items.len() {
+          if is_comment_form(expr) {
+            continue;
+          }
+          let expr_pos = if Some(expr_idx) < last_exec {
             NilExprPosition::Discarded
           } else {
             position
           };
           path.push(expr_idx);
-          collect_legacy_comment_nil_paths(expr, path, expr_pos, root_returns_unit, output);
+          collect_legacy_comment_nil_paths(
+            expr,
+            path,
+            expr_pos,
+            root_returns_unit,
+            allow_rewrite,
+            &clause_shadowed,
+            &clause_local_shadowed,
+            is_macro_head,
+            output,
+          );
           path.pop();
         }
         path.pop();
       }
     }
     _ => {
+      // Unknown macros can rewrite or quote arguments such as `(capture (do (;nil) 1))`.
+      // Retain nested candidates for review instead of authorizing auto-rewrites across macro boundaries.
+      let child_allow_rewrite = if let Some(head_name) = head
+        && !local_shadowed.contains(head_name)
+        && is_macro_head(head_name)
+      {
+        false
+      } else {
+        allow_rewrite
+      };
       for (index, child) in items.iter().enumerate() {
+        if is_comment_form(child) {
+          continue;
+        }
         path.push(index);
-        collect_legacy_comment_nil_paths(child, path, NilExprPosition::Value, root_returns_unit, output);
+        collect_legacy_comment_nil_paths(
+          child,
+          path,
+          NilExprPosition::Value,
+          root_returns_unit,
+          child_allow_rewrite,
+          shadowed,
+          local_shadowed,
+          is_macro_head,
+          output,
+        );
         path.pop();
       }
     }
@@ -4868,6 +5244,7 @@ fn plan_legacy_comment_nil_fixes(
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   let unit_leaf = Cirru::leaf("&unit");
+  let mut macro_head_cache = std::collections::HashMap::<(String, String), bool>::new();
   for (namespace, definition) in selected_definitions {
     select_definition_entry_context(namespace, definition);
     let entry = snapshot
@@ -4879,19 +5256,31 @@ fn plan_legacy_comment_nil_fixes(
       entry.schema.as_ref(),
       CalcitTypeAnnotation::Fn(fn_annot) if matches!(fn_annot.return_type.as_ref(), CalcitTypeAnnotation::Unit)
     );
+    let namespace_shadowed = namespace_shadowed_names(snapshot, namespace)?;
+    let local_shadowed = HashSet::new();
+    let mut is_macro_head = |head: &str| {
+      let key = (namespace.clone(), head.to_owned());
+      *macro_head_cache
+        .entry(key)
+        .or_insert_with(|| super::edit::definition_head_is_macro(snapshot_file, snapshot, namespace, head).unwrap_or(true))
+    };
     let mut candidates = Vec::new();
     collect_legacy_comment_nil_paths(
       &entry.code,
       &mut Vec::new(),
       NilExprPosition::Value,
       root_returns_unit,
+      true,
+      &namespace_shadowed,
+      &local_shadowed,
+      &mut is_macro_head,
       &mut candidates,
     );
     candidates.sort_by(|left, right| right.path.cmp(&left.path));
     let target_definition = format!("{namespace}/{definition}");
     for candidate in candidates {
       let original_node = navigate_to_path(&entry.code, &candidate.path)?;
-      let safe_rewrite = candidate.arg_count == 0 && candidate.position.allows_unit_rewrite();
+      let safe_rewrite = !candidate.inside_unproven_macro && candidate.arg_count == 0 && candidate.position.allows_unit_rewrite();
       let operation = if safe_rewrite {
         Some(FixOperation::ReplaceNodeWithLeaf {
           original_json_ast: cirru_to_json_value(&original_node).to_string(),
@@ -4912,6 +5301,9 @@ fn plan_legacy_comment_nil_fixes(
           }
           NilExprPosition::Value => unreachable!("checked allows_unit_rewrite"),
         }
+      } else if candidate.inside_unproven_macro {
+        "Cannot auto-rewrite `(;nil)` inside a macro call boundary because macro expansion may quote or consume its form; review the macro expansion and migrate manually."
+          .to_owned()
       } else if candidate.arg_count > 0 {
         "Cannot auto-rewrite `(;nil …)` carrying ignored comment/expression arguments; review whether to convert arguments to `;` comments and use `&unit` or `Option :none`."
           .to_owned()
@@ -6461,5 +6853,48 @@ mod tests {
       CalcitTypeAnnotation::Trait(trait_def)
         if trait_def.name.ref_str() == "Display" && trait_def.definition_ref.as_deref() == Some("app.schema/Display")
     ));
+  }
+
+  #[test]
+  fn legacy_comment_nil_collector_respects_quotes_comments_shadowing_and_macro_boundaries() {
+    let source = cirru_parser::parse(
+      r#"
+defn demo (when)
+  cirru-quote (do (;nil) 1)
+  when true (;nil)
+  capture (do (;nil) 1)
+  &let (x 1)
+    ;nil
+    , 2
+  ;nil
+  ; trailing-comment
+"#,
+    )
+    .expect("valid cirru");
+    let mut candidates = Vec::new();
+    let shadowed = std::collections::HashSet::new();
+    let local_shadowed = std::collections::HashSet::new();
+    let mut is_macro = |head: &str| head == "capture";
+    super::collect_legacy_comment_nil_paths(
+      &source[0],
+      &mut Vec::new(),
+      super::NilExprPosition::Value,
+      false,
+      true,
+      &shadowed,
+      &local_shadowed,
+      &mut is_macro,
+      &mut candidates,
+    );
+    // 1) cirru-quote is skipped
+    // 2) `when true (;nil)` with shadowed `when` -> Value (unsafe)
+    // 3) `capture (do (;nil) 1)` -> inside_unproven_macro = true (unsafe)
+    // 4) `&let (x 1) (;nil) (, 2)` -> Discarded (safe)
+    // 5) trailing `;nil` before `; trailing-comment` when root returns Value -> Value (unsafe)
+    assert_eq!(candidates.len(), 4);
+    assert!(!candidates[0].position.allows_unit_rewrite(), "shadowed when must be Value");
+    assert!(candidates[1].inside_unproven_macro, "capture macro arg must stay guarded");
+    assert!(candidates[2].position.allows_unit_rewrite(), "&let non-tail is Discarded");
+    assert!(!candidates[3].position.allows_unit_rewrite(), "tail before comment is Value");
   }
 }

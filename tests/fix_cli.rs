@@ -11621,11 +11621,16 @@ fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
     |demo.review $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.review))
       :defs $ {}
+        |capture $ %{} :CodeEntry (:doc |) (:schema $ quote (Macro Syntax (-> (Expr Dynamic))))
+          :code $ quote
+            defmacro capture (form)
+              quasiquote $ quote ~form
         |keep-review $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Dynamic)))
           :code $ quote
             defn keep-review ()
               ;nil |keep-comment
               quote (;nil)
+              cirru-quote (do (;nil) 1)
               if true
                 ;nil
               ;nil
@@ -11634,6 +11639,15 @@ fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
             defn review-two-arg-if ()
               if true
                 ;nil
+        |trailing-comment $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Dynamic)))
+          :code $ quote
+            defn trailing-comment ()
+              ;nil
+              ; trailing-comment
+        |macro-arg $ %{} :CodeEntry (:doc |) (:schema $ quote (Fn (-> Dynamic)))
+          :code $ quote
+            defn macro-arg ()
+              capture (do (;nil) 1)
     |demo.mixed $ %{} :FileEntry
       :ns $ %{} :CodeEntry (:doc |) (:schema nil) (:code $ quote (ns demo.mixed))
       :defs $ {}
@@ -11648,8 +11662,9 @@ fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
   .expect("write legacy-comment-nil snapshot");
   let before = fs::read(&snapshot).unwrap();
 
-  // Review namespace has 2 machine-applicable? Wait: in keep-review `if true (;nil)` is discarded statement (safe!),
-  // while `;nil |keep-comment`, tail `;nil` in keep-review, and tail `if true (;nil)` in review-two-arg-if stay requires-review.
+  // In demo.review: `keep-review` has discarded `if true (;nil)` (1 machine-applicable) while
+  // `;nil |keep-comment`, tail `;nil`, `review-two-arg-if`, `trailing-comment` before `; trailing-comment`,
+  // and `macro-arg` stay requires-review; `quote` and `cirru-quote` are skipped.
   let review_preview = run_calcit(
     &snapshot,
     &["fix", "--rule", "legacy-comment-nil-v1", "--ns", "demo.review", "--format", "json"],
@@ -11657,10 +11672,10 @@ fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
   assert_success(&review_preview, "preview review-only comment nil");
   let review_report = parse_stdout(&review_preview);
   let review_suggestions = review_report["data"]["suggestions"].as_array().unwrap();
-  assert_eq!(review_suggestions.len(), 4, "{review_report}");
+  assert_eq!(review_suggestions.len(), 6, "{review_report}");
   let keep_if = review_suggestions
     .iter()
-    .find(|item| item["definition"] == "demo.review/keep-review" && item["path"] == "code@5.2")
+    .find(|item| item["definition"] == "demo.review/keep-review" && item["path"] == "code@6.2")
     .expect("2-arg if in discarded statement position");
   assert_eq!(keep_if["applicability"], "machine-applicable");
   assert_eq!(
@@ -11668,8 +11683,8 @@ fn legacy_comment_nil_rule_rewrites_only_proven_empty_sites_to_unit() {
       .iter()
       .filter(|item| item["applicability"] == "requires-review" && item["replacement"].is_null())
       .count(),
-    3,
-    "keep-comment, tail `;nil`, and 2-arg `if` in Value tail stay requires-review: {review_report}"
+    5,
+    "keep-comment, tail `;nil`, 2-arg `if` in Value tail, trailing-comment tail, and macro arg stay requires-review: {review_report}"
   );
 
   // Mixed namespace rewrites only the proven empty discarded `;nil`, leaving `;nil |keep-comment`.

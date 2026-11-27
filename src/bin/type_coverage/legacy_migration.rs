@@ -314,6 +314,9 @@ fn collect<'a>(
       let head = items.first().and_then(leaf);
       let core_head = head.and_then(|name| resolve_core_symbol(name, shadowed));
 
+      if matches!(core_head, Some(";" | "cirru-quote")) && !quote.is_quoted() {
+        return;
+      }
       if core_head == Some(";") {
         return;
       }
@@ -407,6 +410,40 @@ fn collect<'a>(
             }
             return;
           }
+          Some("&let") => {
+            if let Some(Cirru::List(pair)) = items.get(1) {
+              if let Some(value) = pair.get(1) {
+                path.push(1);
+                path.push(1);
+                collect(
+                  value,
+                  path,
+                  quote.for_child(core_head, 1),
+                  type_context.for_child(head, 1, items.len()),
+                  inner_shadowed.as_ref(),
+                  findings,
+                );
+                path.pop();
+                path.pop();
+              }
+              if let Some(binder) = pair.first() {
+                collect_binding_names(binder, inner_shadowed.to_mut());
+              }
+            }
+            for (index, child) in items.iter().enumerate().skip(2) {
+              path.push(index);
+              collect(
+                child,
+                path,
+                quote.for_child(core_head, index),
+                type_context.for_child(head, index, items.len()),
+                inner_shadowed.as_ref(),
+                findings,
+              );
+              path.pop();
+            }
+            return;
+          }
           Some("let[]" | "let{}") => {
             if let Some(value) = items.get(2) {
               path.push(2);
@@ -484,11 +521,27 @@ fn collect<'a>(
         if index == 0 && matches!(child, Cirru::Leaf(_)) && !quote.is_quoted() && type_context == WeakTypeContext::Code {
           continue;
         }
-        // Skip parameter declaration list children in defn/defmacro/fn.
-        if !quote.is_quoted()
-          && type_context == WeakTypeContext::Code
-          && ((matches!(core_head, Some("defn" | "defmacro")) && index == 2) || (core_head == Some("fn") && index == 1))
-        {
+        // Skip definition-name slots and parameter declaration list children in definitions.
+        let is_definition_name = index == 1
+          && matches!(
+            core_head,
+            Some(
+              "defn"
+                | "defmacro"
+                | "def"
+                | "defstruct"
+                | "defenum"
+                | "deftrait"
+                | "deftype"
+                | "defexternal"
+                | "defatom"
+                | "defref"
+                | "defwasm-export"
+                | "defwasm-import"
+            )
+          );
+        let is_param_list = (matches!(core_head, Some("defn" | "defmacro")) && index == 2) || (core_head == Some("fn") && index == 1);
+        if !quote.is_quoted() && type_context == WeakTypeContext::Code && (is_definition_name || is_param_list) {
           continue;
         }
         path.push(index);
@@ -695,5 +748,28 @@ defn demo (x either)
     );
     // Ensure inline helper wasn't needed and paths are populated.
     assert!(!findings.is_empty());
+
+    let edge_source = cirru_parser::parse(
+      r#"
+do
+  defn tag? (x) true
+  &let (tag? (fn (x) true)) (tag? 1)
+  cirru-quote (nil? x)
+"#,
+    )
+    .unwrap();
+    let mut edge_findings = Vec::new();
+    collect(
+      &edge_source[0],
+      &mut Vec::new(),
+      QuoteContext::default(),
+      WeakTypeContext::Code,
+      &HashSet::new(),
+      &mut edge_findings,
+    );
+    assert!(
+      edge_findings.is_empty(),
+      "definition names, &let shadowers, and cirru-quote payloads must not trigger false positives"
+    );
   }
 }
