@@ -1932,6 +1932,21 @@ fn typed_map_decoder_expands_deftype_aliases_and_bound_slots() {
     String::from_utf8_lossy(&recursive.stderr)
   );
   assert!(diagnostic.contains("recursive type alias"), "{diagnostic}");
+
+  edit_definition(&snapshot, "Open", "quote $ deftype Open Dynamic", false);
+  edit_definition(
+    &snapshot,
+    "main!",
+    "quote $ defn main! () (try-parse-cirru-edn-as |1 app.main/Open) &unit",
+    true,
+  );
+  let open = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert!(
+    !open.status.success(),
+    "an alias must not make open data eligible for closed EDN decoding"
+  );
+  let diagnostic = format!("{}{}", String::from_utf8_lossy(&open.stdout), String::from_utf8_lossy(&open.stderr));
+  assert!(diagnostic.contains("E_DECODER_DERIVE"), "{diagnostic}");
 }
 
 fn edit_def_at(snapshot: &Path, target: &str, code: &str) {
