@@ -101,6 +101,8 @@ core 中与服务端和边界解码相关的 API 已直接提供 `Result` / `Opt
 | 集合索引 / 环境变量 | `get`、`first`、`last`、`nth`、`get-env` | `Option T` |
 | 文件与目录读取 | `FsPath .read-text`、`.read-dir`、`.write-text!`、`read-stdin-text` | `Result<..., String>` |
 
+闭合解码的目标可以是 `deftype` 别名，包括已填入类型参数的泛型别名，或绑定到此类类型的类型槽。解码仍按展开后的类型检查实际值；未绑定泛型和递归别名不会成为开放的 `Dynamic`。`try-decode-map-as` 的运行时解码支持 native 和 JS，WASM 暂不支持。
+
 ## 不可恢复失败：`raise`、`unreachable!`、`todo!` 与 `assert`
 
 只有在违反前置条件、出现逻辑不变量破坏或进入不可达分支时，才使用 `raise` 或控制流标记终止执行（效果等同于 Rust 的 `panic!`）：

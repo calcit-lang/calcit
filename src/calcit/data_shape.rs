@@ -837,22 +837,38 @@ impl GraphBuilder {
       return self.build_union(union_def, ns, def);
     }
 
-    let schema = program::lookup_def_schema(&ns, &def);
-    if !matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
-      && !matches!(schema.as_ref(), CalcitTypeAnnotation::TypeRef(schema_name, _) if schema_name.as_ref() == name)
-    {
-      if !args.is_empty() {
+    let alias = if let Some(alias) = super::type_annotation::type_alias_declaration(&format!("{ns}/{def}")) {
+      if alias.generics.len() != args.len() {
         return Err(DataShapeError::new(format!(
-          "cannot apply generic arguments to type alias `{ns}/{def}`"
+          "type alias `{ns}/{def}` expects {} type arguments, got {}",
+          alias.generics.len(),
+          args.len()
         )));
       }
+      Some(alias.expand(&ns, args))
+    } else {
+      let schema = program::lookup_def_schema(&ns, &def);
+      if matches!(schema.as_ref(), CalcitTypeAnnotation::Dynamic)
+        || matches!(schema.as_ref(), CalcitTypeAnnotation::TypeRef(schema_name, _) if schema_name.as_ref() == name)
+      {
+        None
+      } else {
+        if !args.is_empty() {
+          return Err(DataShapeError::new(format!(
+            "cannot apply generic arguments to type alias `{ns}/{def}`"
+          )));
+        }
+        Some(schema)
+      }
+    };
+    if let Some(alias) = alias {
       let alias_key = format!("{ns}/{def}");
       if !self.resolving_aliases.insert(alias_key.clone()) {
         return Err(DataShapeError::new(format!(
           "recursive type alias `{alias_key}`; recursive data must use a nominal struct or enum"
         )));
       }
-      let result = self.build_type(schema.as_ref(), &ns);
+      let result = self.build_type(alias.as_ref(), &ns);
       self.resolving_aliases.remove(&alias_key);
       return result;
     }

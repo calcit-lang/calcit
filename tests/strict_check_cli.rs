@@ -1892,6 +1892,48 @@ fn typed_edn_decoder_rejects_unknown_alias_and_missing_definition() {
   }
 }
 
+#[test]
+fn typed_map_decoder_expands_deftype_aliases_and_bound_slots() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).unwrap();
+  edit_definition(&snapshot, "MapOf", "quote $ deftype MapOf (:generics T) (Map Tag T)", false);
+  edit_definition(&snapshot, "State", "quote $ deftype State (MapOf Bool)", false);
+  edit_definition(&snapshot, "*state", "quote $ deftype-slot :state", false);
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set-type-slot", ":state", "app.main/State"]),
+    "bind the state slot",
+  );
+  edit_definition(
+    &snapshot,
+    "main!",
+    "quote $ defn main! () (assert= true (result:ok? (try-decode-map-as ({} (:show? true)) app.main/State))) (assert= true (result:err? (try-decode-map-as ({} (:show? |bad)) *state))) (assert= true (result:ok? (try-parse-cirru-edn-as \"|{} (:show? true)\" app.main/State))) (assert= true (result:err? (try-parse-cirru-edn-as \"|{} (:show? |bad)\" app.main/State))) &unit",
+    true,
+  );
+  edit_schema(&snapshot, "main!", "Unit");
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "check decoder alias");
+  assert_success(&run_calcit(&snapshot, &[]), "run decoder alias");
+
+  edit_definition(&snapshot, "Loop", "quote $ deftype Loop (List Loop)", false);
+  edit_definition(
+    &snapshot,
+    "main!",
+    "quote $ defn main! () (try-decode-map-as ([]) app.main/Loop) &unit",
+    true,
+  );
+  let recursive = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(
+    !recursive.status.success(),
+    "recursive aliases must not produce an unbounded decoder"
+  );
+  let diagnostic = format!(
+    "{}{}",
+    String::from_utf8_lossy(&recursive.stdout),
+    String::from_utf8_lossy(&recursive.stderr)
+  );
+  assert!(diagnostic.contains("recursive type alias"), "{diagnostic}");
+}
+
 fn edit_def_at(snapshot: &Path, target: &str, code: &str) {
   assert_success(
     &run_calcit(snapshot, &["edit", "def", target, "--overwrite", "--code", code]),
