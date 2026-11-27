@@ -79,6 +79,10 @@ export function planRun({ event, ref, headRef = "", title = "", headMessage = ""
   };
 }
 
+export function needsRustIntegration(plan) {
+  return Boolean(plan.rust && (plan.mode === "full" || plan.rustTests.length > 0));
+}
+
 // Integration tests to run for a light pull request: the changed test files, tests whose source
 // names a changed file (fixtures, calcit/*.cirru, scripts), and tests named after a changed
 // source module (src/bin/cli_handlers/fix.rs -> fix_cli, query.rs -> query_*_cli).
@@ -154,7 +158,8 @@ function main() {
   mkdirSync("target/ci-plan", { recursive: true });
   writeFileSync("target/ci-plan/changed.txt", (changed ?? []).join("\n") + "\n");
   const out = {
-    mode: plan.mode, full: String(plan.mode === "full"), rust: String(plan.rust), wasi: String(plan.wasi),
+    mode: plan.mode, full: String(plan.mode === "full"), rust: String(plan.rust),
+    rust_integration: String(needsRustIntegration(plan)), wasi: String(plan.wasi),
     platform: String(plan.platform), rust_tests: plan.rustTests.map((name) => `--test ${name}`).join(" "), tree,
   };
   appendFileSync(env.GITHUB_OUTPUT, Object.entries(out).map(([key, value]) => `${key}=${value}\n`).join(""));

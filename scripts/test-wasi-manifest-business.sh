@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-readonly CALCIT_BIN="$PWD/target/debug/calcit"
+readonly CALCIT_BIN="${CALCIT_BIN:-$PWD/target/debug/calcit}"
 readonly SNAPSHOT="$PWD/examples/wasi-command/calcit.cirru"
 readonly FIXTURES="$PWD/examples/wasi-command"
 readonly OUTPUT="$PWD/target/wasi-manifest-business"

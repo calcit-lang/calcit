@@ -79,14 +79,17 @@ readonly STARTER_STDOUT="${STARTER_OUT}/stdout.txt"
 readonly STARTER_STDERR="${STARTER_OUT}/stderr.txt"
 readonly CHECK_ONLY_OUT="${CARGO_TARGET_DIR:-target}/wasi-check-only-smoke"
 readonly NATIVE_HARNESS_BIN="${CARGO_TARGET_DIR:-target}/debug/${HARNESS_BIN_NAME}"
-readonly CALCIT_BIN="${CARGO_TARGET_DIR:-target}/debug/calcit"
+readonly CALCIT_BIN="${CALCIT_BIN:-${CARGO_TARGET_DIR:-target}/debug/calcit}"
 WASI_FS_HOST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/calcit-wasi-fs.XXXXXX")
 readonly WASI_FS_HOST_DIR
 trap 'rm -rf "$WASI_FS_HOST_DIR"' EXIT
 
 command -v wasmtime >/dev/null
 
-cargo run --bin calcit -- --check-only "$FIXTURE"
+if [[ ! -x "$CALCIT_BIN" ]]; then
+  cargo build --bin calcit
+fi
+"$CALCIT_BIN" --check-only "$FIXTURE"
 cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --target "$TARGET"
 
 wasmtime run \
@@ -96,8 +99,12 @@ wasmtime run \
 
 # The generated command module keeps the Preview 1 bridge internal and starts
 # through the conventional no-argument `_start` export.
-cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --bin calcit
-cargo run --bin calcit -- "$COMMAND_FIXTURE" test --tag wasi --require-match
+if [[ -x "$CALCIT_BIN" ]]; then
+  cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME"
+else
+  cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --bin calcit
+fi
+"$CALCIT_BIN" "$COMMAND_FIXTURE" test --tag wasi --require-match
 "$CALCIT_BIN" wasi --boundary native "$COMMAND_FIXTURE" --check-only --emit-path "$CHECK_ONLY_OUT"
 if [[ -e "$CHECK_ONLY_OUT/program.wasm" ]]; then
   echo "WASI check-only unexpectedly wrote a module" >&2
