@@ -977,8 +977,10 @@ fn core_wasm_static_defref_initializers_and_stale_magic_type_of() {
           :schema $ quote $ Fn Number (-> Number)
         'inspect-tag $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export inspect-tag (v)
-            if (&= (type-of v) :string) 1
-              if (&= (type-of v) :number) 2 0
+            let
+                tag $ type-of v
+              if (&= tag :string) 1
+                if (&= tag :number) 2 0
           :examples $ []
           :schema $ quote $ Fn String (-> Number)
         'main! $ %{} 'CodeEntry (:doc |)
@@ -1411,7 +1413,9 @@ fn core_wasm_shared_scratch_dag_promotes_once_without_corrupting_scratch() {
                 shared $ &str:pad-right |shared-dag- pad |D
                 dag $ [] shared shared shared shared
               reset! *dag dag
-              if (&= (type-of shared) :string) , shared (raise |corrupted-scratch-magic)
+              let
+                  tag $ type-of shared
+                if (&= tag :string) , shared (raise |corrupted-scratch-magic)
           :examples $ []
           :schema $ quote $ Fn Number (-> String)
         'dag-elem-ptr $ %{} 'CodeEntry (:doc |)
