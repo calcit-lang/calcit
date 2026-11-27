@@ -4239,6 +4239,23 @@
                   do (println |str-trailing-two) 9
                 assert= |7 $ .debug 7
               :tags $ #{} :core :str-arity :unit
+        '&short-fn-has-placeholder? $ %{} 'CodeEntry (:doc "|Internal helper for `\\` to scan a form for `%` or `%2` without crossing into nested `\\` or `quote` forms.")
+          :code $ quote $ defn &short-fn-has-placeholder? (node target)
+            if (list? node)
+              &list-match-internal node false (head _tail)
+                if
+                  or (&= head '\) (&= head 'calcit.core/\)
+                    &= head 'quote
+                    &= head 'calcit.core/quote
+                  , false
+                  loop
+                      body node
+                    &list-match-internal body false (b0 bs)
+                      if (&short-fn-has-placeholder? b0 target) true $ recur bs
+              &= node target
+          :examples $ []
+          :schema $ quote $ Fn T Symbol (-> Bool) (:generics T)
+          :tags $ #{} :internal
         '&str-spaced $ %{} 'CodeEntry
           :doc "|内部 String 拼接函数；仅供 str-spaced 在过滤 nil、完成文本转换后调用。head? 表示首项是否免于前置空格。"
           :code $ quote $ defn &str-spaced (head? x0 & xs)
@@ -6121,31 +6138,11 @@
         '\ $ %{} 'CodeEntry (:doc "|Short anonymous function macro supporting `%` and `%2` placeholders without legacy `?` nil-injecting parameters.")
           :code $ quote $ defmacro \ (& xs)
             if (&list:empty? xs) (raise "|\\ expects function body")
-            loop
-                pending xs
-                has-first? false
-                has-second? false
-              if (&list:empty? pending)
-                if has-second?
-                  quasiquote $ defn %\ (% %2) ~xs
-                  if has-first?
-                    quasiquote $ defn %\ (%) ~xs
-                    quasiquote $ defn %\ () ~xs
-                &let
-                  node $ &list:nth pending 0
-                  &let
-                    rest-nodes $ &list:rest pending
-                    if (list? node)
-                      if
-                        &list-match-internal node false (head _tail)
-                          or (&= head '\) (&= head 'calcit.core/\)
-                            &= head 'quote
-                            &= head 'calcit.core/quote
-                        recur rest-nodes has-first? has-second?
-                        recur (&list:concat node rest-nodes) has-first? has-second?
-                      recur rest-nodes
-                        or has-first? $ &= node '%
-                        or has-second? $ &= node '%2
+            if (&short-fn-has-placeholder? xs '%2)
+              quasiquote $ defn %\ (% %2) ~xs
+              if (&short-fn-has-placeholder? xs '%)
+                quasiquote $ defn %\ (%) ~xs
+                quasiquote $ defn %\ () ~xs
           :examples $ []
             quote $ assert= 3 $ (\ + 1 %) 2
             quote $ assert= 5 $ (\ + % %2) 2 3
