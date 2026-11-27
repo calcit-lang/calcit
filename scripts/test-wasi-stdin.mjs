@@ -45,11 +45,11 @@ try {
     ["edit", "def", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
       "quote $ defn logging-unit-main! () (assert= &unit $ println |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
     ["edit", "schema", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
-      "quote $ Fn (-> Unit)"],
+      "quote $ Fn (-> Unit) (:features :io)"],
     ["edit", "def", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
       "quote $ defn logging-failure-main! () (println |must-not-print $ raise |log-argument-failed)"],
     ["edit", "schema", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
-      "quote $ Fn (-> Unit)"],
+      "quote $ Fn (-> Unit) (:features :io)"],
   ];
   const loggingPreview = JSON.parse(calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--dry-run", "--format", "json"));
   calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--expect-revision", loggingPreview.scoped_revision, "--format", "json");

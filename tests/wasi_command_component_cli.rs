@@ -1172,7 +1172,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
                 println $ str same? |: d1 |: h1 |: w1 |: q1 |: o1 |: m1 |: a1
                 , &unit
             :examples $ []
-            :schema $ quote $ Fn (-> Unit) (:features :io)
+            :schema $ quote $ Fn (-> Unit) (:features :io :state)
           'reload! $ %{} 'CodeEntry (:doc |)
             :code $ quote $ defn reload! () &unit
             :examples $ []
@@ -1241,7 +1241,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
               let ((f @*bad-cb)) (println (f 1))
               , &unit
             :examples $ []
-            :schema $ quote $ Fn (-> Unit) (:features :io)
+            :schema $ quote $ Fn (-> Unit) (:features :io :state)
           'reload! $ %{} 'CodeEntry (:doc |)
             :code $ quote $ defn reload! () &unit
             :examples $ []
@@ -1289,7 +1289,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
             let ((f @*anon-cb)) (println (f 1))
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit) (:features :io)
+          :schema $ quote $ Fn (-> Unit) (:features :io :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -1340,7 +1340,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
             let ((f @*anon-cb)) (println (f 41))
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit) (:features :io)
+          :schema $ quote $ Fn (-> Unit) (:features :io :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -1405,13 +1405,13 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
             if flag (reset! *anon-cb inc1) inc1
             let ((f @*anon-cb)) (f 41)
           :examples $ []
-          :schema $ quote $ Fn Bool (-> Number)
+          :schema $ quote $ Fn Bool (-> Number) (:features :state)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
             println (probe true)
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit) (:features :io)
+          :schema $ quote $ Fn (-> Unit) (:features :io :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -1469,7 +1469,7 @@ fn wasi_command_closure_edge_cases_and_defref_dependency_tracking() {
             let ((f @*saved)) (println (f 1))
             , &unit
           :examples $ []
-          :schema $ quote $ Fn (-> Unit) (:features :io)
+          :schema $ quote $ Fn (-> Unit) (:features :io :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

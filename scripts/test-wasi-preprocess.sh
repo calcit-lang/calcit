@@ -133,7 +133,7 @@ cp calcit/add.cirru "$trait_fixture"
 "$CALCIT_BIN" "$trait_fixture" edit def app.main/main! --overwrite --input-format cirru --code \
   'quote $ defn main! () (if (&= (to-string 42) |42) (println |WASI-trait-to-string:-ok) (quit! 1))'
 "$CALCIT_BIN" "$trait_fixture" edit schema app.main/main! --input-format cirru --code \
-  "quote \$ :: 'Fn \$ {} (:return 'Unit) (:args \$ [])"
+  "quote \$ Fn (-> Unit) (:features :io)"
 "$CALCIT_BIN" wasi --boundary component "$trait_fixture" --emit-path "$trait_output"
 wasmtime run -W component-model-more-async-builtins=y -W component-model-async-stackful=y \
   "$trait_output/program.wasm" >"$WASI_FS_HOST_DIR/trait-stdout.txt"
