@@ -32,10 +32,10 @@ related:
 - **`Nil` 移除 `ToString`，并收口运行时集合/字符串 `nil` 透传**：`Nil` 改为使用不包含 `ToString` 的 `&core-scalar-impls`（`to-string nil` / `nil .to-string` 触发 `E_GENERIC_WHERE_BOUND_MISMATCH`，`&turn-string nil` 在 Native/JS/WASM 显式拒绝）；`&str:concat` 与多参数 `str` 在 Native/JS/WASM 均拒绝 `nil`（仅单参数 `str nil` / `&str nil` 保留调试格式化输出 `""`）；Native/JS 的 `&list:butlast`、`&list:reverse`、`&merge`，以及 JS 的 `&list:slice`、`&list:concat`、`sort`、`blank?` 不再将 `nil` 隐式当作空集合/空串透传，JS `&include`/`&exclude` 也与 Native 对齐，不再静默忽略 `nil`。字符串拼接与转换请使用 `Option` 配合 `.unwrap-or` 或显式空串/空集合。
 - **`\` 短函数宏按实际占位符展开精确元数**：不再生成 `defn %\ (? % %2)` 的旧式 `?` 注入 `nil` 参数，而是依据函数体是否出现 `%2` / `%` 分别展开为 `defn %\ ()`、`defn %\ (%)` 与 `defn %\ (% %2)`；需要省略尾参请改用 `Option` 尾参或显式传参。
 - **`non-nil!` 标为兼容旧入口**：文档明确提示新代码使用 `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
-- **遗留 `nil` 助手、非空具体类型的 `nil?`/`non-nil?` 与 `%{} _`/`%::` 原型构造升级为默认阻断 Error**：
+- **遗留 `nil` 助手、非空具体类型的 `nil?`/`non-nil?`、局部 `impl-traits` 与 `%{} _`/`%::` 升级为默认阻断 Error**：
   - `E_LEGACY_NIL_USAGE`（阻断错误）：`;nil`（改用 `&unit` 或 `Option :none`）、`either`（改用 `Option<T>` `.unwrap-or`/`if-let`/`match`）、`non-nil!`（改用 `Option<T>` `.unwrap`/`.unwrap-or`/`match`）、`keys-non-nil` / `merge-non-nil` / `&merge-non-nil`（改用 `Option<V>` 字段或省略缺失键），以及参数静态类型已知为非空具体类型（排除 `Dynamic`、`Nullable`、`Nil`、`TypeVar`、`TypeSlot`、`JsObject`、`Option`、`JsNullish`）的 `nil?` / `non-nil?` 死检查（移除多余判空或使用 `Option<T>`）。带 `:deprecated` 标签的核心定义也可通过 `calcit analyze weak-types --only deprecated-call` 集中盘点。
-  - `E_LEGACY_DYNAMIC_STYLE`（阻断错误）：`%{} _`（改用具名 `defstruct` 直接构造器）与 `%::`（具名 enum 改用直接构造器 `Enum :variant …`，或先用 `calcit fix --rule named-enum-constructor-v1` 自动改写；匿名 enum 改用 `:: :tag …`）。
-  - **保留为非阻断 Warning（`Notes:`）**：`W_RUNTIME_TYPE_PREDICATE`（针对开放 `Dynamic` / `Nullable` 的 `nil?`/`non-nil?` 以及 `type-of`、`data-view`、`bool?`/`number?`/`string?`/`list?`/`map?`/`struct?`/`enum?` 等运行时谓词）与局部 `impl-traits` 的 `W_LEGACY_DYNAMIC_STYLE`（将在后续收口中迁移至顶层 `(:impls …)` + `defimpl` 或 `(Dyn Trait)`）。
+  - `E_LEGACY_DYNAMIC_STYLE`（阻断错误）：`%{} _`（改用具名 `defstruct` 直接构造器）、`%::`（具名 enum 改用直接构造器 `Enum :variant …`，或先用 `calcit fix --rule named-enum-constructor-v1` 自动改写；匿名 enum 改用 `:: :tag …`），以及局部 `impl-traits` / `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits`（改为顶层 `(:impls …)` + `defimpl`，需要动态多态时改用 `(Dyn Trait)` / `dyn:box`）。
+  - **保留为非阻断 Warning（`Notes:`）**：`W_RUNTIME_TYPE_PREDICATE`（针对开放 `Dynamic` / `Nullable` 的 `nil?`/`non-nil?` 以及 `type-of`、`data-view`、`bool?`/`number?`/`string?`/`list?`/`map?`/`struct?`/`enum?` 等运行时谓词）。
 
 ```cirru
 assert= &unit $ if-let (x None) (println x)

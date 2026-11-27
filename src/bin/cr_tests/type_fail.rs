@@ -2118,53 +2118,30 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
     let _strict = StrictTypesReset::enabled();
     for (name, snippet, code, detail) in [
       (
-        "duplicate-struct-def",
-        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box0 (:n Number)\ndef impl1 $ defimpl Box0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Box0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((B (impl-traits Box0 impl1 impl2))) &unit",
+        "duplicate-top-level-struct-defimpl",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box (:n Number) (:impls ShowT)\ndefimpl Box ShowT $ .show $ fn (x) |a\ndefimpl Box ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_b (Box :n 1))) &unit",
         "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
+        "implements app.main/ShowT twice",
       ),
       (
-        "duplicate-enum-def",
-        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefenum Choice0 (:n Number)\ndef impl1 $ defimpl Choice0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Choice0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((C (impl-traits Choice0 impl1 impl2))) &unit",
+        "duplicate-top-level-enum-defimpl",
+        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefenum Choice (:n Number) (:impls ShowT)\ndefimpl Choice ShowT $ .show $ fn (x) |a\ndefimpl Choice ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_c (Choice :n 1))) &unit",
         "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
+        "implements app.main/ShowT twice",
       ),
-      (
-        "duplicate-typeref-param",
-        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box (:n Number) (:impls ShowT)\ndefimpl Box ShowT $ .show $ fn (x) |a\ndefn attach-again (b)\n  hint-fn $ Fn Box (-> Box)\n  let ((impl2 (defimpl Box ShowT $ .show $ fn (x) |b))) (impl-traits b impl2)\ndefn main! () (do (attach-again (Box :n 1)) &unit)",
-        "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
-      ),
-      (
-        "duplicate-nested-typeref-impl-traits",
-        "def HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndefn attach-again (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits (&struct:impl-traits w helper-impl) helper-impl\ndefn main! () (do (attach-again (Widget0 :n 1)) &unit)",
-        "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
-      ),
-      (
-        "duplicate-chained-impl-traits",
-        "def ShowT $ deftrait ShowT $ .show $ Fn Self (-> String)\ndefstruct Box0 (:n Number)\ndef impl1 $ defimpl Box0 ShowT $ .show $ fn (x) |a\ndef impl2 $ defimpl Box0 ShowT $ .show $ fn (x) |b\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((B (impl-traits (impl-traits Box0 impl1) impl2))) &unit",
-        "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
-      ),
-      (
-        "missing-parent-on-struct-value",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (Widget0 :n 1) child-impl))) &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
-      (
-        "missing-parent-on-nested-struct-value",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (&struct:impl-traits (Widget0 :n 1) helper-impl) child-impl))) &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
-      (
-        "missing-parent-on-let-bound-struct-value",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      w1 $ &struct:impl-traits (Widget0 :n 1) helper-impl\n      w2 $ &struct:impl-traits w1 child-impl\n    , &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
+    ] {
+      let mut snapshot = snapshot::Snapshot::default();
+      let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+      annotate_snippet_macros(&mut file);
+      snapshot.files.insert("app.main".to_owned(), file);
+      for (k, v) in &cached_core_snapshot().files {
+        snapshot.files.insert(k.to_owned(), v.to_owned());
+      }
+      let err = program::extract_program_data(&snapshot).expect_err(&format!("{name} must fail extract_program_data"));
+      assert!(err.contains(code), "{name} should report {code}: {err}");
+      assert!(err.contains(detail), "{name} should explain `{detail}`: {err}");
+    }
+    for (name, snippet, code, detail) in [
       (
         "imported-parent-alias-member-conflict",
         "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ParentAlias ParentT\ndef ChildT $ deftrait ChildT (requires ParentAlias) $ .label $ Fn Self (-> String)\ndefn main! () (do ChildT &unit)",
@@ -2172,34 +2149,10 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
         "member `label` is declared by both",
       ),
       (
-        "missing-parent-on-enum-value",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefenum Choice0 (:n Number)\ndef child-impl $ defimpl Choice0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((c (impl-traits (%:: Choice0 :n 1) child-impl))) &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
-      (
-        "local-deftrait-missing-parent-impl",
-        "defn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      LocalParent $ deftrait LocalParent $ .label $ Fn Self (-> String)\n      LocalChild $ deftrait LocalChild (requires LocalParent) $ .greet $ Fn Self (-> String)\n      Box0 $ defstruct Box0 $ :n Number\n      c-impl $ defimpl Box0 LocalChild $ .greet $ fn (x) |hi\n      Box $ impl-traits Box0 c-impl\n    , &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
-      (
         "local-deftrait-member-conflict",
         "defn main! ()\n  hint-fn $ Fn (-> Unit)\n  let\n      LocalParent $ deftrait LocalParent $ .label $ Fn Self (-> String)\n      LocalChild $ deftrait LocalChild (requires LocalParent) $ .label $ Fn Self (-> String)\n    , &unit",
         "E_TRAIT_REQUIRES",
         "member `label` is declared by both",
-      ),
-      (
-        "missing-parent-after-struct-assoc",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (&struct:impl-traits (&struct:assoc (Widget0 :n 1) :n 2) child-impl))) &unit",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-        "requires an impl of trait",
-      ),
-      (
-        "duplicate-on-if-joined-typeref",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndefenum Choice (:generics T) (:impls ParentT) (:empty) (:item T)\ndefimpl Choice ParentT $ .label $ fn (x) |ok\ndef extra-parent $ defimpl Choice ParentT $ .label $ fn (x) |dup\ndefn attach-on-if (flag)\n  hint-fn $ Fn Bool (-> (Choice Number))\n  let ((c (if flag (%:: Choice :empty) (%:: Choice :item 1)))) (impl-traits c extra-parent)\ndefn main! () (do (attach-on-if true) &unit)",
-        "E_DUPLICATE_TRAIT_IMPL",
-        "duplicate implementation of trait",
       ),
     ] {
       let entries = load_snippet_entries(snippet);
@@ -2211,39 +2164,13 @@ fn strict_type_fail_trait_coherence_duplicate_and_local_requires() {
 }
 
 #[test]
-fn strict_type_check_allows_trait_parent_alias_and_decorated_typeref_impl_attachment() {
+fn strict_type_check_allows_trait_parent_alias_on_top_level_nominal() {
   run_with_large_stack(|| {
     injection::inject_platform_apis();
     let _strict = StrictTypesReset::enabled();
-    for (name, snippet) in [
-      (
-        "parent-alias-satisfied",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ParentAlias ParentT\ndef ChildT $ deftrait ChildT (requires ParentAlias) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (impl-traits (Widget0 :n 1) parent-impl child-impl))) &unit",
-      ),
-      (
-        "decorated-typeref-param",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-child (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits w child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-child (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
-      ),
-      (
-        "nested-decorated-typeref-param",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-nested (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  let\n      w2 $ &struct:impl-traits (&struct:impl-traits w helper-impl) child-impl\n      _h $ .helper w2\n      _g $ .greet w2\n    , w2\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-nested (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
-      ),
-      (
-        "let-bound-decorated-typeref-param",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef HelperT $ deftrait HelperT $ .helper $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef helper-impl $ defimpl Widget0 HelperT $ .helper $ fn (x) |h\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-let (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  let\n      w1 $ &struct:impl-traits w helper-impl\n      w2 $ &struct:impl-traits w1 child-impl\n    , w2\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-let (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
-      ),
-      (
-        "param-struct-assoc-defers-missing-parent",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefstruct Widget0 (:n Number)\ndef parent-impl $ defimpl Widget0 ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Widget0 ChildT $ .greet $ fn (x) |hi\ndefn attach-after-assoc (w)\n  hint-fn $ Fn Widget0 (-> Widget0)\n  &struct:impl-traits (&struct:assoc w :n 2) child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((w (attach-after-assoc (&struct:impl-traits (Widget0 :n 1) parent-impl)))) &unit",
-      ),
-      (
-        "if-joined-typeref-defers-missing-parent",
-        "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ChildT $ deftrait ChildT (requires ParentT) $ .greet $ Fn Self (-> String)\ndefenum Choice (:generics T) (:empty) (:item T)\ndef parent-impl $ defimpl Choice ParentT $ .label $ fn (x) |ok\ndef child-impl $ defimpl Choice ChildT $ .greet $ fn (x) |hi\ndefn attach-on-if (flag)\n  hint-fn $ Fn Bool (-> (Choice Number))\n  let\n      decorated $ impl-traits Choice parent-impl\n      joined $ if flag (decorated :empty) (decorated :item 1)\n    impl-traits joined child-impl\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((c (attach-on-if true))) &unit",
-      ),
-    ] {
-      let entries = load_snippet_entries(snippet);
-      run_check_only(&entries).unwrap_or_else(|err| panic!("{name} must pass strict check-only: {err}"));
-    }
+    let snippet = "def ParentT $ deftrait ParentT $ .label $ Fn Self (-> String)\ndef ParentAlias ParentT\ndef ChildT $ deftrait ChildT (requires ParentAlias) $ .greet $ Fn Self (-> String)\ndefstruct Widget (:n Number) (:impls ParentT ChildT)\ndefimpl Widget ParentT $ .label $ fn (x) |ok\ndefimpl Widget ChildT $ .greet $ fn (x) |hi\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  let ((_w (Widget :n 1))) &unit";
+    let entries = load_snippet_entries(snippet);
+    run_check_only(&entries).unwrap_or_else(|err| panic!("parent-alias-satisfied must pass strict check-only: {err}"));
   });
 }
 
@@ -2357,305 +2284,6 @@ fn strict_type_fail_pass_callback_cannot_escape_non_pass_slot() {
     let ok_snippet = "defn run-now (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  cb 1\ndefn forward-ok (xs cb)\n  hint-fn $ Fn (List Number) (Fn Number (-> Unit) (:features :pass)) (-> Unit)\n  run-now cb\n  run-now (fn (x) (cb (+ x 1)))\n  each xs (fn (x) (cb (+ x 1)))\n  let ((wrapped (fn (x) (hint-fn $ Fn Number (-> Unit)) (cb x))))\n    wrapped 1\n  , &unit\ndefn shadow-ok (cb)\n  hint-fn $ Fn (Fn Number (-> Unit) (:features :pass)) (-> (Fn Number (-> Number)))\n  fn (cb) (+ cb 1)\ndefn main! ()\n  hint-fn $ Fn (-> Unit)\n  forward-ok ([] 1 2) (fn (n) &unit)\n  let ((_s (shadow-ok (fn (n) &unit)))) &unit";
     let entries = load_snippet_entries(ok_snippet);
     run_check_only(&entries).unwrap_or_else(|err| panic!("forwarding :pass callback to :pass slots must pass: {err}"));
-  });
-}
-
-#[test]
-fn strict_type_fail_impl_completeness_across_set_if_join_and_pending_defs() {
-  run_with_large_stack(|| {
-    injection::inject_platform_apis();
-    let _strict = StrictTypesReset::enabled();
-    let base_defs = r#"defstruct Widget0 (:n Number)
-deftrait Parent (.label AnyFn)
-deftrait Child (requires Parent) (.greet AnyFn)
-def ParentImpl (defimpl Widget0 Parent (.label (fn (x) |parent)))
-def ChildImpl (defimpl Widget0 Child (.greet (fn (x) |child)))"#;
-
-    let prepare_with_schemas = |snippet: &str, extra_schemas: &[(&str, &str)]| {
-      builtins::effects::init_effects_states();
-      let mut snapshot = snapshot::Snapshot::default();
-      let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
-      for (name, schema_src) in [
-        ("Parent", "Trait"),
-        ("Child", "Trait"),
-        ("ParentImpl", "Impl"),
-        ("ChildImpl", "Impl"),
-        ("Widget0", "StructDef"),
-      ]
-      .into_iter()
-      .chain(extra_schemas.iter().copied())
-      {
-        if let Some(entry) = file.defs.get_mut(name) {
-          let schema = cirru_parser::parse(schema_src)
-            .unwrap_or_else(|e| panic!("parse schema for {name}: {e}"))
-            .remove(0);
-          let schema = match schema {
-            cirru_parser::Cirru::List(mut items) if items.len() == 1 => items.remove(0),
-            other => other,
-          };
-          entry.schema =
-            snapshot::parse_schema_annotation_for_write(&schema).unwrap_or_else(|e| panic!("parse annotation for {name}: {e}"));
-        }
-      }
-      snapshot.files.insert("app.main".to_owned(), file);
-      prepare_snapshot_entries(snapshot)
-    };
-
-    // 1. `set!` preserves impl incompleteness when overwriting with an incomplete parameter or differing impls.
-    let set_incomplete_snippet = format!(
-      "{base_defs}\n{}",
-      r#"defn check-set-incomplete (w)
-  let ((local (Widget0 :n 1)))
-    set! local w
-    impl-traits local ChildImpl
-defn check-set-impl-mismatch ()
-  let ((local (Widget0 :n 1)) (decorated (impl-traits (Widget0 :n 2) ParentImpl)))
-    set! local decorated
-    impl-traits local ChildImpl
-defn main! () &unit"#
-    );
-    let entries = prepare_with_schemas(
-      &set_incomplete_snippet,
-      &[
-        ("check-set-incomplete", "Fn Widget0 (-> Widget0)"),
-        ("check-set-impl-mismatch", "Fn (-> Widget0)"),
-        ("main!", "Fn (-> Unit)"),
-      ],
-    );
-    for target in ["check-set-incomplete", "check-set-impl-mismatch"] {
-      let warnings = RefCell::new(vec![]);
-      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, target, &warnings, &CallStackList::default())
-        .unwrap_or_else(|err| panic!("{target} should defer missing-parent check when set! writes incomplete/mismatched impls: {err}"));
-    }
-
-    // 2. `if` joins intersect differing impl tables: no false E_DUPLICATE_TRAIT_IMPL or E_IMPL_MISSING_REQUIRED_TRAIT,
-    //    while matching branches continue enforcing both diagnostics.
-    let if_join_ok_snippet = format!(
-      "{base_defs}\n{}",
-      r#"defn if-no-dup (flag)
-  let ((decorated (impl-traits (Widget0 :n 1) ParentImpl)) (plain (Widget0 :n 2)))
-    impl-traits (if flag decorated plain) ParentImpl
-defn if-no-missing (flag)
-  let ((decorated (impl-traits (Widget0 :n 1) ParentImpl)) (plain (Widget0 :n 2)))
-    impl-traits (if flag plain decorated) ChildImpl
-defn main! () &unit"#
-    );
-    let entries = prepare_with_schemas(
-      &if_join_ok_snippet,
-      &[
-        ("if-no-dup", "Fn Bool (-> Widget0)"),
-        ("if-no-missing", "Fn Bool (-> Widget0)"),
-        ("main!", "Fn (-> Unit)"),
-      ],
-    );
-    run_check_only(&entries).unwrap_or_else(|err| panic!("if-join with differing branch impls must defer/intersect safely: {err}"));
-
-    for (name, body, schema, expected_code) in [
-      (
-        "if-both-dup",
-        r#"defn if-both-dup (flag)
-  let ((a (impl-traits (Widget0 :n 1) ParentImpl)) (b (impl-traits (Widget0 :n 2) ParentImpl)))
-    impl-traits (if flag a b) ParentImpl
-defn main! ()
-  let ((_x (if-both-dup true))) &unit"#,
-        "Fn Bool (-> Widget0)",
-        "E_DUPLICATE_TRAIT_IMPL",
-      ),
-      (
-        "if-both-missing",
-        r#"defn if-both-missing (flag)
-  let ((a (Widget0 :n 1)) (b (Widget0 :n 2)))
-    impl-traits (if flag a b) ChildImpl
-defn main! ()
-  let ((_x (if-both-missing true))) &unit"#,
-        "Fn Bool (-> Widget0)",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-      ),
-    ] {
-      let snippet = format!("{base_defs}\n{body}");
-      let entries = prepare_with_schemas(&snippet, &[(name, schema), ("main!", "Fn (-> Unit)")]);
-      let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only with {expected_code}"));
-      assert!(err.contains(expected_code), "{name} should report {expected_code}: {err}");
-    }
-
-    // 3. Pending nominal definition with an in-progress impl attachment defers missing-parent check
-    //    while still reporting duplicate attachments.
-    let pending_def_snippet = r#"deftrait Parent (.label AnyFn)
-deftrait Child (requires Parent) (.greet AnyFn)
-defstruct Widget (:n Number) (:impls Parent)
-defimpl Widget Parent (.label (fn (x) (let ((child-impl (&impl::new Child $ :: .greet (fn (w) |child))) (_w (impl-traits Widget child-impl))) |parent)))
-defn main! ()
-  let ((_refs ([] Widget))) &unit"#;
-    let entries = prepare_with_schemas(pending_def_snippet, &[("Widget", "StructDef"), ("main!", "Fn (-> Unit)")]);
-    let warnings = RefCell::new(vec![]);
-    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Widget", &warnings, &CallStackList::default())
-      .unwrap_or_else(|err| panic!("pending nominal def impl compilation must defer missing-parent check: {err}"));
-
-    let pending_dup_snippet = r#"deftrait Parent (.label AnyFn)
-deftrait Child (requires Parent) (.greet AnyFn)
-defstruct Widget (:n Number) (:impls Parent)
-defimpl Widget Parent (.label (fn (x) (let ((child-impl (&impl::new Child $ :: .greet (fn (w) |child))) (_w (impl-traits (impl-traits Widget child-impl) child-impl))) |parent)))
-defn main! ()
-  let ((_refs ([] Widget))) &unit"#;
-    let entries = prepare_with_schemas(pending_dup_snippet, &[("Widget", "StructDef"), ("main!", "Fn (-> Unit)")]);
-    let err = run_check_only(&entries).expect_err("duplicate impl inside pending nominal def must still report E_DUPLICATE_TRAIT_IMPL");
-    assert!(
-      err.contains("E_DUPLICATE_TRAIT_IMPL"),
-      "pending nominal def must preserve duplicate check: {err}"
-    );
-
-    // 4. Definition-valued (`StructDef` / `EnumDef`) joins routed through `let`, `do`, chained `impl-traits`,
-    //    diverging-branch `if`, constructor calls, and `set!` preserve incompleteness when branches diverge,
-    //    while still enforcing missing-parent / duplicate checks when branches agree or constructors are local.
-    let def_valued_base = r#"defstruct Widget0 (:n Number)
-defenum Choice0 (:n Number)
-deftrait Parent (.label AnyFn)
-deftrait Child (requires Parent) (.greet AnyFn)
-deftrait Helper (.helper AnyFn)
-def ParentImpl (defimpl Widget0 Parent (.label (fn (x) |parent)))
-def ChildImpl (defimpl Widget0 Child (.greet (fn (x) |child)))
-def HelperImpl (defimpl Widget0 Helper (.helper (fn (x) |helper)))
-def EnumParentImpl (defimpl Choice0 Parent (.label (fn (x) |parent)))
-def EnumChildImpl (defimpl Choice0 Child (.greet (fn (x) |child)))"#;
-
-    let prepare_def_valued = |snippet: &str, extra_schemas: &[(&str, &str)]| {
-      let mut all_schemas = vec![
-        ("Choice0", "EnumDef"),
-        ("Helper", "Trait"),
-        ("HelperImpl", "Impl"),
-        ("EnumParentImpl", "Impl"),
-        ("EnumChildImpl", "Impl"),
-        ("main!", "Fn (-> Unit)"),
-      ];
-      all_schemas.extend_from_slice(extra_schemas);
-      prepare_with_schemas(snippet, &all_schemas)
-    };
-
-    let def_valued_ok_snippet = format!(
-      "{def_valued_base}\n{}",
-      r#"defn def-if-join-let-deferred (flag)
-  let
-      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
-      _a $ impl-traits d ChildImpl
-      _b $ impl-traits d ParentImpl
-    , &unit
-defn def-if-join-forwarded (flag)
-  let
-      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
-      forwarded $ do &unit (impl-traits (if flag d (raise |unreachable)) HelperImpl)
-      _attached $ impl-traits forwarded ChildImpl
-    , &unit
-defn def-if-join-construct (flag)
-  let
-      d $ if flag (impl-traits Widget0 ParentImpl) Widget0
-      _inst $ impl-traits (d :n 1) ChildImpl
-    , &unit
-defn enum-def-if-join-let-deferred (flag)
-  let
-      e $ if flag (impl-traits Choice0 EnumParentImpl) Choice0
-      _a $ impl-traits e EnumChildImpl
-    , &unit
-defn def-set-mixed-direct ()
-  let ((local Widget0))
-    set! local (impl-traits Widget0 ParentImpl)
-    impl-traits local ChildImpl
-    , &unit
-defn def-set-mixed-if (flag)
-  let ((local Widget0))
-    set! local (if flag (impl-traits Widget0 ParentImpl) Widget0)
-    impl-traits local ChildImpl
-    , &unit
-defn def-set-branch-if (flag)
-  let ((local Widget0))
-    if flag
-      set! local (impl-traits Widget0 ParentImpl)
-      , &unit
-    impl-traits local ChildImpl
-    , &unit
-defn def-set-branch-match ()
-  let ((local Widget0))
-    match (Option :some 1)
-      (:some _) (set! local (impl-traits Widget0 ParentImpl))
-      (:none) &unit
-    impl-traits local ChildImpl
-    , &unit
-defn def-set-branch-let ()
-  let ((local Widget0))
-    let ((_tmp 1))
-      set! local (impl-traits Widget0 ParentImpl)
-      , &unit
-    impl-traits local ChildImpl
-    , &unit
-defn main! ()
-  def-if-join-let-deferred true
-  def-if-join-forwarded true
-  def-if-join-construct true
-  enum-def-if-join-let-deferred true
-  def-set-mixed-direct
-  def-set-mixed-if true
-  def-set-branch-if true
-  def-set-branch-match
-  def-set-branch-let
-  , &unit"#
-    );
-    let entries = prepare_def_valued(
-      &def_valued_ok_snippet,
-      &[
-        ("def-if-join-let-deferred", "Fn Bool (-> Unit)"),
-        ("def-if-join-forwarded", "Fn Bool (-> Unit)"),
-        ("def-if-join-construct", "Fn Bool (-> Unit)"),
-        ("enum-def-if-join-let-deferred", "Fn Bool (-> Unit)"),
-        ("def-set-mixed-direct", "Fn (-> Unit)"),
-        ("def-set-mixed-if", "Fn Bool (-> Unit)"),
-        ("def-set-branch-if", "Fn Bool (-> Unit)"),
-        ("def-set-branch-match", "Fn (-> Unit)"),
-        ("def-set-branch-let", "Fn (-> Unit)"),
-      ],
-    );
-    run_check_only(&entries)
-      .unwrap_or_else(|err| panic!("definition-valued incomplete joins through let/do/set! must defer safely: {err}"));
-
-    for (name, body, schema, expected_code) in [
-      (
-        "def-if-join-both-missing",
-        r#"defn def-if-join-both-missing (flag)
-  let
-      d $ if flag Widget0 Widget0
-      _a $ impl-traits d ChildImpl
-    , &unit
-defn main! () (def-if-join-both-missing true)"#,
-        "Fn Bool (-> Unit)",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-      ),
-      (
-        "def-if-join-both-dup",
-        r#"defn def-if-join-both-dup (flag)
-  let
-      d $ if flag (impl-traits Widget0 ParentImpl) (impl-traits Widget0 ParentImpl)
-      _a $ impl-traits d ParentImpl
-    , &unit
-defn main! () (def-if-join-both-dup true)"#,
-        "Fn Bool (-> Unit)",
-        "E_DUPLICATE_TRAIT_IMPL",
-      ),
-      (
-        "local-defenum-let-missing",
-        r#"defn local-defenum-let-missing ()
-  let
-      LocalChoice $ defenum LocalChoice (:n Number)
-      c-impl $ defimpl LocalChoice Child (.greet (fn (x) |hi))
-      _attached $ impl-traits LocalChoice c-impl
-    , &unit
-defn main! () (local-defenum-let-missing)"#,
-        "Fn (-> Unit)",
-        "E_IMPL_MISSING_REQUIRED_TRAIT",
-      ),
-    ] {
-      let snippet = format!("{def_valued_base}\n{body}");
-      let entries = prepare_def_valued(&snippet, &[(name, schema)]);
-      let err = run_check_only(&entries).expect_err(&format!("{name} must fail strict check-only with {expected_code}"));
-      assert!(err.contains(expected_code), "{name} should report {expected_code}: {err}");
-    }
   });
 }
 
@@ -6989,13 +6617,13 @@ fn strict_type_fail_defimpl_infers_self_and_rejects_mismatch() {
 }
 
 #[test]
-fn strict_type_fail_local_method_shares_receiver_payload_type() {
+fn strict_type_fail_nominal_method_shares_receiver_payload_type() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     injection::inject_platform_apis();
     for (replacement, should_reject) in [("2", false), ("|wrong-payload", true)] {
       let entries = load_snippet_entries(&format!(
-        "deftrait ReplaceOps\n  .replace $ Fn Self Self $ -> Self\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox ReplaceOps\n        .replace $ fn (self other) other\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      other $ BoxWithImpl :value {replacement}\n    .replace receiver other\n  , &unit"
+        "deftrait ReplaceOps\n  .replace $ Fn Self Self $ -> Self\n\ndefstruct GenericBox (:generics T) (:value T) (:impls ReplaceOps)\n\ndefimpl GenericBox ReplaceOps\n  .replace $ fn (self other) other\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      receiver $ GenericBox :value 1\n      other $ GenericBox :value {replacement}\n    .replace receiver other\n  , &unit"
       ));
       // Compile directly so the ordinary argument checker must reject the bad call.
       let warnings = RefCell::new(vec![]);
@@ -7020,13 +6648,17 @@ fn strict_type_fail_local_method_shares_receiver_payload_type() {
 }
 
 #[test]
-fn strict_type_fail_local_method_keeps_callback_generics_independent() {
+fn strict_type_fail_nominal_method_keeps_callback_generics_independent() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
     injection::inject_platform_apis();
-    for (callback_schema, should_reject) in [("Fn T (-> T) (:generics T)", false), ("Fn Number (-> Number)", true)] {
+    for (callback_schema, should_reject) in [
+      ("Fn T (-> T) (:generics T)", false),
+      ("Fn Number (-> Number)", true),
+      ("Fn U (-> Number) (:generics U)", true),
+    ] {
       let entries = load_snippet_entries(&format!(
-        "deftrait CallbackOps\n  .use-callback $ Fn Self (Fn T (-> T) (:generics T)) (-> Unit)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      LocalBox $ defstruct LocalBox (:generics T) (:value T)\n      box-impl $ defimpl LocalBox CallbackOps\n        .use-callback $ fn (self callback) &unit\n      BoxWithImpl $ impl-traits LocalBox box-impl\n      receiver $ BoxWithImpl :value 1\n      callback $ fn (x)\n        hint-fn $ {callback_schema}\n        , x\n    .use-callback receiver callback"
+        "deftrait CallbackOps\n  .use-callback $ Fn Self (Fn T (-> T) (:generics T)) (-> Unit)\n\ndefstruct GenericBox (:generics T) (:value T) (:impls CallbackOps)\n\ndefimpl GenericBox CallbackOps\n  .use-callback $ fn (self callback) &unit\n\ndefn main! ()\n  hint-fn $ Fn $ -> Unit\n  let\n      receiver $ GenericBox :value 1\n      callback $ fn (x)\n        hint-fn $ {callback_schema}\n        , x\n    .use-callback receiver callback"
       ));
       let warnings = RefCell::new(vec![]);
       let result =
@@ -7095,14 +6727,14 @@ fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
       generic_warnings.borrow()
     );
 
-    // 3. #2839: Local `let` nominal Struct decorated with `impl-traits` must enforce method argument types and return types.
-    let local_arg_entries = load_snippet_entries(
-      "def StepOps $ deftrait StepOps\n  .step $ Fn Self Number $ -> Number\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      LocalCounter $ defstruct LocalCounter $ :v Number\n      counter-impl $ defimpl LocalCounter StepOps\n        .step $ fn (self delta) (+ (:v self) delta)\n      CounterWithImpl $ impl-traits LocalCounter counter-impl\n      c $ CounterWithImpl :v 1\n    .step c |wrong-arg",
+    // 3. #2839: Top-level nominal Struct with `(:impls …)` must enforce method argument types and return types.
+    let nominal_arg_entries = load_snippet_entries(
+      "deftrait StepOps\n  .step $ Fn Self Number $ -> Number\n\ndefstruct StepCounter (:v Number) (:impls StepOps)\n\ndefimpl StepCounter StepOps\n  .step $ fn (self delta) (+ (:v self) delta)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      c $ StepCounter :v 1\n    .step c |wrong-arg",
     );
     let local_arg_warnings = RefCell::new(vec![]);
     let local_arg_res = runner::preprocess::ensure_ns_def_compiled(
-      &local_arg_entries.init_ns,
-      &local_arg_entries.init_def,
+      &nominal_arg_entries.init_ns,
+      &nominal_arg_entries.init_def,
       &local_arg_warnings,
       &CallStackList::default(),
     );
@@ -7112,13 +6744,13 @@ fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
           .borrow()
           .iter()
           .any(|warning| matches!(warning.code(), Some("E_METHOD_ARG_TYPE_MISMATCH" | "E_LOCAL_FN_ARG_TYPE_MISMATCH"))),
-      "expected local impl-traits method call with wrong argument type to fail, got res={local_arg_res:?}, warnings={:?}",
+      "expected nominal trait method call with wrong argument type to fail, got res={local_arg_res:?}, warnings={:?}",
       local_arg_warnings.borrow()
     );
 
     // 4. Contextual check_contextual_return: dynamic contextual return still refines to concrete Child, and explicit Number contract is preserved.
     let child_refine_entries = load_snippet_entries(
-      "defstruct Child (:value Number)\n\ndefstruct Parent (:v Number)\n\ndef ExplicitOps $ deftrait ExplicitOps\n  .val $ Fn Self $ -> Number\n\ndef ParentExplicitImpl $ defimpl Parent ExplicitOps\n  .val $ fn (self) (:v self)\n\ndefn run-open (cb)\n  hint-fn $ Fn (Fn (-> Dynamic)) (-> Unit)\n  cb\n  , &unit\n\ndefn read-open ()\n  hint-fn $ Fn $ -> Unit\n  run-open $ fn () (Child :value 1)\n\ndefn read-explicit ()\n  hint-fn $ Fn $ -> Number\n  let\n      p $ impl-traits (Parent :v 2) ParentExplicitImpl\n    + 1 (.val p)\n\ndefn main! () &unit",
+      "defstruct Child (:value Number)\n\ndeftrait ExplicitOps\n  .val $ Fn Self $ -> Number\n\ndefstruct Parent (:v Number) (:impls ExplicitOps)\n\ndefimpl Parent ExplicitOps\n  .val $ fn (self) (:v self)\n\ndefn run-open (cb)\n  hint-fn $ Fn (Fn (-> Dynamic)) (-> Unit)\n  cb\n  , &unit\n\ndefn read-open ()\n  hint-fn $ Fn $ -> Unit\n  run-open $ fn () (Child :value 1)\n\ndefn read-explicit ()\n  hint-fn $ Fn $ -> Number\n  let\n      p $ Parent :v 2\n    + 1 (.val p)\n\ndefn main! () &unit",
     );
     for target in ["read-open", "read-explicit"] {
       let warnings = RefCell::new(vec![]);
@@ -7138,7 +6770,7 @@ fn strict_type_fail_defimpl_alias_generic_and_local_nominal_contracts() {
 
     // 5. Method generic `T` colliding with implementing type's `T` must stay distinct.
     let collision_entries = load_snippet_entries(
-      "def SwapOps $ deftrait SwapOps\n  .take $ Fn Self T (-> T) (:generics T)\n\ndefstruct GenericHolder (:generics T) (:value T)\n\ndef GenericHolderImpl $ defimpl GenericHolder SwapOps\n  .take $ fn (self other) (:value self)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      h $ impl-traits (GenericHolder :value 1) GenericHolderImpl\n    .take h 2",
+      "deftrait SwapOps\n  .take $ Fn Self T (-> T) (:generics T)\n\ndefstruct GenericHolder (:generics T) (:value T) (:impls SwapOps)\n\ndefimpl GenericHolder SwapOps\n  .take $ fn (self other) (:value self)\n\ndefn main! ()\n  hint-fn $ Fn $ -> Number\n  let\n      h $ GenericHolder :value 1\n    .take h 2",
     );
     let collision_err = run_check_only(&collision_entries)
       .expect_err("expected colliding method generic T vs impl generic T to reject returning (:value self)");
@@ -9273,29 +8905,6 @@ defn main! ()
     let map_entries = load_snippet_entries(guarded_matches_on_map);
     run_check_only(&map_entries).expect("(if (struct? m) ...) on Map must prune impossible true branch");
 
-    let defimpl_guard_app = r#"
-ns app.main
-defstruct Greeter (:name String)
-deftrait Labeled (.label $ Fn Self (-> String))
-def LabeledImpl $ defimpl Greeter Labeled
-  .label $ fn (g)
-    if (&struct:matches? g Greeter) (:name g) (raise |rejected-foreign-struct)
-defn main! ()
-  hint-fn $ Fn (-> Unit)
-  let
-      Other $ impl-traits
-        defstruct Greeter (:name String)
-        , LabeledImpl
-    assert= |rejected-foreign-struct $ try (.label $ Other :name |Ada) (fn (msg) msg)
-  , &unit
-"#;
-    let _non_strict = StrictTypesReset::disabled();
-    let guard_entries = load_snippet_entries(defimpl_guard_app);
-    let eval_res =
-      calcit::run_program(guard_entries.init_ns, guard_entries.init_def, &[]).expect("defimpl guard should preserve runtime check");
-    drop(_non_strict);
-    assert_eq!(eval_res, Calcit::Unit);
-
     // Pruning an impossible branch must still evaluate a non-literal condition so runtime
     // errors in the condition itself are preserved.
     let failing_cond_app = r#"
@@ -9348,7 +8957,7 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
     assert!(
       warnings.borrow().iter().all(|warning| !matches!(
         warning.code(),
-        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE" | "W_LEGACY_DYNAMIC_STYLE")
+        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE")
       )),
       "migration advisories are reported through advisory channel, got {:?}",
       warnings.borrow()
@@ -9384,8 +8993,12 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       .filter(|a| a.code() == Some("E_LEGACY_DYNAMIC_STYLE"))
       .map(|a| a.message().to_owned())
       .collect();
-    // %{} _, %:: -> 2 blocking E_LEGACY_DYNAMIC_STYLE errors
-    assert_eq!(dyn_errors.len(), 2, "expected 2 E_LEGACY_DYNAMIC_STYLE errors, got {blocking:?}");
+    // %{} _, %::, impl-traits -> 3 blocking E_LEGACY_DYNAMIC_STYLE errors
+    assert_eq!(dyn_errors.len(), 3, "expected 3 E_LEGACY_DYNAMIC_STYLE errors, got {blocking:?}");
+    assert!(
+      dyn_errors.iter().any(|msg| msg.contains("`impl-traits`")),
+      "expected E_LEGACY_DYNAMIC_STYLE for impl-traits, got {dyn_errors:?}"
+    );
 
     let pred_notes: Vec<(Vec<u16>, String)> = notes
       .iter()
@@ -9421,18 +9034,6 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       );
     }
 
-    let dyn_notes: Vec<_> = notes
-      .iter()
-      .filter(|a| a.code() == Some("W_LEGACY_DYNAMIC_STYLE"))
-      .map(|a| a.message().to_owned())
-      .collect();
-    // local `impl-traits` stays W_LEGACY_DYNAMIC_STYLE until PR 5b
-    assert_eq!(
-      dyn_notes.len(),
-      1,
-      "expected 1 W_LEGACY_DYNAMIC_STYLE note for impl-traits, got {dyn_notes:?}"
-    );
-
     let modern_warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     let _ = runner::preprocess::take_advisories();
     runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "modern-case", &modern_warnings, &CallStackList::default())
@@ -9441,7 +9042,7 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
     assert!(
       modern_warnings.borrow().iter().all(|warning| !matches!(
         warning.code(),
-        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE" | "W_LEGACY_DYNAMIC_STYLE")
+        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE")
       )),
       "unexpected migration warnings: {:?}",
       modern_warnings.borrow()
@@ -9449,7 +9050,7 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
     assert!(
       modern_advisories.iter().all(|a| !matches!(
         a.code(),
-        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE" | "W_LEGACY_DYNAMIC_STYLE")
+        Some("E_LEGACY_NIL_USAGE" | "W_RUNTIME_TYPE_PREDICATE" | "E_LEGACY_DYNAMIC_STYLE")
       )),
       "canonical Box/Choice/Option/match code must not emit legacy migration warnings: {modern_advisories:?}"
     );

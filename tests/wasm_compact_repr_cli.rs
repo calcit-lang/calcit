@@ -614,8 +614,9 @@ fn boxed_json_scalar_edge_cases_preserve_distinction_alongside_compact_paths() {
                       not (&= j-zero false)
                       &= j-null nil
                       nil? j-null
-                      not (nil? j-false)
-                      not (nil? j-zero)
+                      not (&= j-zero nil)
+                      not (&= j-false j-null)
+                      not (&= j-zero j-null)
                       &= j-true true
                       not (&= j-true 1)
                       &= j-one 1
@@ -946,9 +947,9 @@ fn compact_struct_enum_semantics_equality_hashing_to_map_update_and_codecs() {
                 k-updated $ update k1 :label $ fn (s) (&str:concat s |-u)
                 k-assoc $ &struct:assoc-at k1 0 :b false
                 k-with $ &struct:with-at k1 0 :b false 2 :n (assert-type 99 Int16)
-                e1 $ %:: Status :Busy (assert-type 5 Int32) |run
-                e1-dup $ %:: Status :Busy (assert-type 5 Int32) (&str:concat |r |un)
-                e0 $ %:: Status :Idle
+                e1 $ Status :Busy (assert-type 5 Int32) |run
+                e1-dup $ Status :Busy (assert-type 5 Int32) (&str:concat |r |un)
+                e0 $ Status :Idle
                 e-assoc $ &enum:assoc e1 2 |done
                 m-struct $ &{} k1 e1
                 m-enum $ &{} e0 100
@@ -2200,7 +2201,7 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
           :examples $ []
           :schema $ quote $ Ref String
         '*pers-msg $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defref *pers-msg $ %:: PackedMsg :Empty
+          :code $ quote $ defref *pers-msg $ PackedMsg :Empty
           :examples $ []
           :schema $ quote $ Ref PackedMsg
         '*churn $ %{} 'CodeEntry (:doc |)
@@ -2208,12 +2209,12 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
           :examples $ []
           :schema $ quote $ Ref String
         'alloc-empty-msg $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export alloc-empty-msg () (%:: PackedMsg :Empty)
+          :code $ quote $ defwasm-export alloc-empty-msg () (PackedMsg :Empty)
           :examples $ []
           :schema $ quote $ Fn (-> PackedMsg)
         'alloc-pair-msg $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export alloc-pair-msg ()
-            %:: PackedMsg :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
+            PackedMsg :Pair true (assert-type 42 Int32) (Some |ok) (assert-type 7 UInt8)
           :examples $ []
           :schema $ quote $ Fn (-> PackedMsg)
         'init-strings $ %{} 'CodeEntry (:doc |)
@@ -2223,22 +2224,22 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
               reset! *s2 (&str:concat |he |llo)
               , true
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :state)
         'get-s1 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export get-s1 () @*s1
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
         'get-s2 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export get-s2 () @*s2
           :examples $ []
-          :schema $ quote $ Fn (-> String)
+          :schema $ quote $ Fn (-> String) (:features :state)
         'check-scalar-addr-and-enum-ops $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export check-scalar-addr-and-enum-ops (a b)
             let
-                p1 $ %:: PackedMsg :Pair true a None (assert-type 5 UInt8)
-                p2 $ %:: PackedMsg :Pair true b None (assert-type 5 UInt8)
-                p3 $ %:: PackedMsg :Pair true a (Some @*s1) (assert-type 5 UInt8)
-                p4 $ %:: PackedMsg :Pair true a (Some @*s2) (assert-type 5 UInt8)
+                p1 $ PackedMsg :Pair true a None (assert-type 5 UInt8)
+                p2 $ PackedMsg :Pair true b None (assert-type 5 UInt8)
+                p3 $ PackedMsg :Pair true a (Some @*s1) (assert-type 5 UInt8)
+                p4 $ PackedMsg :Pair true a (Some @*s2) (assert-type 5 UInt8)
                 swapped $ &enum:assoc p3 0 :PairAlt
                 updated $ &enum:assoc p3 3 (Some |hi)
                 m $ &{} p1 10 p2 20
@@ -2253,7 +2254,7 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
                 direct-niche-ok $ (assert-type (&enum:nth p3 3) (Option String)) .some?
               and
                 not= p1 p2
-                = p1 (%:: PackedMsg :Pair true a None (assert-type 5 UInt8))
+                = p1 (PackedMsg :Pair true a None (assert-type 5 UInt8))
                 = p3 p4
                 = (&hash p3) (&hash p4)
                 = (&map:get m p1) (Some 10)
@@ -2268,14 +2269,14 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
                 , match-ok
                 , direct-niche-ok
           :examples $ []
-          :schema $ quote $ Fn Int32 Int32 (-> Bool)
+          :schema $ quote $ Fn Int32 Int32 (-> Bool) (:features :state)
         'commit-compact-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export commit-compact-enum ()
             do
-              reset! *pers-msg (%:: PackedMsg :Pair false (assert-type 99 Int32) (Some (&str:concat |wo |rld)) (assert-type 3 UInt8))
+              reset! *pers-msg (PackedMsg :Pair false (assert-type 99 Int32) (Some (&str:concat |wo |rld)) (assert-type 3 UInt8))
               , true
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :state)
         'read-compact-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export read-compact-enum ()
             match @*pers-msg
@@ -2283,17 +2284,17 @@ fn compact_enum_footprint_scalar_address_safety_and_codecs() {
                 and (not flag) (= num 99) (= opt (Some |world)) (= small 3)
               _ false
           :examples $ []
-          :schema $ quote $ Fn (-> Bool)
+          :schema $ quote $ Fn (-> Bool) (:features :state)
         'pump-churn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export pump-churn (n)
             reset! *churn (&str:pad-right (&str:concat |churn- (to-string n)) 32768 |Z)
             &str:count @*churn
           :examples $ []
-          :schema $ quote $ Fn Number (-> Number)
+          :schema $ quote $ Fn Number (-> Number) (:features :state)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (if (check-scalar-addr-and-enum-ops (assert-type 1 Int32) (assert-type 2 Int32)) 1 0)
           :examples $ []
-          :schema $ quote $ Fn (-> Number)
+          :schema $ quote $ Fn (-> Number) (:features :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
@@ -2419,9 +2420,9 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
         'verify-lifted-parity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export verify-lifted-parity (lifted expected)
             let
-                compact-some $ %:: Action :Apply (assert-type 9 UInt16) (Some |hi) true
-                compact-none $ %:: Action :Apply (assert-type 9 UInt16) None false
-                empty-a $ %:: Action :Noop
+                compact-some $ Action :Apply (assert-type 9 UInt16) (Some |hi) true
+                compact-none $ Action :Apply (assert-type 9 UInt16) None false
+                empty-a $ Action :Noop
               and
                 if (= expected 0)
                   and (= lifted compact-some) (= (&hash lifted) (&hash compact-some))
@@ -2437,8 +2438,8 @@ fn component_abi_cross_layout_enum_equality_and_hash_parity() {
         'make-compact-action $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export make-compact-action (with-str)
             if with-str
-              %:: Action :Apply (assert-type 42 UInt16) (Some |ok) true
-              %:: Action :Apply (assert-type 42 UInt16) None false
+              Action :Apply (assert-type 42 UInt16) (Some |ok) true
+              Action :Apply (assert-type 42 UInt16) None false
           :examples $ []
           :schema $ quote $ Fn Bool (-> Action)
         'main! $ %{} 'CodeEntry (:doc |)
@@ -2553,28 +2554,28 @@ fn compact_enum_assoc_preserves_overflow_and_encode_map_as_option_string() {
         'assoc-metric-num $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export assoc-metric-num ()
             let
-                m $ %:: Metric :Reading 1.5 |seed
+                m $ Metric :Reading 1.5 |seed
               &enum:assoc m 1 3.5
           :examples $ []
           :schema $ quote $ Fn (-> Enum)
         'assoc-metric-str $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export assoc-metric-str ()
             let
-                m $ %:: Metric :Reading 1.5 |seed
+                m $ Metric :Reading 1.5 |seed
               &enum:assoc m 1 |raw
           :examples $ []
           :schema $ quote $ Fn (-> Enum)
         'verify! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export verify! ()
             let
-                p $ %:: Packet :Frame (assert-type 5 UInt8) (Some |abcdefgh)
+                p $ Packet :Frame (assert-type 5 UInt8) (Some |abcdefgh)
                 fitted $ &enum:assoc p 1 9
                 legacy-fitted $ :: :Frame 9 (Some |abcdefgh)
                 overflowed $ &enum:assoc p 1 256
                 legacy-overflow $ :: :Frame 256 (Some |abcdefgh)
                 str-replaced $ &enum:assoc p 2 |raw-str
                 legacy-str-replaced $ :: :Frame 5 |raw-str
-                m $ %:: Metric :Reading 1.5 |seed
+                m $ Metric :Reading 1.5 |seed
                 m-num $ &enum:assoc m 1 3.5
                 m-str $ &enum:assoc m 1 |raw
                 encoded $ encode-map-as p Packet
@@ -2669,7 +2670,7 @@ fn option_niche_branch_keeps_defref_reset_state_branch_local() {
                     Some @*cb
               , 0
           :examples $ []
-          :schema $ quote $ Fn (-> Number)
+          :schema $ quote $ Fn (-> Number) (:features :state)
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
@@ -2733,7 +2734,7 @@ fn option_niche_branch_keeps_defref_reset_state_branch_local() {
                 f @*cb
               f 5
           :examples $ []
-          :schema $ quote $ Fn Bool (-> Number)
+          :schema $ quote $ Fn Bool (-> Number) (:features :state)
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () 0
           :examples $ []

@@ -873,9 +873,7 @@
           :code $ quote $ fn () (log-title "|Test struct polymorphism") (println Lagopus)
             let
                 l1 $ %{} Lagopus $ :name |LagopusA
-                a1 A0
-                a2 $ impl-traits a1 BirdImpl
-                a1r $ %{} a2 $ :name |Demo
+                l1b $ %{} Lagopus $ :name |Demo
                 l1t l1
               assert-traits l1t BirdTrait
               let
@@ -885,7 +883,7 @@
                 println l1
                 l1t .show
                 l2t .show
-                assert= (&struct:impls l1) (&struct:impls a1r)
+                assert= (&struct:impls l1) (&struct:impls l1b)
           :examples $ []
           :schema $ quote $ Fn (-> Unit) (:features :io)
         'test-postfix $ %{} 'CodeEntry (:doc "|test postfix syntax")

@@ -72,7 +72,7 @@
               reset! *hits next
               , next
           :examples $ []
-          :schema $ quote $ Fn (-> Number)
+          :schema $ quote $ Fn (-> Number) (:features :state)
         'db-error-response $ %{} 'CodeEntry
           :doc "|Map a DbError variant to a deterministic HTTP error response."
           :code $ quote $ defn db-error-response (err)
@@ -293,6 +293,7 @@
           :examples $ []
           :schema $ quote $ Fn HttpRequest
             -> $ Result HttpResponse String
+            :features :state
           :tests $ [] $ %{} 'TestEntry (:name |handles-pure-health-and-fallback-natively)
             :code $ quote $ do (reset! *hits 0)
               assert=

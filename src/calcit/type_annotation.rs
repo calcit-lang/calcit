@@ -888,7 +888,7 @@ impl CallTypeProof {
     let expected = if requires_universal_callback && let CalcitTypeAnnotation::Fn(signature) = expected {
       CalcitTypeAnnotation::Fn(Arc::new(signature.with_lexical_binders())).substitute_free_type_vars(&self.renaming)
     } else {
-      expected.substitute_type_vars(&self.renaming)
+      expected.substitute_free_type_vars(&self.renaming)
     };
     if matches!(actual, CalcitTypeAnnotation::TypeVar(name)
       if self.caller_capabilities.as_deref().is_some_and(|items| items.contains_key(name)))

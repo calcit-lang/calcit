@@ -18,6 +18,27 @@
           :code $ quote $ defimpl Label Renderable (.render render-label) (.identity label-identity)
           :examples $ []
           :schema $ quote Impl
+        'Override $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait Override $ .assoc
+            Fn T Tag Number (-> String) (:generics T)
+          :examples $ []
+          :schema $ quote Trait
+        'OverrideItem $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OverrideItem (:n Number) (:impls Override)
+          :examples $ []
+          :schema $ quote StructDef
+        'OverrideItemImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl OverrideItem Override $ .assoc
+            fn (_self _key _value)
+              assert= ([] |start |callback) @OverrideTrace
+              reset! OverrideTrace $ append @OverrideTrace |method
+              , |wrong
+          :examples $ []
+          :schema $ quote Impl
+        'OverrideTrace $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref OverrideTrace $ [] |start
+          :examples $ []
+          :schema $ quote $ Ref (List String)
         'Renderable $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait Renderable
             .render $ Fn T String (-> String) (:generics T)
@@ -60,28 +81,20 @@
           :schema $ quote $ Fn (-> Unit)
           :tests $ []
             %{} 'TestEntry (:name |update-keeps-custom-struct-result-guard)
-              :code $ quote $ let
-                  trace $ ref $ [] |start
-                  Override $ deftrait Override $ .assoc
-                    Fn T Tag Number (-> String) (:generics T)
-                  Item0 $ defstruct Item $ :n Number
-                  implementation $ defimpl Item0 Override $ .assoc
-                    fn (_self _key _value)
-                      assert= ([] |start |callback) @trace
-                      reset! trace $ append @trace |method
-                      , |wrong
-                  Item $ impl-traits Item0 implementation
-                  change $ fn (data)
-                    hint-fn $ Fn Dynamic $ -> Dynamic
-                    update data :n $ fn (value)
-                      hint-fn $ Fn Dynamic $ -> Number
-                      assert= ([] |start) @trace
-                      reset! trace $ append @trace |callback
-                      , 1
-                assert= |rejected $ try
-                  change $ Item :n 0
-                  fn (message) (assert= "|assoc on a struct expected a struct result" message) |rejected
-                assert= ([] |start |callback |method) @trace
+              :code $ quote $ do
+                reset! OverrideTrace $ [] |start
+                let
+                    change $ fn (data)
+                      hint-fn $ Fn Dynamic $ -> Dynamic
+                      update data :n $ fn (value)
+                        hint-fn $ Fn Dynamic $ -> Number
+                        assert= ([] |start) @OverrideTrace
+                        reset! OverrideTrace $ append @OverrideTrace |callback
+                        , 1
+                  assert= |rejected $ try
+                    change $ OverrideItem :n 0
+                    fn (message) (assert= "|assoc on a struct expected a struct result" message) |rejected
+                  assert= ([] |start |callback |method) @OverrideTrace
               :tags $ #{} :unit :update-method-contract
             %{} 'TestEntry
               :name |nested-writes-keep-callback-errors-and-enum-values

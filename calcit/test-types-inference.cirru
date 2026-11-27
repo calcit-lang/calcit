@@ -41,6 +41,17 @@
             :seed S
           :examples $ []
           :schema $ quote StructDef
+        'EmptyMarker $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EmptyMarker (:impls Emptyable)
+          :examples $ []
+          :schema $ quote StructDef
+        'EmptyMarkerImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl EmptyMarker Emptyable
+            .empty $ fn (value)
+              hint-fn $ Fn EmptyMarker $ -> EmptyMarker
+              , value
+          :examples $ []
+          :schema $ quote Impl
         'Job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Job (:title String) (:status Status)
           :examples $ []
@@ -1251,12 +1262,7 @@
               :tags $ #{} :function-contract :generic :lexical-binder :unit
             %{} 'TestEntry (:name |preserves-custom-empty-receiver)
               :code $ quote $ let
-                  Marker $ defstruct EmptyMarker
-                  marker-type $ impl-traits Marker $ defimpl Marker Emptyable
-                    .empty $ fn (value)
-                      hint-fn $ Fn Marker $ -> Marker
-                      , value
-                  value $ marker-type
+                  value $ EmptyMarker
                 assert= value $ renamed-inherited-empty value
                 assert= value $ .empty value
               :tags $ #{} :function-contract :generic :lexical-binder :unit

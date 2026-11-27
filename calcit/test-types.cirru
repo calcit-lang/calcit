@@ -37,6 +37,16 @@
             .dummy $ Fn T (-> Unit) (:generics T)
           :examples $ []
           :schema $ quote Trait
+        'GreetPerson $ %{} 'CodeEntry (:doc "|Struct with top-level coherent trait impl")
+          :code $ quote $ defstruct GreetPerson (:name String) (:age Number) (:impls PersonGreeting)
+          :examples $ []
+          :schema $ quote StructDef
+        'GreetPersonImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl GreetPerson PersonGreeting $ .greet
+            fn (self)
+              str "|Hello, I'm " $ :name self
+          :examples $ []
+          :schema $ quote Impl
         'Labeler $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftype Labeler (:generics T)
             Fn T $ -> String
@@ -66,6 +76,11 @@
                   assert= expected-value value
                   , &unit
             :tags $ #{} :type-slot :unit
+        'PersonGreeting $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait PersonGreeting $ .greet
+            Fn Self $ -> String
+          :examples $ []
+          :schema $ quote Trait
         'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
           :code $ quote $ defenum Result (:ok Number) (:err String)
           :examples $ []
@@ -282,11 +297,9 @@
           :code $ quote $ defn test-defstruct-defenum ()
             assert= :struct-def $ type-of Person
             assert= :enum-def $ type-of Result
-            assert= :struct-def $ type-of $ impl-traits Person StructImpl
             let
-                enum-with-impls $ impl-traits Result EnumImpl
                 ok $ CoherentResult :ok 1
-              assert= :enum-def $ type-of enum-with-impls
+              assert= :enum-def $ type-of CoherentResult
               assert= true $ any? (&enum:impls ok)
                 fn (impl)
                   = (impl-origin impl) (Some ResultTrait)
@@ -432,18 +445,12 @@
           :schema $ quote $ Fn (-> String) (:features :io)
         'test-struct-methods $ %{} 'CodeEntry
           :doc "|Tests method calls on Struct instances with impls"
-          :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
+          :code $ quote $ defn test-struct-methods ()
             let
-                PersonGreeting $ deftrait PersonGreeting $ .greet AnyFn
-                PersonImpl $ defimpl Person PersonGreeting $ .greet
-                  fn (self)
-                    str "|Hello, I'm " $ :name self
-                Person $ impl-traits Person PersonImpl
-                alice $ %{} Person (:name |Alice) (:age 30)
-              let
-                  greeting $ alice .greet
-                println |greeting: greeting
-                assert= "|Hello, I'm Alice" greeting
+                alice $ GreetPerson :name |Alice :age 30
+                greeting $ alice .greet
+              println |greeting: greeting
+              assert= "|Hello, I'm Alice" greeting
             , "|Struct method checks passed"
           :examples $ []
           :schema $ quote $ Fn (-> String)

@@ -88,6 +88,7 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
     *program_data = program::extract_program_data(&snapshot)?;
   }
 
+  drop(runner::preprocess::take_advisories());
   let check_warnings = RefCell::new(vec![]);
   runner::preprocess::ensure_ns_def_compiled(
     host::calcit::CORE_NS,
@@ -137,6 +138,7 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
     codegen::emit_wasm::check_wasi_component(&entries.init_ns, &entries.init_def, world)?;
   }
+  reject_preprocess_warnings(&check_warnings)?;
 
   let duration = Instant::now().duration_since(started_time);
   println!(
@@ -149,11 +151,17 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
 }
 
 fn reject_preprocess_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>) -> Result<(), String> {
+  let (blocking, advisories) = runner::preprocess::split_blocking_advisories(runner::preprocess::take_advisories());
+  check_warnings.borrow_mut().extend(blocking);
   let warnings = check_warnings.borrow();
   if !warnings.is_empty() {
     eprintln!("\n{} ({} errors)", "Errors:".red(), warnings.len());
     LocatedWarning::print_list(&warnings);
     return Err(format!("Found {} errors during preprocessing", warnings.len()));
+  }
+  if !advisories.is_empty() {
+    eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
+    LocatedWarning::print_list(&advisories);
   }
 
   Ok(())

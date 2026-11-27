@@ -713,46 +713,32 @@
             %{} 'TestEntry
               :name |struct-def-trait-dispatch-ignores-instance-impls
               :code $ quote $ let
-                  CustomMarker $ deftrait CustomMarker $ .cmark
-                    Fn Self $ -> Number
-                  BoxBase $ defstruct BoxBase $ :x Number
-                  BoxHash $ impl-traits BoxBase $ defimpl BoxBase Hash
-                    .hash $ fn (self) 7
-                  BoxMark $ impl-traits BoxBase $ defimpl BoxBase CustomMarker
-                    .cmark $ fn (self) 9
-                  EnumBase $ defenum EnumBase $ :a Number
-                  EnumHash $ impl-traits EnumBase $ defimpl EnumBase Hash
-                    .hash $ fn (self) 11
-                  EnumMark $ impl-traits EnumBase $ defimpl EnumBase CustomMarker
-                    .cmark $ fn (self) 13
-                  box-inst $ BoxMark :x 1
-                  enum-inst $ EnumMark :a 1
-                assert= (hash BoxHash) (BoxHash .hash)
-                assert= (hash EnumHash) (EnumHash .hash)
-                assert= (hash BoxHash) (&trait-call Hash :hash BoxHash)
-                assert= (hash EnumHash) (&trait-call Hash :hash EnumHash)
-                assert= true $ &= BoxHash $ assert-traits BoxHash Debug
-                assert= true $ &= BoxHash $ assert-traits BoxHash Eq
-                assert= true $ &= BoxHash $ assert-traits BoxHash Hash
-                assert= true $ &= EnumHash $ assert-traits EnumHash Hash
-                assert= true $ &= box-inst $ assert-traits box-inst CustomMarker
-                assert= true $ &= enum-inst $ assert-traits enum-inst CustomMarker
-                assert= 9 $ &trait-call CustomMarker :cmark box-inst
-                assert= 13 $ &trait-call CustomMarker :cmark enum-inst
+                  fs-path $ FsPath :value |demo.txt
+                  opt-some $ Some 1
+                assert= (hash FsPath) (FsPath .hash)
+                assert= (hash Option) (Option .hash)
+                assert= (hash FsPath) (&trait-call Hash :hash FsPath)
+                assert= (hash Option) (&trait-call Hash :hash Option)
+                assert= true $ &= FsPath $ assert-traits FsPath Debug
+                assert= true $ &= FsPath $ assert-traits FsPath Eq
+                assert= true $ &= FsPath $ assert-traits FsPath Hash
+                assert= true $ &= Option $ assert-traits Option Hash
+                assert= true $ &= fs-path $ assert-traits fs-path FsPathOps
+                assert= true $ &= opt-some $ assert-traits opt-some OptionOps
                 assert= true $ includes?
-                  map (&methods-of BoxMark) &str
-                  , |.cmark
+                  map (&methods-of FsPath) &str
+                  , |.read-text
                 assert= true $ includes?
-                  map (&methods-of EnumMark) &str
-                  , |.cmark
+                  map (&methods-of Option) &str
+                  , |.some?
                 assert= true $ >
-                  count $ &trait-call Debug :debug BoxMark
+                  count $ &trait-call Debug :debug FsPath
                   , 0
                 assert= true $ try
-                  do (assert-traits BoxMark CustomMarker) false
+                  do (assert-traits FsPath FsPathOps) false
                   fn (_err) true
                 assert= true $ try
-                  do (assert-traits EnumMark CustomMarker) false
+                  do (assert-traits Option OptionOps) false
                   fn (_err) true
               :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
@@ -8038,7 +8024,7 @@
                 and (list? entry)
                   not $ empty? entry
                   &= :impls $ &list:nth entry 0
-              raise "|`(:impls …)` attaches implementations only to a top-level struct or enum definition; inside a function, attach them with `impl-traits`"
+              raise "|`(:impls …)` attaches implementations only to a top-level struct or enum definition; move the type definition and its `defimpl` to the top level, or box an implementing value with `(Dyn Trait)` (`dyn:box`)"
             if (data-definition-clause? entries :generics)
               &let
                 generics $ &list:rest $ &list:nth entries 0
@@ -8640,7 +8626,7 @@
                 _ 0
             :tags $ #{} :core :unit
         'defimpl $ %{} 'CodeEntry
-          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: at the top level, the type lists the trait with `(:impls Trait …)` and the compiler attaches this implementation, found in the type's or the trait's namespace. Inside a function, `Type` is the local struct/enum and the returned impl is attached with `impl-traits`. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
+          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: declare the type and its `defimpl` at the top level and list the trait in `(:impls Trait …)` so the compiler attaches it automatically from the type's or trait's namespace; local `impl-traits` attachment fails in project code with `E_LEGACY_DYNAMIC_STYLE`, and `(Dyn Trait)` (`dyn:box`) only boxes values whose type already implements the trait. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
             if
               not $ symbol? name

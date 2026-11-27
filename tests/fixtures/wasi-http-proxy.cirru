@@ -41,7 +41,7 @@
               reset! *hits next
               , next
           :examples $ []
-          :schema $ quote $ Fn (-> Number)
+          :schema $ quote $ Fn (-> Number) (:features :state)
         'extract-body-text $ %{} 'CodeEntry (:doc "|Extract UTF-8 text from HttpBody.")
           :code $ quote $ defn extract-body-text (body)
             match body
@@ -145,7 +145,7 @@
                 true
                   Result :ok $ plain-response 404 |not-found
           :examples $ []
-          :schema $ quote $ Fn HttpRequest (-> (Result HttpResponse String))
+          :schema $ quote $ Fn HttpRequest (-> (Result HttpResponse String)) (:features :state)
           :tests $ [] $ %{} 'TestEntry (:name |handles-routes-and-types-natively)
             :code $ quote $ do
               reset! *hits 0

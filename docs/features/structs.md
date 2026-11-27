@@ -430,20 +430,19 @@ let
 
 ## Polymorphism with Traits
 
-Define a trait with `deftrait` and implement it with `defimpl Type Trait`. A top-level struct lists its traits with `(:impls Trait)`; inside a function body like the example below, `impl-traits` attaches the impl value:
+Define a trait with `deftrait`, list it in the top-level struct's `(:impls Trait)`, and implement it with `defimpl Type Trait` (local/value-level `impl-traits` is rejected with `E_LEGACY_DYNAMIC_STYLE`):
 
-```cirru
+```cirru.no-check
+deftrait BirdTrait
+  .show $ Fn Self (-> Unit)
+
+defstruct Bird (:name String) (:impls BirdTrait)
+
+defimpl Bird BirdTrait
+  .show $ fn (self)
+    println $ :name self
+
 let
-    BirdTrait $ deftrait BirdTrait
-      .show $ Fn Self (-> Unit)
-    BirdShape $ defstruct BirdShape (:name :string)
-    BirdImpl $ defimpl BirdShape BirdTrait
-      .show $ fn (self)
-        ; defimpl bodies are reusable before a concrete Struct is attached,
-        ; so low-level access is explicit at this dynamic implementation boundary.
-        ; Do not copy this form into typed application code.
-        println $ &struct:get self :name
-    Bird $ impl-traits BirdShape BirdImpl
     b $ Bird :name |Sparrow
   assert-traits b BirdTrait
   b .show

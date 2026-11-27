@@ -26,7 +26,7 @@ Keep two concepts separate:
 `Emptyable` 描述 `.empty` 能力，其方法输入和返回使用同一个接收者泛型 `Self`。
 Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用相同合同。
 泛型函数通过 `:where $ {} ('T 'Emptyable)` 取得能力后，调用 `.empty` 仍得到原来的 `T`，不会抹掉 List 成员或 Map 的 key/value 类型。
-自定义 Struct/Enum 在定义上写 `(:impls Emptyable)`，再用 `defimpl 类型 Emptyable` 提供实现（函数内的局部类型用 `impl-traits` 挂载）；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
+自定义 Struct/Enum 在顶层定义上写 `(:impls Emptyable)`，再用顶层 `defimpl 类型 Emptyable` 提供实现（旧 `impl-traits` 动态挂载已升级为阻断错误 `E_LEGACY_DYNAMIC_STYLE`）；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
 
 ## 核心值能力：Hash、Eq、Compare 与 Debug
 
@@ -66,10 +66,10 @@ let
 ## Quick Recipes
 
 - **Define Trait**: `deftrait MyTrait $ .method $ Fn …`
-- **Implement Trait**: `defimpl MyImpl MyTrait .method (fn (x) ...)`
-- **Attach to Struct**: `impl-traits MyStruct MyImpl`
+- **Declare & Implement**: `defstruct MyStruct (:name String) (:impls MyTrait)` + `defimpl MyStruct MyTrait (.method (fn (x) ...))`
 - **Call Method**: `instance .method` (receiver-first; `.method instance` remains compatible)
 - **Check Trait**: `assert-traits instance MyTrait`
+- **Dynamic Polymorphism**: `(Dyn MyTrait)` + `dyn:box value MyTrait`
 
 ## Define a trait
 
@@ -100,17 +100,18 @@ deftrait Shape
 
 ## Implement a trait
 
-Use `defimpl Type Trait …` to implement a trait for a struct or enum. A top-level type lists its traits with `(:impls …)` and is attached automatically (see “顶层定义” below); inside a function, as here, `defimpl` names the local type and returns an impl value that `impl-traits` attaches.
+Use `defimpl Type Trait …` to implement a trait for a top-level struct or enum, and list `Trait` in `(:impls …)` on the type definition (see “顶层定义” below). Local/value-level `impl-traits` fails with `E_LEGACY_DYNAMIC_STYLE`.
 
-```cirru
+```cirru.no-check
+deftrait MyFoo $ .foo $ Fn Self (-> String)
+
+defstruct Person (:name String) (:impls MyFoo)
+
+defimpl Person MyFoo
+  .foo $ fn (p)
+    str-spaced |foo $ :name p
+
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      Fn Self (-> String)
-    Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl Person0 MyFoo $ .foo
-      fn (p) (assert-type p Person0)
-        str-spaced |foo $ :name p
-    Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice
   p .foo
 ```
@@ -123,21 +124,21 @@ let
 defimpl Type Trait ...
 ```
 
-- First argument is the **struct or enum it implements**: at the top level a struct/enum definition, inside a function a local bound to one. The retired `defimpl ImplName Trait` form fails with `E_LEGACY_DEFIMPL_NAME`.
+- First argument is the top-level **struct or enum it implements**. The retired `defimpl ImplName Trait` form fails with `E_LEGACY_DEFIMPL_NAME`.
 - 第二个参数必须是具体的 **trait 值**（symbol）。旧 tag method-bag 形式已退役，不能作为用户态 trait 实现。
-- At the top level the type lists the trait with `(:impls Trait …)` and the implementation is attached automatically (see below). Inside a function the result is an impl value attached with `impl-traits`.
+- The type lists the trait with `(:impls Trait …)` and the implementation is attached automatically (see below).
 
 Examples:
 
-```cirru
+```cirru.no-check
+defstruct PersonA (:name String) (:impls MyFooA)
+deftrait MyFooA $ .foo $ Fn Self (-> String)
+
+defimpl PersonA MyFooA
+  .foo $ fn (p)
+    str-spaced |foo $ :name p
+
 let
-    PersonA0 $ defstruct PersonA $ :name String
-    MyFooA $ deftrait MyFooA $ .foo
-      Fn Self (-> String)
-    MyFooImplA $ defimpl PersonA0 MyFooA $ .foo
-      fn (p) (assert-type p PersonA0)
-        str-spaced |foo $ :name p
-    PersonA $ impl-traits PersonA0 MyFooImplA
     p $ PersonA :name |Alice
   p .foo
 ```
@@ -146,15 +147,15 @@ let
 
 普通 trait 的方法键统一使用 dot 写法（如 `.foo`）；旧 tag 写法（如 `:foo`）已退役。
 
-```cirru
+```cirru.no-check
+deftrait MyFoo $ .foo $ Fn Self (-> String)
+defstruct PersonB (:name String) (:impls MyFoo)
+
+defimpl PersonB MyFoo
+  .foo $ fn (p)
+    str |B: $ :name p
+
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      Fn Self (-> String)
-    Person0 $ defstruct Person $ :name String
-    ImplB $ defimpl Person0 MyFoo $ :: .foo
-      fn (p) (assert-type p Person0)
-        str |B: $ :name p
-    PersonB $ impl-traits Person0 ImplB
     pb $ PersonB :name |Bob
   pb .foo
 ```
@@ -223,85 +224,59 @@ Calcit 按引用载入定义，实现也沿引用找到：类型引用 trait，�
 - 同一个 trait 有两个实现，或在 `(:impls …)` 中重复列出同一 trait（含别名指向同一来源）：`E_DUPLICATE_TRAIT_IMPL`。
 - `(:impls …)` 里的名字解析不到：`E_UNKNOWN_IMPLS_TRAIT`。
 - 类型没在 `(:impls …)` 里列出的 trait，旁边即使有 `defimpl` 也不会挂上。
-- 对于未在任何位置通过值级或局部 `impl-traits`（含 `&struct:impl-traits`、`&enum:impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`）动态改写实现表的顶层名义类型，编译器判定其为**静态连贯（statically coherent）**：整个程序中同一 `(Type, Trait)` 组合最多只能有一个顶层 `defimpl`（重复会直接报 `E_DUPLICATE_TRAIT_IMPL`）；WASM/WASI 后端直接信任该连贯契约，无需分配 `ImplSelector` 或受 8 路分支限制，参数、容器元素、结构体字段及 `defref` 中的值都可直接静态解析 `.method` 与 `&trait-call`。
-- `(:impls …)` 用于顶层定义；函数内/值级 `impl-traits`（及底层 `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits`）**已弃用（deprecated）**，仅保留用于既有测试与兼容路径。新代码应统一使用顶层 `defstruct` / `defenum` + `(:impls …)` + `defimpl`；需要跨类型动态派发时请使用对象安全的 `(Dyn Trait)` 与 `dyn:box`。
+- 对于未动态改写实现表的顶层名义类型，编译器判定其为**静态连贯（statically coherent）**：整个程序中同一 `(Type, Trait)` 组合最多只能有一个顶层 `defimpl`（重复会直接报 `E_DUPLICATE_TRAIT_IMPL`）；WASM/WASI 后端直接信任该连贯契约，无需分配 `ImplSelector` 或受 8 路分支限制，参数、容器元素、结构体字段及 `defref` 中的值都可直接静态解析 `.method` 与 `&trait-call`。
+- `(:impls …)` 用于顶层定义；函数内/值级 `impl-traits`（及底层 `&struct:impl-traits` / `&enum:impl-traits` / `&struct-def:impl-traits` / `&enum-def:impl-traits`）已升级为默认阻断错误 `E_LEGACY_DYNAMIC_STYLE`。新代码统一使用顶层 `defstruct` / `defenum` + `(:impls …)` + `defimpl`；需要跨类型动态派发时请使用对象安全的 `(Dyn Trait)` 与 `dyn:box`。
 
 热重载时，改动 `defimpl` 或 `(:impls …)` 会让类型和它的使用者重新编译，即使类型在另一个 ns。
 
 ## Attach impls to struct/enum definitions
 
-`impl-traits` attaches impl records to a **struct/enum type defined inside a function** (`let`); a top-level definition uses `(:impls …)` instead, and writing `impl-traits` there fails with `E_LEGACY_IMPL_TRAITS`. Attaching more than one implementation of the same nominal trait origin is rejected immediately with `E_DUPLICATE_TRAIT_IMPL` both during static analysis and at runtime across native and JS; do not attach a second impl of the same trait to override an earlier one. When distinct traits on the same type define the same method name, calling `.method` without disambiguation is rejected with `E_AMBIGUOUS_TRAIT_METHOD` statically and at runtime, while `&trait-call Trait :method receiver ...` selects one nominal origin explicitly.
+Top-level definitions declare their implemented traits via `(:impls …)`; writing `impl-traits` at top level (`E_LEGACY_IMPL_TRAITS`) or dynamically inside a function (`E_LEGACY_DYNAMIC_STYLE`) is rejected. Attaching more than one implementation of the same nominal trait origin is rejected immediately with `E_DUPLICATE_TRAIT_IMPL`. When distinct traits on the same type define the same method name, calling `.method` without disambiguation is rejected with `E_AMBIGUOUS_TRAIT_METHOD` statically and at runtime, while `&trait-call Trait :method receiver ...` selects one nominal origin explicitly.
 
-Constraints:
+```cirru.no-check
+deftrait MyFoo $ .foo $ Fn Self (-> String)
+deftrait MyBar $ .bar $ Fn Self (-> String)
+defstruct Box (:name String) (:impls MyFoo MyBar)
 
-- `impl-traits` only accepts **struct/enum** values.
-- Struct/enum values must be created from a definition that already has impls attached (`%{}` or `%::`).
+defimpl Box MyFoo $ .foo $ fn (p) (str |A: $ :name p)
+defimpl Box MyBar $ .bar $ fn (p) (str |B: $ :name p)
 
-Syntax:
-
-```cirru
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      Fn Self (-> String)
-    StructDef0 $ defstruct StructDef $ :name String
-    ImplA $ defimpl StructDef0 MyFoo $ .foo
-      fn (p) (assert-type p StructDef0)
-        str |A: $ :name p
-    MyBar $ deftrait MyBar $ .bar 'Fn
-    ImplB $ defimpl StructDef0 MyBar $ .bar
-      fn (p) (assert-type p StructDef0)
-        str |B: $ :name p
-    StructDef $ impl-traits StructDef0 ImplA ImplB
-    x $ StructDef :name |test
+    x $ Box :name |test
   x .foo
 ```
 
 ### Public vs internal API boundary
 
-- Prefer public API in app/library code: `deftrait`, `defimpl`, `impl-traits`, `.method`, `&trait-call`.
+- Prefer public API in app/library code: `deftrait`, `defimpl`, `(:impls …)`, `.method`, `&trait-call`, `(Dyn Trait)` / `dyn:box`.
 - Treat internal `&...` helpers as runtime-level details; they may change more frequently and are not the stable user contract.
 
 ```cirru.no-check
-do (; struct example)
-  let
-      MyFoo $ deftrait MyFoo
-        .foo $ Fn Self (-> String)
-      Person0 $ defstruct Person (:name String)
-      MyFooImpl $ defimpl Person0 MyFoo
-        .foo $ fn (p) (assert-type p Person0)
-          str-spaced |foo $ :name p
-      Person $ impl-traits Person0 MyFooImpl
-      p $ Person :name |Alice
-    p .foo
-  ; enum example
-  let
-      ResultTrait $ deftrait ResultTrait
-        .describe $ Fn Self (-> String)
-      Result0 $ defenum Result0 (:ok String) (:err String)
-      ResultImpl $ defimpl Result0 ResultTrait
-        .describe $ fn (x)
-          match x
-            (:ok v) (str |ok: v)
-            (:err v) (str |err: v)
-      MyResult $ impl-traits Result0 ResultImpl
-      r $ %:: MyResult :ok |done
-    r .describe
+; struct example
+deftrait MyFoo $ .foo $ Fn Self (-> String)
+defstruct Person (:name String) (:impls MyFoo)
+defimpl Person MyFoo $ .foo $ fn (p) (str-spaced |foo $ :name p)
+
+; enum example
+deftrait ResultTrait $ .describe $ Fn Self (-> String)
+defenum MyResult (:ok String) (:err String) (:impls ResultTrait)
+defimpl MyResult ResultTrait
+  .describe $ fn (x)
+    match x
+      (:ok v) (str |ok: v)
+      (:err v) (str |err: v)
+
+let
+    p $ Person :name |Alice
+    r $ MyResult :ok |done
+  [] (p .foo) (r .describe)
 ```
 
 ### Static analysis boundary
 
-For preprocess to resolve impls and inline methods, keep struct/enum definitions at **top-level `ns/def`** and attach their traits with `(:impls Trait …)`. Types built inside `defn`/`defmacro` bodies with `impl-traits` are only visible to preprocess within that body, and the WASM backend does not compile them.
+Keep struct/enum definitions at **top-level `ns/def`** and attach their traits with `(:impls Trait …)`.
 
-A function that builds a value with a locally attached type and returns it
-under the base type's schema, such as `Fn Number (-> Person0)`, hands callers
-only `Person0`: the attached impls are not part of the static type, so a
-caller's `:where` bound or method specialization cannot rely on them. Build the
-value in the same body that needs the evidence.
-
-When running `warn-dyn-method`, preprocess emits extra diagnostics for:
-
-- `.method` call sites that have multiple origin candidates with the same method name. Diagnostics print namespace-qualified source origins (or a runtime identity), so `app.a/Show` and `app.b/Show` are never collapsed to the short name `Show`.
-- `impl-traits` used inside function/macro bodies (non-top-level attachment).
+When running `warn-dyn-method`, preprocess emits extra diagnostics for `.method` call sites that have multiple origin candidates with the same method name. Diagnostics print namespace-qualified source origins (or a runtime identity), so `app.a/Show` and `app.b/Show` are never collapsed to the short name `Show`.
 
 Method checking, callback signature inference, static lowering, and these diagnostics consume the same candidate resolution. Trait requirements are de-duplicated by nominal origin and normalized independently of declaration order. A requires cycle or a reachable method/default without callable signature metadata is invalid static evidence; it cannot satisfy a generic `:where` bound.
 
@@ -313,11 +288,10 @@ Key trait docs examples are mirrored by executable smoke cases in `calcit/test-d
 
 - `defimpl` argument order (`Type` then `Trait`)
 - `assert-traits` local-first requirement
-- `impl-traits` only accepting struct/enum definitions
 
 ## Method call vs explicit trait call
 
-Normal method invocation uses `.method` dispatch. Both static checking and runtime `.method` dispatch (across native and JS) require a user method name to resolve to at most one nominal trait origin and one attached impl without falling back to last-wins shadowing. If multiple distinct traits provide that method name, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one nominal trait origin report `E_DUPLICATE_TRAIT_IMPL` (and are already rejected at attachment time in `(:impls …)` and `impl-traits`). Use `&trait-call` for multi-trait disambiguation and remove duplicate attachments for single-trait conflicts.
+Normal method invocation uses `.method` dispatch. Both static checking and runtime `.method` dispatch (across native and JS) require a user method name to resolve to at most one nominal trait origin and one attached impl without falling back to last-wins shadowing. If multiple distinct traits provide that method name, `.method` reports `E_AMBIGUOUS_TRAIT_METHOD`; duplicate implementations of one nominal trait origin report `E_DUPLICATE_TRAIT_IMPL` (rejected at attachment time in `(:impls …)` / top-level `defimpl`). Use `&trait-call` for multi-trait disambiguation and remove duplicate attachments for single-trait conflicts.
 
 Strict diagnostics are always on (`--compat-types` was removed in 0.41.0). The read-only `calcit analyze weak-types --only dynamic-method` report lists the remaining dynamic dispatches to migrate.
 
@@ -336,23 +310,17 @@ Usage: `&trait-call Trait :method receiver & args`
 Example with two traits sharing the same method name:
 
 ```cirru.no-check
+deftrait MyZapA $ .zap $ Fn Self (-> String)
+deftrait MyZapB $ .zap $ Fn Self (-> String)
+defstruct Person (:name String) (:impls MyZapA MyZapB)
+defimpl Person MyZapA $ .zap $ fn (_x) |zapA
+defimpl Person MyZapB $ .zap $ fn (_x) |zapB
+
 let
-    MyZapA $ deftrait MyZapA
-      .zap $ Fn Self (-> String)
-    MyZapB $ deftrait MyZapB
-      .zap $ Fn Self (-> String)
-    Person0 $ defstruct Person (:name String)
-    MyZapAImpl $ defimpl Person0 MyZapA
-      .zap $ fn (_x) |zapA
-    MyZapBImpl $ defimpl Person0 MyZapB
-      .zap $ fn (_x) |zapB
-    Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
     p $ Person :name |Alice
-  ; strict checking rejects this ambiguous call
-  p .zap
-  ; explicitly pick a "trait’s" implementation
-  &trait-call MyZapA :zap p
-  &trait-call MyZapB :zap p
+  ; explicitly pick a trait implementation (`p .zap` would be rejected as ambiguous)
+  assert= |zapA $ &trait-call MyZapA :zap p
+  assert= |zapB $ &trait-call MyZapB :zap p
 ```
 
 ## Debugging / introspection
@@ -374,18 +342,11 @@ You can also inspect impl origins directly when validating trait dispatch:
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      Fn Self (-> String)
-    Shape0 $ defenum Shape $ :point Number Number
-    MyFooImpl $ defimpl Shape0 MyFoo $ .foo
-      fn (t)
-        str |shape: $ &enum:nth t 0
-    Shape $ impl-traits Shape0 MyFooImpl
-    shape $ Shape :point 10 20
-    impls $ &enum:impls shape
+    x $ Some 1
+    impls $ &enum:impls x
   any? impls $ fn (impl)
     match (impl-origin impl)
-      (:some origin) (= origin MyFoo)
+      (:some origin) (= origin Countable)
       (:none) false
 ```
 
@@ -400,12 +361,12 @@ deftrait Labeled $ .label $ Fn Self (-> String)
 deftrait Greeting (requires Labeled)
   .greeting $ Fn Self (-> String)
 
-def Greeter $ impl-traits
-  defstruct Greeter $ :name String
-  , LabeledImpl GreetingImpl
+defstruct Greeter (:name String) (:impls Labeled Greeting)
+defimpl Greeter Labeled $ .label $ fn (g) (:name g)
+defimpl Greeter Greeting $ .greeting $ fn (g) (str "|hello " $ :name g)
 ```
 
-- `defimpl GreetingImpl Greeting` 只实现 `Greeting` 自己的方法；`impl-traits` 挂载时同一类型必须也挂载了全部父 trait 的实现，
+- `defimpl Greeter Greeting` 只实现 `Greeting` 自己的方法；`(:impls Labeled Greeting)` 声明时同一类型必须也声明并实现了全部父 trait，
   否则报 `E_IMPL_MISSING_REQUIRED_TRAIT`。`assert-traits value Greeting` 同样检查父 trait 的实现。
 - `:where $ T Greeting` 的函数体可以调用 `.label`；满足 `Greeting` 约束的类型参数也满足 `Labeled` 约束，反方向需要显式检查。
 - external-object trait 的继承用法见 [JavaScript Interop](js-interop.md)。
@@ -422,16 +383,9 @@ Notes:
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      Fn Self (-> String)
-    Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl Person0 MyFoo $ .foo
-      fn (p) (assert-type p Person0)
-        str-spaced |foo $ :name p
-    Person $ impl-traits Person0 MyFooImpl
-    p $ Person :name |Alice
-  assert-traits p MyFoo
-  p .foo
+    xs $ [] 1 2 3
+  assert-traits xs calcit.core/Len
+  xs .len
 ```
 
 ### Examples (verified with `calcit eval`)

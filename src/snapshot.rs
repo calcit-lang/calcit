@@ -3253,9 +3253,8 @@ pub const PERCENT_STRUCT_LITERAL_WARNING: &str = "W_PERCENT_STRUCT_LITERAL";
 pub const LEGACY_NIL_USAGE_ERROR: &str = "E_LEGACY_NIL_USAGE";
 /// Runtime type/nil predicates (`nil?`, `non-nil?`, `list?`, `type-of`, ...) that bypass static pattern matching.
 pub const RUNTIME_TYPE_PREDICATE_WARNING: &str = "W_RUNTIME_TYPE_PREDICATE";
-/// Legacy dynamic styles (`impl-traits`) replaced by nominal `(:impls …)` / `(Dyn Trait)`.
-pub const LEGACY_DYNAMIC_STYLE_WARNING: &str = "W_LEGACY_DYNAMIC_STYLE";
-/// Legacy dynamic prototype construction (`%{} _`, `%::`) replaced by nominal `defstruct`/`defenum` direct constructors.
+/// Legacy dynamic styles (`impl-traits`, `%{} _`, `%::`) replaced by nominal `defstruct`/`defenum`
+/// direct constructors, top-level `(:impls …)` + `defimpl`, or `(Dyn Trait)`.
 pub const LEGACY_DYNAMIC_STYLE_ERROR: &str = "E_LEGACY_DYNAMIC_STYLE";
 pub const LEGACY_TYPE_SYNTAX_CODE: &str = "E_LEGACY_TYPE_SYNTAX";
 

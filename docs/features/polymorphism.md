@@ -14,7 +14,7 @@ entry_for:
 ---
 # Polymorphism
 
-Calcit models polymorphism with traits. Traits define method capabilities. A top-level struct/enum lists the traits it implements with `(:impls Trait …)`, and each implementation is written as `defimpl Type Trait …`; inside a function body, `impl-traits` attaches local impl values.
+Calcit models polymorphism with traits. Traits define method capabilities. A top-level struct/enum lists the traits it implements with `(:impls Trait …)`, and each implementation is written as `defimpl Type Trait …`; dynamic polymorphic collections use `(Dyn Trait)` (`dyn:box`). Local/value-level `impl-traits` is retired (`E_LEGACY_DYNAMIC_STYLE`).
 
 For capability-based dispatch via struct/enum-attached impls (used by struct/enum values created from them), see [Traits](traits.md).
 
@@ -22,10 +22,9 @@ Historically, the idea was inspired by JavaScript, and also [borrowed from a tri
 
 ## Quick Recipes
 
-- **Define Trait**: `deftrait Show $ .show $ quote $ Fn …`
-- **Implement**: `defimpl MyStruct Show .show (fn (x) ...)`
+- **Define Trait**: `deftrait Show $ .show $ Fn Self (-> String)`
+- **Implement**: `defimpl MyStruct Show (.show (fn (x) ...))`
 - **Attach (top level)**: `defstruct MyStruct (:name String) (:impls Show)`
-- **Attach (local, inside `let`)**: `impl-traits MyStruct0 show-impl`
 - **Call**: `instance .show` (receiver-first; `.show instance` remains compatible)
 
 ## Key terms
@@ -47,7 +46,7 @@ Use `Debug` for polymorphic helpers that must work with ordinary values. Use
 - **Trait impl**: An impl carrying the exact trait value as origin and providing its complete method set.
 - **Inherent method bag**: A compatibility impl without trait origin. It participates only in ordinary `.method` lookup and proves no trait bound.
 - **`(:impls …)`**: The clause on a top-level `defstruct`/`defenum` listing its traits; the compiler finds each `defimpl Type Trait` in the type's or the trait's namespace and attaches it.
-- **impl-traits**: Attaches impl values to a struct/enum inside a function body. Writing it as a top-level definition fails with `E_LEGACY_IMPL_TRAITS`.
+- **`impl-traits` (retired)**: Dynamic local trait attachment is rejected with `E_LEGACY_DYNAMIC_STYLE`; declare static top-level `(:impls …)` + `defimpl` or use `(Dyn Trait)` (`dyn:box`).
 - **assert-traits**: Adds a compile-time hint and performs a nominal runtime check for that exact trait origin.
 
 ## Define a trait
@@ -65,40 +64,35 @@ Traits are values and can be referenced like normal symbols.
 
 ## Implement a trait for a struct/enum definition
 
-```cirru
+```cirru.no-check
+deftrait MyFoo
+  .foo $ Fn Self (-> String)
+
+defstruct Person (:name String) (:impls MyFoo)
+
+defimpl Person MyFoo
+  .foo $ fn (p)
+    str "|foo " $ :name p
+
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl Person0 MyFoo $ .foo
-      fn (p) (assert-type p Person0)
-        str "|foo " $ :name p
-    Person $ impl-traits Person0 MyFooImpl
     p $ Person :name |Alice
   p .foo
 ```
 
-`impl-traits` returns a new struct/enum definition with trait implementations attached. You can also attach multiple traits at once:
+You can also list and implement multiple traits on a top-level definition:
 
-```cirru
+```cirru.no-check
+deftrait MyFoo $ .foo $ Fn Self (-> String)
+deftrait ShowTrait $ .show $ Fn Self (-> String)
+deftrait EqTrait $ .eq $ Fn Self (-> String)
+
+defstruct Person (:name String) (:impls ShowTrait EqTrait MyFoo)
+
+defimpl Person ShowTrait $ .show $ fn (p) (str |Person: $ :name p)
+defimpl Person EqTrait $ .eq $ fn (p) (str |eq: $ :name p)
+defimpl Person MyFoo $ .foo $ fn (p) (str |foo: $ :name p)
+
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
-    ShowTrait $ deftrait ShowTrait $ .show
-      quote $ Fn T (-> String) (:generics T)
-    EqTrait $ deftrait EqTrait $ .eq
-      quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name String
-    ShowImpl $ defimpl Person0 ShowTrait $ .show
-      fn (p) (assert-type p Person0)
-        str |Person: $ :name p
-    EqImpl $ defimpl Person0 EqTrait $ .eq
-      fn (p) (assert-type p Person0)
-        str |eq: $ :name p
-    MyFooImpl $ defimpl Person0 MyFoo $ .foo
-      fn (p) (assert-type p Person0)
-        str |foo: $ :name p
-    Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
     p $ Person :name |Alice
   [] (p .show) (p .foo)
 ```
@@ -109,16 +103,9 @@ let
 
 ```cirru
 let
-    MyFoo $ deftrait MyFoo $ .foo
-      quote $ Fn T (-> String) (:generics T)
-    Person0 $ defstruct Person $ :name String
-    MyFooImpl $ defimpl Person0 MyFoo $ .foo
-      fn (p) (assert-type p Person0)
-        str-spaced |foo $ :name p
-    Person $ impl-traits Person0 MyFooImpl
-    p $ Person :name |Alice
-  assert-traits p MyFoo
-  p .foo
+    xs $ [] 1 2 3
+  assert-traits xs calcit.core/Len calcit.core/Mappable
+  xs .len
 ```
 
 If the trait is missing or its selected impl is incomplete, `assert-traits` raises an error. Methods are not combined across unrelated impls: implementing `TraitA/.render` never satisfies `TraitB/.render`.
