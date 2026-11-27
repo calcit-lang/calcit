@@ -3936,6 +3936,7 @@ fn preprocess_generated_specialization(
 struct OutsideGeneratedSpecialization {
   outer_generated: bool,
   outer_recheck: bool,
+  outer_case_verification: bool,
 }
 
 impl OutsideGeneratedSpecialization {
@@ -3943,6 +3944,7 @@ impl OutsideGeneratedSpecialization {
     Self {
       outer_generated: IN_GENERATED_SPECIALIZATION.with(|flag| flag.replace(false)),
       outer_recheck: IN_LET_LAMBDA_RECHECK.with(|flag| flag.replace(false)),
+      outer_case_verification: IN_CASE_BODY_VERIFICATION.with(|flag| flag.replace(false)),
     }
   }
 }
@@ -3951,6 +3953,7 @@ impl Drop for OutsideGeneratedSpecialization {
   fn drop(&mut self) {
     IN_GENERATED_SPECIALIZATION.with(|flag| flag.set(self.outer_generated));
     IN_LET_LAMBDA_RECHECK.with(|flag| flag.set(self.outer_recheck));
+    IN_CASE_BODY_VERIFICATION.with(|flag| flag.set(self.outer_case_verification));
   }
 }
 
@@ -11381,7 +11384,11 @@ fn note_legacy_nil_predicate_migration(
   location: Option<NodeLocation>,
   file_ns: &str,
 ) {
-  if IN_LET_LAMBDA_RECHECK.with(Cell::get) || is_core_or_replay_ns(file_ns) || !should_emit_project_source_lint(file_ns) {
+  if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || in_case_body_verification()
+    || is_core_or_replay_ns(file_ns)
+    || !should_emit_project_source_lint(file_ns)
+  {
     return;
   }
   let Some(location) = location else {
@@ -11434,6 +11441,7 @@ fn note_legacy_fn_migration(
 
 fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<NodeLocation>, file_ns: &str) {
   if IN_LET_LAMBDA_RECHECK.with(Cell::get)
+    || in_case_body_verification()
     || def_ns != calcit::CORE_NS
     || is_core_or_replay_ns(file_ns)
     || !should_emit_project_source_lint(file_ns)
@@ -32499,5 +32507,84 @@ mod tests {
     // Hand-written literal `if false` keeps checking the false branch.
     run_if(Calcit::Bool(false), list_nth_x, Calcit::Bool(true))
       .expect_err("hand-written literal `if false` must still check the true branch");
+  }
+
+  #[test]
+  fn case_verification_compiles_uncached_helper_with_advisories_and_restores_case_mode() {
+    let _guard = lock_preprocess_test_state();
+    let _drained = take_advisories();
+    struct ProjectNsReset;
+    impl Drop for ProjectNsReset {
+      fn drop(&mut self) {
+        let _ = take_advisories();
+        set_project_namespaces(&HashSet::new());
+      }
+    }
+    let _ns_reset = ProjectNsReset;
+
+    let ns = "tests.cases-helper-advisory";
+    let def = "helper-nil";
+    set_project_namespaces(&HashSet::from([ns.to_owned()]));
+
+    let core = crate::load_core_snapshot().expect("embedded core");
+    let source_code = code_to_calcit(
+      &Cirru::List(vec![
+        Cirru::leaf("defn"),
+        Cirru::leaf(def),
+        Cirru::List(vec![Cirru::leaf("x")]),
+        Cirru::List(vec![Cirru::leaf("nil?"), Cirru::leaf("x")]),
+      ]),
+      ns,
+      def,
+      vec![],
+    )
+    .expect("parse helper function");
+    let schema = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Tag)],
+      Arc::new(CalcitTypeAnnotation::Bool),
+    ));
+
+    {
+      let mut program_code = program::PROGRAM_CODE_DATA.write().expect("open program code");
+      program_code.extend(program::extract_program_data(&core).expect("core source"));
+      program_code.insert(
+        Arc::from(ns),
+        program::ProgramFileData {
+          import_map: HashMap::new(),
+          defs: HashMap::from([(
+            Arc::from(def),
+            program::ProgramDefEntry {
+              tags: Default::default(),
+              code: source_code,
+              schema,
+              doc: Arc::from(""),
+              examples: vec![],
+              ffi: None,
+            },
+          )]),
+        },
+      );
+    }
+
+    let warnings = RefCell::new(vec![]);
+    let case_mode = CaseBodyVerificationScope::enter();
+    assert!(in_case_body_verification());
+
+    compile_source_def_for_snapshot(ns, def, &warnings, &CallStackList::default())
+      .expect("uncached helper compilation should succeed inside case verification");
+    assert!(
+      in_case_body_verification(),
+      "compiling an uncached helper must restore active case verification mode"
+    );
+    drop(case_mode);
+    assert!(!in_case_body_verification());
+
+    let advisories = take_advisories();
+    assert!(
+      advisories
+        .iter()
+        .any(|warning| warning.code() == Some(crate::snapshot::LEGACY_NIL_USAGE_ERROR) && warning.message().contains("nil?")),
+      "expected uncached helper compiled inside case mode to retain E_LEGACY_NIL_USAGE, got: {advisories:?}"
+    );
   }
 }
