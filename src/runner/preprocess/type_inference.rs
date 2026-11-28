@@ -3188,13 +3188,8 @@ fn is_core_fn_head(head: &Calcit, name: &str) -> bool {
 fn is_impl_traits_call_head(head: &Calcit) -> bool {
   matches!(
     head,
-    Calcit::Proc(
-      CalcitProc::NativeStructImplTraits
-        | CalcitProc::NativeEnumImplTraits
-        | CalcitProc::NativeStructValueImplTraits
-        | CalcitProc::NativeEnumValueImplTraits
-    )
-  ) || is_core_fn_head(head, "impl-traits")
+    Calcit::Proc(CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits)
+  )
 }
 
 pub(super) fn nominal_def_ref_of(annotation: &CalcitTypeAnnotation) -> Option<String> {
@@ -3225,30 +3220,19 @@ pub(super) fn nominal_def_ref_of(annotation: &CalcitTypeAnnotation) -> Option<St
 }
 
 pub(crate) fn is_statically_coherent_nominal_type(annotation: &CalcitTypeAnnotation) -> bool {
-  nominal_def_ref_of(annotation).is_some_and(|def_ref| !program::is_non_coherent_nominal_def(&def_ref))
+  nominal_def_ref_of(annotation).is_some()
 }
 
 fn is_statically_coherent_nominal_ready(annotation: &CalcitTypeAnnotation) -> bool {
   let Some(def_ref) = nominal_def_ref_of(annotation) else {
     return false;
   };
-  if program::is_non_coherent_nominal_def(&def_ref) {
-    return false;
-  }
   if let Some((ns, def)) = def_ref.rsplit_once('/')
     && definition_has_pending_impl_compilation(ns, def)
   {
     return false;
   }
   true
-}
-
-pub(crate) fn record_non_coherent_nominal_from_expr(base_expr: &Calcit, scope_types: &ScopeTypes) {
-  if let Some(ty) = resolve_type_value(base_expr, scope_types)
-    && let Some(def_ref) = nominal_def_ref_of(ty.as_ref())
-  {
-    program::record_non_coherent_nominal_def(&def_ref);
-  }
 }
 
 /// Resolve an expression's static type alongside whether its static impl table
@@ -3330,15 +3314,7 @@ pub(crate) fn resolve_type_and_impl_completeness(expr: &Calcit, scope_types: &Sc
         {
           let ty = if matches!(
             head,
-            Calcit::Proc(
-              CalcitProc::NativeStructImplTraits
-                | CalcitProc::NativeEnumImplTraits
-                | CalcitProc::NativeStructValueImplTraits
-                | CalcitProc::NativeEnumValueImplTraits
-            )
-          ) || matches!(
-            head,
-            Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "impl-traits"
+            Calcit::Proc(CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits)
           ) {
             Some(attached)
           } else {
@@ -4093,13 +4069,8 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Custom(Arc::new(Calcit::Impl(Arc::new(impl_def))))));
   }
-  if matches!(
-    proc,
-    CalcitProc::NativeStructValueImplTraits
-      | CalcitProc::NativeEnumValueImplTraits
-      | CalcitProc::NativeStructImplTraits
-      | CalcitProc::NativeEnumImplTraits
-  ) && let Some(inferred) = infer_impl_attachment_type(xs, scope_types)
+  if matches!(proc, CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits)
+    && let Some(inferred) = infer_impl_attachment_type(xs, scope_types)
   {
     return Some(inferred);
   }
@@ -7804,30 +7775,19 @@ mod tests {
   fn coherent_nominal_parameter_and_type_ref_preserve_impl_completeness() {
     let _program_state = crate::program::lock_program_test_state();
     let coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/CoherentWidget");
-    let non_coherent_ref: Arc<str> = Arc::from("tests.coherent-unit/NonCoherentWidget");
-    crate::program::record_non_coherent_nominal_def(&non_coherent_ref);
 
     let mut coherent_struct = CalcitStructDef::from_fields(EdnTag::from("CoherentWidget"), vec![EdnTag::from("value")]);
     coherent_struct.definition_ref = Some(coherent_ref);
     let coherent_arc = Arc::new(coherent_struct);
     let coherent_ty = Arc::new(CalcitTypeAnnotation::StructDef(coherent_arc.clone()));
 
-    let mut non_coherent_struct = CalcitStructDef::from_fields(EdnTag::from("NonCoherentWidget"), vec![EdnTag::from("value")]);
-    non_coherent_struct.definition_ref = Some(non_coherent_ref);
-    let non_coherent_arc = Arc::new(non_coherent_struct);
-    let non_coherent_ty = Arc::new(CalcitTypeAnnotation::StructDef(non_coherent_arc.clone()));
-
     assert!(is_statically_coherent_nominal_type(&coherent_ty));
-    assert!(!is_statically_coherent_nominal_type(&non_coherent_ty));
 
     let coherent_val = Arc::new(CalcitTypeAnnotation::StructValue(coherent_arc));
-    let non_coherent_val = Arc::new(CalcitTypeAnnotation::StructValue(non_coherent_arc));
     assert!(is_statically_coherent_nominal_type(&coherent_val));
-    assert!(!is_statically_coherent_nominal_type(&non_coherent_val));
 
     let mut scope = ScopeTypes::new();
     scope.bind_parameter(Arc::from("good"), coherent_ty.clone());
-    scope.bind_parameter(Arc::from("detached"), non_coherent_ty.clone());
 
     let sym = |name: &str| Calcit::Symbol {
       sym: Arc::from(name),
@@ -7840,24 +7800,14 @@ mod tests {
 
     assert!(
       expr_has_complete_impls(&sym("good"), &coherent_ty, &scope),
-      "coherent nominal parameter must retain complete static impls"
-    );
-    assert!(
-      !expr_has_complete_impls(&sym("detached"), &non_coherent_ty, &scope),
-      "non-coherent nominal parameter must stay marked incomplete"
+      "nominal parameter must retain complete static impls"
     );
 
     let mut value_scope = ScopeTypes::new();
     value_scope.insert(Arc::from("val-good"), coherent_val.clone());
-    value_scope.insert(Arc::from("val-detached"), non_coherent_val.clone());
-    value_scope.mark_incomplete_impls(Arc::from("val-detached"));
     assert!(
       expr_has_complete_impls(&sym("val-good"), &coherent_val, &value_scope),
-      "coherent nominal StructValue binding must have complete static impls"
-    );
-    assert!(
-      !expr_has_complete_impls(&sym("val-detached"), &non_coherent_val, &value_scope),
-      "non-coherent StructValue binding marked incomplete must stay incomplete"
+      "nominal StructValue binding must have complete static impls"
     );
   }
 }

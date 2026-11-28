@@ -24,7 +24,14 @@ fn proc_signatures_match_bundled_core_schemas() {
   for proc in CalcitProc::iter() {
     let Some(signature) = proc.get_type_signature() else {
       assert!(
-        matches!(proc, CalcitProc::Recur | CalcitProc::WithTypeSlot),
+        matches!(
+          proc,
+          CalcitProc::Recur
+            | CalcitProc::WithTypeSlot
+            | CalcitProc::NativeNamedEnumNew
+            | CalcitProc::NativeStructImplTraits
+            | CalcitProc::NativeEnumImplTraits
+        ),
         "{proc} has no runtime signature"
       );
       continue;

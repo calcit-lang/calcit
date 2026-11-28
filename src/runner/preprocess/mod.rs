@@ -1833,6 +1833,14 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "0.48.0",
       "store `Option<V>` or omit absent keys instead of treating nil map values as absent",
     )),
+    "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits" => Some((
+      "0.48.0",
+      "declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism",
+    )),
+    "%::" => Some((
+      "0.48.0",
+      "use a closed nominal `defenum` direct constructor (`Enum :variant`, or `calcit fix --rule named-enum-constructor-v1`) or `::` for anonymous enums",
+    )),
     _ => None,
   }
 }
@@ -4640,7 +4648,7 @@ fn preprocess_expr_unguarded(
               def_id: Some(program::ensure_def_id(def_ns, def).0),
             });
             Ok(retain_resolved_source_usage(form, expr, call_stack))
-          } else if let Ok(p) = def.parse::<CalcitProc>() {
+          } else if let Some(p) = CalcitProc::parse_source_proc(def) {
             warn_on_invalid_builtin_import(
               p,
               def_ns,
@@ -5527,31 +5535,6 @@ fn preprocess_list_call(
       }
       items.extend(pair.iter().cloned());
     }
-    return preprocess_expr(
-      &Calcit::from(CalcitList::from(items.as_slice())),
-      scope_defs,
-      scope_types,
-      file_ns,
-      check_warnings,
-      call_stack,
-    );
-  }
-
-  // `%:: _ :variant ...` is the canonical anonymous-enum constructor.
-  if has_anonymous_definition_marker
-    && (matches!(&head_form, Calcit::Proc(CalcitProc::NativeNamedEnumNew)) || is_constructor_named("%::"))
-  {
-    note_legacy_migration_core_call(
-      calcit::CORE_NS,
-      "%::",
-      head
-        .get_location()
-        .or(call_location)
-        .or_else(|| find_proc_call_location_in_source("%::", &args, file_ns)),
-      file_ns,
-    );
-    let mut items = vec![Calcit::Proc(CalcitProc::NativeEnum)];
-    items.extend(args.iter().skip(1).cloned());
     return preprocess_expr(
       &Calcit::from(CalcitList::from(items.as_slice())),
       scope_defs,
@@ -7186,13 +7169,7 @@ fn preprocess_list_call(
               type_inference::check_trait_requires_declaration(&processed_args, scope_types, file_ns, &signature_owner)
                 .map(|message| (message, "E_TRAIT_REQUIRES"))
             }
-            CalcitProc::NativeStructImplTraits
-            | CalcitProc::NativeEnumImplTraits
-            | CalcitProc::NativeStructValueImplTraits
-            | CalcitProc::NativeEnumValueImplTraits => {
-              if let Some(base) = processed_args.first() {
-                type_inference::record_non_coherent_nominal_from_expr(base, scope_types);
-              }
+            CalcitProc::NativeStructImplTraits | CalcitProc::NativeEnumImplTraits => {
               type_inference::check_impl_attachment_coherence(&processed_args, scope_types).map(|(code, message)| (message, code))
             }
             _ => None,
@@ -7935,22 +7912,6 @@ fn preprocess_known_function_call(
     );
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
-  if info.def_ns.as_ref() == calcit::CORE_NS
-    && info.name.as_ref() == "impl-traits"
-    && !calcit::is_bundled_core_ns(file_ns)
-    && program::lookup_def_code(file_ns, def_name)
-      .is_some_and(|code| program::impl_attach::is_hand_written_top_level_impl_traits(file_ns, def_name, &code))
-  {
-    return Err(CalcitErr::use_msg_stack_location_with_code(
-      CalcitErrKind::Syntax,
-      format!(
-        "{file_ns}/{def_name}: a top-level definition no longer attaches impls with `impl-traits`; list the traits on the type, `defstruct T … (:impls Trait …)`, and write each implementation as `defimpl T Trait …` in the type's or the trait's namespace. `impl-traits` stays for structs and enums defined inside a function"
-      ),
-      LEGACY_IMPL_TRAITS_ERROR,
-      call_stack,
-      call_location.clone(),
-    ));
-  }
   if matches!(&head_form, Calcit::Import(_)) {
     note_legacy_fn_migration(info.as_ref(), &processed_call_args, scope_types, call_location.clone(), file_ns);
   }
@@ -8062,30 +8023,6 @@ fn preprocess_known_function_call(
       call_location.clone(),
       check_warnings,
     );
-    if info.def_ns.as_ref() == calcit::CORE_NS && info.name.as_ref() == "impl-traits" {
-      let is_top_level_nominal_wrapper = current_args.first().is_some_and(|base| {
-        matches!(
-          base,
-          Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructNew | CalcitProc::NativeEnumNew)))
-        )
-      }) && program::lookup_def_code(file_ns, def_name).is_some_and(|code| {
-        program::impl_attach::code_is_top_level_impl_traits(&code)
-          && (calcit::is_bundled_core_ns(file_ns)
-            || !program::impl_attach::is_hand_written_top_level_impl_traits(file_ns, def_name, &code))
-      });
-      if !is_top_level_nominal_wrapper && let Some(base) = current_args.first() {
-        type_inference::record_non_coherent_nominal_from_expr(base, scope_types);
-      }
-      if let Some((code, message)) = type_inference::check_impl_attachment_coherence(&current_args, scope_types) {
-        return Err(CalcitErr::use_msg_stack_location_with_code(
-          CalcitErrKind::Type,
-          message,
-          code,
-          call_stack,
-          call_location.clone(),
-        ));
-      }
-    }
     let effective_schema = effective_user_call_schema(info.as_ref());
     let effective_schema = if let Some(contract) = checked_contract.as_ref()
       && let Some(expected_types) = contract.expected_types.as_ref()
@@ -11218,17 +11155,6 @@ fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, 
         "[Warn] runtime type check `{name}` relies on dynamic inspection; prefer closed nominal `defenum`/`defstruct`/`EdnValue`/`JsonValue` with `match`, or `Any` (`any:downcast`) / `(Dyn Trait)`"
       ),
     )),
-    "impl-traits" | "&struct:impl-traits" | "&enum:impl-traits" | "&struct-def:impl-traits" | "&enum-def:impl-traits" => Some((
-      crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
-      format!(
-        "[Error] `{name}` attaches traits dynamically; declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism"
-      ),
-    )),
-    "%::" => Some((
-      crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
-      "[Error] `%::` constructs a dynamic enum prototype; prefer a closed nominal `defenum` with direct constructors (`Enum :variant …`)"
-        .to_owned(),
-    )),
     "%{} _" => Some((
       crate::snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
       "[Error] `%{} _` constructs an anonymous struct prototype; prefer a closed nominal `defstruct` with direct constructors (`Struct :field value`)"
@@ -11423,18 +11349,6 @@ fn note_legacy_migration_core_call(def_ns: &str, name: &str, location: Option<No
   if location.ns.as_ref() != file_ns || location.def.as_ref() == GENERATED_DEF {
     return;
   }
-  if name == "impl-traits" {
-    // Top-level `(:impls …)` declarations wrap definitions in an internal `impl-traits` call
-    // at root coord `[]`; skip compiler-synthesized attachment while keeping handwritten calls warned.
-    let synthetic_top_level_impls = location.coord.is_empty()
-      && program::lookup_def_code(&location.ns, &location.def).is_some_and(|code| {
-        program::impl_attach::code_is_top_level_impl_traits(&code)
-          && !program::impl_attach::is_hand_written_top_level_impl_traits(&location.ns, &location.def, &code)
-      });
-    if synthetic_top_level_impls {
-      return;
-    }
-  }
   let Some((code, message)) = legacy_migration_advisory_for_core_name(name) else {
     return;
   };
@@ -11538,7 +11452,7 @@ struct ProcCallSite<'a> {
 fn note_legacy_proc_migration(
   proc: &CalcitProc,
   xs: &Arc<CalcitList>,
-  head: &Calcit,
+  _head: &Calcit,
   raw_args: &CalcitList,
   processed_args: &CalcitList,
   site: ProcCallSite<'_>,
@@ -11555,26 +11469,9 @@ fn note_legacy_proc_migration(
   {
     return;
   }
-  let location = if *proc == CalcitProc::NativeNamedEnumNew {
-    let source_match = find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns);
-    let written_percent_enum = source_match.is_some()
-      || matches!(
-        head,
-        Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "%::" | "calcit.core/%::")
-      )
-      || matches!(
-        head,
-        Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%::"
-      );
-    if !written_percent_enum {
-      return;
-    }
-    source_match.or(call_location)
-  } else {
-    call_location
-      .or_else(|| find_list_location_in_call_stack(xs, proc.as_ref(), call_stack, file_ns))
-      .or_else(|| find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns))
-  };
+  let location = call_location
+    .or_else(|| find_list_location_in_call_stack(xs, proc.as_ref(), call_stack, file_ns))
+    .or_else(|| find_proc_call_location_in_source(proc.as_ref(), raw_args, file_ns));
   if *proc == CalcitProc::NilQuestion
     && let Ok(expanded) = type_inference::expand_literal_call_arguments(processed_args)
     && expanded.len() == 1
@@ -12212,7 +12109,6 @@ fn reject_cond_without_default(
 }
 
 const LEGACY_DEFIMPL_NAME_ERROR: &str = "E_LEGACY_DEFIMPL_NAME";
-const LEGACY_IMPL_TRAITS_ERROR: &str = "E_LEGACY_IMPL_TRAITS";
 
 /// `defimpl T Trait …` names the struct or enum it implements: a local bound to
 /// a struct/enum definition, or a top-level one. The retired
@@ -28764,7 +28660,11 @@ mod tests {
       keep_variant,
       drop_variant,
     ]);
-    let wrapped = Calcit::from(vec![test_symbol("impl-traits"), enum_form, test_symbol("MapEntryDecisionOps")]);
+    let wrapped = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeEnumImplTraits),
+      enum_form,
+      test_symbol("MapEntryDecisionOps"),
+    ]);
 
     assert_eq!(data_definition_kind_from_code(&wrapped), Some("defenum"));
   }

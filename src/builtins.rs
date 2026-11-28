@@ -402,8 +402,6 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeTraitNew => meta::trait_new(args),
     NativeImplNew => structs::new_impl(args),
     NativeImplOrigin => meta::impl_origin(args),
-    NativeStructValueImplTraits => meta::record_impl_traits(args),
-    NativeEnumValueImplTraits => meta::tuple_impl_traits(args),
     NativeStructImplTraits => meta::struct_impl_traits(args),
     NativeEnumImplTraits => meta::enum_impl_traits(args),
     NativeEnumDefHasVariant => meta::enum_def_has_variant(args),

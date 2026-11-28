@@ -810,22 +810,6 @@ export let _$n_enum_$o_params = function (x: CalcitEnumValue) {
   return new CalcitSliceList(x.extra);
 };
 
-export let _$n_enum_$o_impl_traits = function (x: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
-  if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:impl-traits expects an enum value");
-  const impls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
-  checkAttachedTraitImpls([...(x.enumPrototype?.impls ?? []), ...impls], "&enum:impl-traits");
-  let proto = x.enumPrototype;
-  if (proto == null) {
-    const tagName = x.tag instanceof CalcitTag ? x.tag : newTag("tag");
-    const anyTypes = new CalcitSliceList(new Array(x.extra.length).fill(newTag("any")));
-    proto = new CalcitEnumDef(
-      new CalcitStructValue(newTag("_"), [tagName], [anyTypes], new CalcitStructDef(newTag("_"), [tagName], [anyTypes]))
-    );
-  }
-  return new CalcitEnumValue(x.tag, x.extra, proto.withImpls(impls));
-};
-
 export let _$n_enum_$o_definition = function (x: CalcitEnumValue) {
   if (arguments.length !== 1) throw new Error("&enum:definition takes 1 argument");
   if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:definition expects an enum value");
@@ -954,15 +938,6 @@ export let _$n_struct_$o_impls = function (xs: CalcitValue) {
   if (arguments.length !== 1) throw new Error("&struct:impls takes 1 argument");
   if (xs instanceof CalcitStructValue) return new CalcitSliceList(xs.structRef.impls);
   throw new Error("&struct:impls expected a struct value");
-};
-
-export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
-  if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
-  if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
-  const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
-  checkAttachedTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
-  const nextStruct = xs.structRef.withImpls(xs.structRef.impls.concat(impls));
-  return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
 
 export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {

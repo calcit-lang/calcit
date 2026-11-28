@@ -127,6 +127,13 @@ const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
   (CalcitSyntax::Match, &[]),
 ];
 
+/// Effect tags for compiler-internal core procs without a public Snapshot entry.
+const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
+  (CalcitProc::NativeNamedEnumNew, &[]),
+  (CalcitProc::NativeStructImplTraits, &[]),
+  (CalcitProc::NativeEnumImplTraits, &[]),
+];
+
 /// Effect declarations for core definitions, syntax forms and methods.
 struct TagIndex {
   core: HashMap<String, HashSet<EdnTag>>,
@@ -148,6 +155,12 @@ impl TagIndex {
     }
     for (syntax, tags) in HIDDEN_CORE_SYNTAX_TAGS {
       let name = syntax.to_string();
+      core
+        .entry(name)
+        .or_insert_with(|| tags.iter().map(|tag| EdnTag::new(*tag)).collect());
+    }
+    for (proc, tags) in HIDDEN_CORE_PROC_TAGS {
+      let name = proc.as_ref().to_owned();
       core
         .entry(name)
         .or_insert_with(|| tags.iter().map(|tag| EdnTag::new(*tag)).collect());
@@ -966,7 +979,7 @@ fn resolve_symbol_head(sym: &str, current_ns: &str) -> Option<CallHead> {
   if program_code.get("calcit.core").is_some_and(|core| core.defs.contains_key(sym)) {
     return Some(CallHead::Core(sym.to_string()));
   }
-  if sym.parse::<CalcitProc>().is_ok() {
+  if CalcitProc::parse_source_proc(sym).is_some() {
     return Some(CallHead::Core(sym.to_string()));
   }
   if builtins::is_registered_proc(sym) {
@@ -2818,8 +2831,14 @@ mod tests {
     use strum::IntoEnumIterator;
     let snapshot = crate::load_core_snapshot().expect("load core");
     let core = snapshot.files.get("calcit.core").expect("calcit.core");
+    let hidden_procs: HashSet<&str> = HIDDEN_CORE_PROC_TAGS.iter().map(|(proc, _)| proc.as_ref()).collect();
     for proc in CalcitProc::iter() {
-      assert!(core.defs.contains_key(proc.as_ref()), "proc `{proc}` needs a calcit.core entry");
+      let name = proc.as_ref();
+      assert_eq!(
+        core.defs.contains_key(name),
+        !hidden_procs.contains(name),
+        "proc `{proc}` needs exactly one effect declaration: a calcit.core entry or HIDDEN_CORE_PROC_TAGS"
+      );
     }
     let hidden_syntax: HashSet<String> = HIDDEN_CORE_SYNTAX_TAGS.iter().map(|(syntax, _)| syntax.to_string()).collect();
     for syntax in CalcitSyntax::iter() {

@@ -15,11 +15,11 @@ const traitSnapshot = resolve("calcit/test-traits.cirru");
 // rejected before execution or codegen.
 export function traitRejectionCases() {
   const legacyAttachmentCases = [
-    ["legacy-impl-traits", "let ((Person (impl-traits PlainPerson MyFooImpl))) (%{} Person (:name |Alice))", /E_LEGACY_DYNAMIC_STYLE/],
-    ["legacy-struct-def-impl-traits", "&struct-def:impl-traits PlainPerson MyFooImpl", /E_LEGACY_DYNAMIC_STYLE/],
-    ["legacy-enum-def-impl-traits", "&enum-def:impl-traits Demo0 MyBarImpl", /E_LEGACY_DYNAMIC_STYLE/],
-    ["legacy-struct-impl-traits", "&struct:impl-traits (PlainPerson :name |Alice) MyFooImpl", /E_LEGACY_DYNAMIC_STYLE/],
-    ["legacy-enum-impl-traits", "&enum:impl-traits (Demo0 :demo 1) MyBarImpl", /E_LEGACY_DYNAMIC_STYLE/],
+    ["legacy-impl-traits", "let ((Person (impl-traits PlainPerson MyFooImpl))) (%{} Person (:name |Alice))", /E_REMOVED_CORE_FUNCTION/],
+    ["legacy-struct-def-impl-traits", "&struct-def:impl-traits PlainPerson MyFooImpl", /E_REMOVED_CORE_FUNCTION/],
+    ["legacy-enum-def-impl-traits", "&enum-def:impl-traits Demo0 MyBarImpl", /E_REMOVED_CORE_FUNCTION/],
+    ["legacy-struct-impl-traits", "&struct:impl-traits (PlainPerson :name |Alice) MyFooImpl", /E_REMOVED_CORE_FUNCTION/],
+    ["legacy-enum-impl-traits", "&enum:impl-traits (Demo0 :demo 1) MyBarImpl", /E_REMOVED_CORE_FUNCTION/],
   ];
   return legacyAttachmentCases;
 }

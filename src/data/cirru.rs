@@ -275,7 +275,7 @@ fn code_to_calcit_in(
         }
         // TODO future work of reader literal expanding
         _ => {
-          if let Ok(p) = s.parse::<CalcitProc>() {
+          if let Some(p) = CalcitProc::parse_source_proc(s) {
             Ok(Calcit::Proc(p))
           } else if let Ok(f) = s.parse::<f64>() {
             Ok(Calcit::Number(f))

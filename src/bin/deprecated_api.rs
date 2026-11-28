@@ -623,9 +623,13 @@ mod tests {
             entry("defimpl CanonicalBox ShowTrait\n  .show $ fn (self) |ok"),
           ),
           (
-            "LegacyBox".to_owned(),
-            entry("def LegacyBox $ impl-traits (defstruct LegacyInner (:n Number)) CanonicalBoxImpl"),
+            "OldHelper".to_owned(),
+            snapshot::CodeEntry {
+              tags: HashSet::from([cirru_edn::EdnTag::new("deprecated")]),
+              ..entry("defn old-helper () 1")
+            },
           ),
+          ("DeprecatedCaller".to_owned(), entry("def DeprecatedCaller $ OldHelper")),
         ]),
       },
     );
@@ -656,14 +660,14 @@ mod tests {
       "expected 0 uses for CanonicalBox, got {canonical_uses:?}"
     );
 
-    let legacy = file.defs.get("LegacyBox").expect("LegacyBox entry");
+    let caller = file.defs.get("DeprecatedCaller").expect("DeprecatedCaller entry");
     assert!(
-      program::written_source_code_for_attached_def(ns, "LegacyBox", &legacy.code).is_none(),
-      "handwritten LegacyBox must not be masked by WRITTEN_CODE"
+      program::written_source_code_for_attached_def(ns, "DeprecatedCaller", &caller.code).is_none(),
+      "ordinary def must not be masked by WRITTEN_CODE"
     );
     let mut legacy_uses = vec![];
     collect_uses(
-      &legacy.code,
+      &caller.code,
       ns,
       &file.import_map,
       &targets,
@@ -672,6 +676,6 @@ mod tests {
       &mut legacy_uses,
     );
     assert_eq!(legacy_uses.len(), 1);
-    assert_eq!(legacy_uses[0].target_name, "impl-traits");
+    assert_eq!(legacy_uses[0].target_name, "OldHelper");
   }
 }

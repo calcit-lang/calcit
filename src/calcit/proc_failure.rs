@@ -85,9 +85,7 @@ impl CalcitProc {
       NativeNamedEnumNew => Raises("the variant is not defined or the payload does not match its arity"),
       NativeEnumNth | NativeEnumAssoc | NativeImplNth => Raises(INDEX),
       NativeStructNew | NativeEnumNew | NativeUnionNew | NativeTraitNew | NativeImplNew => Raises("the definition data is malformed"),
-      NativeStructValueImplTraits | NativeEnumValueImplTraits | NativeStructImplTraits | NativeEnumImplTraits => {
-        Raises("an attached value is not an impl")
-      }
+      NativeStructImplTraits | NativeEnumImplTraits => Raises("an attached value is not an impl"),
       NativeImplGet => Raises("the impl has no such method"),
       NativeEnumDefVariantArity => Raises("the variant is not defined"),
       NativeEnumValidate => Raises("the value does not match its enum definition"),

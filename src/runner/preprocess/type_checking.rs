@@ -1248,6 +1248,11 @@ pub(crate) fn check_proc_arg_types(
   call_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  if matches!(proc, CalcitProc::NativeNamedEnumNew) {
+    check_enum_construction(args, scope_types, file_ns, def_name, check_warnings);
+    return;
+  }
+
   // Get type signature for this proc
   let Some(signature) = proc.get_type_signature() else {
     return;
@@ -1425,13 +1430,6 @@ pub(crate) fn check_proc_arg_types(
     CalcitProc::NativeStruct | CalcitProc::NativeStructGet | CalcitProc::NativeStructNth | CalcitProc::NativeLooseStruct
   ) {
     return;
-  }
-
-  // Specialized checks add proc-specific evidence on top of the generic
-  // argument contract below; they never replace it, so a known non-Enum
-  // receiver is still rejected against the declared `:enum` parameter.
-  if matches!(proc, CalcitProc::NativeNamedEnumNew) {
-    check_enum_construction(args, scope_types, file_ns, def_name, check_warnings);
   }
 
   let expected_types = match proc {

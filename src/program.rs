@@ -228,48 +228,6 @@ static PROGRAM_COMPILED_DATA_STATE: LazyLock<RwLock<ProgramCompiledData>> = Lazy
 /// raw code information before program running
 pub static PROGRAM_CODE_DATA: LazyLock<ProgramCodeLock> = LazyLock::new(ProgramCodeLock::default);
 
-/// Generation-scoped cache of nominal `ns/def` keys observed with dynamic/local
-/// `impl-traits` decoration across source loading and preprocessing.
-static NON_COHERENT_NOMINAL_STATE: LazyLock<RwLock<(u64, HashSet<String>)>> = LazyLock::new(|| RwLock::new((u64::MAX, HashSet::new())));
-
-fn with_synced_non_coherent_nominal_state_read<R>(reader: impl FnOnce(&HashSet<String>) -> R) -> R {
-  let source = PROGRAM_CODE_DATA.read().expect("read program code");
-  let gen_while_locked = PROGRAM_CODE_DATA.generation();
-  {
-    let state = NON_COHERENT_NOMINAL_STATE.read().expect("read non-coherent nominal defs");
-    if state.0 == gen_while_locked {
-      return reader(&state.1);
-    }
-  }
-  let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
-  let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
-  // Keep `source` read lock held across installation and consumption so no writer
-  // can advance `PROGRAM_CODE_DATA` generation or publish a stale snapshot.
-  if state.0 == u64::MAX || state.0 < gen_while_locked {
-    *state = (gen_while_locked, collected);
-  }
-  reader(&state.1)
-}
-
-pub(crate) fn is_non_coherent_nominal_def(def_ref: &str) -> bool {
-  with_synced_non_coherent_nominal_state_read(|defs| defs.contains(def_ref))
-}
-
-pub(crate) fn record_non_coherent_nominal_def(def_ref: &str) {
-  let source = PROGRAM_CODE_DATA.read().expect("read program code");
-  let gen_while_locked = PROGRAM_CODE_DATA.generation();
-  let mut state = NON_COHERENT_NOMINAL_STATE.write().expect("write non-coherent nominal defs");
-  if state.0 == u64::MAX || state.0 < gen_while_locked {
-    let collected = impl_attach::collect_non_coherent_nominal_defs(&source);
-    *state = (gen_while_locked, collected);
-  }
-  state.1.insert(def_ref.to_owned());
-}
-
-pub(crate) fn snapshot_non_coherent_nominal_defs() -> HashSet<String> {
-  with_synced_non_coherent_nominal_state_read(|defs| defs.clone())
-}
-
 /// The lock around [`ProgramCodeData`]. Every write access bumps a generation
 /// counter, so derived facts about the source (such as whether `calcit.core`
 /// is the bundled one) can be cached until the next write.
@@ -327,7 +285,6 @@ pub(crate) struct ProgramTestStateGuard {
   runtime_data: ProgramRuntimeData,
   compiled_data: ProgramCompiledData,
   code_data: ProgramCodeData,
-  non_coherent_nominal_state: Option<HashSet<String>>,
   def_id_index: ProgramDefIdIndex,
   feature_policy: HashMap<String, snapshot::FeaturePolicy>,
   target: Option<snapshot::SnapshotTarget>,
@@ -342,12 +299,6 @@ impl Drop for ProgramTestStateGuard {
     {
       let mut code_guard = PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner());
       *code_guard = std::mem::take(&mut self.code_data);
-      let restored_gen = PROGRAM_CODE_DATA.generation();
-      let restored_non_coherent = self.non_coherent_nominal_state.take();
-      *NON_COHERENT_NOMINAL_STATE.write().unwrap_or_else(|error| error.into_inner()) = match restored_non_coherent {
-        Some(defs) => (restored_gen, defs),
-        None => (u64::MAX, HashSet::new()),
-      };
     }
     {
       // Preprocessed code embeds def ids. A value built while this guard was
@@ -366,12 +317,7 @@ impl Drop for ProgramTestStateGuard {
 pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
   let lock = PROGRAM_TEST_STATE_LOCK.lock().unwrap_or_else(|error| error.into_inner());
   let code_guard = PROGRAM_CODE_DATA.read().unwrap_or_else(|error| error.into_inner());
-  let code_gen = PROGRAM_CODE_DATA.generation();
   let code_data = code_guard.clone();
-  let non_coherent_nominal_state = {
-    let cache = NON_COHERENT_NOMINAL_STATE.read().unwrap_or_else(|error| error.into_inner());
-    (cache.0 == code_gen).then(|| cache.1.clone())
-  };
   drop(code_guard);
   ProgramTestStateGuard {
     _lock: lock,
@@ -381,7 +327,6 @@ pub(crate) fn lock_program_test_state() -> ProgramTestStateGuard {
       .unwrap_or_else(|error| error.into_inner())
       .clone(),
     code_data,
-    non_coherent_nominal_state,
     def_id_index: PROGRAM_DEF_ID_INDEX.read().unwrap_or_else(|error| error.into_inner()).clone(),
     feature_policy: ACTIVE_FEATURE_POLICY.read().unwrap_or_else(|error| error.into_inner()).clone(),
     target: *ACTIVE_TARGET.read().unwrap_or_else(|error| error.into_inner()),
@@ -1337,9 +1282,9 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
 /// namespace, including dependencies and FFI contracts, is the bundled core.
 /// Compare against the actual embedded source rather than trusting its name.
 pub(crate) fn has_bundled_core_source() -> bool {
-  static BUNDLED_CORE: LazyLock<ProgramCodeData> = LazyLock::new(|| {
+  static BUNDLED_CORE: LazyLock<(ProgramCodeData, ProgramCodeData)> = LazyLock::new(|| {
     let snapshot = crate::load_core_snapshot().expect("embedded core snapshot");
-    snapshot
+    let raw: ProgramCodeData = snapshot
       .files
       .iter()
       .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
@@ -1348,7 +1293,10 @@ pub(crate) fn has_bundled_core_source() -> bool {
         let data = extract_file_data(file, name.clone()).expect("embedded core source");
         (name, data)
       })
-      .collect()
+      .collect();
+    let mut attached = raw.clone();
+    impl_attach::attach_source_impls_detached(&mut attached).expect("attach embedded core source impls");
+    (raw, attached)
   });
   // Source code a previous call already matched against the embedded core.
   // Preprocessing asks on every comparison it visits, and a deep comparison
@@ -1361,7 +1309,7 @@ pub(crate) fn has_bundled_core_source() -> bool {
   // asks on every `=` comparison and condition it visits; rescanning every
   // core definition per call dominated codegen time on real projects.
   static CACHED_ANSWER: std::sync::Mutex<Option<(u64, bool)>> = std::sync::Mutex::new(None);
-  let bundled = LazyLock::force(&BUNDLED_CORE);
+  let (bundled, attached_bundled) = LazyLock::force(&BUNDLED_CORE);
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
   let generation = PROGRAM_CODE_DATA.generation();
   let mut cached = CACHED_ANSWER.lock().unwrap_or_else(|error| error.into_inner());
@@ -1385,7 +1333,11 @@ pub(crate) fn has_bundled_core_source() -> bool {
                 _ => false,
               };
               known || {
-                let same = entry.code == expected.code;
+                let same = entry.code == expected.code
+                  || attached_bundled
+                    .get(namespace)
+                    .and_then(|attached_file| attached_file.defs.get(name))
+                    .is_some_and(|attached_entry| entry.code == attached_entry.code);
                 if same {
                   verified.insert(key, entry.code.to_owned());
                 }

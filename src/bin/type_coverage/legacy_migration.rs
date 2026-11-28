@@ -90,32 +90,32 @@ fn classify_core_call(symbol: &str) -> Option<(MigrationCategory, &'static str, 
     "impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "impl-traits",
-      "Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
+      "Removed in 0.48.0. Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
     )),
     "&struct:impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "&struct:impl-traits",
-      "Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
+      "Removed in 0.48.0. Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
     )),
     "&enum:impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "&enum:impl-traits",
-      "Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
+      "Removed in 0.48.0. Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
     )),
     "&struct-def:impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "&struct-def:impl-traits",
-      "Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
+      "Removed in 0.48.0. Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
     )),
     "&enum-def:impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "&enum-def:impl-traits",
-      "Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
+      "Removed in 0.48.0. Declare static top-level `(:impls …)` + `defimpl`, or use `(Dyn Trait)` (`dyn:box`) for dynamic polymorphism.",
     )),
     "%::" => Some((
       MigrationCategory::LegacyDynamicStyle,
       "%::",
-      "Use a closed nominal `defenum` direct constructor (`Enum :variant …`, or `calcit fix --rule named-enum-constructor-v1`) or `::` for anonymous enums.",
+      "Removed in 0.48.0. Use a closed nominal `defenum` direct constructor (`Enum :variant …`, or `calcit fix --rule named-enum-constructor-v1`) or `::` for anonymous enums.",
     )),
     "nil?" => Some((
       MigrationCategory::RuntimeTypePredicate,

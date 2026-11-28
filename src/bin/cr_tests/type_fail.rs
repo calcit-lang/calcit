@@ -1575,8 +1575,7 @@ fn top_level_impl_traits_is_rejected() {
     );
 
     let warnings = RefCell::new(vec![]);
-    let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Box", &warnings, &CallStackList::default())
-      .expect_err("top-level impl-traits must be rejected");
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Box", &warnings, &CallStackList::default());
     let collected = warnings
       .borrow()
       .iter()
@@ -1584,8 +1583,12 @@ fn top_level_impl_traits_is_rejected() {
       .collect::<Vec<_>>()
       .join("\n");
     assert!(
-      err.to_string().contains("E_LEGACY_IMPL_TRAITS") || collected.contains("E_LEGACY_IMPL_TRAITS"),
-      "unexpected error: {err}\n{collected}"
+      result.is_err() || collected.contains("E_REMOVED_CORE_FUNCTION"),
+      "top-level impl-traits must be rejected: {result:?}\n{collected}"
+    );
+    assert!(
+      collected.contains("E_REMOVED_CORE_FUNCTION"),
+      "expected E_REMOVED_CORE_FUNCTION:\n{collected}"
     );
   });
 }
@@ -1598,8 +1601,7 @@ fn top_level_qualified_impl_traits_is_rejected() {
     );
 
     let warnings = RefCell::new(vec![]);
-    let err = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Box", &warnings, &CallStackList::default())
-      .expect_err("top-level impl-traits must be rejected");
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, "Box", &warnings, &CallStackList::default());
     let collected = warnings
       .borrow()
       .iter()
@@ -1607,8 +1609,12 @@ fn top_level_qualified_impl_traits_is_rejected() {
       .collect::<Vec<_>>()
       .join("\n");
     assert!(
-      err.to_string().contains("E_LEGACY_IMPL_TRAITS") || collected.contains("E_LEGACY_IMPL_TRAITS"),
-      "unexpected error: {err}\n{collected}"
+      result.is_err() || collected.contains("E_REMOVED_CORE_FUNCTION"),
+      "top-level qualified impl-traits must be rejected: {result:?}\n{collected}"
+    );
+    assert!(
+      collected.contains("E_REMOVED_CORE_FUNCTION"),
+      "expected E_REMOVED_CORE_FUNCTION:\n{collected}"
     );
   });
 }
@@ -2415,6 +2421,12 @@ fn retired_core_functions_report_preferred_spelling() {
       ("keys-non-nil ({} (:a 1))", "keys-non-nil", "Option<V>", "0.48.0"),
       ("merge-non-nil ({} (:a 1)) ({})", "merge-non-nil", "Option<V>", "0.48.0"),
       ("&merge-non-nil ({} (:a 1)) ({})", "&merge-non-nil", "Option<V>", "0.48.0"),
+      ("impl-traits 1 2", "impl-traits", "defimpl", "0.48.0"),
+      ("&struct:impl-traits 1 2", "&struct:impl-traits", "defimpl", "0.48.0"),
+      ("&enum:impl-traits 1 2", "&enum:impl-traits", "defimpl", "0.48.0"),
+      ("&struct-def:impl-traits 1 2", "&struct-def:impl-traits", "defimpl", "0.48.0"),
+      ("&enum-def:impl-traits 1 2", "&enum-def:impl-traits", "defimpl", "0.48.0"),
+      ("%:: :none :ok", "%::", "Enum :variant", "0.48.0"),
     ] {
       for source in [
         snippet.to_owned(),
@@ -5605,42 +5617,33 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
   });
 }
 
-/// `&enum:nth` and `%::` keep their declared receiver contracts: a known
-/// non-Enum receiver is rejected during strict checking instead of failing at
-/// runtime (#2181). A Rust type-fail test is needed because `:tests` only run
-/// after a clean check and cannot express an expected preprocessing diagnostic.
+/// `&enum:nth` keeps its declared receiver contract: a known non-Enum receiver
+/// is rejected during strict checking instead of failing at runtime (#2181).
+/// A Rust type-fail test is needed because `:tests` only run after a clean
+/// check and cannot express an expected preprocessing diagnostic.
 #[test]
 fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
-    for (source, proc_name, expected, actual) in [
-      (
-        "let\n    bad $ fn (xs)\n      hint-fn $ Fn (List String) (-> Tag)\n      &enum:nth xs 0\n  bad $ [] |x",
-        "&enum:nth",
-        "`:enum`",
-        "`list<string>`",
-      ),
-      ("let ((xs ([] 1)))\n  %:: xs :a", "%::", "`:enum-def`", "`list<number>`"),
-    ] {
-      let entries = load_snippet_entries(source);
-      let warnings = RefCell::new(vec![]);
-      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-        .expect("a non-Enum receiver should produce a type diagnostic, not a preprocessing failure");
-      let warnings = warnings.borrow();
-      assert!(
-        warnings.iter().any(|warning| warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
-          && warning
-            .message()
-            .contains(&format!("Proc `{proc_name}` arg 1 expects type {expected}, but got {actual}"))),
-        "`{source}` should reject the non-Enum receiver: {warnings:?}"
-      );
-    }
+    let source = "let\n    bad $ fn (xs)\n      hint-fn $ Fn (List String) (-> Tag)\n      &enum:nth xs 0\n  bad $ [] |x";
+    let entries = load_snippet_entries(source);
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("a non-Enum receiver should produce a type diagnostic, not a preprocessing failure");
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| warning.code() == Some("E_PROC_ARG_TYPE_MISMATCH")
+        && warning
+          .message()
+          .contains("Proc `&enum:nth` arg 1 expects type `:enum`, but got `list<string>`")),
+      "`{source}` should reject the non-Enum receiver: {warnings:?}"
+    );
 
     // Enum receivers, including nominal enum values, stay warning-free.
     for source in [
       "let\n    good $ fn (xs)\n      hint-fn $ Fn Enum (-> Tag)\n      &enum:nth xs 0\n  good $ :: :ns |demo",
       "&enum:nth (Option :some 1) 1",
-      "&enum:nth (%:: (defenum E (:a Number)) :a 1) 1",
+      "&enum:nth (Result :ok 1) 1",
     ] {
       let accepted = load_snippet_entries(source);
       let warnings = RefCell::new(vec![]);
@@ -8946,7 +8949,7 @@ defn main! ()
 fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "def ShowTrait $ deftrait ShowTrait\n  .show $ Fn Self (-> String)\n\ndefstruct Box (:value Number) (:impls ShowTrait)\n\ndefimpl Box ShowTrait\n  .show $ fn (self) (str (:value self))\n\ndefenum Choice (:some Number) (:none)\n\ndefenum ShadowOption (:some Number) (:none)\n\ndefn legacy-case (raw num text shadowed)\n  hint-fn $ Fn Dynamic Number String ShadowOption (-> Dynamic)\n  let\n      DynBox $ defstruct DynBox (:value Number)\n      dyn-impl $ defimpl DynBox ShowTrait\n        .show $ fn (self) (str (:value self))\n      is-list $ list? raw\n      is-nil $ nil? raw\n      is-lit-nil $ nil? nil\n      is-non-nil $ non-nil? raw\n      is-dead-nil $ nil? num\n      is-dead-non-nil $ non-nil? text\n      is-dead-shadow $ nil? shadowed\n      kind $ type-of raw\n      lit-kind $ type-of 1\n      viewed $ match (data-view raw)\n        (:number n) n\n        _ 0\n      anon $ %{} _ (:x 1)\n      proto $ %:: Choice :none\n      dyn $ impl-traits DynBox dyn-impl\n    [] is-list is-nil is-lit-nil is-non-nil is-dead-nil is-dead-non-nil is-dead-shadow kind lit-kind viewed anon proto dyn\n\ndefn modern-case (opt)\n  hint-fn $ Fn (Option Number) (-> Number)\n  let\n      b $ Box :value 2\n      c $ Choice :some (:value b)\n    match opt\n      (:some n) (+ n (:value b))\n      (:none) 0\n\ndefn main! ()\n  [] (legacy-case 1 4 |ok (ShadowOption :none)) (modern-case (Option :some 3))",
+      "def ShowTrait $ deftrait ShowTrait\n  .show $ Fn Self (-> String)\n\ndefstruct Box (:value Number) (:impls ShowTrait)\n\ndefimpl Box ShowTrait\n  .show $ fn (self) (str (:value self))\n\ndefenum Choice (:some Number) (:none)\n\ndefenum ShadowOption (:some Number) (:none)\n\ndefn legacy-case (raw num text shadowed)\n  hint-fn $ Fn Dynamic Number String ShadowOption (-> Dynamic)\n  let\n      DynBox $ defstruct DynBox (:value Number)\n      dyn-impl $ defimpl DynBox ShowTrait\n        .show $ fn (self) (str (:value self))\n      is-list $ list? raw\n      is-nil $ nil? raw\n      is-lit-nil $ nil? nil\n      is-non-nil $ non-nil? raw\n      is-dead-nil $ nil? num\n      is-dead-non-nil $ non-nil? text\n      is-dead-shadow $ nil? shadowed\n      kind $ type-of raw\n      lit-kind $ type-of 1\n      viewed $ match (data-view raw)\n        (:number n) n\n        _ 0\n      anon $ %{} _ (:x 1)\n    [] is-list is-nil is-lit-nil is-non-nil is-dead-nil is-dead-non-nil is-dead-shadow kind lit-kind viewed anon\n\ndefn modern-case (opt)\n  hint-fn $ Fn (Option Number) (-> Number)\n  let\n      b $ Box :value 2\n      c $ Choice :some (:value b)\n    match opt\n      (:some n) (+ n (:value b))\n      (:none) 0\n\ndefn main! ()\n  [] (legacy-case 1 4 |ok (ShadowOption :none)) (modern-case (Option :some 3))",
     );
 
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -8994,11 +8997,11 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       .filter(|a| a.code() == Some("E_LEGACY_DYNAMIC_STYLE"))
       .map(|a| a.message().to_owned())
       .collect();
-    // %{} _, %::, impl-traits -> 3 blocking E_LEGACY_DYNAMIC_STYLE errors
-    assert_eq!(dyn_errors.len(), 3, "expected 3 E_LEGACY_DYNAMIC_STYLE errors, got {blocking:?}");
+    // %{} _ -> 1 blocking E_LEGACY_DYNAMIC_STYLE error
+    assert_eq!(dyn_errors.len(), 1, "expected 1 E_LEGACY_DYNAMIC_STYLE error, got {blocking:?}");
     assert!(
-      dyn_errors.iter().any(|msg| msg.contains("`impl-traits`")),
-      "expected E_LEGACY_DYNAMIC_STYLE for impl-traits, got {dyn_errors:?}"
+      dyn_errors.iter().any(|msg| msg.contains("`%{} _`")),
+      "expected E_LEGACY_DYNAMIC_STYLE for `%{{}} _`, got {dyn_errors:?}"
     );
 
     let pred_notes: Vec<(Vec<u16>, String)> = notes
@@ -9050,8 +9053,7 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       "canonical Box/Choice/Option/match code must not emit legacy migration warnings: {modern_advisories:?}"
     );
 
-    let fresh_entries =
-      load_snippet_entries("defenum Choice (:some Number) (:none)\n\ndefn main! ()\n  [] (nil? 1) (%:: Choice :none)");
+    let fresh_entries = load_snippet_entries("defn main! ()\n  [] (nil? 1) (%{} _)");
     let err = run_check_only(&fresh_entries).expect_err("legacy nil and prototype styles must fail run_check_only");
     assert!(err.contains(snapshot::LEGACY_NIL_USAGE_ERROR), "{err}");
     assert!(err.contains(snapshot::LEGACY_DYNAMIC_STYLE_ERROR), "{err}");
