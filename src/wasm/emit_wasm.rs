@@ -1381,7 +1381,7 @@ fn emit_wasm_impl(
     let is_custom_core = ns == "calcit.core"
       && matches!(
         name.as_str(),
-        "repeat" | "interleave" | "zipmap" | "intersperse" | "join-string" | "try-parse-json" | "json:parse" | "keys-non-nil"
+        "repeat" | "interleave" | "zipmap" | "intersperse" | "join-string" | "try-parse-json" | "json:parse"
       );
     let is_wasi_init = target == WasmTarget::Wasi && ns == init_ns && name == init_def;
     if matches!(args, CalcitFnArgs::Args(_))
@@ -6352,11 +6352,8 @@ fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
   match args {
     CalcitFnArgs::Args(names) => Ok(names.len() as u32),
     CalcitFnArgs::MarkedArgs(labels) => {
-      if labels
-        .iter()
-        .any(|label| matches!(label, CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark))
-      {
-        return Err("optional and rest parameters are not supported for defwasm-import".into());
+      if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)) {
+        return Err("rest parameters are not supported for defwasm-import".into());
       }
       Ok(labels.iter().filter(|label| matches!(label, CalcitArgLabel::Idx(_))).count() as u32)
     }
@@ -6463,21 +6460,10 @@ fn effective_collection_slot(slot: &Arc<CalcitTypeAnnotation>, is_empty: bool) -
   }
 }
 
-/// Strip `Nil` from non-first `merge-non-nil` operand values since runtime keeps earlier values when RHS is `nil`.
-fn strip_nil_for_merge_non_nil(ty: &Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  match CalcitTypeAnnotation::expand_schema_alias(ty).as_ref() {
-    CalcitTypeAnnotation::Nil => crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone(),
-    CalcitTypeAnnotation::Nullable(inner, _) => inner.clone(),
-    _ => ty.clone(),
-  }
-}
-
-/// Join one `merge` / `merge-non-nil` operand's Map key and value types into the accumulated pair.
+/// Join one `merge` operand's Map key and value types into the accumulated pair.
 fn join_merge_map_operand(
   joined_map: &mut Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)>,
   arg_ev: &WasmTypeEvidence,
-  skip_rhs_nil: bool,
-  arg_idx: usize,
 ) -> bool {
   let arg_ty = expand_wasm_value_type(arg_ev.scalar_origin.as_ref().unwrap_or(&arg_ev.annotation));
   let is_empty = arg_ev.set_member_types.as_deref() == Some(&[]);
@@ -6485,10 +6471,7 @@ fn join_merge_map_operand(
     return false;
   };
   let eff_k = effective_collection_slot(k, is_empty);
-  let mut eff_v = effective_collection_slot(v, is_empty);
-  if skip_rhs_nil && arg_idx > 0 {
-    eff_v = strip_nil_for_merge_non_nil(&eff_v);
-  }
+  let eff_v = effective_collection_slot(v, is_empty);
   match joined_map {
     None => {
       *joined_map = Some((eff_k, eff_v));
@@ -7106,13 +7089,12 @@ fn inline_lambda_shape(expr: &Calcit) -> Option<(usize, bool)> {
       Some(Calcit::List(args)) => args
         .iter()
         .map(|arg| match arg {
-          Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => Some(match sym.as_ref() {
-            "&" => CalcitArgLabel::RestMark,
-            "?" => CalcitArgLabel::OptionalMark,
-            _ => CalcitArgLabel::Idx(0),
-          }),
+          Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => match sym.as_ref() {
+            "&" => Some(CalcitArgLabel::RestMark),
+            "?" => None,
+            _ => Some(CalcitArgLabel::Idx(0)),
+          },
           Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Some(CalcitArgLabel::RestMark),
-          Calcit::Syntax(CalcitSyntax::ArgOptional, _) => Some(CalcitArgLabel::OptionalMark),
           _ => None,
         })
         .collect::<Option<Vec<_>>>()?,
@@ -7126,13 +7108,11 @@ fn inline_lambda_shape(expr: &Calcit) -> Option<(usize, bool)> {
 /// The `(required, rest)` shape of a marked parameter list; see
 /// `inline_lambda_shape`.
 fn arg_labels_shape(labels: &[CalcitArgLabel]) -> Option<(usize, bool)> {
-  let (mut required, mut optional, mut rest, mut rest_params) = (0, false, false, 0);
+  let (mut required, mut rest, mut rest_params) = (0, false, 0);
   for label in labels {
     match label {
       CalcitArgLabel::Idx(_) if rest => rest_params += 1,
-      CalcitArgLabel::Idx(_) if !optional => required += 1,
-      CalcitArgLabel::Idx(_) => {}
-      CalcitArgLabel::OptionalMark if !rest => optional = true,
+      CalcitArgLabel::Idx(_) => required += 1,
       CalcitArgLabel::RestMark if !rest => rest = true,
       _ => return None,
     }
@@ -8410,7 +8390,7 @@ fn infer_wasm_evidence_in_scope(
           }
           let Some(mut ev) = infer_wasm_callable_result(ctx, expr, &items.drop_left().to_vec(), local_types, closures, visiting)
             .or_else(|| {
-              matches!(def_name, Some("merge" | "merge-non-nil"))
+              (def_name == Some("merge"))
                 .then(|| WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Map(DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()))))
             })
           else {
@@ -8476,11 +8456,6 @@ fn infer_wasm_evidence_in_scope(
                 }
               }
             }
-          } else if def_name == Some("keys-non-nil")
-            && let Some(arg0) = items.get(1)
-            && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg0, local_types, closures, visiting)
-          {
-            ev.set_member_types = arg_ev.set_member_types;
           } else if matches!(def_name, Some("&map:empty" | "&set:empty" | "empty"))
             && items.len() == 2
             && let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, &items[1], local_types, closures, visiting)
@@ -8543,16 +8518,15 @@ fn infer_wasm_evidence_in_scope(
               ev.annotation = base_ev.annotation;
             }
             ev.set_member_types = Some(combined);
-          } else if matches!(def_name, Some("merge" | "merge-non-nil" | "union" | "difference" | "intersection")) && items.len() > 1 {
-            let is_map_op = matches!(def_name, Some("merge" | "merge-non-nil"));
-            let skip_rhs_nil = def_name == Some("merge-non-nil");
+          } else if matches!(def_name, Some("merge" | "union" | "difference" | "intersection")) && items.len() > 1 {
+            let is_map_op = def_name == Some("merge");
             let mut joined_map: Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)> = None;
             let mut map_types_known = is_map_op;
             let mut combined = Vec::new();
             let mut all_known = true;
-            for (arg_idx, arg) in items.iter().skip(1).enumerate() {
+            for arg in items.iter().skip(1) {
               if let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting) {
-                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev, skip_rhs_nil, arg_idx) {
+                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev) {
                   map_types_known = false;
                 }
                 if let Some(members) = arg_ev.set_member_types {
@@ -8957,22 +8931,17 @@ fn infer_wasm_evidence_in_scope(
           }
           if matches!(
             proc,
-            CalcitProc::NativeMerge
-              | CalcitProc::NativeMergeNonNil
-              | CalcitProc::NativeUnion
-              | CalcitProc::NativeDifference
-              | CalcitProc::NativeSetIntersection
+            CalcitProc::NativeMerge | CalcitProc::NativeUnion | CalcitProc::NativeDifference | CalcitProc::NativeSetIntersection
           ) && items.len() > 1
           {
-            let is_map_op = matches!(proc, CalcitProc::NativeMerge | CalcitProc::NativeMergeNonNil);
-            let skip_rhs_nil = matches!(proc, CalcitProc::NativeMergeNonNil);
+            let is_map_op = matches!(proc, CalcitProc::NativeMerge);
             let mut joined_map: Option<(Arc<CalcitTypeAnnotation>, Arc<CalcitTypeAnnotation>)> = None;
             let mut map_types_known = is_map_op;
             let mut combined = Vec::new();
             let mut all_known = true;
-            for (arg_idx, arg) in items.iter().skip(1).enumerate() {
+            for arg in items.iter().skip(1) {
               if let Some(arg_ev) = infer_wasm_evidence_in_scope(ctx, arg, local_types, closures, visiting) {
-                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev, skip_rhs_nil, arg_idx) {
+                if map_types_known && !join_merge_map_operand(&mut joined_map, &arg_ev) {
                   map_types_known = false;
                 }
                 if let Some(members) = arg_ev.set_member_types {
@@ -10496,7 +10465,6 @@ fn compute_fn_arity(args: &CalcitFnArgs) -> (u32, Option<u32>) {
               fixed += 1;
             }
           }
-          CalcitArgLabel::OptionalMark => {}
           CalcitArgLabel::RestMark => {
             rest_seen = true;
           }
@@ -10518,7 +10486,7 @@ fn fn_param_names(args: &CalcitFnArgs) -> Vec<String> {
       .iter()
       .filter_map(|label| match label {
         CalcitArgLabel::Idx(index) => Some(CalcitLocal::read_name(*index)),
-        CalcitArgLabel::OptionalMark | CalcitArgLabel::RestMark => None,
+        CalcitArgLabel::RestMark => None,
       })
       .collect(),
   }
@@ -10591,7 +10559,6 @@ fn direct_scalar_type_test(expr: &Calcit) -> bool {
           | CalcitProc::NativeMapAssoc
           | CalcitProc::NativeMapDissoc
           | CalcitProc::NativeMerge
-          | CalcitProc::NativeMergeNonNil
           | CalcitProc::NativeMapDiffNew
           | CalcitProc::NativeMapDiffKeys
           | CalcitProc::NativeMapCommonKeys
@@ -11066,24 +11033,6 @@ fn compile_fn(
     ctx.recur_shape = arg_labels_shape(labels).filter(|&(required, rest)| rest || required != arity);
   }
 
-  if source_ns == "calcit.core" && export_name == "keys-non-nil" && arity == 1 {
-    let arg0 = Calcit::Symbol {
-      sym: param_names[0].clone().into(),
-      info: Arc::new(crate::wasm::host::calcit::CalcitSymbolInfo {
-        at_ns: source_ns.into(),
-        at_def: export_name.into(),
-      }),
-      location: None,
-    };
-    emit_map_keys_non_nil(&mut ctx, &[arg0])?;
-    return Ok(CompiledFn {
-      export_name: None,
-      params: vec![ValType::F64; arity],
-      results: vec![ValType::F64],
-      locals: std::mem::take(&mut ctx.extra_locals),
-      instructions: std::mem::take(&mut ctx.instructions),
-    });
-  }
   reject_non_tail_recur(body, &format!("{source_ns}/{export_name}"))?;
   // Check if body uses recur
   ctx.uses_recur = body.iter().any(check_uses_recur);
@@ -12115,7 +12064,6 @@ fn is_core_special_call_name(name: &str) -> bool {
         | "exclude"
         | "pairs-map"
         | "merge"
-        | "merge-non-nil"
         | "fold"
         | "reduce"
         | "foldl-compare"
@@ -12147,7 +12095,6 @@ fn is_core_special_call_name(name: &str) -> bool {
         | "join-string"
         | "let"
         | "filter-map-kv"
-        | "keys-non-nil"
         | "try-parse-json"
         | "json:parse"
         | "nil->option"
@@ -12603,7 +12550,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "exclude" => return emit_set_op_variadic(ctx, &args_list, SetOpKind::Exclude),
           "pairs-map" => return emit_pairs_map(ctx, &args_list),
           "merge" => return emit_map_merge_variadic(ctx, &args_list),
-          "merge-non-nil" => return emit_map_merge_non_nil_variadic(ctx, &args_list),
           // Seeded fold aliases lower to the same loop for proc/import callees.
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           // `foldl-compare xs acc f` → inline comparison loop.
@@ -12656,7 +12602,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "let" if !args_list.is_empty() => return emit_let_multi(ctx, &args_list),
           // `filter-map-kv xs f` — consume typed :keep/:drop decisions.
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
-          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           "try-parse-json" if args_list.len() == 1 => return edn_parse::emit_try_parse_json(ctx, &args_list),
           "json:parse" if args_list.len() == 1 => return edn_parse::emit_try_parse_json_value(ctx, &args_list),
           "nil->option" if args_list.len() == 1 => {
@@ -12733,14 +12678,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
-        "keys-non-nil"
-          if args_list.len() == 1
-            && info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
-            && !ctx.lambda_locals.contains_key(name)
-            && !ctx.locals.contains_key(name) =>
-        {
-          return emit_map_keys_non_nil(ctx, &args_list);
-        }
         "="
           if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
             && !ctx.lambda_locals.contains_key(name)
@@ -12775,13 +12712,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
             && !ctx.locals.contains_key(name) =>
         {
           return emit_map_merge_variadic(ctx, &args_list);
-        }
-        "merge-non-nil"
-          if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
-            && !ctx.lambda_locals.contains_key(name)
-            && !ctx.locals.contains_key(name) =>
-        {
-          return emit_map_merge_non_nil_variadic(ctx, &args_list);
         }
         "try-parse-json"
           if args_list.len() == 1
@@ -12886,7 +12816,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
-          "keys-non-nil" if args_list.len() == 1 => return emit_map_keys_non_nil(ctx, &args_list),
           _ => {}
         }
       }
@@ -14032,7 +13961,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeSetIntersection => emit_set_intersection(ctx, args),
     CalcitProc::NativeSetDestruct => emit_set_destruct(ctx, args),
     CalcitProc::NativeMerge => emit_map_merge(ctx, args),
-    CalcitProc::NativeMergeNonNil => emit_map_merge_non_nil(ctx, args),
     CalcitProc::NativeMapDiffNew => emit_map_diff_new(ctx, args),
     CalcitProc::NativeMapDiffKeys => emit_map_diff_keys(ctx, args),
     CalcitProc::NativeMapCommonKeys => emit_map_common_keys(ctx, args),

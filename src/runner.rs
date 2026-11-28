@@ -958,7 +958,6 @@ pub fn bind_marked_args(
   // println!("bind args: {:?} {}", args, values);
 
   let mut spreading = false;
-  let mut optional = false;
 
   let mut pop_args_idx = MutIndex::default();
   let mut pop_values_idx = MutIndex::default();
@@ -989,28 +988,21 @@ pub fn bind_marked_args(
     } else {
       match arg {
         CalcitArgLabel::RestMark => spreading = true,
-        CalcitArgLabel::OptionalMark => optional = true,
-        // only advance the value cursor when a value is consumed, so a missing optional
-        // leaves it at `values.len()` and a following rest param binds an empty list
         CalcitArgLabel::Idx(idx) => match values.get(pop_values_idx.0) {
           Some(v) => {
             pop_values_idx.0 += 1;
             scope.insert_mut(*idx, v.to_owned());
           }
           None => {
-            if optional {
-              scope.insert_mut(*idx, Calcit::Nil);
-            } else {
-              return Err(CalcitErr::use_msg_stack(
-                CalcitErrKind::Arity,
-                format!(
-                  "too few values `{values:?}` for arguments `{}`; missing required argument `{}`",
-                  render_marked_args(args),
-                  CalcitLocal::read_name(*idx)
-                ),
-                call_stack,
-              ));
-            }
+            return Err(CalcitErr::use_msg_stack(
+              CalcitErrKind::Arity,
+              format!(
+                "too few values `{values:?}` for arguments `{}`; missing required argument `{}`",
+                render_marked_args(args),
+                CalcitLocal::read_name(*idx)
+              ),
+              call_stack,
+            ));
           }
         },
       }
@@ -1038,7 +1030,6 @@ fn render_marked_args(args: &[CalcitArgLabel]) -> String {
   for arg in args {
     match arg {
       CalcitArgLabel::RestMark => parts.push("&".to_owned()),
-      CalcitArgLabel::OptionalMark => parts.push("?".to_owned()),
       CalcitArgLabel::Idx(idx) => parts.push(CalcitLocal::read_name(*idx)),
     }
   }
@@ -1397,7 +1388,7 @@ mod tests {
   }
 
   #[test]
-  fn runtime_fn_arity_preserves_marked_optionals_before_rest() {
+  fn runtime_fn_arity_preserves_rest_and_trailing_optionals() {
     use crate::calcit::{CalcitArgLabel, CalcitFnCallShape, ProcArity};
 
     let number = Arc::new(CalcitTypeAnnotation::Number);
@@ -1408,36 +1399,19 @@ mod tests {
       Arc::new(CalcitTypeAnnotation::List(number.clone())),
     ]);
     info.rest_type = Some(number);
-    let cases = [
-      (
-        CalcitFnArgs::MarkedArgs(vec![
-          CalcitArgLabel::Idx(0),
-          CalcitArgLabel::OptionalMark,
-          CalcitArgLabel::Idx(1),
-          CalcitArgLabel::RestMark,
-          CalcitArgLabel::Idx(2),
-        ]),
-        1,
-      ),
-      (
-        CalcitFnArgs::MarkedArgs(vec![
-          CalcitArgLabel::Idx(0),
-          CalcitArgLabel::Idx(1),
-          CalcitArgLabel::RestMark,
-          CalcitArgLabel::Idx(2),
-        ]),
-        2,
-      ),
-    ];
-    for (args, min) in cases {
-      info.call_shape = CalcitFnCallShape::from_parts(&args, &info.arg_types, true);
-      info.args = Arc::new(args);
-      let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(&info) else {
-        panic!("runtime callable must retain its function annotation")
-      };
-      assert_eq!(signature.call_arity(), ProcArity { min, max: None });
-      assert_eq!(signature.rest_type, info.rest_type);
-    }
+    let args = CalcitFnArgs::MarkedArgs(vec![
+      CalcitArgLabel::Idx(0),
+      CalcitArgLabel::Idx(1),
+      CalcitArgLabel::RestMark,
+      CalcitArgLabel::Idx(2),
+    ]);
+    info.call_shape = CalcitFnCallShape::from_parts(&args, &info.arg_types, true);
+    info.args = Arc::new(args);
+    let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(&info) else {
+      panic!("runtime callable must retain its function annotation")
+    };
+    assert_eq!(signature.call_arity(), ProcArity { min: 2, max: None });
+    assert_eq!(signature.rest_type, info.rest_type);
 
     // Typed Option completion is retained only when there is no rest binding.
     let fixed = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option]);

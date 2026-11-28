@@ -2378,7 +2378,7 @@ pub fn conservative_macro_schema(code: &Cirru, owner: &str) -> Result<Option<Arc
   };
   let shape = ParamShape::from_tokens(params.iter().filter_map(|item| match item {
     Cirru::Leaf(token) if matches!(token.as_ref(), "[]" | ",") => None,
-    Cirru::Leaf(token) if token.as_ref() == "?" => Some(ParamShapeToken::OptionalMark),
+    Cirru::Leaf(token) if token.as_ref() == "?" => Some(ParamShapeToken::LegacyOptionalMark),
     Cirru::Leaf(token) if token.as_ref() == "&" => Some(ParamShapeToken::RestMark),
     _ => Some(ParamShapeToken::Binding),
   }));
@@ -9247,7 +9247,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 56,
+      macro_count, 54,
       "update the audited bundled macro inventory when core macros change"
     );
   }
@@ -9530,7 +9530,6 @@ mod tests {
 
     for (def_name, required, optional, has_rest) in [
       ("or", 1, 0, true),
-      ("either", 0, 0, true),
       ("when", 1, 0, true),
       ("when-not", 1, 0, true),
       ("if-not", 2, 0, true),
@@ -9564,14 +9563,6 @@ mod tests {
             [crate::calcit::MacroSyntaxType::Expr(inner)]
               if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
           ));
-          assert!(matches!(
-            signature.rest_input,
-            Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
-              if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-          ));
-        }
-        "either" => {
-          assert!(signature.required_inputs.is_empty());
           assert!(matches!(
             signature.rest_input,
             Some(crate::calcit::MacroSyntaxType::Expr(ref inner))
@@ -10470,7 +10461,7 @@ mod tests {
     let Edn::Map(defs) = defs else { panic!("defs map") };
     defs.insert(
       Edn::str("legacy-macro"),
-      Edn::Quote(parse_one("defmacro legacy-macro (required ? optional & rest) required")),
+      Edn::Quote(parse_one("defmacro legacy-macro (required & rest) required")),
     );
 
     let (snapshot, migration) =
@@ -10481,7 +10472,7 @@ mod tests {
       panic!("migrated direct-quote macro should have a strict Macro contract")
     };
     assert!(matches!(signature.required_inputs.as_slice(), [MacroSyntaxType::Syntax]));
-    assert!(matches!(signature.optional_inputs.as_slice(), [MacroSyntaxType::Syntax]));
+    assert!(signature.optional_inputs.is_empty());
     assert!(matches!(signature.rest_input, Some(MacroSyntaxType::Syntax)));
     assert!(
       matches!(signature.expansion, MacroExpansionType::Expr(ref semantic) if matches!(semantic.as_ref(), CalcitTypeAnnotation::Dynamic))

@@ -60,32 +60,32 @@ fn classify_core_call(symbol: &str) -> Option<(MigrationCategory, &'static str, 
     ";nil" => Some((
       MigrationCategory::LegacyNil,
       ";nil",
-      "Replace with `&unit` (no-value statement; auto-fixable for empty `(;nil)` in discarded/Unit-tail positions via `calcit fix --rule legacy-comment-nil-v1`) or `Option :none` (absence).",
+      "Removed in 0.48.0. Replace with `&unit` (no-value statement; auto-fixable for empty `(;nil)` in discarded/Unit-tail positions via `calcit fix --rule legacy-comment-nil-v1`) or `Option :none` (absence).",
     )),
     "either" => Some((
       MigrationCategory::LegacyNil,
       "either",
-      "Migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`.",
+      "Removed in 0.48.0. Migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`.",
     )),
     "non-nil!" => Some((
       MigrationCategory::LegacyNil,
       "non-nil!",
-      "Migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`.",
+      "Removed in 0.48.0. Migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`.",
     )),
     "keys-non-nil" => Some((
       MigrationCategory::LegacyNil,
       "keys-non-nil",
-      "Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
+      "Removed in 0.48.0. Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
     )),
     "merge-non-nil" => Some((
       MigrationCategory::LegacyNil,
       "merge-non-nil",
-      "Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
+      "Removed in 0.48.0. Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
     )),
     "&merge-non-nil" => Some((
       MigrationCategory::LegacyNil,
       "&merge-non-nil",
-      "Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
+      "Removed in 0.48.0. Store `Option<V>` or omit absent keys instead of treating nil map values as absent.",
     )),
     "impl-traits" => Some((
       MigrationCategory::LegacyDynamicStyle,

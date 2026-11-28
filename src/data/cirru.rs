@@ -189,7 +189,6 @@ fn code_to_calcit_in(
       "&tab" => Ok(Calcit::new_str("\t")),
       "&calcit-version" => Ok(Calcit::new_str(env!("CARGO_PKG_VERSION"))),
       "&" => Ok(Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::clone(ns))),
-      "?" => Ok(Calcit::Syntax(CalcitSyntax::ArgOptional, Arc::clone(ns))),
       "~" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolate, Arc::clone(ns))),
       "~@" => Ok(Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, Arc::clone(ns))),
       "assert-type" => Ok(Calcit::Syntax(CalcitSyntax::AssertType, Arc::clone(ns))),

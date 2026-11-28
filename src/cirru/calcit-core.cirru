@@ -3825,14 +3825,6 @@
               assert= :failed $ try (do (&merge (as-dynamic) (&{} :a 1)) :ok) (fn (_err) :failed)
               assert= :failed $ try (do (&merge (&{} :a 1) (as-dynamic)) :ok) (fn (_err) :failed)
             :tags $ #{} :core :unit
-        '&merge-non-nil $ %{} 'CodeEntry
-          :doc "|internal function for merging non-nil values\nSyntax: (&merge-non-nil map1 map2 & maps)\nParams: map1 (map), map2 (map), maps (map, variadic)\nReturns: map\nMerges maps, skipping nil values"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn (Map K V) (Map K V)
-            -> $ Map K V
-            :generics K V
-          :tags $ #{} :builtin :internal :deprecated
         '&methods-of $ %{} 'CodeEntry (:doc "|返回值上可用的方法选择器。传入 trait 描述符时列出其声明的方法。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -4988,20 +4980,6 @@
           :examples $ []
           :schema $ quote $ Fn Dynamic (& Dynamic) (-> Enum)
           :tags $ #{} :builtin :internal
-        ';nil $ %{} 'CodeEntry
-          :doc "|Legacy macro that evaluates to nil while accepting ignored body forms.\nUse &unit (or a do expression ending in &unit) when an operation has no domain value; use Option for absence in new APIs."
-          :code $ quote $ defmacro ;nil (& _body)
-          :examples $ [] $ quote
-            assert-type (;nil) (quote Nil)
-          :schema $ quote $ Macro (& Syntax)
-            -> $ Expr Nil
-          :tags $ #{} :macro :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |ignores-body-and-returns-nil)
-            :code $ quote $ do
-              assert= nil $ ;nil
-              assert= nil $ ;nil (raise |must-not-run) :ignored
-              assert= nil $ calcit.core/;nil :ignored
-            :tags $ #{} :core :macro :unit
         '< $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn < (x & ys)
             if
@@ -5183,12 +5161,6 @@
             quote $ assert= true $ >= 5 5
             quote $ assert= false $ >= 3 5
           :schema $ quote $ Fn Number (& Number) (-> Bool)
-        '? $ %{} 'CodeEntry
-          :doc "|internal syntax for optional argument in function definition\nSyntax: (? optional-arg) in parameter list\nParams: optional-arg (symbol)\nReturns: parameter marker\nMarks optional parameters in function definitions"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote Dynamic
-          :tags $ #{} :builtin :internal :syntax
         '?{} $ %{} 'CodeEntry (:doc "|内部匿名 Struct 构造器。交替接收字段标签和值，并检查重复字段。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -9569,44 +9541,6 @@
           :schema $ quote $ Fn String
             -> $ Result EdnValue String
           :tags $ #{} :core :data
-        'either $ %{} 'CodeEntry
-          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
-          :code $ quote $ defmacro either (& xs)
-            if (&list:empty? xs) (raise "|either expects at least 1 expression")
-            &let
-              item $ &list:nth xs 0
-              &let
-                rest-xs $ &list:rest xs
-                if (&list:empty? rest-xs) item $ if (list? item)
-                  &let
-                    v1# $ gensym |v1
-                    quasiquote $ &let (~v1# ~item)
-                      if (nil? ~v1#)
-                        either
-                          ~ $ &list:nth rest-xs 0
-                          ~@ $ &list:rest rest-xs
-                        ~ v1#
-                  quasiquote $ if (nil? ~item)
-                    either
-                      ~ $ &list:nth rest-xs 0
-                      ~@ $ &list:rest rest-xs
-                    ~ item
-          :examples $ []
-            quote $ assert= 42 $ either nil 42 nil
-            quote $ assert= false $ either false true
-            quote $ assert= |backup $ either nil nil |backup
-          :schema $ quote $ Macro
-            & $ Expr Dynamic
-            -> $ Expr Dynamic
-          :tags $ #{} :macro :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |returns-first-non-nil)
-            :code $ quote $ do
-              assert= 1 $ either nil 1
-              assert= 1 $ either 1 nil
-              assert= nil $ either nil nil
-              assert= 1 $ either nil nil 1
-              assert= 1 $ either (do nil) (do 1) (do nil)
-            :tags $ #{} :core :unit
         'empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty (x) (.empty x)
           :examples $ []
@@ -11514,13 +11448,9 @@
             %{} 'TestEntry (:name |plain-call-into-rest-local)
               :code $ quote $ let
                   collect $ fn (a & xs) (&list:count xs)
-                  pick $ fn (a ? b)
-                    if (nil? b) a b
                 assert= 1 $ collect 0 9
                 assert= 0 $ collect 0
                 assert= 3 $ collect 0 7 8 9
-                assert= 1 $ pick 1
-                assert= 2 $ pick 1 2
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-with-rest-param)
               :code $ quote $ do
@@ -11533,10 +11463,6 @@
                 assert= 2 $
                   fn (a & xs) (&list:count xs)
                   , 1 2 3
-                assert= 5 $
-                  fn (a ? b)
-                    if (nil? b) a b
-                  , 5
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-rest-param-recur)
               :code $ quote $ do
@@ -11546,12 +11472,6 @@
                       recur (&- n 1) n n
                       &list:count xs
                   , 2
-                assert= 1 $
-                  fn (n ? acc)
-                    if (&> n 0)
-                      recur (&- n 1) n
-                      , acc
-                  , 3
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |rest-callee-in-hof)
               :code $ quote $ do
@@ -11676,29 +11596,6 @@
                     same $ &list:nth items 0
                 assert= |wrong $ first-open $ [] |wrong
               :tags $ #{} :call-boundary :open-element-proof
-            %{} 'TestEntry (:name |optional-then-rest-local)
-              :code $ quote $ let
-                  count-rest $ fn (a ? b & xs) (&list:count xs)
-                  pick-b $ fn (a ? b & xs)
-                    if (nil? b) 0 b
-                  count-leading $ fn (? a & xs) (&list:count xs)
-                  count-two $ fn (a ? b ? c & xs) (&list:count xs)
-                  pick-c $ fn (a ? b ? c & xs)
-                    if (nil? c) 0 c
-                assert= 0 $ count-rest 1
-                assert= 0 $ pick-b 1
-                assert= 2 $ pick-b 1 2
-                assert= 2 $ count-rest 1 2 3 4
-                assert= 0 $ count-leading
-                assert= 0 $ count-leading 1
-                assert= 2 $ count-leading 1 2 3
-                assert= 0 $ count-two 1
-                assert= 0 $ count-two 1 2
-                assert= 0 $ pick-c 1 2
-                assert= 0 $ count-two 1 2 3
-                assert= 3 $ pick-c 1 2 3
-                assert= 1 $ count-two 1 2 3 4
-              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |local-generic-hint-preserves-option-values)
               :code $ quote $ let
                   same $ fn (value)
@@ -12447,61 +12344,6 @@
               :code $ quote $ assert= (#{} :a :b)
                 keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
-        'keys-non-nil $ %{} 'CodeEntry
-          :doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
-          :code $ quote $ defn keys-non-nil (x)
-            &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
-              hint-fn $ Fn K V $ -> Bool
-              not $ nil? v
-          :examples $ []
-            quote $ assert= (#{} :a :b)
-              keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
-            quote $ assert= (#{})
-              keys-non-nil $ {} (:a nil) (:b nil)
-          :schema $ quote $ Fn (Map K V)
-            -> $ Set K
-            :generics K V
-          :tags $ #{} :deprecated
-          :tests $ []
-            %{} 'TestEntry (:name |omits-nil-map-values)
-              :code $ quote $ assert= (#{} :a :b)
-                keys-non-nil $ {,} :a 1 :b 2 :c nil
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-false-and-zero-values)
-              :code $ quote $ do
-                assert= (#{} :a :b)
-                  keys-non-nil $ &{} :a false :b 0 :c nil
-                assert= (#{} :b)
-                  keys-non-nil $ &{} :a 1 :a nil :b false
-                assert= (#{} :a :b)
-                  let
-                      m $ &{} :a false :b true
-                    keys-non-nil m
-                assert= (#{} :a :b)
-                  let
-                      m $ &{} :a 0 :b 1
-                    keys-non-nil m
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |duplicate-literal-keeps-last)
-              :code $ quote $ let
-                  small $ &{} :a 1 :b 2 :a 3
-                  large $ &{} :a 1 :b 2 :c 3 :d 4 :e 5 :f 6 :g 7 :h 8 :i 9 :a 10
-                assert= 2 $ .len small
-                assert= (Some 3) (get small :a)
-                assert= (#{} :a :b) (keys-non-nil small)
-                assert= 9 $ .len large
-                assert= (Some 10) (get large :a)
-                assert=
-                  #{} :a :b :c :d :e :f :g :h :i
-                  keys-non-nil large
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |structural-duplicate-key)
-              :code $ quote $ let
-                  m $ &{} ([] 1 2) 10 ([] 2 3) 20 ([] 1 2) 100
-                assert= 2 $ .len m
-                assert= (Some 100)
-                  get m $ [] 1 2
-              :tags $ #{} :core :unit
         'last $ %{} 'CodeEntry
           :doc "|Return the last item as Option<T>; empty collections produce none."
           :code $ quote $ defn last (xs)
@@ -13155,20 +12997,6 @@
                 assert= ({})
                   ({}) .merge $ {}
               :tags $ #{} :core :unit
-        'merge-non-nil $ %{} 'CodeEntry
-          :doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
-          :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
-          :examples $ []
-          :schema $ quote $ Fn (Map K V)
-            & $ Map K V
-            -> $ Map K V
-            :generics K V
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-existing-values-for-nil)
-            :code $ quote $ assert=
-              {,} :a 1 :b 12 :c 3 :d 14
-              merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
-            :tags $ #{} :core :unit
         'min $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn min (xs)
             &let
@@ -13319,12 +13147,6 @@
             quote $ assert= false $ nil? 0
           :schema $ quote $ Fn T (-> Bool) (:generics T)
           :tags $ #{} :builtin :internal
-        'non-nil! $ %{} 'CodeEntry (:doc "|Legacy runtime assertion that raises when a value is nil and otherwise returns it unchanged. New code should use Option<T> with match, if-let, .unwrap-or, or .unwrap instead of nil.")
-          :code $ quote $ defn non-nil! (x)
-            if (nil? x) (raise "|expected non nil value") x
-          :examples $ []
-          :schema $ quote $ Fn T (-> T) (:generics T)
-          :tags $ #{} :control :deprecated
         'non-nil? $ %{} 'CodeEntry
           :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；Option variant 请使用 .some?/.none?。WASM 会依据静态类型证据 lowering，泛型直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
           :code $ quote $ defn non-nil? (x)

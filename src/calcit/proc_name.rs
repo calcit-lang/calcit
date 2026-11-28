@@ -409,8 +409,6 @@ pub enum CalcitProc {
   NativeMerge,
   #[strum(serialize = "to-pairs")]
   ToPairs,
-  #[strum(serialize = "&merge-non-nil")]
-  NativeMergeNonNil,
   #[strum(serialize = "&map:get")]
   NativeMapGet,
   #[strum(serialize = "&map:dissoc")]

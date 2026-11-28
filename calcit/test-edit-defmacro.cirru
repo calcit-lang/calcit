@@ -21,12 +21,6 @@
             %{} 'TestEntry (:name |rest-expands)
               :code $ quote $ assert= 3 (rest-id 3 4 5)
               :tags $ #{} :macro-edit
-        'optional-id $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defmacro optional-id (value ? ignored) value
-          :examples $ []
-          :schema $ quote $ Macro Syntax
-            -> $ Expr Dynamic
-            :optional Syntax
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () nil
           :examples $ []

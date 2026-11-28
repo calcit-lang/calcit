@@ -659,7 +659,6 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::Butlast
       | CalcitProc::Range
       | CalcitProc::NativeMerge
-      | CalcitProc::NativeMergeNonNil
       | CalcitProc::ToPairs
       | CalcitProc::NativeMapDissoc
       | CalcitProc::NativeMapToList

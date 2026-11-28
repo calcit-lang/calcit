@@ -362,7 +362,6 @@ fn validate_loop_accumulator_evidence(
           | CalcitProc::NativeMultiply
           | CalcitProc::NativeDivide
           | CalcitProc::NativeMerge
-          | CalcitProc::NativeMergeNonNil
           | CalcitProc::NativeUnion
           | CalcitProc::NativeSetIntersection
           | CalcitProc::NativeDifference

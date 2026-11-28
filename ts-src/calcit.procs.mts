@@ -1500,23 +1500,6 @@ export let _$n_merge = (a: CalcitValue, b: CalcitMap | CalcitSliceMap): CalcitVa
   throw new Error("Expected map or struct value");
 };
 
-export let _$n_merge_non_nil = (a: CalcitMap | CalcitSliceMap, b: CalcitMap | CalcitSliceMap): CalcitMap | CalcitSliceMap => {
-  if (a === null) {
-    return b;
-  }
-  if (b === null) {
-    return a;
-  }
-  if (!(a instanceof CalcitMap || a instanceof CalcitSliceMap)) {
-    throw new Error("Expected map");
-  }
-  if (!(b instanceof CalcitMap || b instanceof CalcitSliceMap)) {
-    throw new Error("Expected map");
-  }
-
-  return a.mergeSkip(b, null);
-};
-
 export let to_pairs = (xs: CalcitValue): CalcitValue | CalcitSliceList => {
   if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) {
     let result: Array<CalcitSliceList> = [];

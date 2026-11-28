@@ -1826,6 +1826,13 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "0.33.0",
       "use `to-lispy-string` to show a List (`format-cirru-edn` for EDN data); it returned FingerVec debug text, so build an explicit tree model to teach tree structure",
     )),
+    ";nil" => Some(("0.48.0", "use `&unit` (for no-value statements) or `Option :none` (for absence)")),
+    "either" => Some(("0.48.0", "use `Option<T>` with `.unwrap-or`, `if-let`, or `match`")),
+    "non-nil!" => Some(("0.48.0", "use `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`")),
+    "keys-non-nil" | "merge-non-nil" | "&merge-non-nil" => Some((
+      "0.48.0",
+      "store `Option<V>` or omit absent keys instead of treating nil map values as absent",
+    )),
     _ => None,
   }
 }
@@ -6206,10 +6213,6 @@ fn preprocess_list_call(
         }
         CalcitSyntax::ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be preprocessed as operator", &xs.to_vec())
           .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR")),
-        CalcitSyntax::ArgOptional => {
-          CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be preprocessed as operator", &xs.to_vec())
-            .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR"))
-        }
         CalcitSyntax::MacroInterpolate => {
           CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be preprocessed as operator", &xs.to_vec())
             .map_err(|error| error.with_code("E_SYNTAX_MARKER_AS_OPERATOR"))
@@ -8516,7 +8519,6 @@ fn check_fn_marked_args(
 
   let mut i = 0;
   let mut j = 0;
-  let mut optional = false;
 
   loop {
     let d = defined_args.get(i);
@@ -8532,26 +8534,14 @@ fn check_fn_marked_args(
         // dynamic args rule, all okay
         return;
       }
-      (Some(CalcitArgLabel::OptionalMark), _) => {
-        // dynamic args rule, all okay
-        optional = true;
-        i += 1;
-        continue;
-      }
       (Some(_), None) => {
-        if optional {
-          i += 1;
-          j += 1;
-          continue;
-        } else {
-          gen_check_warning_code(
-            format!("[Error] lack of args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
-            "E_FN_ARITY",
-            file_ns,
-            check_warnings,
-          );
-          return;
-        }
+        gen_check_warning_code(
+          format!("[Error] lack of args in {f_name} `{defined_args:?}` with `{params}`, at {file_ns}/{def_name}"),
+          "E_FN_ARITY",
+          file_ns,
+          check_warnings,
+        );
+        return;
       }
       (None, Some(_)) => {
         gen_check_warning_code(
@@ -8832,11 +8822,8 @@ fn check_recur_args_in_expr(
       let nested_arity = match &*info.args {
         CalcitFnArgs::Args(args) => args.len(),
         CalcitFnArgs::MarkedArgs(args) => {
-          // Count actual parameters, excluding & and ? markers
-          args
-            .iter()
-            .filter(|a| !matches!(a, CalcitArgLabel::RestMark | CalcitArgLabel::OptionalMark))
-            .count()
+          // Count actual parameters, excluding & markers
+          args.iter().filter(|a| !matches!(a, CalcitArgLabel::RestMark)).count()
         }
       };
       // Check body with nested function's arity
@@ -10951,7 +10938,6 @@ fn warn_on_nominal_enum_legacy_absence_use_at(
       | "dissoc"
       | "dissoc-in"
       | "merge"
-      | "merge-non-nil"
       | "update"
       | "update-in"
       | "="
@@ -11219,23 +11205,6 @@ fn note_percent_struct_literal(info: &CalcitMacro, head: &Calcit, args: &CalcitL
 
 fn legacy_migration_advisory_for_core_name(name: &str) -> Option<(&'static str, String)> {
   match name {
-    ";nil" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
-      "[Error] legacy `;nil` returns nil; replace it with `&unit` (for no-value statements) or `Option :none` (for absence)".to_owned(),
-    )),
-    "either" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
-      "[Error] legacy `either` branches on nil; migrate to `Option<T>` with `.unwrap-or`, `if-let`, or `match`".to_owned(),
-    )),
-    "non-nil!" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
-      "[Error] legacy `non-nil!` asserts against nil at runtime; migrate to `Option<T>` with `match`, `if-let`, `.unwrap-or`, or `.unwrap`"
-        .to_owned(),
-    )),
-    "keys-non-nil" | "merge-non-nil" | "&merge-non-nil" => Some((
-      crate::snapshot::LEGACY_NIL_USAGE_ERROR,
-      format!("[Error] legacy `{name}` treats nil map values as absent; store `Option<V>` or omit absent keys instead"),
-    )),
     "nil?" | "non-nil?" => Some((
       crate::snapshot::RUNTIME_TYPE_PREDICATE_WARNING,
       format!(
@@ -13286,7 +13255,6 @@ fn synthetic_fn_args(info: &CalcitFn, schema: &CalcitTypeAnnotation, synthetic_n
       for label in labels {
         match label {
           CalcitArgLabel::Idx(idx) => push_local(*idx, &mut nodes),
-          CalcitArgLabel::OptionalMark => nodes.push(Calcit::Syntax(CalcitSyntax::ArgOptional, info.def_ns.clone())),
           CalcitArgLabel::RestMark => nodes.push(Calcit::Syntax(CalcitSyntax::ArgSpread, info.def_ns.clone())),
         }
       }
@@ -17657,18 +17625,17 @@ pub fn preprocess_defn(
       let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
       let mut param_symbols: Vec<Arc<str>> = vec![];
-      let mut has_marked_args = false; // Track if function has & or ? markers
+      let mut has_marked_args = false; // Track if function has & markers
       let source_owned = program::has_def_code(ctx.file_ns, def_name.as_ref());
       let generated_by_macro = call_stack_contains_macro(ctx.call_stack) && !source_owned;
 
-      if strict_types_enabled()
-        && should_emit_project_source_lint(ctx.file_ns)
-        && !generated_by_macro
-        && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
+      if ys
+        .iter()
+        .any(|arg| matches!(arg, Calcit::Symbol { sym, .. } if sym.as_ref() == "?"))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
-          "legacy `?` parameters implicitly bind omitted arguments to nil; remove `?`, declare trailing parameters as Option<T>, and pass `Option :some value` or `Option :none` explicitly when omission sugar is not used",
+          "legacy `?` optional parameter syntax was removed in 0.48.0; remove `?`, declare trailing parameters as Option<T>, and omit trailing arguments or pass `Option :some value` / `Option :none` explicitly",
           "E_LEGACY_OPTIONAL_PARAM",
           ctx.call_stack,
           find_preferred_macro_location(ctx.call_stack).or_else(|| {
@@ -17694,7 +17661,6 @@ pub fn preprocess_defn(
       ys.traverse_result(&mut |y| {
         match y {
           Calcit::Syntax(CalcitSyntax::ArgSpread, _)
-          | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
           | Calcit::Syntax(CalcitSyntax::MacroInterpolate, _)
           | Calcit::Syntax(CalcitSyntax::MacroInterpolateSpread, _) => {
             has_marked_args = true; // Mark that this function has special args
@@ -20940,7 +20906,7 @@ pub fn preprocess_assert_traits(
 
 fn analyze_def_schema_param_shape(args: &CalcitList) -> ParamShape {
   ParamShape::from_tokens(args.iter().map(|item| match item {
-    Calcit::Syntax(CalcitSyntax::ArgOptional, _) => ParamShapeToken::OptionalMark,
+    Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "?" => ParamShapeToken::LegacyOptionalMark,
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => ParamShapeToken::RestMark,
     _ => ParamShapeToken::Binding,
   }))
@@ -25231,31 +25197,28 @@ mod tests {
   }
 
   #[test]
-  fn strict_types_rejects_legacy_optional_parameters_but_compat_mode_keeps_them() {
+  fn removed_optional_parameters_fail_in_strict_and_compat_modes() {
     let _state = lock_preprocess_test_state();
     let code = legacy_optional_definition();
 
-    {
-      let _strict = StrictTypesGuard::new(false);
-      preprocess_test_expr(&code).expect("compatibility mode should keep legacy optional parameters");
+    for strict in [false, true] {
+      let _strict = StrictTypesGuard::new(strict);
+      let error = preprocess_test_expr(&code).expect_err("removed `?` parameter syntax must fail in all modes");
+      assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
+      assert!(error.msg.contains("Option<T>"));
+      assert!(error.location.is_some(), "diagnostic should retain the definition location");
     }
-
-    let _strict = StrictTypesGuard::new(true);
-    let error = preprocess_test_expr(&code).expect_err("strict mode should reject implicit nil parameter binding");
-    assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
-    assert!(error.msg.contains("Option<T>"));
-    assert!(error.location.is_some(), "strict diagnostic should retain the definition location");
   }
 
   #[test]
-  fn strict_types_keep_macro_owned_optional_parameters_out_of_the_source_migration_rule() {
+  fn removed_optional_parameters_fail_inside_macro_expansions_too() {
     let _state = lock_preprocess_test_state();
     let _strict = StrictTypesGuard::new(true);
     let code = legacy_optional_definition();
     let warnings = RefCell::new(vec![]);
     let macro_stack = CallStackList::default().extend("calcit.core", "\\", StackKind::Macro, &Calcit::Nil, &[]);
 
-    preprocess_expr(
+    let error = preprocess_expr(
       &code,
       &HashSet::new(),
       &mut ScopeTypes::new(),
@@ -25263,7 +25226,8 @@ mod tests {
       &warnings,
       &macro_stack,
     )
-    .expect("the source migration rule must not reject private parameters owned by a macro expansion");
+    .expect_err("macro expansions must also reject removed `?` syntax");
+    assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_PARAM"));
   }
 
   #[test]
@@ -32069,7 +32033,7 @@ mod tests {
   }
 
   #[test]
-  fn validate_def_schema_skips_optional_marker() {
+  fn validate_def_schema_rejects_removed_optional_marker() {
     let args = CalcitList::from(&[
       Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(&Arc::from("xs")),
@@ -32091,7 +32055,14 @@ mod tests {
         location: None,
         type_info: crate::calcit::DYNAMIC_TYPE.clone(),
       }),
-      Calcit::Syntax(CalcitSyntax::ArgOptional, Arc::from("test")),
+      Calcit::Symbol {
+        sym: Arc::from("?"),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("test"),
+          at_def: Arc::from("slice"),
+        }),
+        location: None,
+      },
       Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(&Arc::from("m")),
         sym: Arc::from("m"),
@@ -32105,10 +32076,7 @@ mod tests {
     ] as &[Calcit]);
 
     let shape = analyze_def_schema_param_shape(&args);
-    assert_eq!(shape.required, 2);
-    assert_eq!(shape.optional, 1);
-    assert!(!shape.has_rest);
-    assert!(shape.errors.is_empty());
+    assert!(!shape.errors.is_empty(), "removed `?` marker must fail param shape validation");
   }
 
   #[test]

@@ -222,30 +222,6 @@ pub fn map_vals(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn call_merge_non_nil(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Map(xs)), Some(Calcit::Map(ys))) => {
-      let mut zs: rpds::HashTrieMapSync<Calcit, Calcit> = xs.to_owned();
-      for (k, v) in ys {
-        if *v != Calcit::Nil {
-          zs.insert_mut(k.to_owned(), v.to_owned());
-        }
-      }
-      Ok(Calcit::Map(zs))
-    }
-    (Some(a), Some(b)) => {
-      let msg = format!(
-        "&map:merge-non-nil requires 2 maps, but received: {} and {}",
-        type_of(std::slice::from_ref(a))?.lisp_str(),
-        type_of(std::slice::from_ref(b))?.lisp_str()
-      );
-      let hint = format_proc_examples_hint(&CalcitProc::NativeMergeNonNil).unwrap_or_default();
-      CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
-    }
-    (_, _) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:merge-non-nil expected 2 arguments, but received:", xs),
-  }
-}
-
 /// out to list, but with a arbitrary order
 pub fn to_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {

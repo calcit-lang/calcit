@@ -56,7 +56,6 @@ const CONCRETE_RETURN_PROOF_DIAGNOSTIC: &str = "E_FN_RETURN_UNPROVEN";
 const CALLABLE_CONTRACT_PROOF_RULE: &str = "callable-contract-proof-v1";
 const NOMINAL_WRITE_PROOF_RULE: &str = "nominal-write-proof-v1";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
-const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const CORE_ABSENCE_RULE: &str = "core-absence-to-public-v1";
 const LEGACY_COMMENT_NIL_RULE: &str = "legacy-comment-nil-v1";
 const LEGACY_COMMENT_NIL_DIAGNOSTIC: &str = "E_LEGACY_NIL_USAGE";
@@ -531,18 +530,17 @@ pub(crate) fn handle_fix_command(
   let local_rename = selected_rules.contains(&RENAME_LOCAL_RULE);
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
-  let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
   let effect_features = selected_rules.contains(&EFFECT_FEATURES_RULE);
   let legacy_comment_nil = selected_rules.contains(&LEGACY_COMMENT_NIL_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
-  let migration_rule = semantic_refactor || schema_synthesis || optional_parameters || options.workflow.is_some();
+  let migration_rule = semantic_refactor || schema_synthesis || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
-  let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || optional_parameters || effect_features {
+  let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || effect_features {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   };
-  let mut selected_definitions = if (schema_synthesis && validation_only) || optional_parameters {
+  let mut selected_definitions = if schema_synthesis && validation_only {
     select_definitions(options, compiled_snapshot, project_namespaces)?
   } else {
     project_definitions.clone()
@@ -714,13 +712,6 @@ pub(crate) fn handle_fix_command(
       snapshot_file,
       &project_definitions,
     )?);
-  } else if optional_parameters {
-    suggestions.extend(plan_optional_parameter_diagnostics(
-      options,
-      &source_snapshot,
-      snapshot_file,
-      &project_definitions,
-    )?);
   } else if selected_rules.contains(&REMOVED_DATA_API_RULE) {
     suggestions.extend(plan_removed_data_api_fixes(options, &source_snapshot, snapshot_file, &warnings)?);
   }
@@ -852,6 +843,14 @@ pub(crate) fn handle_fix_command(
         // Helper calls left for review keep their own warning; they are what
         // `core-option-method-v1` reports, not an effect of the staged fix.
         .filter(|warning| warning.code() != Some("E_OPTION_HELPER_CALL"))
+        // Ambiguous `;nil` forms left for manual review emit `E_REMOVED_CORE_FUNCTION`
+        // once `;nil` is removed in 0.48.0; allow `legacy-comment-nil-v1` partial
+        // fixes to stage without blaming those untouched review sites.
+        .filter(|warning| {
+          !(options.rule.as_deref() == Some(LEGACY_COMMENT_NIL_RULE)
+            && warning.code() == Some("E_REMOVED_CORE_FUNCTION")
+            && warning.to_string().contains("unknown `;nil`"))
+        })
         .map(ToString::to_string)
         .collect::<Vec<_>>()
     };
@@ -1295,6 +1294,11 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
       "Fix rule `{rule}` was retired in 0.31.0 together with the core names it migrated. Run it with a 0.30.x Calcit CLI before upgrading; in this CLI, a remaining call reports an unknown-name warning with the preferred spelling."
     ));
   }
+  if options.rule.as_deref() == Some(OPTIONAL_PARAMETERS_RULE) {
+    return Err(format!(
+      "Fix rule `{OPTIONAL_PARAMETERS_RULE}` was retired in 0.48.0 together with legacy `?` optional parameters. Run it with a 0.47.x Calcit CLI before upgrading, or migrate `?` parameters to trailing `Option<T>` omission; see docs/run/upgrade.md."
+    ));
+  }
   if options.include_attached {
     let selected = selected_rule_ids(options);
     let unsupported = selected
@@ -1364,12 +1368,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   }
   let value_to_zero_arg_fn = options.rule.as_deref() == Some(VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = options.rule.as_deref() == Some(SYNTHESIZE_SCHEMA_RULE);
-  let optional_parameters = options.rule.as_deref() == Some(OPTIONAL_PARAMETERS_RULE);
-  if optional_parameters && options.apply {
-    return Err(format!(
-      "Fix rule `{OPTIONAL_PARAMETERS_RULE}` is review-only until body and caller semantics can be proven; omit `--apply` to inspect the migration evidence."
-    ));
-  }
   if semantic_rename {
     if options.ns.is_none() || options.definition.is_none() || options.replacement_name.is_none() {
       return Err(format!(
@@ -1380,7 +1378,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     if replacement.is_empty() || replacement.contains('/') {
       return Err("`calcit fix --to` must be one non-empty unqualified definition name.".to_owned());
     }
-  } else if value_to_zero_arg_fn || schema_synthesis || optional_parameters {
+  } else if value_to_zero_arg_fn || schema_synthesis {
     if options.ns.is_none() || options.definition.is_none() {
       return Err(format!(
         "Fix rule `{}` requires exact `--ns` and `--def` arguments.",
@@ -1429,7 +1427,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CONCRETE_RETURN_PROOF_RULE
         | CALLABLE_CONTRACT_PROOF_RULE
         | NOMINAL_WRITE_PROOF_RULE
-        | OPTIONAL_PARAMETERS_RULE
         | CORE_ABSENCE_RULE
         | LEGACY_COMMENT_NIL_RULE
         | REDUNDANT_HINT_FN_RULE
@@ -1440,7 +1437,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CORE_ABSENCE_RULE}`, `{LEGACY_COMMENT_NIL_RULE}`, `{REDUNDANT_HINT_FN_RULE}`, `{EFFECT_FEATURES_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{CORE_ABSENCE_RULE}`, `{LEGACY_COMMENT_NIL_RULE}`, `{REDUNDANT_HINT_FN_RULE}`, `{EFFECT_FEATURES_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1483,7 +1480,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CONCRETE_RETURN_PROOF_RULE
         | CALLABLE_CONTRACT_PROOF_RULE
         | NOMINAL_WRITE_PROOF_RULE
-        | OPTIONAL_PARAMETERS_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_IDENTITY_CONVERSION_RULE
@@ -1509,8 +1505,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
         LEGACY_COMMENT_NIL_RULE => LEGACY_COMMENT_NIL_RULE,
         REDUNDANT_HINT_FN_RULE => REDUNDANT_HINT_FN_RULE,
-        EFFECT_FEATURES_RULE => EFFECT_FEATURES_RULE,
-        _ => OPTIONAL_PARAMETERS_RULE,
+        _ => EFFECT_FEATURES_RULE,
       }];
     }
     return AVAILABLE_RULES.iter().copied().filter(|candidate| *candidate == rule).collect();
@@ -1672,13 +1667,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       diagnostic_code: SPREAD_CALL_PROOF_DIAGNOSTIC,
       evidence_source: "compiler-fixed-call-proof",
       lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    OPTIONAL_PARAMETERS_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: OPTIONAL_PARAMETERS_DIAGNOSTIC,
-      evidence_source: "source-parameters-and-declared-schema",
-      lifecycle: "review-required",
       source_version_required: false,
     },
     _ => unreachable!("selected fix rule must have current-semantics metadata"),
@@ -2132,288 +2120,6 @@ pub(crate) mod schema_synthesis;
 mod spread_call;
 mod structural_rewrite;
 use schema_synthesis::plan_schema_synthesis;
-
-/// Surface legacy omission markers from the unexpanded Snapshot without implying a safe rewrite.
-fn plan_optional_parameter_diagnostics(
-  options: &FixCommand,
-  snapshot: &Snapshot,
-  snapshot_file: &str,
-  project_definitions: &[(String, String)],
-) -> Result<Vec<FixSuggestion>, String> {
-  let namespace = options.ns.as_deref().expect("optional parameter rule requires namespace");
-  let definition = options.definition.as_deref().expect("optional parameter rule requires definition");
-  let entry = snapshot
-    .files
-    .get(namespace)
-    .and_then(|file| file.defs.get(definition))
-    .ok_or_else(|| format!("Optional parameter source `{namespace}/{definition}` does not exist in the editable Snapshot."))?;
-  let Cirru::List(code) = &entry.code else {
-    return Err(format!(
-      "Optional parameter source `{namespace}/{definition}` is not a definition form."
-    ));
-  };
-  let head = code.first().and_then(leaf_value);
-  if !matches!(head, Some("defn" | "defcomp" | "defn-js")) {
-    return Err(format!(
-      "Fix rule `{OPTIONAL_PARAMETERS_RULE}` requires a source function definition, found `{}` at `{namespace}/{definition}`.",
-      head.unwrap_or("<non-leaf>")
-    ));
-  }
-  let Some(Cirru::List(args)) = code.get(2) else {
-    return Err(format!(
-      "Source function `{namespace}/{definition}` has no inspectable argument list."
-    ));
-  };
-  let signature = match entry.schema.as_ref() {
-    CalcitTypeAnnotation::Fn(signature) => Some(signature.as_ref()),
-    _ => None,
-  };
-  let mut optional = false;
-  let mut argument_index = 0;
-  let mut suggestions = Vec::new();
-  let mut candidate_arg_types = signature.map(|signature| signature.arg_types.clone());
-  for (source_index, arg) in args.iter().enumerate() {
-    if arg.eq_leaf("?") {
-      optional = true;
-      continue;
-    }
-    if arg.eq_leaf("&") {
-      optional = false;
-      continue;
-    }
-    if optional {
-      let declared = signature.and_then(|signature| signature.arg_types.get(argument_index));
-      let candidate = declared
-        .filter(|annotation| optional_parameter_schema_type(annotation).is_some())
-        .and_then(|annotation| optional_parameter_candidate(annotation));
-      candidate_arg_types = candidate_arg_types.and_then(|mut arg_types| {
-        let candidate_type = declared.and_then(optional_parameter_schema_type)?;
-        *arg_types.get_mut(argument_index)? = candidate_type;
-        Some(arg_types)
-      });
-      let parameter = leaf_value(arg).unwrap_or("<destructured>");
-      let reason = if candidate.is_some() {
-        "declared-type-only; body presence checks, explicit nil, generated/external callers, and call evaluation are not yet proven"
-      } else {
-        "no precise declared parameter type; type and call semantics require review"
-      };
-      suggestions.push(FixSuggestion {
-        rule_id: OPTIONAL_PARAMETERS_RULE,
-        diagnostic_code: OPTIONAL_PARAMETERS_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&[2, source_index])),
-        fingerprint: node_fingerprint(arg),
-        origin_chain: vec![serde_json::json!({
-          "kind": "legacy-optional-parameter",
-          "parameter": parameter,
-          "argument_index": argument_index,
-          "declared_type": declared.map(|annotation| annotation.to_brief_string()),
-          "candidate_type": candidate,
-          "reason": reason,
-        })],
-        original: quoted_json(arg),
-        replacement: None,
-        applicability: "needs-review",
-        message: format!(
-          "Legacy optional parameter `{parameter}` needs an explicit Option contract and coordinated caller/body review; {reason}."
-        ),
-        target_path: vec![2, source_index],
-        operation: None,
-      });
-    }
-    argument_index += 1;
-  }
-  if !suggestions.is_empty() {
-    let candidate_fn_schema_edn = signature
-      .zip(candidate_arg_types)
-      .filter(|(signature, arg_types)| signature.arg_types.len() == argument_index && arg_types.len() == argument_index)
-      .and_then(|(signature, arg_types)| {
-        let mut candidate = signature.clone();
-        candidate.arg_types = arg_types;
-        if !optional_candidate_signature_is_closed(&candidate) {
-          return None;
-        }
-        cirru_edn::format(&candidate.to_schema_edn(), true).ok()
-      });
-    let usage_evidence = collect_optional_parameter_usages(snapshot, namespace, definition, project_definitions);
-    for suggestion in &mut suggestions {
-      suggestion.origin_chain[0]["candidate_fn_schema_edn"] = serde_json::json!(candidate_fn_schema_edn.as_deref());
-      suggestion.origin_chain.extend(usage_evidence.iter().cloned());
-    }
-  }
-  Ok(suggestions)
-}
-
-/// Collect resolver-backed local source references; attached sources and external consumers remain outside this proof.
-fn collect_optional_parameter_usages(
-  snapshot: &Snapshot,
-  target_ns: &str,
-  target_def: &str,
-  project_definitions: &[(String, String)],
-) -> Vec<Value> {
-  with_legacy_migration_mode(|| {
-    let warnings = RefCell::new(Vec::new());
-    let mut evidence = Vec::new();
-    let mut failed_definitions = Vec::new();
-    for (owner_ns, owner_def) in project_definitions {
-      let Some(entry) = snapshot.files.get(owner_ns).and_then(|file| file.defs.get(owner_def)) else {
-        failed_definitions.push(format!("{owner_ns}/{owner_def}"));
-        continue;
-      };
-      let Ok(usages) = runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
-      else {
-        failed_definitions.push(format!("{owner_ns}/{owner_def}"));
-        continue;
-      };
-      for usage in usages {
-        if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
-          continue;
-        }
-        let owner = format!("{owner_ns}/{owner_def}");
-        if !usage.macro_origin.is_empty() {
-          evidence.push(serde_json::json!({
-            "kind": "macro-origin-reference",
-            "definition": owner,
-            "macro_origin": usage.macro_origin,
-          }));
-          continue;
-        }
-        let Some(location) = usage.location else {
-          evidence.push(serde_json::json!({"kind": "unlocated-reference", "definition": owner}));
-          continue;
-        };
-        if location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
-          evidence.push(serde_json::json!({
-            "kind": "outside-editable-source",
-            "definition": owner,
-            "location": location.to_string(),
-          }));
-          continue;
-        }
-        let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-        let parent = path
-          .split_last()
-          .and_then(|(index, parent_path)| navigate_to_path(&entry.code, parent_path).ok().map(|node| (*index, node)));
-        let Some((index, Cirru::List(call))) = parent else {
-          evidence.push(serde_json::json!({
-            "kind": "unlocated-reference",
-            "definition": owner,
-            "path": format!("code{}", format_path(&path)),
-          }));
-          continue;
-        };
-        let call_kind = if index == 0 && !call.iter().skip(1).any(|item| item.eq_leaf("&")) {
-          "direct-call"
-        } else if index == 0 {
-          "spread-call"
-        } else {
-          "function-value"
-        };
-        evidence.push(serde_json::json!({
-          "kind": "resolved-project-reference",
-          "definition": owner,
-          "path": format!("code{}", format_path(&path)),
-          "call_kind": call_kind,
-          "provided_arguments": if call_kind == "direct-call" { Some(call.len().saturating_sub(1)) } else { None },
-          "explicit_nil_arguments": if call_kind == "direct-call" {
-            call.iter().skip(1).enumerate().filter_map(|(index, item)| item.eq_leaf("nil").then_some(index)).collect::<Vec<_>>()
-          } else {
-            Vec::new()
-          },
-          "explicit_false_arguments": if call_kind == "direct-call" {
-            call.iter().skip(1).enumerate().filter_map(|(index, item)| item.eq_leaf("false").then_some(index)).collect::<Vec<_>>()
-          } else {
-            Vec::new()
-          },
-        }));
-      }
-    }
-    evidence.sort_by_key(|value| value.to_string());
-    evidence.insert(
-      0,
-      serde_json::json!({
-        "kind": "project-reference-scan",
-        "scope": "definition-code-only",
-        "scanned_definitions": project_definitions.len(),
-        "failed_definitions": failed_definitions,
-        "external_consumers": "unproven",
-        "attached_sources": "untraced",
-      }),
-    );
-    evidence
-  })
-}
-
-fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<String> {
-  match annotation {
-    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
-    CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
-      if matches!(args[0].as_ref(), CalcitTypeAnnotation::Dynamic) {
-        None
-      } else {
-        Some(annotation.to_brief_string())
-      }
-    }
-    other => Some(format!("Option<{}>", other.to_brief_string())),
-  }
-}
-
-/// Build a declaration-backed nominal Option slot without guessing through aliases or open types.
-fn optional_parameter_schema_type(annotation: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<std::sync::Arc<CalcitTypeAnnotation>> {
-  let inner = annotation.as_ref();
-  if !optional_candidate_type_is_closed(inner) {
-    return None;
-  }
-  match inner {
-    CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
-      Some(std::sync::Arc::new(inner.clone()))
-    }
-    CalcitTypeAnnotation::TypeRef(..) | CalcitTypeAnnotation::TypeSlot(..) => None,
-    _ => Some(std::sync::Arc::new(CalcitTypeAnnotation::TypeRef(
-      "calcit.core/Option".into(),
-      std::sync::Arc::new(vec![std::sync::Arc::new(inner.clone())]),
-    ))),
-  }
-}
-
-/// A review-only candidate must not preserve explicit open members in any signature position.
-fn optional_candidate_signature_is_closed(signature: &CalcitFnTypeAnnotation) -> bool {
-  signature.arg_types.iter().all(|arg| optional_candidate_type_is_closed(arg))
-    && optional_candidate_type_is_closed(&signature.return_type)
-    && signature
-      .rest_type
-      .as_ref()
-      .is_none_or(|rest| optional_candidate_type_is_closed(rest))
-}
-
-fn optional_candidate_type_is_closed(annotation: &CalcitTypeAnnotation) -> bool {
-  match annotation {
-    CalcitTypeAnnotation::Dynamic
-    | CalcitTypeAnnotation::DynFn
-    | CalcitTypeAnnotation::AnonymousEnum
-    | CalcitTypeAnnotation::Custom(_)
-    | CalcitTypeAnnotation::TypeSlot(_)
-    | CalcitTypeAnnotation::Macro(_)
-    | CalcitTypeAnnotation::Syntax(_) => false,
-    CalcitTypeAnnotation::List(inner)
-    | CalcitTypeAnnotation::Set(inner)
-    | CalcitTypeAnnotation::Ref(inner)
-    | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Nullable(inner, _) => optional_candidate_type_is_closed(inner),
-    CalcitTypeAnnotation::Map(key, value) => optional_candidate_type_is_closed(key) && optional_candidate_type_is_closed(value),
-    CalcitTypeAnnotation::TypeRef(_, args) => {
-      args.iter().all(|arg| optional_candidate_type_is_closed(arg))
-        && (annotation.resolve_to_struct().is_some() || annotation.resolve_to_enum().is_some())
-    }
-    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::Tuple(args) => {
-      args.iter().all(|arg| optional_candidate_type_is_closed(arg))
-    }
-    CalcitTypeAnnotation::Fn(signature) => optional_candidate_signature_is_closed(signature),
-    _ => true,
-  }
-}
 
 fn plan_value_to_zero_arg_fn(
   options: &FixCommand,
@@ -6359,9 +6065,8 @@ mod tests {
   use super::{
     ConstructorScope, FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings,
     collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement,
-    migration_for_source_leaf, optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate,
-    prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree,
-    struct_fields_are_complete, suggestion_operations,
+    migration_for_source_leaf, prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references,
+    rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
@@ -6414,53 +6119,6 @@ mod tests {
           .contains("entry:default")
       );
     }
-  }
-
-  #[test]
-  fn optional_parameter_candidates_do_not_invent_dynamic_or_double_wrap_option() {
-    assert_eq!(optional_parameter_candidate(&CalcitTypeAnnotation::Dynamic), None);
-    assert_eq!(
-      optional_parameter_candidate(&CalcitTypeAnnotation::Number),
-      Some("Option<:number>".to_owned())
-    );
-    let option = CalcitTypeAnnotation::TypeRef(
-      Arc::from("calcit.core/Option"),
-      Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]),
-    );
-    assert_eq!(optional_parameter_candidate(&option), Some(option.to_brief_string()));
-  }
-
-  #[test]
-  fn optional_fn_candidate_checks_nested_members_and_rest_type() {
-    let open_map = Arc::new(CalcitTypeAnnotation::Map(
-      Arc::new(CalcitTypeAnnotation::Number),
-      Arc::new(CalcitTypeAnnotation::Dynamic),
-    ));
-    let closed_map = Arc::new(CalcitTypeAnnotation::Map(
-      Arc::new(CalcitTypeAnnotation::Number),
-      Arc::new(CalcitTypeAnnotation::String),
-    ));
-    assert!(!optional_candidate_type_is_closed(&CalcitTypeAnnotation::List(open_map)));
-    assert!(optional_candidate_type_is_closed(&CalcitTypeAnnotation::List(closed_map)));
-
-    let mut signature = CalcitFnTypeAnnotation {
-      open_reason: Default::default(),
-      cases: Default::default(),
-      guard: None,
-      runtime_arity: None,
-      generics: Arc::new(vec![]),
-      where_bounds: Arc::new(vec![]),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
-      return_type: Arc::new(CalcitTypeAnnotation::Unit),
-      fn_kind: SchemaKind::Fn,
-      rest_type: Some(Arc::new(CalcitTypeAnnotation::Dynamic)),
-      features: Arc::new(std::collections::HashSet::new()),
-    };
-    assert!(!optional_candidate_signature_is_closed(&signature));
-    signature.rest_type = Some(Arc::new(CalcitTypeAnnotation::String));
-    assert!(optional_candidate_signature_is_closed(&signature));
-    signature.return_type = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Dynamic)));
-    assert!(!optional_candidate_signature_is_closed(&signature));
   }
 
   #[test]

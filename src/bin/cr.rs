@@ -3746,17 +3746,26 @@ mod tests {
 
   #[test]
   fn validate_macro_optional_and_rest_shapes() {
-    let code = list(vec![
+    let legacy_code = list(vec![
       leaf("defmacro"),
       leaf("test-macro"),
       list(vec![leaf("a"), leaf("?"), leaf("b"), leaf("&"), leaf("xs")]),
       leaf("nil"),
     ]);
-    let schema = macro_schema_with_optional(1, 1, true);
-    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &schema);
-    assert!(issues.is_empty(), "well-formed optional/rest macro should pass: {issues:?}");
+    let schema = macro_schema_with_optional(1, 0, true);
+    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &legacy_code, &schema);
+    assert!(issues.iter().any(|issue| issue.starts_with("[E_DEF_PARAM_SHAPE]")), "{issues:?}");
 
-    let mismatch = macro_schema_with_optional(2, 0, false);
+    let code = list(vec![
+      leaf("defmacro"),
+      leaf("test-macro"),
+      list(vec![leaf("a"), leaf("&"), leaf("xs")]),
+      leaf("nil"),
+    ]);
+    let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &schema);
+    assert!(issues.is_empty(), "well-formed rest macro should pass: {issues:?}");
+
+    let mismatch = macro_schema_with_optional(2, 1, false);
     let issues = type_coverage::validate_def_vs_schema("myns", "my-macro", &code, &mismatch);
     assert!(
       issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),

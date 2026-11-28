@@ -24,6 +24,16 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.48.0 物理移除旧式 `?` 参数与 6 个已退役 `nil` 助手（#2994）
+
+- **移除 `?` 可选参数语法（`E_LEGACY_OPTIONAL_PARAM` / `E_DEF_PARAM_SHAPE`）**：函数与宏参数列表不再支持 `?`；请改为显式 `Option<T>` 尾参并利用尾部 `Option` 省略语法，或显式传入 `Option :some value` / `Option :none`。review-only 规则 `calcit fix --rule optional-parameters-v1` 已同步退役。
+- **从 `calcit.core`、Native、`@calcit/procs` 与 WASM 物理移除 6 个旧 `nil` 助手（`E_REMOVED_CORE_FUNCTION`）**：
+  - `;nil` -> `&unit`（无值语句）或 `Option :none`（表示缺失）；仍可使用 `calcit fix --rule legacy-comment-nil-v1` 自动安全改写空 `(;nil)`。
+  - `either` -> `Option<T>` 配合 `.unwrap-or`、`if-let` 或 `match`；旧源码迁移桥接可使用 `calcit fix --rule core-absence-to-public-v1`。
+  - `non-nil!` -> `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
+  - `keys-non-nil`、`merge-non-nil`、`&merge-non-nil` -> 存储 `Option<V>` 字段或显式省略缺失键，不再以 `nil` 作为 map 值缺失约定。
+- `calcit analyze weak-types --only legacy-migration` 仍会在原始 AST 上盘点上述 6 个旧调用名称，方便旧项目一次性升级。
+
 ## 0.47.0 核心 `nil` / `?` 收口、运行时严格化与迁移工具链（#2973）
 
 - **两参数 `if-let` 返回 `&unit`（`Unit`）且移除旧式 `?` 参数**：三参数 `(if-let (x opt) then else)` 行为不变；两参数 `(if-let (x opt) effect)` 仅执行 `then` 的副作用并返回 `&unit`，不再隐式返回 `nil`；`if-let` 参数列表不再包含 `?`，同时编译器也移除了对 `calcit.core/if-let` 的 `?` 例外放行。

@@ -238,19 +238,21 @@ fn extract_defn_closure_parts(ctx: &WasmGenCtx, items: &[Calcit], source_expr: O
     match p {
       Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => match sym.as_ref() {
         "&" => labels.push(CalcitArgLabel::RestMark),
-        "?" => labels.push(CalcitArgLabel::OptionalMark),
+        "?" => {
+          return Err(
+            "legacy `?` optional parameter syntax was removed in 0.48.0; declare trailing parameters as Option<T> instead".to_owned(),
+          );
+        }
         name => {
           labels.push(CalcitArgLabel::Idx(0));
           params.push(name.to_owned());
         }
       },
       Calcit::Syntax(CalcitSyntax::ArgSpread, _) => labels.push(CalcitArgLabel::RestMark),
-      Calcit::Syntax(CalcitSyntax::ArgOptional, _) => labels.push(CalcitArgLabel::OptionalMark),
       other => return Err(format!("invalid closure parameter `{other}`")),
     }
   }
-  let (required, rest) =
-    arg_labels_shape(&labels).ok_or_else(|| "unsupported `?`/`&` parameter marker placement in closure".to_owned())?;
+  let (required, rest) = arg_labels_shape(&labels).ok_or_else(|| "unsupported `&` parameter marker placement in closure".to_owned())?;
   let body: Vec<Calcit> = items.iter().skip(3).cloned().collect();
   let fn_sig = source_expr
     .and_then(|e| infer_wasm_static_type(ctx, e))

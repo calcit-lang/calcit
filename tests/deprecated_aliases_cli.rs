@@ -238,15 +238,12 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     .filter(|item| item["status"] == "failed")
     .map(|item| item["definition"].as_str().unwrap())
     .collect::<std::collections::BTreeSet<_>>();
-  // Both Option erasures and legacy `;nil`/`either` definitions fail strict check.
+  // Option erasures fail strict check.
   assert_eq!(
     failed,
     std::collections::BTreeSet::from([
       "app.other/unwrap-value",
       "app.roundtrip/match-value",
-      "app.roundtrip/nil-macro-match",
-      "app.roundtrip/nil-macro-prefix",
-      "app.roundtrip/nil-macro-receiver",
       "app.roundtrip/read-field",
       "app.roundtrip/reader-value",
       "app.roundtrip/threaded-value",
@@ -254,7 +251,10 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     ])
   );
   let notes = strict_report["data"]["advisories"].as_array().expect("advisories array");
-  assert!(notes.is_empty(), "legacy nil usages moved to blocking errors: {notes:?}");
+  assert!(
+    notes.iter().all(|note| note["code"] == "W_RUNTIME_TYPE_PREDICATE"),
+    "only runtime nil? predicate advisory may remain: {notes:?}"
+  );
   let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
   assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];
@@ -262,7 +262,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
   let report: serde_json::Value = serde_json::from_slice(&report.stdout).expect("one JSON document");
   assert_eq!(report["diagnostics"], serde_json::json!([]));
-  assert_eq!(report["data"]["summary"], serde_json::json!({"findings":9,"unknown":0}));
+  assert_eq!(report["data"]["summary"], serde_json::json!({"findings":6,"unknown":0}));
   let findings = report["data"]["findings"].as_array().unwrap();
   let at = |id: &str| {
     findings
@@ -270,14 +270,14 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
       .find(|finding| finding["definition"] == id)
       .expect("source location")
   };
-  assert_eq!(at("app.roundtrip/read-field")["path"], "code@3.1");
-  assert_eq!(at("app.roundtrip/read-field")["input"]["path"], "code@3.1.1");
+  assert_eq!(at("app.roundtrip/read-field")["path"], "code@3.1.0.1");
+  assert_eq!(at("app.roundtrip/read-field")["input"]["path"], "code@3.1.0.1.1");
   assert_eq!(at("app.roundtrip/read-field")["input"]["expression"], "get data :name");
   assert_eq!(at("app.roundtrip/unwrap-value")["input"]["expression"], "value");
   assert_eq!(at("app.roundtrip/reader-value")["input"]["expression"], "@state");
   assert_eq!(
     at("app.roundtrip/read-field")["consumer"],
-    serde_json::json!({"path":"code@3","head":"either","child_index":1})
+    serde_json::json!({"path":"code@3.1.0","head":"v","child_index":1})
   );
   assert_eq!(at("app.roundtrip/threaded-value")["input"]["path"], "code@3.0");
   for finding in findings {
@@ -307,7 +307,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   )));
   let scoped = run_calcit(snapshot, &[&view[..], &["--ns", "app.roundtrip", "--format", "json"]].concat());
   let scoped: serde_json::Value = serde_json::from_slice(&scoped.stdout).unwrap();
-  assert_eq!(scoped["data"]["summary"]["findings"], 8);
+  assert_eq!(scoped["data"]["summary"]["findings"], 5);
   let summary = run_calcit(
     snapshot,
     &[&view[..], &["--ns-prefix", "app.round", "--summary-only", "--format", "json"]].concat(),
@@ -319,7 +319,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   assert!(human.status.success());
   let human = String::from_utf8(human.stdout).unwrap();
   assert!(human.starts_with("# Option → nil\n\n"));
-  assert!(human.contains("```cirru\n") && human.contains("Direct consumer: either @ code@3"));
+  assert!(human.contains("```cirru\n") && human.contains("Direct consumer: v @ code@3.1.0"));
   let strict_after = run_calcit(snapshot, &strict_args);
   assert_eq!(strict_before.status.code(), strict_after.status.code());
   let strict_before: serde_json::Value = serde_json::from_slice(&strict_before.stdout).unwrap();
