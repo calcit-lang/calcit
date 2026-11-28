@@ -672,6 +672,17 @@ let
 
 与返回 `Result Dynamic String` 的 `try-parse-cirru-edn` / `.parse-cirru-edn` 不同，`EdnValue` 将 `:tag` 与 `:symbol` 的名称保存为 `String`，并支持递归 `Set EdnValue` 与 `Map EdnValue EdnValue`，因此在 WASM/WASI 上也能解析编译期未知的任意 tag/symbol 与嵌套集合。
 
+若数据已经是内存中的开放运行期值（例如含裸 `nil` 的列表 Map 键 `[] nil` 或保留 `{:legacy nil}` 的旧存档状态），在 Native 与 JS 目标上可使用 `edn:from-dynamic`（签名 `Fn Dynamic (-> (Result EdnValue String)) (:open :decode)`）一次性校验并收口为封闭 `EdnValue`，拒绝 `fn`、`ref`、`struct`、非有限浮点数等非 EDN 运行期值：
+
+```cirru
+let
+    raw $ {} (([] nil :grid) ({} (:legacy nil) (:ok true)))
+  match (edn:from-dynamic raw)
+    (:ok value)
+      assert= (Result :ok value) (edn:parse (.to-edn value))
+    (:err msg) (raise msg)
+```
+
 ## 封闭存在容器 `Any`（`any:box` / `any:downcast`）
 
 `Any` 是零元内建封闭类型，用于在严格静态检查与跨后端运行时中传递编译期封闭的单态值（例如 `Map String Any` 状态表或异构组件载荷）。与开放的 `Dynamic` 不同，具体类型不会隐式放宽为 `Any`，`Any` 与 `Dynamic` 之间也不互通；值只能通过 `any:box` 装箱进入 `Any`，并通过 `any:downcast` 按规范 `TypeId` 解箱为 `Option T`。

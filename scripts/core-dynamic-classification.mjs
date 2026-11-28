@@ -129,6 +129,10 @@ const runtimePolymorphic = new Set([
   "with-type-slot",
 ]);
 const openDataBoundaries = new Set([
+  "&edn:from-dynamic-at",
+  "&edn:from-dynamic-list",
+  "&edn:from-dynamic-map",
+  "&edn:from-dynamic-set",
   "&try-parse-cirru-edn",
   "&try-parse-json",
   "data-definition-clause?",
@@ -138,6 +142,7 @@ const openDataBoundaries = new Set([
   "data-definition-where-form?",
   "data-view",
   "decode-map-as",
+  "edn:from-dynamic",
   "json-parse",
   "parse-cirru-edn",
   "parse-cirru-list",
