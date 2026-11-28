@@ -1364,6 +1364,90 @@
           :examples $ []
           :schema $ quote $ Fn String (-> String)
           :tags $ #{} :internal
+        '&edn:from-dynamic-at $ %{} 'CodeEntry
+          :doc "|Internal helper: convert a runtime value into closed EdnValue up to depth limit."
+          :code $ quote $ defn &edn:from-dynamic-at (value depth)
+            if (&> depth 256)
+              Result :err "|edn:from-dynamic value nesting exceeds depth limit"
+              cond
+                (nil? value)
+                  Result :ok $ EdnValue :nil
+                (bool? value)
+                  Result :ok $ EdnValue :bool value
+                (number? value)
+                  if
+                    &= 0 $ &- value value
+                    Result :ok $ EdnValue :number value
+                    Result :err $ str "|edn:from-dynamic expected finite number, got: " value
+                (string? value)
+                  Result :ok $ EdnValue :string value
+                (tag? value)
+                  Result :ok $ EdnValue :tag $ &turn-string value
+                (symbol? value)
+                  Result :ok $ EdnValue :symbol $ &turn-string value
+                (list? value)
+                  &edn:from-dynamic-list value 0 (&list:count value) ([]) (&+ depth 1)
+                (set? value)
+                  let
+                      items $ &set:to-list value
+                    &edn:from-dynamic-set items 0 (&list:count items) (#{}) (&+ depth 1)
+                (map? value)
+                  let
+                      entries $ &map:to-list value
+                    &edn:from-dynamic-map entries 0 (&list:count entries) ({}) (&+ depth 1)
+                true
+                  Result :err $ str "|edn:from-dynamic unsupported runtime value type: " (type-of value)
+          :examples $ []
+          :schema $ quote $ Fn Dynamic Number
+            -> $ Result EdnValue String
+            :open :decode
+          :tags $ #{} :internal
+        '&edn:from-dynamic-list $ %{} 'CodeEntry
+          :doc "|Internal helper: convert a dynamic List into EdnValue :list."
+          :code $ quote $ defn &edn:from-dynamic-list (xs idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :list acc
+              match (&edn:from-dynamic-at (&list:nth xs idx) depth)
+                (:ok item)
+                  recur xs (&+ idx 1) total (&list:append acc item) depth
+                (:err msg) (Result :err msg)
+          :examples $ []
+          :schema $ quote $ Fn (List Dynamic) Number Number (List EdnValue) Number
+            -> $ Result EdnValue String
+            :open :decode
+          :tags $ #{} :internal
+        '&edn:from-dynamic-map $ %{} 'CodeEntry
+          :doc "|Internal helper: convert dynamic Map pairs into EdnValue :map."
+          :code $ quote $ defn &edn:from-dynamic-map (entries idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :map acc
+              let[] (k v) (&list:nth entries idx)
+                match (&edn:from-dynamic-at k depth)
+                  (:err msg) (Result :err msg)
+                  (:ok ek)
+                    match (&edn:from-dynamic-at v depth)
+                      (:err msg) (Result :err msg)
+                      (:ok ev)
+                        recur entries (&+ idx 1) total (&map:assoc acc ek ev) depth
+          :examples $ []
+          :schema $ quote $ Fn (List (Tuple Dynamic Dynamic)) Number Number (Map EdnValue EdnValue) Number
+            -> $ Result EdnValue String
+            :open :decode
+          :tags $ #{} :internal
+        '&edn:from-dynamic-set $ %{} 'CodeEntry
+          :doc "|Internal helper: convert dynamic Set items into EdnValue :set."
+          :code $ quote $ defn &edn:from-dynamic-set (items idx total acc depth)
+            if (&>= idx total)
+              Result :ok $ EdnValue :set acc
+              match (&edn:from-dynamic-at (&list:nth items idx) depth)
+                (:ok item)
+                  recur items (&+ idx 1) total (&include acc item) depth
+                (:err msg) (Result :err msg)
+          :examples $ []
+          :schema $ quote $ Fn (List Dynamic) Number Number (Set EdnValue) Number
+            -> $ Result EdnValue String
+            :open :decode
+          :tags $ #{} :internal
         '&edn:leaf-needs-quote? $ %{} 'CodeEntry
           :doc "|Internal helper: check whether a Cirru leaf string contains whitespace, parens, quotes, backslashes, or control characters."
           :code $ quote $ defn &edn:leaf-needs-quote? (text idx total)
@@ -9494,6 +9578,64 @@
             edn:format $ EdnValue :list $ [] (EdnValue :tag |a) (EdnValue :number 1)
           :schema $ quote $ Fn EdnValue (-> String)
           :tags $ #{} :core :data
+        'edn:from-dynamic $ %{} 'CodeEntry
+          :doc "|Validate and lift an in-memory runtime value (including raw nil, Bool, finite Number, String, Tag, Symbol, and recursive List/Set/Map keys such as `[] nil`) into closed nominal `Result<EdnValue, String>`. Non-EDN values (Fn, Ref, Struct, Enum, Unit, non-finite numbers) return `Result :err String`. Supported on Native and JS targets; WASM callers should parse Cirru EDN text directly with `edn:parse`."
+          :code $ quote $ defn edn:from-dynamic (value) (&edn:from-dynamic-at value 0)
+          :examples $ []
+            quote $ edn:from-dynamic $ [] nil :k 1
+            quote $ edn:from-dynamic $ {} (:legacy nil) (:ok true)
+          :schema $ quote $ Fn Dynamic
+            -> $ Result EdnValue String
+            :open :decode
+          :tags $ #{} :core :data
+          :tests $ []
+            %{} 'TestEntry (:name |lifts-scalars-and-raw-nil-into-closed-edn-value)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ EdnValue :nil
+                  edn:from-dynamic nil
+                assert=
+                  Result :ok $ EdnValue :bool true
+                  edn:from-dynamic true
+                assert=
+                  Result :ok $ EdnValue :number 42
+                  edn:from-dynamic 42
+                assert=
+                  Result :ok $ EdnValue :string |abc
+                  edn:from-dynamic |abc
+                assert=
+                  Result :ok $ EdnValue :tag |k
+                  edn:from-dynamic :k
+                assert=
+                  Result :ok $ EdnValue :symbol |sym
+                  edn:from-dynamic 'sym
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-list-keys-with-raw-nil-and-nested-legacy-maps)
+              :code $ quote $ let
+                  raw $ {}
+                    ([] nil :grid)
+                      {} (:legacy nil) (:ok true)
+                  converted $ edn:from-dynamic raw
+                  expected $ EdnValue :map $ {}
+                    (EdnValue :list $ [] (EdnValue :nil) (EdnValue :tag |grid))
+                      EdnValue :map $ {}
+                        (EdnValue :tag |legacy) (EdnValue :nil)
+                        (EdnValue :tag |ok) (EdnValue :bool true)
+                assert= (Result :ok expected) converted
+                match converted
+                  (:ok edn)
+                    assert= (Result :ok edn)
+                      edn:parse $ .to-edn edn
+                  (:err _) (assert= true false)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-edn-and-non-finite-values)
+              :code $ quote $ do
+                assert= true $ .err? $ edn:from-dynamic (fn (x) x)
+                assert= true $ .err? $ edn:from-dynamic (ref 1)
+                assert= true $ .err? $ edn:from-dynamic &unit
+                assert= true $ .err? $ edn:from-dynamic (&/ 1 0)
+                assert= true $ .err? $ edn:from-dynamic (&/ 0 0)
+              :tags $ #{} :core :unit
         'edn:parse $ %{} 'CodeEntry
           :doc "|Parse Cirru EDN text into closed nominal `Result<EdnValue, String>` without `Dynamic`. Syntax, overflow, or unsupported-form errors return `Result :err String`. Works across Native, JS, and WASM/WASI."
           :code $ quote $ defn edn:parse (source) (&try-parse-edn-value Result EdnValue source)

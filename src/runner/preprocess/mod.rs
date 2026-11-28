@@ -19915,22 +19915,22 @@ fn preprocess_assert_type_with_obligation(
   if let Calcit::Local(local) = &asserted_target {
     let current_type = current_type.expect("local assertion has inline type evidence");
     let retain_assertion = type_inference::has_inferred_empty_slot(&current_type);
-    let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
-      && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
-    {
-      current_type
-    } else {
-      asserted_type
-    };
-    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
+    let preserves_narrower_local = current_type.as_ref().is_compatible_with(asserted_type.as_ref())
+      && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref());
+    let preserve_widened_value = preserves_narrower_local
+      && assertion_proof.is_some_and(TypeProof::is_proven)
+      && args.get(1).is_some_and(is_explicit_dynamic_type_form);
+    let scope_type_entry = if preserves_narrower_local { current_type } else { asserted_type };
+    ctx.scope_types.annotate(local.sym.to_owned(), scope_type_entry.clone());
 
     let mut typed_local = local.to_owned();
-    typed_local.type_info = type_entry;
+    typed_local.type_info = scope_type_entry;
 
-    if retain_assertion {
-      // Absence can prove this assertion before a loop acquires a payload.
-      // Keep its declared constraint for expanded-core retries, including
-      // assertions in closures that capture the loop parameter.
+    if retain_assertion || preserve_widened_value {
+      // Absence or explicit proven widening keeps the declared `assert-type`
+      // wrapper in value position (for example, initializing a widened `loop`
+      // accumulator from a narrower generic local) without erasing the local's
+      // own narrower type in its surrounding lexical scope (#2984).
       return Ok(Calcit::from(vec![
         Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
         asserted_target,
@@ -19945,6 +19945,32 @@ fn preprocess_assert_type_with_obligation(
     asserted_target,
     asserted_type_form,
   ]))
+}
+
+/// Bare broad forms such as `:list` / `List` assert only the outer family and
+/// must not widen an inferred container element type like `List<Number>` (#26064).
+/// Parameterized forms (`(List Dynamic)`) and explicit `Dynamic` intentionally widen.
+fn is_explicit_dynamic_type_form(form: &Calcit) -> bool {
+  match form {
+    Calcit::List(items) => {
+      if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) {
+        return items.get(1).is_some_and(is_explicit_dynamic_type_form);
+      }
+      true
+    }
+    Calcit::CirruQuote(Cirru::List(items)) => {
+      if matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "quote") {
+        return matches!(items.get(1), Some(Cirru::List(_)))
+          || matches!(items.get(1), Some(Cirru::Leaf(name)) if matches!(name.trim_start_matches('\''), "Dynamic" | ":dynamic" | ":any"));
+      }
+      true
+    }
+    Calcit::Symbol { sym, .. } | Calcit::CirruQuote(Cirru::Leaf(sym)) => {
+      matches!(sym.trim_start_matches('\''), "Dynamic" | ":dynamic" | ":any")
+    }
+    Calcit::Tag(tag) => matches!(tag.ref_str(), "dynamic" | "any"),
+    _ => false,
+  }
 }
 
 pub fn preprocess_unsafe_coerce(
@@ -26641,6 +26667,71 @@ mod tests {
     assert!(
       scope_types.is_empty(),
       "expression assert-traits should not mutate local scope types"
+    );
+  }
+
+  #[test]
+  fn local_assert_type_widening_keeps_scope_narrow_and_widens_value_position() {
+    let _guard = lock_preprocess_test_state();
+    // Statement position: `(assert-type x (List Dynamic))` on `x: List Number` keeps `x` narrow in scope.
+    let stmt_expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("x"), Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("1")])]),
+      Cirru::List(vec![
+        Cirru::leaf("assert-type"),
+        Cirru::leaf("x"),
+        Cirru::List(vec![Cirru::leaf("List"), Cirru::leaf("Dynamic")]),
+      ]),
+      Cirru::leaf("x"),
+    ]);
+    let stmt_code = code_to_calcit(&stmt_expr, "tests.assert", "stmt", vec![]).expect("parse stmt");
+    let mut stmt_types: ScopeTypes = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let stmt_resolved =
+      preprocess_expr(&stmt_code, &HashSet::new(), &mut stmt_types, "tests.assert", &warnings, &stack).expect("stmt preprocess");
+    let trailing_type = match stmt_resolved {
+      Calcit::List(nodes) => resolve_type_value(&nodes[3], &stmt_types).expect("trailing local type"),
+      other => panic!("expected let list, got {other}"),
+    };
+    assert_eq!(
+      trailing_type.as_ref(),
+      &CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)),
+      "statement-position assert-type must not degrade subsequent local uses in scope"
+    );
+
+    // Value position: `(let ((acc (assert-type xs (List Dynamic)))) acc)` widens the new binding.
+    let bind_expr = Cirru::List(vec![
+      Cirru::leaf("&let"),
+      Cirru::List(vec![Cirru::leaf("xs"), Cirru::List(vec![Cirru::leaf("[]"), Cirru::leaf("1")])]),
+      Cirru::List(vec![
+        Cirru::leaf("&let"),
+        Cirru::List(vec![
+          Cirru::leaf("acc"),
+          Cirru::List(vec![
+            Cirru::leaf("assert-type"),
+            Cirru::leaf("xs"),
+            Cirru::List(vec![Cirru::leaf("List"), Cirru::leaf("Dynamic")]),
+          ]),
+        ]),
+        Cirru::leaf("acc"),
+      ]),
+    ]);
+    let bind_code = code_to_calcit(&bind_expr, "tests.assert", "bind", vec![]).expect("parse bind");
+    let mut bind_types: ScopeTypes = ScopeTypes::new();
+    let bind_resolved =
+      preprocess_expr(&bind_code, &HashSet::new(), &mut bind_types, "tests.assert", &warnings, &stack).expect("bind preprocess");
+    let acc_type = match bind_resolved {
+      Calcit::List(outer) => match &outer[2] {
+        Calcit::List(inner) => resolve_type_value(&inner[2], &bind_types).expect("acc local type"),
+        other => panic!("expected inner let, got {other}"),
+      },
+      other => panic!("expected outer let, got {other}"),
+    };
+    assert_eq!(
+      acc_type.as_ref(),
+      &CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone()),
+      "value-position widening assert-type must initialize the bound local with the asserted wider type"
     );
   }
 

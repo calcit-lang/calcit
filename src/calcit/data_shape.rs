@@ -1575,4 +1575,47 @@ mod tests {
       "dropping final FfiResource lease must trigger release exactly once"
     );
   }
+
+  #[test]
+  fn build_open_expands_deftype_alias_through_bound_type_slot() {
+    let _guard = program::lock_program_test_state();
+    let mut file = crate::program::ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::new(),
+    };
+    let alias_code = cirru_parser::parse("deftype PluginState (Map Tag Bool)")
+      .expect("alias parses")
+      .remove(0);
+    let alias_calcit = crate::data::cirru::code_to_calcit(&alias_code, "app.schema", "PluginState", vec![]).expect("calcit parses");
+    file.defs.insert(
+      Arc::from("PluginState"),
+      crate::program::ProgramDefEntry {
+        tags: HashSet::new(),
+        code: alias_calcit,
+        schema: crate::calcit::DYNAMIC_TYPE.clone(),
+        doc: Arc::from(""),
+        examples: vec![],
+        ffi: None,
+      },
+    );
+    crate::program::PROGRAM_CODE_DATA
+      .write()
+      .expect("write program")
+      .insert(Arc::from("app.schema"), file);
+
+    crate::calcit::clear_type_slots();
+    crate::calcit::push_type_slot_override(
+      Arc::from("plugin-state"),
+      Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.schema/PluginState"), Arc::new(vec![]))),
+    );
+
+    let shape = DataShapeGraph::build_open(&CalcitTypeAnnotation::TypeSlot(Arc::from("plugin-state")), "alerts.core")
+      .expect("bound TypeSlot targeting a deftype alias must build a decoder DataShapeGraph");
+    let valid = Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::tag("open"), Calcit::Bool(true)));
+    let invalid = Calcit::Map(rpds::HashTrieMap::new_sync().insert(Calcit::tag("open"), Calcit::new_str("bad")));
+    shape.validate_value(&valid).expect("bool value matches PluginState");
+    assert!(shape.validate_value(&invalid).is_err(), "string value must fail PluginState check");
+
+    crate::calcit::clear_type_slots();
+  }
 }
