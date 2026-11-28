@@ -3193,7 +3193,7 @@ fn analyze_param_shape(args: Option<&Cirru>) -> ParamShape {
   };
   ParamShape::from_tokens(xs.iter().filter_map(|item| match item {
     Cirru::Leaf(s) if matches!(s.as_ref(), "[]" | ",") => None,
-    Cirru::Leaf(s) if s.as_ref() == "?" => Some(ParamShapeToken::OptionalMark),
+    Cirru::Leaf(s) if s.as_ref() == "?" => Some(ParamShapeToken::LegacyOptionalMark),
     Cirru::Leaf(s) if s.as_ref() == "&" => Some(ParamShapeToken::RestMark),
     _ => Some(ParamShapeToken::Binding),
   }))

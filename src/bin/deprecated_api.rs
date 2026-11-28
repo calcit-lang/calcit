@@ -583,6 +583,7 @@ mod tests {
 
   #[test]
   fn skips_compiler_generated_impl_traits_while_reporting_handwritten_calls() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|err| err.into_inner());
     let mut snapshot = calcit::load_core_snapshot().expect("embedded core");
     snapshot.package = "tests".to_owned();
     let ns = "tests.deprecated-synthetic-impl-traits";

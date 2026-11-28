@@ -449,6 +449,23 @@ fn fresh(used: &mut HashSet<String>) -> Cirru {
   unreachable!()
 }
 
+fn expand_nil_fallback(head: Cirru, fallbacks: &[Cirru], head_is_local: bool, used: &mut HashSet<String>) -> Cirru {
+  let Some((next, remaining)) = fallbacks.split_first() else {
+    return head;
+  };
+  let rest_expr = expand_nil_fallback(next.clone(), remaining, false, used);
+  if head_is_local {
+    list([leaf("if"), list([leaf("calcit.core/nil?"), head.clone()]), rest_expr, head])
+  } else {
+    let binding = fresh(used);
+    list([
+      leaf("let"),
+      list([list([binding.clone(), head])]),
+      list([leaf("if"), list([leaf("calcit.core/nil?"), binding.clone()]), rest_expr, binding]),
+    ])
+  }
+}
+
 /// Merge proven nested replacements before building the enclosing match.
 fn rewrite(node: &Cirru, path: &mut Vec<usize>, proven: &BTreeMap<Vec<usize>, (Entry, Consumer)>, used: &mut HashSet<String>) -> Cirru {
   let Cirru::List(items) = node else { return node.clone() };
@@ -495,20 +512,18 @@ fn rewrite(node: &Cirru, path: &mut Vec<usize>, proven: &BTreeMap<Vec<usize>, (E
     Consumer::NonNil if destructured => (leaf("true"), leaf("false")),
     Consumer::Nil => (list([leaf("calcit.core/nil?"), payload]), leaf("true")),
     Consumer::NonNil => (list([leaf("calcit.core/non-nil?"), payload]), leaf("false")),
-    // `either` falls through on a nil payload too, so the Some branch keeps
-    // that check while the None branch goes straight to the fallbacks. Only
-    // one branch runs, so each fallback still evaluates at most once and
-    // lazily, without turning the Option back into nil.
+    // `either` was removed in 0.48.0, so expand fallback checks inline with
+    // `calcit.core/nil?` while keeping each fallback lazy and evaluated once.
     Consumer::Either => {
       let fallbacks = rewritten[2..].to_vec();
       let some = if destructured {
         payload
       } else {
-        list([leaf("calcit.core/either"), payload].into_iter().chain(fallbacks.iter().cloned()))
+        expand_nil_fallback(payload, &fallbacks, true, used)
       };
-      let none = match fallbacks.as_slice() {
-        [single] => single.clone(),
-        _ => list(std::iter::once(leaf("calcit.core/either")).chain(fallbacks.iter().cloned())),
+      let none = match fallbacks.split_first() {
+        Some((first, rest)) => expand_nil_fallback(first.clone(), rest, false, used),
+        None => leaf("nil"),
       };
       (some, none)
     }

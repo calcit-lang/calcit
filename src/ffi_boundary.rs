@@ -86,7 +86,6 @@ impl CalcitSyntax {
       | Self::HintFn
       | Self::CallSpread
       | Self::ArgSpread
-      | Self::ArgOptional
       | Self::MacroInterpolate
       | Self::MacroInterpolateSpread
       | Self::AssertType

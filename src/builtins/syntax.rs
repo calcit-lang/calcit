@@ -229,10 +229,7 @@ fn extract_arg_types_from_locals(args: &CalcitList, params: &[Arc<str>]) -> Vec<
         result[param_idx] = local.type_info.clone();
         param_idx += 1;
       }
-    } else if matches!(
-      item,
-      Calcit::Syntax(CalcitSyntax::ArgSpread, _) | Calcit::Syntax(CalcitSyntax::ArgOptional, _)
-    ) {
+    } else if matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
       // Skip marker syntax nodes
       continue;
     }
@@ -261,6 +258,9 @@ fn extract_arg_types_from_processed_body(forms: &[Calcit], params: &[Arc<str>]) 
 fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
   let mut params: Vec<Arc<str>> = vec![];
   args.traverse_result(&mut |item| match item {
+    Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "?" => {
+      Err("legacy `?` optional parameter syntax was removed in 0.48.0; declare trailing parameters as Option<T> instead".to_owned())
+    }
     Calcit::Local(CalcitLocal { sym, .. }) => {
       params.push(sym.to_owned());
       Ok(())
@@ -269,7 +269,7 @@ fn collect_param_symbols(args: &CalcitList) -> Result<Vec<Arc<str>>, String> {
       params.push(sym.to_owned());
       Ok(())
     }
-    Calcit::Syntax(CalcitSyntax::ArgSpread, _) | Calcit::Syntax(CalcitSyntax::ArgOptional, _) => Ok(()),
+    Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Ok(()),
     _ => Err(format!("collect-param-symbols unexpected argument: {item:?}")),
   })?;
   Ok(params)
@@ -588,12 +588,11 @@ mod tests {
 pub fn get_raw_args(args: &CalcitList) -> Result<Vec<CalcitArgLabel>, String> {
   let mut xs: Vec<CalcitArgLabel> = vec![];
   args.traverse_result(&mut |item| match item {
+    Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "?" => {
+      Err("legacy `?` optional parameter syntax was removed in 0.48.0; declare trailing parameters as Option<T> instead".to_owned())
+    }
     Calcit::Local(CalcitLocal { idx, .. }) => {
       xs.push(CalcitArgLabel::Idx(*idx));
-      Ok(())
-    }
-    Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
-      xs.push(CalcitArgLabel::OptionalMark);
       Ok(())
     }
     Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
@@ -615,17 +614,15 @@ pub fn get_raw_args_fn(args: &CalcitList) -> Result<CalcitFnArgs, String> {
   let mut has_mark = false;
   args.traverse_result(&mut |item| {
     match item {
+      Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "?" => {
+        Err("legacy `?` optional parameter syntax was removed in 0.48.0; declare trailing parameters as Option<T> instead".to_owned())
+      }
       Calcit::Local(CalcitLocal { idx, .. }) => {
         xs.push(CalcitArgLabel::Idx(*idx));
         Ok(())
       }
       Calcit::Syntax(CalcitSyntax::ArgSpread, _) => {
         xs.push(CalcitArgLabel::RestMark);
-        has_mark = true;
-        Ok(())
-      }
-      Calcit::Syntax(CalcitSyntax::ArgOptional, _) => {
-        xs.push(CalcitArgLabel::OptionalMark);
         has_mark = true;
         Ok(())
       }

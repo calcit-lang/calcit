@@ -2757,7 +2757,6 @@ mod tests {
     }
     assert_eq!(core_kinds(&index, "get-env"), strings(&["env"]));
     assert_eq!(core_kinds(&index, "quit!"), strings(&["control"]));
-    assert_eq!(core_kinds(&index, "non-nil!"), strings(&["control"]));
     for name in ["unreachable!", "&unreachable!"] {
       assert_eq!(core_kinds(&index, name), strings(&["control"]), "{name}");
     }

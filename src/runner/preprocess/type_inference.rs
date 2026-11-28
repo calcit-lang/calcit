@@ -2881,11 +2881,10 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
   if let Some(Calcit::List(params)) = xs.get(2)
     && params
       .iter()
-      .any(|param| matches!(param, Calcit::Syntax(CalcitSyntax::ArgOptional | CalcitSyntax::ArgSpread, _)))
+      .any(|param| matches!(param, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
   {
-    // Function annotations do not retain optional-parameter call shapes.
-    // Recovering these callbacks as fixed arity would reject valid shorthand
-    // lambdas that accept an optional second argument.
+    // Function annotations do not retain rest-parameter call shapes.
+    // Recovering these callbacks as fixed arity would reject variadic lambdas.
     return None;
   }
   let (arg_types, rest_type) = infer_preprocessed_function_parameters(xs.get(2));
@@ -4366,7 +4365,6 @@ fn infer_collection_growth(proc: &CalcitProc, xs: &CalcitList, scope: &ScopeType
       | P::NativeListAssocAfter
       | P::NativeListConcat
       | P::NativeMerge
-      | P::NativeMergeNonNil
       | P::NativeInclude
       | P::NativeUnion
   ) {
@@ -4387,7 +4385,7 @@ fn infer_collection_growth(proc: &CalcitProc, xs: &CalcitList, scope: &ScopeType
       }
       Some(Arc::new(T::Map(key, value)))
     }
-    (P::NativeMerge | P::NativeMergeNonNil, T::Map(key, value)) => {
+    (P::NativeMerge, T::Map(key, value)) => {
       let (mut key, mut value) = (key.clone(), value.clone());
       for other in xs.iter().skip(2) {
         let other = actual(other);

@@ -559,7 +559,6 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeMap => maps::call_new_map(args),
     NativeMerge => maps::call_merge(args),
     ToPairs => maps::to_pairs(args),
-    NativeMergeNonNil => maps::call_merge_non_nil(args),
     NativeMapToList => maps::to_list(args),
     NativeMapFoldKv => maps::fold_kv(args, call_stack),
     NativeMapCount => maps::count(args),
@@ -663,7 +662,6 @@ pub fn handle_syntax(
     // different behaviors, in Rust interpreter it's nil, in js codegen it's nothing
     HintFn => meta::no_op(),
     ArgSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`&` cannot be used as operator", &nodes.to_vec()),
-    ArgOptional => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`?` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolate => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~` cannot be used as operator", &nodes.to_vec()),
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
     AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),

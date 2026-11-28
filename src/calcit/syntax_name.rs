@@ -68,9 +68,6 @@ pub enum CalcitSyntax {
   /// spreading in function definition and call
   #[strum(serialize = "&")]
   ArgSpread,
-  /// optional argument in function definition
-  #[strum(serialize = "?")]
-  ArgOptional,
   /// interpolate value in macro
   #[strum(serialize = "~")]
   MacroInterpolate,
@@ -237,7 +234,7 @@ impl CalcitSyntax {
             param_types: vec![Arc::clone(&dyn_t), Arc::clone(&dyn_t)],
             return_type: Arc::clone(&dyn_t),
           }),
-          Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | ArgOptional | MacroInterpolate | MacroInterpolateSpread => None,
+          Defn | Defmacro | DefWasmExport | DefWasmImport | ArgSpread | MacroInterpolate | MacroInterpolateSpread => None,
         };
         if let Some(sig) = sig {
           map.insert(syntax, sig);

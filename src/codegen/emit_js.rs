@@ -2398,9 +2398,7 @@ fn gen_js_func(
   let mut spreading_code = String::from(""); // js list and calcit-js list are different, need to convert
   let mut args_code = String::from("");
   let mut spreading = false;
-  let mut has_optional = false;
   let mut args_count = 0;
-  let mut optional_count = 0;
   let mut recur_arg_names: Vec<String> = vec![];
   let mut fixed_arg_names: Vec<String> = vec![];
   let has_rest_param =
@@ -2434,30 +2432,10 @@ fn gen_js_func(
           } else {
             return Err(format!("unexpected argument after spreading: {sym}"));
           }
-        } else if has_optional {
-          // match native binding: `&` may follow optionals, and a repeated `?` is a no-op
-          match sym {
-            CalcitArgLabel::RestMark => spreading = true,
-            CalcitArgLabel::OptionalMark => {}
-            CalcitArgLabel::Idx(idx) => {
-              if !args_code.is_empty() {
-                args_code.push_str(", ");
-              }
-              let sym = CalcitLocal::read_name(*idx);
-              let arg_name = escape_var(&sym);
-              args_code.push_str(&arg_name);
-              fixed_arg_names.push(arg_name);
-              local_defs.insert(sym.into());
-              optional_count += 1;
-            }
-          }
         } else {
           match sym {
             CalcitArgLabel::RestMark => {
               spreading = true;
-            }
-            CalcitArgLabel::OptionalMark => {
-              has_optional = true;
             }
             CalcitArgLabel::Idx(idx) => {
               if !args_code.is_empty() {
@@ -2496,30 +2474,12 @@ fn gen_js_func(
   } else if spreading {
     snippets::tmpl_args_fewer_than(name, args_count, at_ns)
   } else if trailing_option_count > 0 {
-    let option_required = args.param_len() - trailing_option_count;
-    let required = if has_optional {
-      args_count.min(option_required)
-    } else {
-      option_required
-    };
+    let required = args.param_len() - trailing_option_count;
     snippets::tmpl_args_between(name, required, args.param_len(), at_ns)
-  } else if has_optional {
-    snippets::tmpl_args_between(name, args_count, args_count + optional_count, at_ns)
   } else {
     snippets::tmpl_args_exact(name, args_count, at_ns)
   };
 
-  let legacy_optional_fill_code = if has_optional {
-    fixed_arg_names
-      .iter()
-      .enumerate()
-      .skip(args_count)
-      .map(|(idx, arg_name)| format!("if (arguments.length <= {idx}) {arg_name} = null;"))
-      .collect::<Vec<_>>()
-      .join("\n")
-  } else {
-    String::new()
-  };
   let option_fill_code = if trailing_option_count == 0 {
     String::new()
   } else {
@@ -2544,13 +2504,13 @@ fn gen_js_func(
       .collect::<Vec<_>>()
       .join("\n")
   };
-  let entry_check_code = [check_args.trim(), legacy_optional_fill_code.trim(), option_fill_code.trim()]
+  let entry_check_code = [check_args.trim(), option_fill_code.trim()]
     .into_iter()
     .filter(|part| !part.is_empty())
     .collect::<Vec<_>>()
     .join("\n");
 
-  let recur_assign_code_template = if !spreading && !has_optional {
+  let recur_assign_code_template = if !spreading {
     let mut code = String::new();
     for (idx, arg_name) in recur_arg_names.iter().enumerate() {
       if idx > 0 {

@@ -162,7 +162,7 @@
 | `E_LEGACY_HINT_FN_TARGET` | `src/runner/preprocess/mod.rs` |
 | `E_LEGACY_IMPL_TRAITS` | `src/runner/preprocess/mod.rs` |
 | `E_LEGACY_NIL_USAGE` | `src/bin/cli_handlers/fix.rs`<br>`src/snapshot.rs` |
-| `E_LEGACY_OPTIONAL_PARAM` | `src/bin/cli_handlers/fix.rs`<br>`src/runner/preprocess/mod.rs` |
+| `E_LEGACY_OPTIONAL_PARAM` | `src/runner/preprocess/mod.rs` |
 | `E_LEGACY_OPTIONAL_TYPE` | `src/snapshot.rs` |
 | `E_LEGACY_TRAIT_METHOD_KEY` | `src/runner/preprocess/mod.rs` |
 | `E_LEGACY_TYPE_SYNTAX` | `src/snapshot.rs` |
@@ -230,7 +230,7 @@
 | `E_RECUR_ARG_TYPE_MISMATCH` | `src/runner/preprocess/recursive_inputs.rs`<br>`src/runner/preprocess/type_checking.rs` |
 | `E_RECUR_ARITY` | `src/runner/preprocess/mod.rs` |
 | `E_RECUR_NOT_IN_TAIL` | `src/runner/preprocess/mod.rs` |
-| `E_REMOVED_CORE_FUNCTION` | `src/runner/preprocess/mod.rs` |
+| `E_REMOVED_CORE_FUNCTION` | `src/bin/cli_handlers/fix.rs`<br>`src/runner/preprocess/mod.rs` |
 | `E_REMOVED_DATA_API` | `src/bin/cli_handlers/fix.rs`<br>`src/runner/preprocess/mod.rs` |
 | `E_REMOVED_TAG_MATCH` | `src/runner/preprocess/mod.rs` |
 | `E_REQUIRED_STRUCT_FIELD_TYPE` | `src/runner/preprocess/mod.rs` |
@@ -324,10 +324,10 @@
 | `E_WASM_EDN_SHAPE` | `src/wasm/emit_wasm/edn_parse.rs` |
 | `E_WASM_EDN_STRUCT_SHAPE` | `src/wasm/emit_wasm/edn.rs` |
 | `E_WASM_EDN_SYNTAX` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
-| `E_WASM_EDN_TAG` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
+| `E_WASM_EDN_TAG` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_TOKEN_LIMIT` | `src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/static_data.rs` |
 | `E_WASM_EDN_TYPE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/edn.rs` |
-| `E_WASM_NIL_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/any_box.rs`<br>`src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/methods.rs` |
+| `E_WASM_NIL_TYPE_EVIDENCE` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/any_box.rs`<br>`src/wasm/emit_wasm/closure.rs`<br>`src/wasm/emit_wasm/edn_parse.rs`<br>`src/wasm/emit_wasm/methods.rs` |
 | `E_WASM_SET_ELEMENT_KIND` | `src/wasm/emit_wasm.rs`<br>`src/wasm/emit_wasm/lists.rs`<br>`src/wasm/emit_wasm/maps.rs`<br>`src/wasm/emit_wasm/sets.rs` |
 | `E_WASM_STRUCT_IDENTITY` | `src/wasm/emit_wasm/structs.rs` |
 | `E_WASM_TAG_CONVERSION` | `src/wasm/emit_wasm.rs` |

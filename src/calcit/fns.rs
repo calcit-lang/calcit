@@ -16,7 +16,7 @@ pub(crate) fn trailing_option_arg_count(arg_types: &[Arc<CalcitTypeAnnotation>],
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamShapeToken {
   Binding,
-  OptionalMark,
+  LegacyOptionalMark,
   RestMark,
 }
 
@@ -33,7 +33,6 @@ impl ParamShape {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Phase {
       Required,
-      Optional,
       RestBinding,
       AfterRest,
     }
@@ -45,37 +44,29 @@ impl ParamShape {
       errors: vec![],
     };
     let mut phase = Phase::Required;
-    let mut saw_optional_mark = false;
 
     for token in tokens {
       match token {
         ParamShapeToken::Binding => match phase {
           Phase::Required => shape.required += 1,
-          Phase::Optional => shape.optional += 1,
           Phase::RestBinding => {
             shape.has_rest = true;
             phase = Phase::AfterRest;
           }
           Phase::AfterRest => shape.errors.push("binding appears after the rest parameter"),
         },
-        ParamShapeToken::OptionalMark => match phase {
-          Phase::Required => {
-            saw_optional_mark = true;
-            phase = Phase::Optional;
-          }
-          Phase::Optional => shape.errors.push("optional marker appears more than once"),
-          Phase::RestBinding | Phase::AfterRest => shape.errors.push("optional marker appears after the rest marker"),
-        },
+        ParamShapeToken::LegacyOptionalMark => {
+          shape
+            .errors
+            .push("legacy `?` optional parameter marker was removed in 0.48.0; declare trailing Option<T> parameters instead");
+        }
         ParamShapeToken::RestMark => match phase {
-          Phase::Required | Phase::Optional => phase = Phase::RestBinding,
+          Phase::Required => phase = Phase::RestBinding,
           Phase::RestBinding | Phase::AfterRest => shape.errors.push("rest marker appears more than once"),
         },
       }
     }
 
-    if saw_optional_mark && shape.optional == 0 {
-      shape.errors.push("optional marker is missing an optional binding");
-    }
     if phase == Phase::RestBinding {
       shape.errors.push("rest marker is missing its binding");
     }
@@ -92,9 +83,8 @@ impl ParamShape {
     }
   }
 
-  /// Preserve the established callable arity model for ordinary functions,
-  /// whose schemas describe every fixed slot but do not encode the `?`
-  /// marker separately. Macro diagnostics use the full shape instead.
+  /// Ordinary functions describe every fixed slot directly in their schema
+  /// and do not have a separate marker in source parameter lists.
   pub fn as_fixed_arity(&self) -> Self {
     Self {
       required: self.required + self.optional,
@@ -184,8 +174,6 @@ pub fn validate_definition_schema_shape(
 pub enum CalcitArgLabel {
   /// variable
   Idx(u16),
-  /// `?``
-  OptionalMark,
   /// `&`
   RestMark,
 }
@@ -194,7 +182,6 @@ impl Display for CalcitArgLabel {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     match self {
       CalcitArgLabel::Idx(s) => write!(f, "{}", CalcitLocal::read_name(*s)),
-      CalcitArgLabel::OptionalMark => write!(f, "?"),
       CalcitArgLabel::RestMark => write!(f, "&"),
     }
   }
@@ -231,10 +218,9 @@ impl CalcitFnCallShape {
     let param_len = args.param_len();
     let has_marked_rest =
       matches!(args, CalcitFnArgs::MarkedArgs(labels) if labels.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
-    let marked_optionals = args.marked_optional_count();
     Self {
       param_len: u16::try_from(param_len).expect("function parameter count exceeds local index capacity"),
-      trailing_optionals: u16::try_from(marked_optionals.max(trailing_option_arg_count(arg_types, param_len)))
+      trailing_optionals: u16::try_from(trailing_option_arg_count(arg_types, param_len))
         .expect("optional parameter count exceeds local index capacity"),
       has_rest: has_typed_rest || has_marked_rest,
     }
@@ -262,23 +248,9 @@ impl CalcitFnArgs {
     }
   }
 
-  /// Counts the trailing parameters made optional by a legacy `?` marker.
-  ///
-  /// Keep this evidence available independently from typed `Option` metadata:
-  /// imported and anonymous impl callables may still originate from source that
-  /// uses the marker while their schema remains intentionally broad.
+  /// Counts the trailing parameters made optional by a legacy `?` marker (always 0 since 0.48.0).
   pub fn marked_optional_count(&self) -> usize {
-    match self {
-      CalcitFnArgs::MarkedArgs(labels) => {
-        let shape = ParamShape::from_tokens(labels.iter().map(|label| match label {
-          CalcitArgLabel::Idx(_) => ParamShapeToken::Binding,
-          CalcitArgLabel::OptionalMark => ParamShapeToken::OptionalMark,
-          CalcitArgLabel::RestMark => ParamShapeToken::RestMark,
-        }));
-        if shape.errors.is_empty() { shape.optional } else { 0 }
-      }
-      CalcitFnArgs::Args(_) => 0,
-    }
+    0
   }
 
   /// Produce a Vec<Arc<...>> aligned with current parameter arity for storing type hints.
@@ -358,12 +330,7 @@ mod tests {
 
   #[test]
   fn counts_marked_args_only_on_locals() {
-    let args = CalcitFnArgs::MarkedArgs(vec![
-      CalcitArgLabel::Idx(1),
-      CalcitArgLabel::OptionalMark,
-      CalcitArgLabel::Idx(2),
-      CalcitArgLabel::RestMark,
-    ]);
+    let args = CalcitFnArgs::MarkedArgs(vec![CalcitArgLabel::Idx(1), CalcitArgLabel::Idx(2), CalcitArgLabel::RestMark]);
     assert_eq!(args.param_len(), 2, "only locals should be counted toward arity");
     assert_eq!(args.empty_arg_types().len(), 2);
     assert!(
@@ -414,17 +381,6 @@ mod tests {
 
     let typed = CalcitFnArgs::Args(vec![1]);
     assert!(CalcitFnCallShape::from_parts(&typed, std::slice::from_ref(&*crate::calcit::DYNAMIC_TYPE), true).has_rest());
-
-    let optional = CalcitFnArgs::MarkedArgs(vec![
-      CalcitArgLabel::Idx(1),
-      CalcitArgLabel::Idx(2),
-      CalcitArgLabel::OptionalMark,
-      CalcitArgLabel::Idx(3),
-    ]);
-    let optional_shape = CalcitFnCallShape::from_parts(&optional, &[], false);
-    assert_eq!(optional.marked_optional_count(), 1);
-    assert_eq!(optional_shape.param_len(), 3);
-    assert_eq!(optional_shape.trailing_optionals(), 1);
   }
 
   #[test]
@@ -446,16 +402,10 @@ mod tests {
   }
 
   #[test]
-  fn parameter_shapes_track_required_optional_and_rest_bindings() {
-    let shape = ParamShape::from_tokens([
-      ParamShapeToken::Binding,
-      ParamShapeToken::OptionalMark,
-      ParamShapeToken::Binding,
-      ParamShapeToken::RestMark,
-      ParamShapeToken::Binding,
-    ]);
+  fn parameter_shapes_track_required_and_rest_bindings() {
+    let shape = ParamShape::from_tokens([ParamShapeToken::Binding, ParamShapeToken::RestMark, ParamShapeToken::Binding]);
     assert_eq!(shape.required, 1);
-    assert_eq!(shape.optional, 1);
+    assert_eq!(shape.optional, 0);
     assert!(shape.has_rest);
     assert!(shape.errors.is_empty());
   }
@@ -463,19 +413,18 @@ mod tests {
   #[test]
   fn parameter_shapes_report_malformed_marker_sequences() {
     let cases = [
-      (vec![ParamShapeToken::OptionalMark], "optional marker is missing"),
+      (
+        vec![ParamShapeToken::LegacyOptionalMark, ParamShapeToken::Binding],
+        "legacy `?` optional parameter marker was removed",
+      ),
       (vec![ParamShapeToken::RestMark], "rest marker is missing"),
       (
         vec![ParamShapeToken::RestMark, ParamShapeToken::Binding, ParamShapeToken::Binding],
         "binding appears after",
       ),
       (
-        vec![ParamShapeToken::OptionalMark, ParamShapeToken::OptionalMark],
-        "optional marker appears more than once",
-      ),
-      (
-        vec![ParamShapeToken::OptionalMark, ParamShapeToken::RestMark, ParamShapeToken::Binding],
-        "optional marker is missing",
+        vec![ParamShapeToken::RestMark, ParamShapeToken::Binding, ParamShapeToken::RestMark],
+        "rest marker appears more than once",
       ),
     ];
     for (tokens, expected) in cases {

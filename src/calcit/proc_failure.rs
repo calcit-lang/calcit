@@ -178,9 +178,9 @@ impl CalcitProc {
       NativeBufListNew | NativeBufListPush | NativeBufListConcat | NativeBufListToList | NativeBufListCount => Total,
 
       // maps
-      NativeMap | ToPairs | NativeMergeNonNil | NativeMapDissoc | NativeMapToList | NativeMapCount | NativeMapEmpty
-      | NativeMapContains | NativeMapIncludes | NativeMapAssoc | NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys
-      | NativeMapDiffTriple | NativeMapKeys | NativeMapVals => Total,
+      NativeMap | ToPairs | NativeMapDissoc | NativeMapToList | NativeMapCount | NativeMapEmpty | NativeMapContains
+      | NativeMapIncludes | NativeMapAssoc | NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys | NativeMapDiffTriple
+      | NativeMapKeys | NativeMapVals => Total,
       NativeMerge => Raises("merging into a struct names a field the struct does not have"),
       NativeMapGet => Result("`Option :none` for a missing key"),
       NativeMapDestruct => Result("`MapDestruct :none` for an empty map"),

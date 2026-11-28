@@ -1751,13 +1751,29 @@ fn structural_code_and_ffi_metadata_report_distinct_expected_inputs() {
 }
 
 #[test]
-fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
+fn edit_defmacro_keeps_required_and_rest_macros_loadable() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
 
   create_macro(&snapshot, "required-id", "quote $ defmacro required-id (value) value");
-  create_macro(&snapshot, "optional-id", "quote $ defmacro optional-id (value ? ignored) value");
   create_macro(&snapshot, "rest-id", "quote $ defmacro rest-id (value & ignored) value");
+
+  let rejected_optional = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "app.main/optional-id",
+      "--code",
+      "quote $ defmacro optional-id (value ? ignored) value",
+    ],
+  );
+  assert!(!rejected_optional.status.success(), "legacy `?` defmacro must fail");
+  let rejected_stderr = String::from_utf8_lossy(&rejected_optional.stderr);
+  assert!(
+    rejected_stderr.contains("legacy `?` optional parameter marker was removed in 0.48.0"),
+    "stderr:\n{rejected_stderr}"
+  );
 
   for (name, expected_schema) in [
     (
@@ -1769,20 +1785,6 @@ fn edit_defmacro_keeps_required_optional_and_rest_macros_loadable() {
           "{}",
           [":capabilities", ["#{}"]],
           [":expansion", ["::", "'Expr", "'Dynamic"]],
-          [":required", ["[]", "'Syntax"]]
-        ]
-      ]),
-    ),
-    (
-      "optional-id",
-      serde_json::json!([
-        "::",
-        "'Macro",
-        [
-          "{}",
-          [":capabilities", ["#{}"]],
-          [":expansion", ["::", "'Expr", "'Dynamic"]],
-          [":optional", ["[]", "'Syntax"]],
           [":required", ["[]", "'Syntax"]]
         ]
       ]),
@@ -1837,7 +1839,7 @@ fn edit_transaction_and_format_share_the_canonical_macro_schema() {
   create_macro(
     &snapshot,
     "direct-shape",
-    "quote $ defmacro direct-shape (required ? optional & rest) required",
+    "quote $ defmacro direct-shape (required & rest) required",
   );
   let preview_edn = run_calcit(
     &snapshot,
@@ -1878,7 +1880,7 @@ fn edit_transaction_and_format_share_the_canonical_macro_schema() {
       "edit",
       "transaction",
       "--code",
-      r#"[["edit","def","app.main/transaction-shape","--code","quote $ defmacro transaction-shape (required ? optional & rest) required"]]"#,
+      r#"[["edit","def","app.main/transaction-shape","--code","quote $ defmacro transaction-shape (required & rest) required"]]"#,
       "--format",
       "json",
     ],

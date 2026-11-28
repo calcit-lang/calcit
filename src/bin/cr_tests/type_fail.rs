@@ -2409,6 +2409,12 @@ fn retired_core_functions_report_preferred_spelling() {
       ("let-sugar ((a 1)) a", "let-sugar", "let[]", "0.31.0"),
       ("apply-args (1) (fn (x) x)", "apply-args", "loop ((param value) ...) body", "0.31.0"),
       ("&format-ternary-tree $ [] 1", "&format-ternary-tree", "to-lispy-string", "0.33.0"),
+      (";nil", ";nil", "&unit", "0.48.0"),
+      ("either nil 1", "either", "Option<T>", "0.48.0"),
+      ("non-nil! 1", "non-nil!", "Option<T>", "0.48.0"),
+      ("keys-non-nil ({} (:a 1))", "keys-non-nil", "Option<V>", "0.48.0"),
+      ("merge-non-nil ({} (:a 1)) ({})", "merge-non-nil", "Option<V>", "0.48.0"),
+      ("&merge-non-nil ({} (:a 1)) ({})", "&merge-non-nil", "Option<V>", "0.48.0"),
     ] {
       for source in [
         snippet.to_owned(),
@@ -3360,10 +3366,9 @@ fn nil_tests_on_option_literals_are_errors() {
 fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
   run_with_large_stack(|| {
     // The lowered `:nil` arm tests a generated local with `nil?`; only the
-    // user-written `nil? x` is an error. `either` also tests a gensym local,
-    // but its nil check is the user's, so it still fails.
+    // user-written `nil? x` is an error.
     let entries = load_snippet_entries(
-      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x) (either x 0)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
+      "let\n    m $ {} (:a 1)\n    x $ get m :a\n  [] (nil? x)\n    match (data-view x)\n      (:nil) 1\n      _ 2",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     runner::preprocess::take_advisories();
@@ -3373,11 +3378,7 @@ fn data_view_nil_arm_on_an_option_is_not_a_nil_check() {
       .into_iter()
       .filter(|advisory| advisory.code() == Some(snapshot::OPTION_NIL_CHECK_ERROR))
       .collect::<Vec<_>>();
-    assert_eq!(
-      nil_checks.len(),
-      2,
-      "`nil? x` and `either` fail, the data-view guard does not: {nil_checks:?}"
-    );
+    assert_eq!(nil_checks.len(), 1, "`nil? x` fails, the data-view guard does not: {nil_checks:?}");
     assert!(
       nil_checks.iter().all(|check| !check.message().contains("match_v")),
       "{nil_checks:?}"
@@ -8945,7 +8946,7 @@ defn main! ()
 fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "def ShowTrait $ deftrait ShowTrait\n  .show $ Fn Self (-> String)\n\ndefstruct Box (:value Number) (:impls ShowTrait)\n\ndefimpl Box ShowTrait\n  .show $ fn (self) (str (:value self))\n\ndefenum Choice (:some Number) (:none)\n\ndefenum ShadowOption (:some Number) (:none)\n\ndefn legacy-case (raw m other num text shadowed)\n  hint-fn $ Fn Dynamic (Map Tag Dynamic) (Map Tag Dynamic) Number String ShadowOption (-> Dynamic)\n  let\n      DynBox $ defstruct DynBox (:value Number)\n      dyn-impl $ defimpl DynBox ShowTrait\n        .show $ fn (self) (str (:value self))\n      a $ either raw 1\n      b $ non-nil! raw\n      ks $ keys-non-nil m\n      mg $ merge-non-nil m other\n      is-list $ list? raw\n      is-nil $ nil? raw\n      is-lit-nil $ nil? nil\n      is-non-nil $ non-nil? raw\n      is-dead-nil $ nil? num\n      is-dead-non-nil $ non-nil? text\n      is-dead-shadow $ nil? shadowed\n      kind $ type-of raw\n      lit-kind $ type-of 1\n      viewed $ match (data-view raw)\n        (:number n) n\n        _ 0\n      anon $ %{} _ (:x 1)\n      proto $ %:: Choice :none\n      dyn $ impl-traits DynBox dyn-impl\n    ;nil a b ks mg is-list is-nil is-lit-nil is-non-nil is-dead-nil is-dead-non-nil is-dead-shadow kind lit-kind viewed anon proto dyn\n\ndefn modern-case (opt)\n  hint-fn $ Fn (Option Number) (-> Number)\n  let\n      b $ Box :value 2\n      c $ Choice :some (:value b)\n    match opt\n      (:some n) (+ n (:value b))\n      (:none) 0\n\ndefn main! ()\n  [] (legacy-case 1 ({} (:a 2)) ({} (:b 3)) 4 |ok (ShadowOption :none)) (modern-case (Option :some 3))",
+      "def ShowTrait $ deftrait ShowTrait\n  .show $ Fn Self (-> String)\n\ndefstruct Box (:value Number) (:impls ShowTrait)\n\ndefimpl Box ShowTrait\n  .show $ fn (self) (str (:value self))\n\ndefenum Choice (:some Number) (:none)\n\ndefenum ShadowOption (:some Number) (:none)\n\ndefn legacy-case (raw num text shadowed)\n  hint-fn $ Fn Dynamic Number String ShadowOption (-> Dynamic)\n  let\n      DynBox $ defstruct DynBox (:value Number)\n      dyn-impl $ defimpl DynBox ShowTrait\n        .show $ fn (self) (str (:value self))\n      is-list $ list? raw\n      is-nil $ nil? raw\n      is-lit-nil $ nil? nil\n      is-non-nil $ non-nil? raw\n      is-dead-nil $ nil? num\n      is-dead-non-nil $ non-nil? text\n      is-dead-shadow $ nil? shadowed\n      kind $ type-of raw\n      lit-kind $ type-of 1\n      viewed $ match (data-view raw)\n        (:number n) n\n        _ 0\n      anon $ %{} _ (:x 1)\n      proto $ %:: Choice :none\n      dyn $ impl-traits DynBox dyn-impl\n    [] is-list is-nil is-lit-nil is-non-nil is-dead-nil is-dead-non-nil is-dead-shadow kind lit-kind viewed anon proto dyn\n\ndefn modern-case (opt)\n  hint-fn $ Fn (Option Number) (-> Number)\n  let\n      b $ Box :value 2\n      c $ Choice :some (:value b)\n    match opt\n      (:some n) (+ n (:value b))\n      (:none) 0\n\ndefn main! ()\n  [] (legacy-case 1 4 |ok (ShadowOption :none)) (modern-case (Option :some 3))",
     );
 
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
@@ -8969,8 +8970,8 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       .filter(|a| a.code() == Some("E_LEGACY_NIL_USAGE"))
       .map(|a| a.message().to_owned())
       .collect();
-    // either, non-nil!, keys-non-nil, merge-non-nil, nil? num, non-nil? text, nil? shadowed, ;nil -> 8 blocking E_LEGACY_NIL_USAGE errors
-    assert_eq!(nil_errors.len(), 8, "expected 8 E_LEGACY_NIL_USAGE errors, got {blocking:?}");
+    // nil? num, non-nil? text, nil? shadowed -> 3 blocking E_LEGACY_NIL_USAGE errors
+    assert_eq!(nil_errors.len(), 3, "expected 3 E_LEGACY_NIL_USAGE errors, got {blocking:?}");
     assert!(
       blocking.iter().all(|a| a.code() != Some(snapshot::OPTION_NIL_CHECK_ERROR)),
       "shadowed non-core enum must emit E_LEGACY_NIL_USAGE, not E_OPTION_NIL_CHECK: {blocking:?}"
@@ -9009,21 +9010,15 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       })
       .collect();
     // list?, nil? raw, nil? nil, non-nil? raw, type-of raw, type-of 1, data-view -> 7 notes
-    // (concrete non-nullable nil? num / non-nil? text / nil? shadowed move to E_LEGACY_NIL_USAGE,
-    // and macro-internal nil? inside `either` / `match (data-view raw)` must NOT fire).
     assert_eq!(pred_notes.len(), 7, "expected 7 W_RUNTIME_TYPE_PREDICATE notes, got {pred_notes:?}");
-    assert!(
-      pred_notes.iter().all(|(coord, _)| !coord.starts_with(&[4, 1, 2])),
-      "macro-internal `nil?` inside `either` must not emit W_RUNTIME_TYPE_PREDICATE: {pred_notes:?}"
-    );
     let expected_pred_sites: [(&[u16], &str); 7] = [
-      (&[4, 1, 6, 1], "`list?`"),
-      (&[4, 1, 7, 1], "`nil?`"),
-      (&[4, 1, 8, 1], "`nil?`"),
-      (&[4, 1, 9, 1], "`non-nil?`"),
-      (&[4, 1, 13, 1], "`type-of`"),
-      (&[4, 1, 14, 1], "`type-of`"),
-      (&[4, 1, 15, 1, 1], "`data-view`"),
+      (&[4, 1, 2, 1], "`list?`"),
+      (&[4, 1, 3, 1], "`nil?`"),
+      (&[4, 1, 4, 1], "`nil?`"),
+      (&[4, 1, 5, 1], "`non-nil?`"),
+      (&[4, 1, 9, 1], "`type-of`"),
+      (&[4, 1, 10, 1], "`type-of`"),
+      (&[4, 1, 11, 1, 1], "`data-view`"),
     ];
     for (expected_coord, expected_name) in expected_pred_sites {
       assert!(
@@ -9055,7 +9050,8 @@ fn legacy_nil_and_prototype_style_block_while_dynamic_predicates_stay_notes() {
       "canonical Box/Choice/Option/match code must not emit legacy migration warnings: {modern_advisories:?}"
     );
 
-    let fresh_entries = load_snippet_entries("defenum Choice (:some Number) (:none)\n\ndefn main! ()\n  [] (;nil) (%:: Choice :none)");
+    let fresh_entries =
+      load_snippet_entries("defenum Choice (:some Number) (:none)\n\ndefn main! ()\n  [] (nil? 1) (%:: Choice :none)");
     let err = run_check_only(&fresh_entries).expect_err("legacy nil and prototype styles must fail run_check_only");
     assert!(err.contains(snapshot::LEGACY_NIL_USAGE_ERROR), "{err}");
     assert!(err.contains(snapshot::LEGACY_DYNAMIC_STYLE_ERROR), "{err}");
