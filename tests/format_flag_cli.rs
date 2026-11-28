@@ -881,3 +881,33 @@ fn query_ns_marks_generated_namespaces() {
   assert!(!cirru.status.success(), "generated namespace has no FileEntry source");
   assert!(stderr(&cirru).contains("not stored in the Snapshot"), "{}", stderr(&cirru));
 }
+
+#[test]
+fn weak_types_lists_open_family_types_with_reasons_in_edn_and_json() {
+  let open_family = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/open-family-types.cirru"));
+  let json = assert_json_document(
+    &run_in(
+      None,
+      open_family,
+      &["analyze", "weak-types", "--only", "schema-open", "--format", "json"],
+    ),
+    "analyze weak-types --only schema-open --format json",
+  );
+  assert!(
+    json["data"]["summary"]["kinds"]["schema-open"].as_u64().is_some_and(|n| n > 0),
+    "{json}"
+  );
+  let defs = json["data"]["definitions"].as_array().expect("definitions");
+  let call_any = defs.iter().find(|d| d["id"] == "app.main/call-any").expect("call-any listed");
+  assert_eq!(call_any["occurrences"][0]["kind"], "schema-open");
+  assert_eq!(call_any["occurrences"][0]["intent"], "intentional-open");
+  assert_eq!(call_any["occurrences"][0]["detail"], "schema-open:AnyFn:arg:open=reflect");
+
+  let edn = run_in(
+    None,
+    open_family,
+    &["analyze", "weak-types", "--only", "schema-open", "--format", "edn"],
+  );
+  assert_edn_document(&edn, "analyze weak-types --only schema-open --format edn");
+  assert!(stdout(&edn).contains("schema-open:AnyFn:arg:open=reflect"), "{}", stdout(&edn));
+}

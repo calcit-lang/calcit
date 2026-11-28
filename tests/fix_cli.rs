@@ -5097,8 +5097,19 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
       .iter()
       .all(|finding| matches!(
         finding["intent"].as_str(),
-        Some("intentional-js-ffi" | "intentional-type-slot-dynamic")
+        Some("intentional-js-ffi" | "intentional-type-slot-dynamic" | "intentional-open")
       ))
+  );
+  assert!(
+    workflow["retained_type_boundaries"]
+      .as_array()
+      .expect("retained type boundaries should be an array")
+      .iter()
+      .any(|finding| {
+        finding["definition"] == "fix-command.main/fixable"
+          && finding["kind"] == "schema-open"
+          && finding["intent"] == "intentional-open"
+      })
   );
   assert_eq!(workflow["resume"]["revision"], report["revision"]);
   assert_eq!(workflow["resume"]["apply_command"][3], "--workflow");

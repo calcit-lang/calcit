@@ -384,7 +384,7 @@ and implementation-completion status are separate concerns.
 
 schema 候选即使没有剩余洞，仍需独立实现证明。返回声明、未证明的断言和强转目标类型不足以授予自动写回；证明不足时保留 `boundary-unknown` 候选及原始编译器证据，不中断其他定义的只读查询。
 
-普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
+普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码或盘点开放边界时，显式运行 `calcit analyze weak-types --only schema-dynamic,schema-open,unresolved-type-slot,code-dynamic --intent unresolved --format edn`，按 definition/path 返回源码处理；默认分析也会列出 `:schema` 中的 `AnyFn` / `AnyStruct` / `AnyEnum`（`schema-open`），并在已声明 `(:open :reflect|:decode|:host)` 时标记为 `intentional-open` 且在 `detail` 中附带 `open=<reason>`，从而区分已审阅兼容边界与未解释开放类型（只单独筛查 `Dynamic` 位置时仍可使用 `--only schema-dynamic`）。不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
 `code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
 

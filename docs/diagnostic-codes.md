@@ -361,7 +361,7 @@
 | `W_LEGACY_TYPE_SYNTAX` | `src/snapshot.rs` |
 | `W_MACRO_SCHEMA_DYNAMIC` | `src/bin/type_coverage.rs` |
 | `W_NIL_TYPE_DEBT` | `src/bin/type_coverage.rs` |
-| `W_OPEN_FAMILY` | `src/snapshot.rs` |
+| `W_OPEN_FAMILY` | `src/bin/type_coverage.rs`<br>`src/snapshot.rs` |
 | `W_PERCENT_STRUCT_LITERAL` | `src/snapshot.rs` |
 | `W_PREPROCESS` | `src/bin/cli_handlers/query.rs` |
 | `W_REDUNDANT_HINT_FN` | `src/bin/cli_handlers/fix.rs` |
