@@ -248,6 +248,8 @@ fn entry_polymorphism(entry: &snapshot::CodeEntry) -> (Vec<String>, Vec<String>)
 #[serde(rename_all = "kebab-case")]
 pub enum WeakTypeKind {
   SchemaDynamic,
+  /// `AnyFn` / `AnyStruct` / `AnyEnum` in a written schema (#2976).
+  SchemaOpen,
   UnresolvedTypeSlot,
   CodeDynamic,
   CodeNil,
@@ -262,6 +264,7 @@ impl WeakTypeKind {
   pub fn as_str(&self) -> &'static str {
     match self {
       Self::SchemaDynamic => "schema-dynamic",
+      Self::SchemaOpen => "schema-open",
       Self::UnresolvedTypeSlot => "unresolved-type-slot",
       Self::CodeDynamic => "code-dynamic",
       Self::CodeNil => "code-nil",
@@ -281,6 +284,7 @@ impl WeakTypeKind {
   pub fn all() -> BTreeSet<Self> {
     BTreeSet::from([
       Self::SchemaDynamic,
+      Self::SchemaOpen,
       Self::UnresolvedTypeSlot,
       Self::CodeDynamic,
       Self::CodeNil,
@@ -795,6 +799,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
   for item in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
     let kind = match item {
       "schema-dynamic" => WeakTypeKind::SchemaDynamic,
+      "schema-open" => WeakTypeKind::SchemaOpen,
       "unresolved-type-slot" => WeakTypeKind::UnresolvedTypeSlot,
       "code-dynamic" => WeakTypeKind::CodeDynamic,
       "code-nil" => WeakTypeKind::CodeNil,
@@ -802,7 +807,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
       "data-dynamic" => WeakTypeKind::DataDynamic,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic; or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip, inferred-dynamic"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, schema-open, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic; or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip, inferred-dynamic"
         ));
       }
     };
@@ -811,7 +816,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
 
   if selected.is_empty() {
     return Err(
-      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic"
+      "Weak-type filter cannot be empty. Use comma-separated values from: schema-dynamic, schema-open, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce, data-dynamic"
         .to_owned(),
     );
   }
@@ -893,6 +898,22 @@ fn push_weak_type_occurrence(
     path: path.into(),
     unsafe_evidence: None,
   });
+}
+
+fn apply_fn_open_reason(occurrences: &mut [WeakTypeOccurrence], reason: Option<calcit::calcit::FnOpenReason>) {
+  let Some(reason) = reason else {
+    return;
+  };
+  for occurrence in occurrences {
+    if matches!(occurrence.kind, WeakTypeKind::SchemaDynamic | WeakTypeKind::SchemaOpen)
+      && occurrence.intent == WeakTypeIntent::Unresolved
+    {
+      occurrence.intent = WeakTypeIntent::IntentionalOpen;
+      if occurrence.kind == WeakTypeKind::SchemaOpen {
+        occurrence.detail = format!("{}:open={}", occurrence.detail, reason.as_str());
+      }
+    }
+  }
 }
 
 fn scan_intentional_macro_expr(annotation: &CalcitTypeAnnotation, path: &str, detail: &str, occurrences: &mut Vec<WeakTypeOccurrence>) {
@@ -981,13 +1002,7 @@ fn scan_schema_dynamic_annotation(
         scan_schema_dynamic_annotation(rest, &format!("{path}.rest"), &rest_detail, occurrences);
       }
       // A stated `(:open …)` reason covers every open position below it.
-      if fn_annot.open_reason.0.is_some() {
-        for occurrence in &mut occurrences[occurrence_start..] {
-          if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
-            occurrence.intent = WeakTypeIntent::IntentionalOpen;
-          }
-        }
-      }
+      apply_fn_open_reason(&mut occurrences[occurrence_start..], fn_annot.open_reason.0);
     }
     CalcitTypeAnnotation::Macro(signature) => {
       for (idx, contract) in signature.required_inputs.iter().chain(signature.optional_inputs.iter()).enumerate() {
@@ -1022,6 +1037,15 @@ fn scan_schema_dynamic_annotation(
         let item_detail = extend_schema_dynamic_detail(detail, "item");
         scan_schema_dynamic_annotation(item, &format!("{path}.item.{idx}"), &item_detail, occurrences);
       }
+    }
+    _ if annotation.open_family_name().is_some() => {
+      let family = annotation.open_family_name().expect("open_family_name matched Some");
+      push_weak_type_occurrence(
+        occurrences,
+        WeakTypeKind::SchemaOpen,
+        weak_type_detail(WeakTypeKind::SchemaOpen, &format!("{family}:{detail}")),
+        path.to_owned(),
+      );
     }
     _ => {}
   }
@@ -1121,6 +1145,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
     return "This Dynamic is the input of a reviewed `:decode-boundary` function. Keep the function small: check the value and return a concrete type, and cover rejected inputs with tests.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalOpen {
+    if occurrence.kind == WeakTypeKind::SchemaOpen {
+      return "This open family type (`AnyFn` / `AnyStruct` / `AnyEnum`) sits in a signature that states why it stays open with `(:open …)`. Keep the reason accurate; replace it with a concrete type, `:generics` type parameter, or trait `:where` bound once callers need more than the open contract.";
+    }
     return "This Dynamic sits in a signature that states why it stays open with `(:open …)`. Keep the reason accurate; replace it with a concrete type or type parameter once callers need more than the open contract.";
   }
   if occurrence.intent == WeakTypeIntent::IntentionalTypeSlotDynamic {
@@ -1142,6 +1169,9 @@ fn weak_type_suggestion(occurrence: &WeakTypeOccurrence) -> &'static str {
   }
   if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
     return "Bind this slot in the selected entry with `calcit config set-type-slot <slot> <namespace/definition>`; a `Dynamic` binding does not count as bound.";
+  }
+  if occurrence.kind == WeakTypeKind::SchemaOpen {
+    return "Replace `AnyFn` / `AnyStruct` / `AnyEnum` with a concrete type, a `:generics` type parameter, or a trait `:where` bound; if this signature is intentionally open, document why with `(:open :reflect)`, `(:open :decode)`, or `(:open :host)`.";
   }
   if occurrence.detail.contains("legacy-any") {
     return "Migrate legacy `:any` to `Dynamic`, then narrow it with a concrete type, a declared type variable, or a named enum when the value participates in typed code.";
@@ -1205,10 +1235,10 @@ fn entry_schema_issues(ns: &str, def_name: &str, code: &Cirru, schema: &Arc<Calc
     {
       continue;
     }
-    let warning = if occurrence.kind == WeakTypeKind::UnresolvedTypeSlot {
-      "W_UNRESOLVED_TYPE_SLOT"
-    } else {
-      "W_SCHEMA_DYNAMIC"
+    let warning = match occurrence.kind {
+      WeakTypeKind::UnresolvedTypeSlot => "W_UNRESOLVED_TYPE_SLOT",
+      WeakTypeKind::SchemaOpen => "W_OPEN_FAMILY",
+      _ => "W_SCHEMA_DYNAMIC",
     };
     issues.push(format!(
       "[{warning}] {} is unresolved ({}). Fix: {}",
@@ -1780,8 +1810,9 @@ pub fn analyze_weak_types_entry(
 ) -> Option<WeakTypeRow> {
   let mut occurrences: Vec<WeakTypeOccurrence> = vec![];
 
-  let selected_schema_annotations =
-    selected.contains(&WeakTypeKind::SchemaDynamic) || selected.contains(&WeakTypeKind::UnresolvedTypeSlot);
+  let selected_schema_annotations = selected.contains(&WeakTypeKind::SchemaDynamic)
+    || selected.contains(&WeakTypeKind::SchemaOpen)
+    || selected.contains(&WeakTypeKind::UnresolvedTypeSlot);
   if matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
     if selected.contains(&WeakTypeKind::SchemaDynamic) && !code_declares_embedded_type_schema(&entry.code) {
       push_weak_type_occurrence(
@@ -1801,13 +1832,7 @@ pub fn analyze_weak_types_entry(
         scan_schema_dynamic_annotation(rest, "schema.rest", "rest", &mut occurrences);
       }
       // The root signature's `(:open …)` reason covers its positions too.
-      if fn_annot.open_reason.0.is_some() {
-        for occurrence in &mut occurrences {
-          if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
-            occurrence.intent = WeakTypeIntent::IntentionalOpen;
-          }
-        }
-      }
+      apply_fn_open_reason(&mut occurrences, fn_annot.open_reason.0);
     }
   } else if selected_schema_annotations {
     let before = occurrences.len();
@@ -2555,8 +2580,9 @@ pub(crate) fn run_weak_types_report_with_rows(
   }
   let _ = writeln!(
     out,
-    "- hits: schema-dynamic={} unresolved-type-slot={} code-dynamic={} code-nil={} unsafe-coerce={}",
+    "- hits: schema-dynamic={} schema-open={} unresolved-type-slot={} code-dynamic={} code-nil={} unsafe-coerce={}",
     kind_count.get("schema-dynamic").copied().unwrap_or(0),
+    kind_count.get("schema-open").copied().unwrap_or(0),
     kind_count.get("unresolved-type-slot").copied().unwrap_or(0),
     kind_count.get("code-dynamic").copied().unwrap_or(0),
     kind_count.get("code-nil").copied().unwrap_or(0),
@@ -2773,13 +2799,14 @@ pub(crate) fn run_weak_types_report_with_rows(
   let _ = writeln!(out, "- detail:");
   for kind in [
     "schema-dynamic",
+    "schema-open",
     "unresolved-type-slot",
     "code-dynamic",
     "code-nil",
     "unsafe-coerce",
     "data-dynamic",
   ] {
-    if kind == "data-dynamic" && !detail_count.contains_key(kind) {
+    if matches!(kind, "data-dynamic" | "schema-open") && !detail_count.contains_key(kind) {
       continue;
     }
     let _ = writeln!(out, "  - {kind}");
@@ -4006,6 +4033,7 @@ pub(crate) fn format_weak_types_json_with_rows(
   }
   for kind in [
     "schema-dynamic",
+    "schema-open",
     "unresolved-type-slot",
     "code-dynamic",
     "code-nil",
@@ -4400,6 +4428,60 @@ mod tests {
     assert!(reasoned.iter().all(|intent| *intent == WeakTypeIntent::IntentionalOpen));
     let plain = row_intents("Fn Dynamic (-> Dynamic)");
     assert_eq!(plain, vec![WeakTypeIntent::Unresolved, WeakTypeIntent::Unresolved]);
+  }
+
+  #[test]
+  fn schema_open_reports_open_family_types_with_reason_and_filter() {
+    let schema = |text: &str| {
+      let form = cirru_parser::parse(text).expect("parse schema").remove(0);
+      calcit::snapshot::parse_schema_annotation_for_write(&form).expect("schema parses")
+    };
+    let mut reasoned_entry = calcit::snapshot::CodeEntry::from_code(
+      cirru_parser::parse("defn client-option-callback (k) None")
+        .expect("parse code")
+        .remove(0),
+    );
+    reasoned_entry.schema = schema("Fn Number (-> (Option AnyFn)) (:open :decode)");
+
+    let reasoned_row = super::analyze_weak_types_entry("app.main", "client-option-callback", &reasoned_entry, &WeakTypeKind::all())
+      .expect("Option AnyFn with (:open :decode) must appear in weak-types");
+    assert_eq!(reasoned_row.occurrences.len(), 1);
+    let occ = &reasoned_row.occurrences[0];
+    assert_eq!(occ.kind, WeakTypeKind::SchemaOpen);
+    assert_eq!(occ.intent, WeakTypeIntent::IntentionalOpen);
+    assert_eq!(occ.path, "schema.return.type-arg.0");
+    assert_eq!(occ.detail, "schema-open:AnyFn:return:type-arg:open=decode");
+
+    let dynamic_only = super::analyze_weak_types_entry(
+      "app.main",
+      "client-option-callback",
+      &reasoned_entry,
+      &super::parse_weak_type_kinds("schema-dynamic").expect("filter parses"),
+    );
+    assert!(
+      dynamic_only.is_none(),
+      "schema-dynamic filter must keep SchemaDynamic counts unchanged"
+    );
+
+    let mut plain_entry = calcit::snapshot::CodeEntry::from_code(cirru_parser::parse("defn f (x) x").expect("parse code").remove(0));
+    plain_entry.schema = schema("Fn AnyEnum (-> AnyStruct)");
+    let plain_row = super::analyze_weak_types_entry("app.main", "f", &plain_entry, &WeakTypeKind::all())
+      .expect("AnyEnum/AnyStruct must appear in weak-types");
+    assert_eq!(plain_row.occurrences.len(), 2);
+    assert!(plain_row.occurrences.iter().all(|it| it.kind == WeakTypeKind::SchemaOpen));
+    assert!(plain_row.occurrences.iter().all(|it| it.intent == WeakTypeIntent::Unresolved));
+    assert_eq!(plain_row.occurrences[0].detail, "schema-open:AnyEnum:arg");
+    assert_eq!(plain_row.occurrences[1].detail, "schema-open:AnyStruct:return");
+
+    // Inner (:open ...) keeps its own reason while outer (:open ...) covers outer open families.
+    let mut nested_entry =
+      calcit::snapshot::CodeEntry::from_code(cirru_parser::parse("defn wrap (cb) cb").expect("parse code").remove(0));
+    nested_entry.schema = schema("Fn (Fn AnyFn (-> Unit) (:open :reflect)) (-> AnyStruct) (:open :host)");
+    let nested_row = super::analyze_weak_types_entry("app.main", "wrap", &nested_entry, &WeakTypeKind::all())
+      .expect("nested schema-open should be recorded");
+    assert_eq!(nested_row.occurrences.len(), 2);
+    assert_eq!(nested_row.occurrences[0].detail, "schema-open:AnyFn:arg:fn-arg:open=reflect");
+    assert_eq!(nested_row.occurrences[1].detail, "schema-open:AnyStruct:return:open=host");
   }
 
   #[test]
