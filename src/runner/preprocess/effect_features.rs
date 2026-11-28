@@ -1054,7 +1054,7 @@ fn scan_core_def(def: &str, visiting: &mut HashSet<String>) -> HashSet<Effect> {
 fn scan_core_code(code: &Calcit, found: &mut HashSet<Effect>, visiting: &mut HashSet<String>) {
   match code {
     Calcit::Symbol { sym, .. } => {
-      if let Ok(proc) = sym.parse::<CalcitProc>() {
+      if let Some(proc) = CalcitProc::parse_source_proc(sym) {
         found.extend(proc_effect(&proc));
       } else if let Some(effect) = registered_effect(sym) {
         found.insert(effect);

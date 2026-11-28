@@ -250,7 +250,7 @@ mod tests {
           lazy_value(
             DefId(1),
             Calcit::List(Arc::new(CalcitList::Vector(vec![
-              symbol("impl-traits"),
+              Calcit::Proc(crate::calcit::CalcitProc::NativeStructImplTraits),
               symbol("base-type"),
               symbol("trait-impl"),
             ]))),

@@ -843,13 +843,12 @@ pub(crate) fn handle_fix_command(
         // Helper calls left for review keep their own warning; they are what
         // `core-option-method-v1` reports, not an effect of the staged fix.
         .filter(|warning| warning.code() != Some("E_OPTION_HELPER_CALL"))
-        // Ambiguous `;nil` forms left for manual review emit `E_REMOVED_CORE_FUNCTION`
-        // once `;nil` is removed in 0.48.0; allow `legacy-comment-nil-v1` partial
-        // fixes to stage without blaming those untouched review sites.
+        // Ambiguous `;nil` / untouched `%::` forms left for manual or follow-up
+        // rules emit `E_REMOVED_CORE_FUNCTION` once removed in 0.48.0; allow
+        // staged migration rules/presets to validate without blaming those sites.
         .filter(|warning| {
-          !(options.rule.as_deref() == Some(LEGACY_COMMENT_NIL_RULE)
-            && warning.code() == Some("E_REMOVED_CORE_FUNCTION")
-            && warning.to_string().contains("unknown `;nil`"))
+          !(warning.code() == Some("E_REMOVED_CORE_FUNCTION")
+            && (warning.to_string().contains("unknown `;nil`") || warning.to_string().contains("unknown `%::`")))
         })
         .map(ToString::to_string)
         .collect::<Vec<_>>()

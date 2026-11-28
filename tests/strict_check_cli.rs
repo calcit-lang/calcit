@@ -1420,7 +1420,7 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn %make-plugin (value) (%:: Plugin :item |wrong-payload)",
+        "quote $ defn %make-plugin (value) (Plugin :item |wrong-payload)",
       ],
     ),
     "introduce an invalid enum payload",
@@ -2807,7 +2807,7 @@ fn wasm_and_wasi_reject_open_scalar_equality_and_untyped_json_codecs() {
 }
 
 #[test]
-fn trait_attachment_procs_require_an_impl_and_check_every_rest_argument() {
+fn retired_trait_attachment_names_fail_with_removed_core_function() {
   let eval = |expression: &str| {
     let code = format!(
       "let ((S (defstruct S (:value Number))) (E (defenum E (:item))) (Marker (deftrait Marker)) (implementation (defimpl S Marker))) {expression}"
@@ -2822,18 +2822,16 @@ fn trait_attachment_procs_require_an_impl_and_check_every_rest_argument() {
     ("&enum-def:impl-traits", "E"),
     ("&struct:impl-traits", "(S :value 1)"),
     ("&enum:impl-traits", "(E :item)"),
+    ("impl-traits", "S"),
   ] {
-    for (arguments, code, detail) in [
-      ("", "E_PROC_ARITY", "expects at least 2 args"),
-      (" 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 2 expects type `:impl`"),
-      (" implementation 1", "E_PROC_ARG_TYPE_MISMATCH", "arg 3 expects type `:impl`"),
-    ] {
-      let expression = format!("({proc} {receiver}{arguments})");
-      let output = eval(&expression);
-      let stderr = String::from_utf8_lossy(&output.stderr);
-      assert!(!output.status.success(), "{expression} must fail");
-      assert!(stderr.contains(code) && stderr.contains(detail), "{expression}: {stderr}");
-    }
+    let expression = format!("({proc} {receiver} implementation)");
+    let output = eval(&expression);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "{expression} must fail");
+    assert!(
+      stderr.contains("E_REMOVED_CORE_FUNCTION") && stderr.contains("0.48.0"),
+      "{expression}: {stderr}"
+    );
   }
 }
 

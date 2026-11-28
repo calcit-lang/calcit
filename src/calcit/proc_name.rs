@@ -72,10 +72,6 @@ pub enum CalcitProc {
   NativeTraitNew,
   #[strum(serialize = "&impl::new")]
   NativeImplNew,
-  #[strum(serialize = "&struct:impl-traits")]
-  NativeStructValueImplTraits,
-  #[strum(serialize = "&enum:impl-traits")]
-  NativeEnumValueImplTraits,
   #[strum(serialize = "&struct-def:impl-traits")]
   NativeStructImplTraits,
   #[strum(serialize = "&enum-def:impl-traits")]
@@ -592,18 +588,26 @@ fn variadic_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
 }
 
 impl CalcitProc {
+  /// Parse a builtin proc name written in user source code, excluding
+  /// compiler-internal lowered constructors and `(:impls …)` attachment heads.
+  pub fn parse_source_proc(s: &str) -> Option<Self> {
+    let proc = s.parse::<Self>().ok()?;
+    if matches!(
+      proc,
+      Self::NativeNamedEnumNew | Self::NativeStructImplTraits | Self::NativeEnumImplTraits
+    ) {
+      None
+    } else {
+      Some(proc)
+    }
+  }
+
   /// Whether a typed `Variadic<T>` is a homogeneous call contract rather than
   /// collection-literal inference evidence.
   pub(crate) fn checks_variadic_arg_types(&self) -> bool {
     matches!(
       self,
-      Self::NativeListConcat
-        | Self::NativeMerge
-        | Self::NativeMapDissoc
-        | Self::NativeStructValueImplTraits
-        | Self::NativeEnumValueImplTraits
-        | Self::NativeStructImplTraits
-        | Self::NativeEnumImplTraits
+      Self::NativeListConcat | Self::NativeMerge | Self::NativeMapDissoc | Self::NativeStructImplTraits | Self::NativeEnumImplTraits
     )
   }
 
@@ -654,8 +658,8 @@ impl CalcitProc {
 
   fn build_type_signature(&self, core: &crate::snapshot::FileInSnapShot) -> Option<ProcTypeSignature> {
     match self {
-      // These forms are checked during preprocessing.
-      Self::Recur | Self::WithTypeSlot => None,
+      // These forms are checked during preprocessing and do not carry public `calcit.core` schemas.
+      Self::Recur | Self::WithTypeSlot | Self::NativeNamedEnumNew | Self::NativeStructImplTraits | Self::NativeEnumImplTraits => None,
       _ => Some(self.signature_from_core(core)),
     }
   }

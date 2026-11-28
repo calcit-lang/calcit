@@ -1702,15 +1702,12 @@ fn deprecated_call_skips_synthetic_top_level_impl_traits() {
   )
   .expect("write handwritten impl-traits snapshot");
 
-  let legacy_out = run_calcit(
-    &snapshot,
-    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
-  );
-  assert!(legacy_out.status.success(), "{}", String::from_utf8_lossy(&legacy_out.stderr));
-  let legacy_report: serde_json::Value = serde_json::from_slice(&legacy_out.stdout).expect("single JSON report");
-  assert_eq!(
-    legacy_report["data"]["summary"]["calls"], 1,
-    "handwritten `impl-traits` must still report in deprecated-call: {legacy_report}"
+  let legacy_check = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!legacy_check.status.success());
+  let legacy_stderr = String::from_utf8_lossy(&legacy_check.stderr);
+  assert!(
+    legacy_stderr.contains("E_REMOVED_CORE_FUNCTION"),
+    "handwritten `impl-traits` must fail with E_REMOVED_CORE_FUNCTION:\n{legacy_stderr}"
   );
 
   // Handwritten top-level `impl-traits` without `(:impls ...)` must still be flagged too.
@@ -1727,8 +1724,10 @@ fn deprecated_call_skips_synthetic_top_level_impl_traits() {
         |Show $ %{} :CodeEntry (:doc |) (:schema $ quote Trait)
           :code $ quote $ deftrait Show
             .show $ Fn Self (-> String)
+        |ValidInner $ %{} :CodeEntry (:doc |) (:schema $ quote StructDef)
+          :code $ quote $ defstruct ValidInner (:n Number)
         |LegacyImpl $ %{} :CodeEntry (:doc |) (:schema $ quote Dynamic)
-          :code $ quote $ defimpl LegacyInner Show
+          :code $ quote $ defimpl ValidInner Show
             .show $ fn (self) |ok
         |LegacyBox $ %{} :CodeEntry (:doc |) (:schema $ quote StructDef)
           :code $ quote $ def LegacyBox $ impl-traits (defstruct LegacyInner (:n Number)) LegacyImpl
@@ -1738,18 +1737,15 @@ fn deprecated_call_skips_synthetic_top_level_impl_traits() {
   )
   .expect("write handwritten top-level impl-traits snapshot");
 
-  let top_legacy_out = run_calcit(
-    &snapshot,
-    &["analyze", "weak-types", "--only", "deprecated-call", "--format", "json"],
+  let top_legacy_check = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!top_legacy_check.status.success());
+  let top_legacy_combined = format!(
+    "{}{}",
+    String::from_utf8_lossy(&top_legacy_check.stdout),
+    String::from_utf8_lossy(&top_legacy_check.stderr)
   );
   assert!(
-    top_legacy_out.status.success(),
-    "{}",
-    String::from_utf8_lossy(&top_legacy_out.stderr)
-  );
-  let top_legacy_report: serde_json::Value = serde_json::from_slice(&top_legacy_out.stdout).expect("single JSON report");
-  assert_eq!(
-    top_legacy_report["data"]["summary"]["calls"], 1,
-    "handwritten top-level `impl-traits` must still report in deprecated-call: {top_legacy_report}"
+    top_legacy_combined.contains("E_REMOVED_CORE_FUNCTION"),
+    "handwritten top-level `impl-traits` must fail with E_REMOVED_CORE_FUNCTION:\n{top_legacy_combined}"
   );
 }

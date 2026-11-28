@@ -325,12 +325,12 @@ let
     :a 1
 ```
 
-Named enums use `%:: EnumDef ...`; anonymous enum values use `%:: _ ...` or the `::` shorthand:
+Named enums construct values with `Enum :variant ...`; anonymous enum values use `::`:
 
 ```cirru.no-run
 let
     SampleResult $ defenum SampleResult (:ok Number) (:err String)
-  %:: SampleResult :ok 1
+  SampleResult :ok 1
 :: :point 10 20
 ```
 

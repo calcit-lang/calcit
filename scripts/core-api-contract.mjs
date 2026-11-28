@@ -44,8 +44,13 @@ export const writeEdn = value => `${format_cirru_edn(encode(value))}\n`;
 function declaration(code) {
   if (!Array.isArray(code)) return null;
   if (code[0] === "def") return declaration(code[2]);
-  if (code[0] === "impl-traits") return declaration(code[1]);
-  if (["defenum", "defstruct", "deftrait"].includes(code[0])) return { quote: code };
+  if (["defenum", "defstruct", "deftrait"].includes(code[0])) {
+    return {
+      quote: code[0] === "defenum" || code[0] === "defstruct"
+        ? code.filter(slot => !(Array.isArray(slot) && slot[0] === ":impls"))
+        : code,
+    };
+  }
   return null;
 }
 

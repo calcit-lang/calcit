@@ -18,12 +18,6 @@
             -> $ Set T
             :generics T
           :tags $ #{} :builtin :internal
-        '%:: $ %{} 'CodeEntry
-          :doc "|Construct a nominal enum from an EnumDef. In source, %:: _ lowers to the anonymous enum constructor."
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn EnumDef Tag (& Dynamic) (-> Enum)
-          :tags $ #{} :builtin :internal
         '%{} $ %{} 'CodeEntry
           :doc "|Construct a struct value. Use a StructDef for nominal values or `_` for an anonymous struct."
           :code $ quote $ defmacro %{} (R & xs)
@@ -753,7 +747,7 @@
                   count-of $ fn (v)
                     hint-fn $ Fn AnyEnum $ -> Number
                     .count v
-                assert= 3 $ count-of $ %:: _ :point 1 2
+                assert= 3 $ count-of $ :: :point 1 2
                 assert= 2 $ count-of $ Some 1
                 assert= 1 $ count-of None
               :tags $ #{} :unit
@@ -762,7 +756,7 @@
                   has-index? $ fn (v i)
                     hint-fn $ Fn AnyEnum Number $ -> Bool
                     .contains? v i
-                  point $ %:: _ :point 1 2
+                  point $ :: :point 1 2
                 assert= true $ has-index? point 2
                 assert= false $ has-index? point 3
                 assert= false $ has-index? point -1
@@ -1582,11 +1576,6 @@
           :examples $ []
           :schema $ quote $ Fn EnumDef Tag (-> Bool)
           :tags $ #{} :builtin :internal
-        '&enum-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an EnumDef.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn EnumDef Impl (& Impl) (-> EnumDef)
-          :tags $ #{} :builtin :internal :deprecated
         '&enum-def:new $ %{} 'CodeEntry
           :doc "|Create an EnumDef from a name and declared variants."
           :code $ quote &runtime-implementation
@@ -1635,11 +1624,6 @@
               assert-type (&enum:definition value) (Option EnumDef)
               assert= None $ &enum:definition $ :: :anonymous 1
             :tags $ #{} :nominal-definition-proof :unit
-        '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn Enum Impl (& Impl) (-> Enum)
-          :tags $ #{} :builtin :internal :deprecated
         '&enum:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to an enum value."
           :code $ quote &runtime-implementation
@@ -4565,11 +4549,6 @@
             %{} 'TestEntry (:name |named-call-counts-wire-bytes)
               :code $ quote $ assert= 5 (&str:utf8-byte-count "|A😀")
               :tags $ #{} :core :unit
-        '&struct-def:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a StructDef.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn StructDef Impl (& Impl) (-> StructDef)
-          :tags $ #{} :builtin :internal :deprecated
         '&struct-def:new $ %{} 'CodeEntry
           :doc "|内部结构体定义构造器。名称后可以跟字段类型及可选默认值、泛型和 where 元数据。用户代码使用 defstruct。"
           :code $ quote &runtime-implementation
@@ -4667,11 +4646,6 @@
           :examples $ []
           :schema $ quote $ Fn Struct (-> Tag)
           :tags $ #{} :builtin :internal
-        '&struct:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to a struct value.")
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ quote $ Fn Struct Impl (& Impl) (-> Struct)
-          :tags $ #{} :builtin :internal :deprecated
         '&struct:impls $ %{} 'CodeEntry
           :doc "|Return implementations attached to a struct value."
           :code $ quote &runtime-implementation
@@ -5280,12 +5254,11 @@
         'EdnValue $ %{} 'CodeEntry
           :doc "|Closed recursive nominal Cirru EDN value ADT across Native, JS, and WASM/WASI without Dynamic. Variants: :nil, :bool Bool, :number Number, :string String, :tag String, :symbol String, :list (List EdnValue), :set (Set EdnValue), :map (Map EdnValue EdnValue). Tags and symbols carry String names so arbitrary runtime Cirru EDN data parses identically across all targets including WASM/WASI. Use `edn:parse` to parse Cirru EDN text into `Result EdnValue String`, and `.to-edn` (or `edn:format`) to format."
           :code $ quote $ def EdnValue
-            impl-traits
-              defenum EdnValue (:nil) (:bool Bool) (:number Number) (:string String) (:tag String) (:symbol String)
-                :list $ List EdnValue
-                :set $ Set EdnValue
-                :map $ Map EdnValue EdnValue
-              , EdnValueOpsImpl
+            defenum EdnValue (:nil) (:bool Bool) (:number Number) (:string String) (:tag String) (:symbol String)
+              :list $ List EdnValue
+              :set $ Set EdnValue
+              :map $ Map EdnValue EdnValue
+              :impls EdnValueOps
           :examples $ []
             quote $ edn:parse "|{} (:ok true) (:items ([] 1 |a nil))"
             quote $ .to-edn $ EdnValue :list
@@ -5408,7 +5381,7 @@
           :schema $ quote Trait
           :tags $ #{} :internal :trait
         'EdnValueOpsImpl $ %{} 'CodeEntry (:doc "|Internal EdnValue method implementation.")
-          :code $ quote $ defimpl EdnValueOpsImpl EdnValueOps (.to-edn edn:format)
+          :code $ quote $ defimpl EdnValue EdnValueOps (.to-edn edn:format)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
@@ -5428,9 +5401,7 @@
         'FfiResponse $ %{} 'CodeEntry
           :doc "|Nominal wrapper for an exactly-once native async response capability."
           :code $ quote $ def FfiResponse
-            impl-traits
-              defstruct FfiResponse $ :raw Dynamic
-              , FfiResponseOpsImpl
+            defstruct FfiResponse (:raw Dynamic) (:impls FfiResponseOps)
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :core :data :ffi
@@ -5444,16 +5415,14 @@
           :tags $ #{} :internal :trait
         'FfiResponseOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async response methods."
-          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps (.resolve! ffi-response:resolve) (.reject! ffi-response:reject)
+          :code $ quote $ defimpl FfiResponse FfiResponseOps (.resolve! ffi-response:resolve) (.reject! ffi-response:reject)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
         'FfiTask $ %{} 'CodeEntry
           :doc "|Nominal wrapper for a cancellable native async task capability."
           :code $ quote $ def FfiTask
-            impl-traits
-              defstruct FfiTask $ :raw Dynamic
-              , FfiTaskOpsImpl
+            defstruct FfiTask (:raw Dynamic) (:impls FfiTaskOps)
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :core :data :ffi
@@ -5467,16 +5436,14 @@
           :tags $ #{} :internal :trait
         'FfiTaskOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async task methods."
-          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel! ffi-task:cancel) (.cancel-with! ffi-task:cancel-with)
+          :code $ quote $ defimpl FfiTask FfiTaskOps (.cancel! ffi-task:cancel) (.cancel-with! ffi-task:cancel-with)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
         'FsPath $ %{} 'CodeEntry
           :doc "|Nominal UTF-8 host filesystem path. Construct with fs:path; file effects are exposed on FsPath rather than String."
           :code $ quote $ def FsPath
-            impl-traits
-              defstruct FsPath $ :value String
-              , FsPathOpsImpl
+            defstruct FsPath (:value String) (:impls FsPathOps)
           :examples $ []
           :schema $ quote StructDef
           :tags $ #{} :core :data
@@ -5493,7 +5460,7 @@
           :schema $ quote Trait
           :tags $ #{} :internal :trait
         'FsPathOpsImpl $ %{} 'CodeEntry (:doc "|Internal FsPath method implementation.")
-          :code $ quote $ defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text! fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
+          :code $ quote $ defimpl FsPath FsPathOps (.read-text fs-path:read-text) (.write-text! fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
@@ -5537,7 +5504,7 @@
                   hash-node $ fn (node)
                     hint-fn $ Fn CirruNode $ -> Number
                     hash node
-                  t $ %:: _ :pair 1 |a
+                  t $ :: :pair 1 |a
                   r1 $ Result :ok |ok
                   r2 $ Result :ok |ok
                 assert=
@@ -5667,11 +5634,10 @@
         'JsonValue $ %{} 'CodeEntry
           :doc "|Closed recursive nominal JSON value ADT across Native, JS, and WASM/WASI without Dynamic. Variants: :null, :bool Bool, :number Number, :string String, :array (List JsonValue), :object (Map String JsonValue). Use `json:parse` to parse JSON text into `Result JsonValue String`, and `.to-json` / `.to-json-pretty` (or `json:stringify` / `json:pretty`) to format."
           :code $ quote $ def JsonValue
-            impl-traits
-              defenum JsonValue (:null) (:bool Bool) (:number Number) (:string String)
-                :array $ List JsonValue
-                :object $ Map String JsonValue
-              , JsonValueOpsImpl
+            defenum JsonValue (:null) (:bool Bool) (:number Number) (:string String)
+              :array $ List JsonValue
+              :object $ Map String JsonValue
+              :impls JsonValueOps
           :examples $ []
             quote $ json:parse "|{\"ok\":true,\"items\":[1,\"a\",null]}"
             quote $ .to-json $ JsonValue :array
@@ -5782,7 +5748,7 @@
           :schema $ quote Trait
           :tags $ #{} :internal :trait
         'JsonValueOpsImpl $ %{} 'CodeEntry (:doc "|Internal JsonValue method implementation.")
-          :code $ quote $ defimpl JsonValueOpsImpl JsonValueOps (.to-json json:stringify) (.to-json-pretty json:pretty)
+          :code $ quote $ defimpl JsonValue JsonValueOps (.to-json json:stringify) (.to-json-pretty json:pretty)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
@@ -5856,9 +5822,7 @@
         'Option $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Option<T> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Option :some value 或 Option :none 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Option
-            impl-traits
-              defenum Option (:generics T) (:some T) (:none)
-              , OptionMappableImpl OptionOpsImpl
+            defenum Option (:generics T) (:some T) (:none) (:impls Mappable OptionOps)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -5899,7 +5863,7 @@
                 assert= 0 $ .unwrap-or None 0
               :tags $ #{} :core :unit
         'OptionMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Option")
-          :code $ quote $ defimpl OptionMappableImpl Mappable (.map option:map)
+          :code $ quote $ defimpl Option Mappable (.map option:map)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :trait-impl
@@ -5926,7 +5890,7 @@
           :schema $ quote Trait
           :tags $ #{} :internal :trait
         'OptionOpsImpl $ %{} 'CodeEntry (:doc "|Internal Option method implementation.")
-          :code $ quote $ defimpl OptionOpsImpl OptionOps (.some? option:some?) (.none? option:none?) (.unwrap option:unwrap) (.unwrap-or option:unwrap-or) (.and-then option:and-then) (.or-else option:or-else) (.fold option:fold)
+          :code $ quote $ defimpl Option OptionOps (.some? option:some?) (.none? option:none?) (.unwrap option:unwrap) (.unwrap-or option:unwrap-or) (.and-then option:and-then) (.or-else option:or-else) (.fold option:fold)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
@@ -5951,9 +5915,7 @@
         'Result $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。"
           :code $ quote $ def Result
-            impl-traits
-              defenum Result (:generics T E) (:ok T) (:err E)
-              , ResultMappableImpl ResultOpsImpl
+            defenum Result (:generics T E) (:ok T) (:err E) (:impls Mappable ResultOps)
           :examples $ []
           :schema $ quote Dynamic
           :tags $ #{} :data
@@ -6009,7 +5971,7 @@
                     fn () $ Result :ok 99
               :tags $ #{} :core :unit
         'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
-          :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
+          :code $ quote $ defimpl Result Mappable (.map result:map)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :trait-impl
@@ -6034,7 +5996,7 @@
           :schema $ quote Trait
           :tags $ #{} :internal :trait
         'ResultOpsImpl $ %{} 'CodeEntry (:doc "|Internal Result method implementation.")
-          :code $ quote $ defimpl ResultOpsImpl ResultOps (.ok? result:ok?) (.err? result:err?) (.unwrap-or result:unwrap-or) (.and-then result:and-then) (.map-err result:map-err) (.or-else result:or-else)
+          :code $ quote $ defimpl Result ResultOps (.ok? result:ok?) (.err? result:err?) (.unwrap-or result:unwrap-or) (.and-then result:and-then) (.map-err result:map-err) (.or-else result:or-else)
           :examples $ []
           :schema $ quote Impl
           :tags $ #{} :internal :trait-impl
@@ -8598,7 +8560,7 @@
                 _ 0
             :tags $ #{} :core :unit
         'defimpl $ %{} 'CodeEntry
-          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: declare the type and its `defimpl` at the top level and list the trait in `(:impls Trait …)` so the compiler attaches it automatically from the type's or trait's namespace; local `impl-traits` attachment fails in project code with `E_LEGACY_DYNAMIC_STYLE`, and `(Dyn Trait)` (`dyn:box`) only boxes values whose type already implements the trait. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
+          :doc "|macro for implementing a trait for a struct or enum\nSyntax: (defimpl Type Trait (.method value) ...)\nParams: Type (struct/enum definition symbol), Trait (nominal trait symbol), method pairs\nReturns: impl value\nNotes: declare the type and its `defimpl` at the top level and list the trait in `(:impls Trait …)` so the compiler attaches it automatically from the type's or trait's namespace; `(Dyn Trait)` (`dyn:box`) only boxes values whose type already implements the trait. The retired `defimpl ImplName Trait` form fails with E_LEGACY_DEFIMPL_NAME; legacy tag names/origins fail with E_LEGACY_DEFIMPL_TAG.\nExpands to &impl::new"
           :code $ quote $ defmacro defimpl (name trait & pairs)
             if
               not $ symbol? name
@@ -8801,7 +8763,7 @@
                 assert= 2 $ match shape
                   (:circle r) r
                   (:dot) 0
-                assert= (%:: Shape :dot) (Shape :dot)
+                assert= (Shape :dot) (Shape :dot)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |reads-member-types-as-type-syntax)
               :code $ quote $ let
@@ -9729,7 +9691,7 @@
           :examples $ []
             quote $ assert= true $ enum-def?
               defenum Result (:ok) (:err String)
-            quote $ assert= false $ enum-def? (%:: _ :ok 1)
+            quote $ assert= false $ enum-def? (:: :ok 1)
           :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard EnumDef)
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
           :code $ quote $ defn enum-definition (tuple) (&enum:definition tuple)
@@ -9785,7 +9747,7 @@
           :doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error."
           :code $ quote &runtime-implementation
           :examples $ []
-            quote $ assert= true $ enum? (%:: _ :ok 1)
+            quote $ assert= true $ enum? (:: :ok 1)
             quote $ assert= false $ enum?
               {} $ :ok 1
           :schema $ quote $ Fn T (-> Bool) (:generics T) (:guard Enum)
@@ -11882,27 +11844,6 @@
             assert= None $ impl-origin $ &impl::new :PlainImpl
           :schema $ quote $ Fn Impl
             -> $ Option Trait
-        'impl-traits $ %{} 'CodeEntry
-          :doc "|Append trait implementations\nSyntax: (impl-traits value & traits)\nParams: value (struct/enum), traits (impl, variadic)\nReturns: value with updated trait implementations\nDispatches to &struct:impl-traits, &enum:impl-traits"
-          :code $ quote $ defn impl-traits (x & traits)
-            if
-              not $ every? traits $ fn (trait)
-                = :impl $ type-of trait
-              raise "|impl-traits misuse. Expected: impl arguments are :impl values. Actual: found non-impl argument. Fix: pass values created by `defimpl`."
-            let
-                attach $ fn (proc-name)
-                  if (&list:empty? traits)
-                    raise $ str-spaced proc-name "|expected 2+ arguments. Fix: pass at least one implementation created by defimpl."
-              if (struct-def? x)
-                do (attach |&struct-def:impl-traits)
-                  &struct-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
-                if (enum-def? x)
-                  do (attach |&enum-def:impl-traits)
-                    &enum-def:impl-traits x (&list:nth traits 0) & $ &list:rest traits
-                  raise $ str-spaced "|impl-traits misuse. Expected: first argument is struct/enum definition. Actual:" (type-of x) "|Fix: attach impls to `defstruct`/`defenum` result, then construct instances from that definition."
-          :examples $ []
-          :schema $ quote $ Fn Dynamic (& Impl) (-> Dynamic) (:open :intrinsic)
-          :tags $ #{} :deprecated
         'inc $ %{} 'CodeEntry (:doc "|Increments a number by 1")
           :code $ quote $ defn inc (x) (&+ x 1)
           :examples $ []
@@ -13578,7 +13519,7 @@
           :code $ quote $ defn option:and-then (opt f)
             match opt
               (:some value) (f value)
-              (:none) (%:: Option :none)
+              (:none) (Option :none)
           :examples $ [] $ quote
             assert= (Some 4)
               (Some 2) .and-then $ fn (x)
@@ -13650,8 +13591,8 @@
           :code $ quote $ defn option:map (opt f)
             match opt
               (:some value)
-                %:: Option :some $ f value
-              (:none) (%:: Option :none)
+                Option :some $ f value
+              (:none) (Option :none)
           :examples $ []
           :schema $ quote $ Fn (Option T)
             Fn T (-> U) (:features :pass)
@@ -14461,7 +14402,7 @@
           :code $ quote $ defn result:and-then (res f)
             match res
               (:ok value) (f value)
-              (:err err) (%:: Result :err err)
+              (:err err) (Result :err err)
           :examples $ [] $ quote
             assert= (Result :ok 4)
               (Result :ok 2) .and-then $ fn (x)
@@ -14505,8 +14446,8 @@
           :code $ quote $ defn result:map (res f)
             match res
               (:ok value)
-                %:: Result :ok $ f value
-              (:err err) (%:: Result :err err)
+                Result :ok $ f value
+              (:err err) (Result :err err)
           :examples $ []
           :schema $ quote $ Fn (Result T E)
             Fn T (-> U) (:features :pass)
@@ -14527,9 +14468,9 @@
           :doc "|Maps the error payload of a Result while preserving :ok."
           :code $ quote $ defn result:map-err (res f)
             match res
-              (:ok value) (%:: Result :ok value)
+              (:ok value) (Result :ok value)
               (:err err)
-                %:: Result :err $ f err
+                Result :err $ f err
           :examples $ [] $ quote
             assert= (Result :err |failed!)
               (Result :err |failed) .map-err $ fn (e) (str e |!)

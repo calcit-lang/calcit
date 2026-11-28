@@ -70,6 +70,7 @@ pub use thunk::{CalcitThunk, CalcitThunkInfo};
 pub(crate) use type_annotation::checkpoint_type_slot_declarations;
 #[cfg(test)]
 pub(crate) use type_annotation::set_def_code_lookup_hook_for_test;
+pub(crate) use type_annotation::type_alias_declaration;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitNumericRefinement, CalcitTypeAnnotation, DYNAMIC_TYPE, FnOpenReason,
   FnOpenReasonNote, MacroCapability, MacroExpansionType, MacroSignature, MacroSyntaxType, NullableOrigin, PASS_EFFECTS_FEATURE,
@@ -77,7 +78,6 @@ pub use type_annotation::{
   install_entry_type_slots, pop_type_slot_override, push_type_slot_override, register_type_slot, resolve_type_slot,
   value_matches_type_annotation, with_type_annotation_warning_context,
 };
-pub(crate) use type_annotation::{TypeBindings, type_alias_declaration, type_alias_from_code};
 pub use type_id::{CanonicalTypeIdError, CompiledAnyTypeId, canonical_type_hash, canonical_type_key};
 pub use union_def::{CalcitUnionDef, UnionMemberKind};
 

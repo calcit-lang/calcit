@@ -831,7 +831,6 @@ mod tests {
       tag_index: HashMap::new(),
       struct_layouts: StructLayouts::default(),
       enum_layouts: EnumLayouts::default(),
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
@@ -901,6 +900,11 @@ mod tests {
 
   #[test]
   fn compile_dyn_trampolines_terminates_and_defers_unreachable_errors() {
+    let _guard = crate::wasm::host::program::lock_program_test_state();
+    crate::wasm::host::program::PROGRAM_CODE_DATA
+      .write()
+      .expect("clear program code for dyn_trait test")
+      .clear();
     let env = dummy_env(WasmTarget::Core, WasmBoundary::Native);
     let missing_trait = Arc::new(
       CalcitTrait::new(EdnTag::new("Custom"), vec![EdnTag::new("op")], vec![DYNAMIC_TYPE.clone()])

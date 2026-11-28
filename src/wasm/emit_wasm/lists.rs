@@ -2130,7 +2130,6 @@ mod sort_tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
-        non_coherent_nominal_defs: Default::default(),
         any_type_table: Default::default(),
       },
     )

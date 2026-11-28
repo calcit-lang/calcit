@@ -925,6 +925,54 @@ fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
       report["revision"].as_str().unwrap(),
     ]);
     assert_success(&run_calcit(&snapshot, &apply), "apply attached surface migration");
+    if selector == "removed-data-api-v1" {
+      // `removed-data-api-v1` alone intentionally leaves `%::` un-migrated until
+      // `named-enum-constructor-v1` also runs.
+      let partial_test = run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]);
+      assert!(!partial_test.status.success());
+      assert!(
+        String::from_utf8_lossy(&partial_test.stderr).contains("E_REMOVED_CORE_FUNCTION"),
+        "{}",
+        String::from_utf8_lossy(&partial_test.stderr)
+      );
+      let enum_preview = run_calcit(
+        &snapshot,
+        &[
+          "fix",
+          "--ns",
+          "app.main",
+          "--def",
+          "main!",
+          "--rule",
+          "named-enum-constructor-v1",
+          "--include-attached",
+          "--format",
+          "json",
+        ],
+      );
+      assert_success(&enum_preview, "follow-up enum preview");
+      let enum_report = parse_stdout(&enum_preview);
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "fix",
+            "--ns",
+            "app.main",
+            "--def",
+            "main!",
+            "--rule",
+            "named-enum-constructor-v1",
+            "--include-attached",
+            "--apply",
+            "--allow-no-vcs",
+            "--expect-revision",
+            enum_report["revision"].as_str().unwrap(),
+          ],
+        ),
+        "follow-up enum apply",
+      );
+    }
     assert_success(
       &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
       "unchanged migrated assertion",
@@ -1293,10 +1341,17 @@ fn attached_named_constructors_preserve_unknown_macro_regions() {
         "attach nominal boundary assertion",
       );
     }
-    assert_success(
-      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
-      "original named boundaries",
-    );
+    let before_test = run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]);
+    if rule == "named-enum-constructor-v1" {
+      assert!(
+        !before_test.status.success() && String::from_utf8_lossy(&before_test.stderr).contains("E_REMOVED_CORE_FUNCTION"),
+        "original `%::` named boundaries must fail with E_REMOVED_CORE_FUNCTION before fix:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&before_test.stdout),
+        String::from_utf8_lossy(&before_test.stderr)
+      );
+    } else {
+      assert_success(&before_test, "original named boundaries");
+    }
     let before = fs::read(&snapshot).unwrap();
     let args = [
       "fix",
@@ -1381,8 +1436,8 @@ fn named_constructor_fix_migrates_qualified_quasiquote_templates() {
   }
   let before_run = run_calcit(&snapshot, &[]);
   assert!(
-    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_LEGACY_DYNAMIC_STYLE"),
-    "original template `%::` must fail with E_LEGACY_DYNAMIC_STYLE before fix:\nstdout:\n{}\nstderr:\n{}",
+    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_REMOVED_CORE_FUNCTION"),
+    "original template `%::` must fail with E_REMOVED_CORE_FUNCTION before fix:\nstdout:\n{}\nstderr:\n{}",
     String::from_utf8_lossy(&before_run.stdout),
     String::from_utf8_lossy(&before_run.stderr)
   );
@@ -1501,8 +1556,8 @@ fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
   }
   let before_run = run_calcit(&snapshot, &[]);
   assert!(
-    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_LEGACY_DYNAMIC_STYLE"),
-    "original core enum `%::` must fail with E_LEGACY_DYNAMIC_STYLE before fix:\nstdout:\n{}\nstderr:\n{}",
+    !before_run.status.success() && String::from_utf8_lossy(&before_run.stderr).contains("E_REMOVED_CORE_FUNCTION"),
+    "original core enum `%::` must fail with E_REMOVED_CORE_FUNCTION before fix:\nstdout:\n{}\nstderr:\n{}",
     String::from_utf8_lossy(&before_run.stdout),
     String::from_utf8_lossy(&before_run.stderr)
   );
@@ -1520,6 +1575,21 @@ fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
       "create shadowing definition",
     );
   }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.shadow/shadowed",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ Fn (-> Dynamic)",
+      ],
+    ),
+    "declare shadowing fixture schema",
+  );
   let shadow_preview = run_calcit(
     &snapshot,
     &[
@@ -4296,6 +4366,9 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
   ];
   if !migrated {
     expected.push(("E_FN_RETURN_UNPROVEN", "fix-command.main/fixable"));
+    expected.push(("E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-enum"));
+    expected.push(("E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-enum-overlap"));
+    expected.push(("E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-nested"));
   }
   let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
   assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
@@ -4320,7 +4393,15 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
   }
   if migrated {
     assert!(
-      diagnostics.iter().all(|item| item["definition"] != "fix-command.main/fixable"),
+      diagnostics.iter().all(|item| !matches!(
+        item["definition"].as_str(),
+        Some(
+          "fix-command.main/fixable"
+            | "fix-command.main/legacy-enum"
+            | "fix-command.main/legacy-enum-overlap"
+            | "fix-command.main/legacy-nested"
+        )
+      )),
       "{diagnostics:?}"
     );
   }

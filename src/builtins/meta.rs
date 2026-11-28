@@ -4,8 +4,8 @@ use crate::{
   builtins,
   calcit::{
     self, Calcit, CalcitEnumDef, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitLocal,
-    CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation, GEN_NS,
-    GENERATED_DEF, brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
+    CalcitProc, CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTypeAnnotation, GEN_NS, GENERATED_DEF,
+    brief_type_of_value, format_proc_examples_hint, gen_core_id, register_type_slot, value_matches_type_annotation,
   },
   call_stack::{self, CallStackList},
   codegen::gen_ir::dump_code,
@@ -1416,74 +1416,6 @@ fn check_attached_trait_impls(impls: &[Arc<CalcitImpl>], proc_name: &str) -> Res
     }
   }
   Ok(())
-}
-
-pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:impl-traits expected 2+ arguments, but received:", xs);
-  }
-  match &xs[0] {
-    Calcit::Struct(struct_value) => {
-      let mut impls = struct_value.struct_ref.impls.clone();
-      impls.extend(collect_trait_impls(&xs[1..], "&struct:impl-traits")?);
-      check_attached_trait_impls(&impls, "&struct:impl-traits")?;
-      let mut next_struct = (*struct_value.struct_ref).clone();
-      next_struct.impls = impls;
-
-      Ok(Calcit::Struct(CalcitStructValue {
-        struct_ref: Arc::new(next_struct),
-        values: struct_value.values.to_owned(),
-      }))
-    }
-    other => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&struct:impl-traits expected a struct value, but received: {other}"),
-    ),
-  }
-}
-
-pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() < 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&enum:impl-traits expected 2+ arguments, but received:", xs);
-  }
-  match &xs[0] {
-    Calcit::Enum(enum_value) => {
-      let mut next_sum_type = match &enum_value.sum_type {
-        Some(s) => (**s).clone(),
-        None => {
-          let tag_name = match &*enum_value.tag {
-            Calcit::Tag(t) => t.to_owned(),
-            _ => EdnTag::from("tag"),
-          };
-          let struct_value = CalcitStructValue {
-            struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::from("_"), vec![tag_name])),
-            values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::from(
-              &vec![Calcit::tag("any"); enum_value.extra.len()][..],
-            )))]),
-          };
-          CalcitEnumDef::from_struct(struct_value).map_err(|msg| {
-            CalcitErr::use_msg_stack_location(
-              CalcitErrKind::Type,
-              format!("failed to create anonymous enum, {msg}"),
-              &CallStackList::default(),
-              enum_value.tag.get_location(),
-            )
-          })?
-        }
-      };
-      next_sum_type.impls.extend(collect_trait_impls(&xs[1..], "&enum:impl-traits")?);
-      check_attached_trait_impls(&next_sum_type.impls, "&enum:impl-traits")?;
-      Ok(Calcit::Enum(CalcitEnumValue {
-        tag: enum_value.tag.to_owned(),
-        extra: enum_value.extra.to_owned(),
-        sum_type: Some(Arc::new(next_sum_type)),
-      }))
-    }
-    other => CalcitErr::err_str(
-      CalcitErrKind::Type,
-      format!("&enum:impl-traits expected an enum value, but received: {other}"),
-    ),
-  }
 }
 
 pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -3016,6 +2948,7 @@ pub fn with_type_slot_runtime(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::calcit::CalcitStructDef;
 
   #[test]
   fn implicit_self_generic_is_added_to_trait_fn_schemas() {
@@ -3535,10 +3468,6 @@ mod tests {
     }));
 
     let struct_def = CalcitStructDef::from_fields(EdnTag::new("Box"), vec![]);
-    let struct_val = CalcitStructValue {
-      struct_ref: Arc::new(struct_def.clone()),
-      values: Arc::new(vec![]),
-    };
     let mut proto = CalcitStructDef::from_fields(EdnTag::new("Choice"), vec![EdnTag::new("item")]);
     proto.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
     let enum_def = CalcitEnumDef::from_struct(CalcitStructValue {
@@ -3546,26 +3475,13 @@ mod tests {
       values: Arc::new(vec![Calcit::List(Arc::new(CalcitList::default()))]),
     })
     .expect("enum def");
-    let enum_val = CalcitEnumValue {
-      tag: Arc::new(Calcit::tag("item")),
-      extra: vec![].into(),
-      sum_type: Some(Arc::new(enum_def.clone())),
-    };
 
     for (label, res) in [
       (
         "struct-def",
         struct_impl_traits(&[Calcit::StructDef(Arc::new(struct_def)), first.clone(), second.clone()]),
       ),
-      (
-        "struct-val",
-        record_impl_traits(&[Calcit::Struct(struct_val), first.clone(), second.clone()]),
-      ),
-      (
-        "enum-def",
-        enum_impl_traits(&[Calcit::EnumDef(Arc::new(enum_def)), first.clone(), second.clone()]),
-      ),
-      ("enum-val", tuple_impl_traits(&[Calcit::Enum(enum_val), first, second])),
+      ("enum-def", enum_impl_traits(&[Calcit::EnumDef(Arc::new(enum_def)), first, second])),
     ] {
       let err = res.expect_err(&format!("{label} must reject duplicate nominal trait origin"));
       assert_eq!(err.code(), Some("E_DUPLICATE_TRAIT_IMPL"), "{label}: {err:?}");
@@ -3706,16 +3622,13 @@ mod tests {
       values: Arc::new(vec![constant_method("c")]),
     }));
 
-    let plain_val = Calcit::Struct(CalcitStructValue {
-      struct_ref: Arc::new(CalcitStructDef::from_fields(EdnTag::new("Widget"), vec![])),
-      values: Arc::new(vec![]),
-    });
+    let plain_def = Calcit::StructDef(Arc::new(CalcitStructDef::from_fields(EdnTag::new("Widget"), vec![])));
 
-    let err = record_impl_traits(&[plain_val.clone(), child_impl.clone()]).expect_err("plain struct without parent must fail");
+    let err = struct_impl_traits(&[plain_def.clone(), child_impl.clone()]).expect_err("plain struct without parent must fail");
     assert_eq!(err.code(), Some("E_IMPL_MISSING_REQUIRED_TRAIT"), "{err:?}");
 
-    let decorated = record_impl_traits(&[plain_val, parent_impl]).expect("attach parent impl");
-    record_impl_traits(&[decorated, child_impl]).expect("decorated struct with parent impl attaches child impl");
+    let decorated = struct_impl_traits(&[plain_def, parent_impl]).expect("attach parent impl");
+    struct_impl_traits(&[decorated, child_impl]).expect("decorated struct with parent impl attaches child impl");
   }
 
   #[test]

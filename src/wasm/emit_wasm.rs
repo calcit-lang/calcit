@@ -1451,7 +1451,6 @@ fn emit_wasm_impl(
     }
   }
 
-  let non_coherent_nominal_defs = Arc::new(program::snapshot_non_coherent_nominal_defs());
   let dyn_base_fn_idx = num_imports + runtime_fn_count + fn_defs.len() as u32;
   let next_dyn_fn_idx = Rc::new(RefCell::new(dyn_base_fn_idx));
   let mut closure_registry = closure::ClosureRegistry::new(next_dyn_fn_idx.clone());
@@ -1486,7 +1485,6 @@ fn emit_wasm_impl(
     tag_index,
     struct_layouts,
     enum_layouts,
-    non_coherent_nominal_defs,
     string_pool,
     atom_globals,
     atom_is_scalar,
@@ -6269,8 +6267,6 @@ struct WasmCompileEnv {
   struct_layouts: StructLayouts,
   enum_layouts: EnumLayouts,
   any_type_table: any_box::AnyTypeTable,
-  /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
-  non_coherent_nominal_defs: Arc<HashSet<String>>,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -6680,8 +6676,6 @@ struct WasmGenCtx {
   enum_layouts: EnumLayouts,
   /// Whole-program canonical `TypeId` table (`1..=N`, `0` = never-boxed).
   any_type_table: any_box::AnyTypeTable,
-  /// Top-level nominal `ns/def` definitions touched by dynamic/local `impl-traits`.
-  non_coherent_nominal_defs: Arc<HashSet<String>>,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -6800,7 +6794,6 @@ impl WasmGenCtx {
       struct_layouts: env.struct_layouts,
       enum_layouts: env.enum_layouts,
       any_type_table: env.any_type_table,
-      non_coherent_nominal_defs: env.non_coherent_nominal_defs,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -8993,6 +8986,15 @@ fn infer_wasm_evidence_in_scope(
             && let Some(ev) = infer_list_concat_evidence(ctx, &items.drop_left().to_vec(), local_types, closures, visiting)
           {
             return Some(ev);
+          }
+          if matches!(proc, CalcitProc::NativeNamedEnumNew) {
+            return infer_static_type_from_expr(expr)
+              .filter(|inferred| inferred.is_proven_for(&CalcitTypeAnnotation::AnonymousEnum))
+              .map(|annotation| WasmTypeEvidence {
+                exact_impls: annotation.resolve_to_enum().is_some(),
+                ..WasmTypeEvidence::contract(annotation)
+              })
+              .or_else(|| Some(WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::AnonymousEnum))));
           }
           let (ns, def) = proc.get_ns_def();
           let signature = program::lookup_def_schema(ns, def).resolve_to_fn().or_else(|| {
@@ -11223,8 +11225,8 @@ fn nominal_type_def_ref(ty: &CalcitTypeAnnotation) -> Option<String> {
   }
 }
 
-fn is_statically_coherent_nominal(ctx: &WasmGenCtx, ty: &CalcitTypeAnnotation) -> bool {
-  nominal_type_def_ref(ty).is_some_and(|def_ref| !ctx.non_coherent_nominal_defs.contains(&def_ref))
+fn is_statically_coherent_nominal(_ctx: &WasmGenCtx, ty: &CalcitTypeAnnotation) -> bool {
+  nominal_type_def_ref(ty).is_some()
 }
 
 fn has_effective_exact_impls(ctx: &WasmGenCtx, ev: &WasmTypeEvidence) -> bool {
@@ -12537,7 +12539,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         // form instead of the fully lowered expression. Resolve their current
         // public names through CalcitProc so ABI renames do not silently turn
         // supported operations into skipped functions.
-        if let Ok(proc) = import.def.parse::<CalcitProc>() {
+        if let Some(proc) = CalcitProc::parse_source_proc(&import.def) {
           return emit_proc_call(ctx, &proc, &args_list);
         }
         match import.def.as_ref() {
@@ -12659,7 +12661,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         }
         return emit_core_print(ctx, name, &args_list);
       }
-      if let Ok(proc) = name.parse::<CalcitProc>() {
+      if let Some(proc) = CalcitProc::parse_source_proc(name) {
         return emit_proc_call(ctx, &proc, &args_list);
       }
       // HOF interceptors — Symbol-head calls appear when preprocessor doesn't resolve
@@ -13853,7 +13855,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeEnumDefinition => emit_enum_definition(ctx, args),
     CalcitProc::NativeEnumImpls
     | CalcitProc::NativeEnumParams
-    | CalcitProc::NativeEnumValueImplTraits
     | CalcitProc::NativeEnumDefHasVariant
     | CalcitProc::NativeEnumDefVariantArity => Err(format!("Enum operation {proc} not yet supported in WASM codegen")),
     CalcitProc::NativeEnumAssoc => emit_enum_assoc(ctx, args),
@@ -16614,14 +16615,14 @@ fn static_predicate_condition_outcome_in_scope(
   }
   let proc = match head {
     Calcit::Proc(p) => Some(*p),
-    Calcit::Import(import) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => import.def.parse::<CalcitProc>().ok(),
+    Calcit::Import(import) if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS => CalcitProc::parse_source_proc(&import.def),
     Calcit::Symbol { sym, info, .. }
       if info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS
         && !local_types.contains_key(sym.as_ref())
         && !ctx.locals.contains_key(sym.as_ref())
         && !closures.contains_key(sym.as_ref()) =>
     {
-      sym.parse::<CalcitProc>().ok()
+      CalcitProc::parse_source_proc(sym)
     }
     _ => None,
   }?;
@@ -16780,7 +16781,6 @@ fn impl_alternatives(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Vec<WasmTypeEvid
   }
   if alternatives.len() > 1
     && let Some(first_ref) = alternatives.first().and_then(|first| nominal_type_def_ref(&first.annotation))
-    && !ctx.non_coherent_nominal_defs.contains(&first_ref)
     && alternatives
       .iter()
       .all(|alt| nominal_type_def_ref(&alt.annotation).as_deref() == Some(first_ref.as_str()))
@@ -17946,10 +17946,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Arc::new(std::collections::HashSet::from([
-        String::from("tests.wasm/LoopProbe"),
-        String::from("tests.wasm/LimitProbe"),
-      ])),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(1, env.clone());
@@ -17960,7 +17956,6 @@ mod tests {
     assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
 
     let mut left = CalcitStructDef::from_fields(EdnTag::new("LoopProbe"), vec![]);
-    left.definition_ref = Some(Arc::from("tests.wasm/LoopProbe"));
     left.impls.push(Arc::new(CalcitImpl {
       name: EdnTag::new("LoopProbeImpl"),
       origin: None,
@@ -18040,6 +18035,7 @@ mod tests {
         type_info,
       })
     };
+    let base_probe = CalcitStructDef::from_fields(EdnTag::new("LimitProbe"), vec![]);
     let choices = (0..count)
       .map(|index| {
         if index > 0 {
@@ -18050,8 +18046,7 @@ mod tests {
             .insert(condition, WasmTypeEvidence::contract(Arc::new(CalcitTypeAnnotation::Bool)));
         }
         let name = format!("choice{index}");
-        let mut prototype = CalcitStructDef::from_fields(EdnTag::new("LimitProbe"), vec![]);
-        prototype.definition_ref = Some(Arc::from("tests.wasm/LimitProbe"));
+        let mut prototype = base_probe.clone();
         prototype.impls.push(Arc::new(CalcitImpl {
           name: EdnTag::new(format!("LimitProbeImpl{index}")),
           origin: None,
@@ -18136,7 +18131,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let count = super::MAX_IMPL_ALTERNATIVES + 3;
@@ -18247,7 +18241,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -18491,7 +18484,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -18602,7 +18594,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -18692,7 +18683,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -21042,7 +21032,6 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
-        non_coherent_nominal_defs: Default::default(),
         any_type_table: Default::default(),
       },
     );
@@ -21090,7 +21079,6 @@ mod tests {
         target: WasmTarget::Core,
         boundary: WasmBoundary::Native,
         world: WasiWorld::Command,
-        non_coherent_nominal_defs: Default::default(),
         any_type_table: Default::default(),
       },
     );
@@ -21546,7 +21534,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let local_x = |type_info: Arc<CalcitTypeAnnotation>| {
@@ -21790,7 +21777,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(0, env);
@@ -21932,7 +21918,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
 
@@ -22063,7 +22048,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
@@ -22196,7 +22180,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Default::default(),
       any_type_table: Default::default(),
     };
     let info = Arc::new(CalcitSymbolInfo {
@@ -22293,7 +22276,6 @@ mod tests {
           target: WasmTarget::Core,
           boundary: WasmBoundary::Native,
           world: WasiWorld::Command,
-          non_coherent_nominal_defs: Default::default(),
           any_type_table: Default::default(),
         };
         let info = Arc::new(CalcitSymbolInfo {
@@ -22439,7 +22421,6 @@ mod tests {
     );
 
     let mut left_def = CalcitStructDef::from_fields(EdnTag::new("ProbeBox"), vec![]);
-    left_def.definition_ref = Some(Arc::from("tests.wasm/ProbeBox"));
     left_def.impls.push(Arc::new(CalcitImpl {
       name: EdnTag::new("ProbeShow"),
       origin: Some(trait_def.clone()),
@@ -22478,7 +22459,6 @@ mod tests {
       target: WasmTarget::Core,
       boundary: WasmBoundary::Native,
       world: WasiWorld::Command,
-      non_coherent_nominal_defs: Arc::new(std::collections::HashSet::from([String::from("tests.wasm/ProbeBox")])),
       any_type_table: Default::default(),
     };
     let mut ctx = WasmGenCtx::new(3, env.clone());

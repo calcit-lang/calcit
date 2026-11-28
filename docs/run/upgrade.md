@@ -24,7 +24,7 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.48.0 物理移除旧式 `?` 参数与 6 个已退役 `nil` 助手（#2994）
+## 0.48.0 物理移除旧 `nil` / `?` 语法与动态 `impl-traits` / `%::` 构造（#2994, #2995）
 
 - **移除 `?` 可选参数语法（`E_LEGACY_OPTIONAL_PARAM` / `E_DEF_PARAM_SHAPE`）**：函数与宏参数列表不再支持 `?`；请改为显式 `Option<T>` 尾参并利用尾部 `Option` 省略语法，或显式传入 `Option :some value` / `Option :none`。review-only 规则 `calcit fix --rule optional-parameters-v1` 已同步退役。
 - **从 `calcit.core`、Native、`@calcit/procs` 与 WASM 物理移除 6 个旧 `nil` 助手（`E_REMOVED_CORE_FUNCTION`）**：
@@ -32,7 +32,11 @@ related:
   - `either` -> `Option<T>` 配合 `.unwrap-or`、`if-let` 或 `match`；旧源码迁移桥接可使用 `calcit fix --rule core-absence-to-public-v1`。
   - `non-nil!` -> `Option<T>` 配合 `match`、`if-let`、`.unwrap-or` 或 `.unwrap`。
   - `keys-non-nil`、`merge-non-nil`、`&merge-non-nil` -> 存储 `Option<V>` 字段或显式省略缺失键，不再以 `nil` 作为 map 值缺失约定。
-- `calcit analyze weak-types --only legacy-migration` 仍会在原始 AST 上盘点上述 6 个旧调用名称，方便旧项目一次性升级。
+- **物理移除动态 `impl-traits` 家族与 `%::`（`E_REMOVED_CORE_FUNCTION`），强制全程序名义静态连贯（#2995）**：
+  - 值级 `&struct:impl-traits`、`&enum:impl-traits` 以及用户可调用的 `impl-traits`、`&struct-def:impl-traits`、`&enum-def:impl-traits`、`%::` 已从 `calcit.core`、解析器、Native、`@calcit/procs` 与 WASM 后端移除；调用时直接触发 `E_REMOVED_CORE_FUNCTION`（`calcit.core` 自身类型也已全部切换至顶层 `(:impls …)` + `defimpl Type Trait`）。
+  - 挂接 trait 实现请统一声明顶层 `defstruct` / `defenum` `(:impls Trait …)` 与 `defimpl Type Trait`，需要动态多态时使用 `(Dyn Trait)` / `dyn:box`；具名 enum 构造请使用直接构造器 `Enum :variant …`（旧 `%::` 源码仍可通过 `calcit fix --rule named-enum-constructor-v1` 自动迁移），匿名 enum 使用 `:: :tag …`。
+  - 全程序所有 `defstruct`/`defenum` 定义现在**无条件静态连贯**，同 `(Type, Trait)` 出现重复顶层 `defimpl` 一律在加载阶段报 `E_DUPLICATE_TRAIT_IMPL`。
+- `calcit analyze weak-types --only legacy-migration` 仍会在原始 AST 上集中盘点上述已移除符号，方便旧项目一次性升级。
 
 ## 0.47.0 核心 `nil` / `?` 收口、运行时严格化与迁移工具链（#2973）
 

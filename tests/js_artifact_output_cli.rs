@@ -109,9 +109,7 @@ const emptyEnumDef = new first.CalcitEnumDef(enumProto);
 const emptyEnumVal = new first.CalcitEnumValue(enumTag, [], emptyEnumDef);
 
 assert.throws(() => first._$n_struct_def_$o_impl_traits(emptyStructDef, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
-assert.throws(() => first._$n_struct_$o_impl_traits(emptyStructVal, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
 assert.throws(() => first._$n_enum_def_$o_impl_traits(emptyEnumDef, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
-assert.throws(() => first._$n_enum_$o_impl_traits(emptyEnumVal, dupImplA, dupImplB), /E_DUPLICATE_TRAIT_IMPL/);
 
 const alpha = new first.CalcitTrait(first.newTag("Alpha"), [first.newTag("zap")], [first.DYNAMIC]);
 const beta = new first.CalcitTrait(first.newTag("Beta"), [first.newTag("zap")], [first.DYNAMIC]);

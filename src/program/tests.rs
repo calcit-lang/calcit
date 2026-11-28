@@ -219,25 +219,44 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
   let _guard = lock_program_test_state();
   reset_program_test_state();
 
-  let wrapper_code = code_to_calcit(
+  let enum_code = code_to_calcit(
     &cirru_list(vec![
-      cirru_leaf("def"),
-      cirru_leaf("alert-actions-plugin"),
-      cirru_list(vec![
-        cirru_leaf("impl-traits"),
-        cirru_list(vec![
-          cirru_leaf("defenum"),
-          cirru_leaf("PluginNode"),
-          cirru_list(vec![cirru_leaf(":value"), cirru_leaf("Dynamic")]),
-        ]),
-        cirru_leaf("PluginActions"),
-      ]),
+      cirru_leaf("defenum"),
+      cirru_leaf("PluginNode"),
+      cirru_list(vec![cirru_leaf(":value"), cirru_leaf("Dynamic")]),
     ]),
     "tests.nominal-wrapper",
     "alert-actions-plugin",
     vec![],
   )
-  .expect("build nominal impl wrapper source");
+  .expect("build inner enum source");
+  let trait_code = code_to_calcit(
+    &cirru_leaf("PluginActions"),
+    "tests.nominal-wrapper",
+    "alert-actions-plugin",
+    vec![],
+  )
+  .expect("build trait ref source");
+  let Calcit::List(def_items) = code_to_calcit(
+    &cirru_list(vec![
+      cirru_leaf("def"),
+      cirru_leaf("alert-actions-plugin"),
+      cirru_leaf("PluginActions"),
+    ]),
+    "tests.nominal-wrapper",
+    "alert-actions-plugin",
+    vec![],
+  )
+  .expect("build nominal impl wrapper source") else {
+    unreachable!("parsed def wrapper must be a list");
+  };
+  let mut def_vec = def_items.to_vec();
+  def_vec[2] = Calcit::from(vec![
+    Calcit::Proc(crate::calcit::CalcitProc::NativeEnumImplTraits),
+    enum_code,
+    trait_code,
+  ]);
+  let wrapper_code = Calcit::from(def_vec);
 
   PROGRAM_CODE_DATA.write().expect("seed nominal wrapper source").insert(
     Arc::from("tests.nominal-wrapper"),
@@ -2291,7 +2310,7 @@ fn defimpl_type_trait_attaches_through_the_impls_clause() {
   let first = program["app.m"].defs["P"].code.to_string();
   assert_eq!(
     first,
-    "([] 'calcit.core/impl-traits ([] 'defstruct 'P ([] :name 'String)) 'P-Labeled)"
+    "([] (&proc &struct-def:impl-traits) ([] 'defstruct 'P ([] :name 'String)) 'P-Labeled)"
   );
 
   impl_attach::attach_source_impls(&mut program).expect("attach again");
@@ -2441,7 +2460,7 @@ fn reload_preserves_program_and_caches_when_impls_validation_fails() {
   apply_code_changes(&valid_changes).expect("corrected reload should succeed");
   assert_eq!(
     code("Q").as_deref(),
-    Some("([] 'calcit.core/impl-traits ([] 'defstruct 'Q ([] :x 'Number)) 'Q-Labeled)")
+    Some("([] (&proc &struct-def:impl-traits) ([] 'defstruct 'Q ([] :x 'Number)) 'Q-Labeled)")
   );
   assert_eq!(
     code("P").as_deref(),
@@ -2490,7 +2509,7 @@ fn reload_reattaches_when_a_defimpl_changes_in_another_namespace() {
   apply_code_changes(&rename_impl("P-Labeled", "P-Labeled-v2")).expect("move impl to a new name");
   assert_eq!(
     code("P"),
-    "([] 'calcit.core/impl-traits ([] 'defstruct 'P ([] :name 'String)) 'app.t/P-Labeled-v2)"
+    "([] (&proc &struct-def:impl-traits) ([] 'defstruct 'P ([] :name 'String)) 'app.t/P-Labeled-v2)"
   );
   assert_ne!(code("P"), attached);
   assert_eq!(lookup_runtime_cell("app.m", "P"), Some(RuntimeCell::Cold), "the type is rebuilt");
@@ -2543,7 +2562,7 @@ fn list_source_def_names_returns_sorted_definition_names() {
 }
 
 #[test]
-fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coherent_forms() {
+fn nominal_types_unconditionally_reject_duplicate_top_level_defimpl() {
   let _guard = lock_program_test_state();
 
   // Plain defstruct without (:impls ...) is coherent, so two top-level defimpls for (P, Labeled) fail.
@@ -2558,7 +2577,7 @@ fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coh
   let err = impl_attach::attach_source_impls(&mut same_ns_dup).expect_err("duplicate top-level defimpl must fail");
   assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 
-  // Duplicate across the type namespace and trait namespace also fails on a coherent nominal type.
+  // Duplicate across the type namespace and trait namespace also fails unconditionally.
   let mut cross_ns_dup = impl_attach_program(
     "defstruct P (:name String)",
     &[("P-Labeled-1", "defimpl P t/Labeled (.label f)")],
@@ -2578,153 +2597,22 @@ fn coherent_nominal_types_reject_duplicate_top_level_defimpl_and_collect_non_coh
   let err = impl_attach::attach_source_impls(&mut cross_ns_dup).expect_err("cross-ns duplicate top-level defimpl must fail");
   assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 
-  // Every runtime/local impl attachment primitive marks the target nominal definition non-coherent.
-  for (marker_expr, expect_non_coherent) in [
-    ("def LocalType $ defstruct P (:name String)", false),
-    ("def LocalEnum $ defenum P (:none)", false),
-    ("def p-v $ impl-traits (%{} P :name |a) P-Labeled", true),
-    ("def p-v $ &struct:impl-traits (%{} P :name |a) P-Labeled", true),
-    ("def p-v $ &enum:impl-traits (%:: P :none) P-Labeled", true),
-    ("def p-d $ &struct-def:impl-traits P P-Labeled", true),
-    ("def p-d $ &enum-def:impl-traits P P-Labeled", true),
-    ("defn helper (x) (hint-fn $ Fn P (-> Any)) (&struct:impl-traits x P-Labeled)", true),
-    ("defn helper (x) (assert-type x P) (&struct:impl-traits x P-Labeled)", true),
-  ] {
-    let program = impl_attach_program(
-      "defstruct P (:name String)",
-      &[
-        ("P-Labeled", "defimpl P t/Labeled (.label f)"),
-        ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-        ("UseP", marker_expr),
-      ],
-      &[],
-    );
-    let non_coherent = impl_attach::collect_non_coherent_nominal_defs(&program);
-    assert_eq!(
-      non_coherent.contains("app.m/P"),
-      expect_non_coherent,
-      "unexpected coherence detection for `{marker_expr}`: {non_coherent:?}"
-    );
-    if expect_non_coherent {
-      let mut detached = program;
-      impl_attach::attach_source_impls(&mut detached).expect("non-coherent nominal types preserve detached defimpls");
-    }
-  }
-
-  // Hand-written top-level `def P (impl-traits (defstruct P ...) ...)` outside calcit.core also marks P non-coherent.
-  let mut hand_wrapped = impl_attach_program(
-    "impl-traits (defstruct P (:name String)) P-Labeled",
-    &[
-      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-    ],
-    &[],
-  );
-  assert!(
-    impl_attach::collect_non_coherent_nominal_defs(&hand_wrapped).contains("app.m/P"),
-    "hand-written top-level impl-traits wrapper must mark nominal def non-coherent"
-  );
-  impl_attach::attach_source_impls(&mut hand_wrapped).expect("hand-wrapped non-coherent def preserves detached defimpls");
-
-  // Factory calls `(make-p)` returning a nominal type must mark that type non-coherent when passed to `impl-traits`.
-  for factory_def in [
-    "defn make-p () (hint-fn $ Fn (-> P)) (%{} P :name |a)",
-    "defn make-p () (%{} P :name |a)",
-  ] {
-    let mut factory_program = impl_attach_program(
-      "defstruct P (:name String)",
-      &[
-        ("P-Labeled", "defimpl P t/Labeled (.label f)"),
-        ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-        ("make-p", factory_def),
-        ("UseFactory", "def p-v $ impl-traits (make-p) P-Labeled"),
-      ],
-      &[],
-    );
-    assert!(
-      impl_attach::collect_non_coherent_nominal_defs(&factory_program).contains("app.m/P"),
-      "factory call `{factory_def}` must mark returned nominal def non-coherent"
-    );
-    impl_attach::attach_source_impls(&mut factory_program).expect("factory-attached non-coherent def preserves detached defimpls");
-  }
-
-  // Shadowing `let` binding `(let ((P (make-q))) (impl-traits P ...))` must NOT fall through to top-level `P`.
-  let mut shadowed = impl_attach_program(
+  // Retired runtime attachment expressions in other definitions do not exempt P from coherence.
+  let mut with_retired_call = impl_attach_program(
     "defstruct P (:name String)",
     &[
-      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
+      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
       ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("make-q", "defn make-q () 42"),
-      ("UseShadow", "def v $ let ((P (make-q))) (impl-traits P P-Labeled)"),
+      ("UseP", "defn use-p (x) (impl-traits x P-Labeled-1)"),
     ],
     &[],
   );
-  assert!(
-    !impl_attach::collect_non_coherent_nominal_defs(&shadowed).contains("app.m/P"),
-    "shadowed local binding without a nominal target must not mark top-level P non-coherent"
-  );
-  let err = impl_attach::attach_source_impls(&mut shadowed).expect_err("top-level P stays coherent and rejects duplicate defimpl");
-  assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
-
-  // Deep branching factory DAG (26 layers of `(if flag (prev) (prev))`) must finish linearly without exponential blowup.
-  let mut dag_defs: Vec<(String, String)> = vec![
-    ("P-Labeled".to_owned(), "defimpl P t/Labeled (.label f)".to_owned()),
-    ("P-Labeled-2".to_owned(), "defimpl P t/Labeled (.label g)".to_owned()),
-    ("f0".to_owned(), "defn f0 () (%{} P :name |a)".to_owned()),
-  ];
-  let mut prev = String::from("f0");
-  for layer in 1..=26 {
-    let name = format!("f{layer}");
-    dag_defs.push((name.clone(), format!("defn {name} (flag) (if flag ({prev}) ({prev}))")));
-    prev = name;
-  }
-  dag_defs.push(("UseDag".to_owned(), format!("def v $ impl-traits ({prev} true) P-Labeled")));
-  let dag_refs: Vec<(&str, &str)> = dag_defs.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-  let mut dag_program = impl_attach_program("defstruct P (:name String)", &dag_refs, &[]);
-  assert!(
-    impl_attach::collect_non_coherent_nominal_defs(&dag_program).contains("app.m/P"),
-    "26-layer branching factory DAG must mark P non-coherent quickly"
-  );
-  impl_attach::attach_source_impls(&mut dag_program).expect("DAG-attached non-coherent def preserves detached defimpls");
-
-  // Unannotated legacy attachment helper `(defn decorate (x) (impl-traits x P-Labeled))` propagates caller argument types.
-  let mut unannotated_helper = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("decorate", "defn decorate (x) (impl-traits x P-Labeled)"),
-      ("wrap", "defn wrap (y) (decorate y)"),
-      ("UseWrap", "def v $ wrap (%{} P :name |a)"),
-    ],
-    &[],
-  );
-  assert!(
-    impl_attach::collect_non_coherent_nominal_defs(&unannotated_helper).contains("app.m/P"),
-    "unannotated attachment helper must propagate caller nominal argument into non_coherent set"
-  );
-  impl_attach::attach_source_impls(&mut unannotated_helper).expect("unannotated helper keeps detached defimpls on passed nominal type");
-
-  // Unannotated attachment helper with NO nominal callers must NOT mark unrelated top-level P non-coherent.
-  let mut unused_helper = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("decorate", "defn decorate (x) (impl-traits x P-Labeled)"),
-    ],
-    &[],
-  );
-  assert!(
-    !impl_attach::collect_non_coherent_nominal_defs(&unused_helper).contains("app.m/P"),
-    "uncalled unannotated helper must not mark unrelated P non-coherent"
-  );
-  let err = impl_attach::attach_source_impls(&mut unused_helper).expect_err("unrelated P must still reject duplicate defimpl");
+  let err = impl_attach::attach_source_impls(&mut with_retired_call).expect_err("retired impl-traits must not waive coherence");
   assert!(err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{err}");
 }
 
 #[test]
-fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
+fn impl_attach_normalizes_trait_aliases() {
   let _guard = lock_program_test_state();
 
   // `(:impls LabeledAlias)` in `app.m` finds `defimpl m/P Labeled` in origin `app.t`.
@@ -2771,171 +2659,4 @@ fn impl_attach_normalizes_trait_aliases_and_tracks_match_coherence() {
   );
   let dup_err = impl_attach::attach_source_impls(&mut dup_alias_and_origin).expect_err("duplicate impl via alias must fail");
   assert!(dup_err.starts_with("[E_DUPLICATE_TRAIT_IMPL] app.m/P"), "{dup_err}");
-
-  // `(impl-traits (match ...) ...)` marks branch nominal targets non-coherent.
-  let mut match_branch_attach = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      (
-        "UseMatch",
-        "defn use-match (flag) (impl-traits (match flag (true (%{} P :name |a)) (_ (%{} P :name |b))) P-Labeled-1)",
-      ),
-    ],
-    &[],
-  );
-  assert!(
-    impl_attach::collect_non_coherent_nominal_defs(&match_branch_attach).contains("app.m/P"),
-    "match branch returning nominal struct inside impl-traits must mark P non-coherent"
-  );
-  impl_attach::attach_source_impls(&mut match_branch_attach).expect("match-attached non-coherent type preserves detached defimpls");
-
-  // `(impl-traits (match flag (true x) (_ ...)) ...)` propagates parameter sink through match.
-  let mut match_param_sink = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      (
-        "decorate",
-        "defn decorate (flag x fallback) (impl-traits (match flag (true x) (_ fallback)) P-Labeled-1)",
-      ),
-      ("UseDecorate", "def v $ decorate true (%{} P :name |a) 0"),
-    ],
-    &[],
-  );
-  assert!(
-    impl_attach::collect_non_coherent_nominal_defs(&match_param_sink).contains("app.m/P"),
-    "match returning parameter inside impl-traits must propagate param sink to caller nominal type"
-  );
-  impl_attach::attach_source_impls(&mut match_param_sink).expect("match param sink keeps detached defimpls");
-
-  // Pattern-bound local `P` inside `match` must not leak to top-level `P`.
-  let match_shadowed = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      (
-        "UseShadowMatch",
-        "defn use-shadow (opt) (impl-traits (match opt ((:some P) P) ((:none) 0)) P-Labeled-1)",
-      ),
-    ],
-    &[],
-  );
-  assert!(
-    !impl_attach::collect_non_coherent_nominal_defs(&match_shadowed).contains("app.m/P"),
-    "pattern-bound local P in match must not mark top-level P non-coherent"
-  );
-
-  // Nested `match` inside pattern-bound branch must keep outer pattern shadowing in both walker and param sink collector.
-  let nested_match_shadowed = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      (
-        "UseNestedShadowMatch",
-        "defn use-nested-shadow (opt) (match opt ((:some P) (impl-traits (match true (true P) (_ P)) P-Labeled-1)) ((:none) 0))",
-      ),
-      (
-        "decorate-shadow",
-        "defn decorate-shadow (x opt) (match opt ((:some x) (impl-traits (match true (true x) (_ x)) P-Labeled-1)) ((:none) 0))",
-      ),
-      ("CallDecorateShadow", "def v $ decorate-shadow (%{} P :name |a) (Some 1)"),
-    ],
-    &[],
-  );
-  assert!(
-    !impl_attach::collect_non_coherent_nominal_defs(&nested_match_shadowed).contains("app.m/P"),
-    "nested match inside shadowing match branch must not leak outer param or top-level P"
-  );
-
-  // Pattern-bound name shadowing both an outer local helper and a global attachment helper `decorate`
-  // must keep an empty sink entry so `(decorate ...)` does not fall through to the global helper.
-  let shadowed_global_fn = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("decorate", "defn decorate (x) (impl-traits x P-Labeled-1)"),
-      (
-        "UseMatchShadowGlobalFn",
-        "defn use-shadow-fn (opt) (let ((decorate (fn (x) x))) (match opt ((:some decorate) (decorate (%{} P :name |a))) ((:none) 0)))",
-      ),
-      (
-        "WrapShadowGlobalFn",
-        "defn wrap-shadow-fn (arg opt) (let ((decorate (fn (x) x))) (match opt ((:some decorate) (decorate arg)) ((:none) 0)))",
-      ),
-      ("CallWrapShadowGlobalFn", "def v $ wrap-shadow-fn (%{} P :name |a) (Some 1)"),
-    ],
-    &[],
-  );
-  assert!(
-    !impl_attach::collect_non_coherent_nominal_defs(&shadowed_global_fn).contains("app.m/P"),
-    "match pattern binding shadowing global helper name must block fallthrough in both walker and param sink collector"
-  );
-}
-
-#[test]
-fn impl_attach_scan_under_program_write_lock_handles_typeref_fn_schemas_without_deadlock() {
-  let _guard = lock_program_test_state();
-  // Reproduces the `apply_code_changes` / `extract_program_data` lock order where
-  // `PROGRAM_CODE_DATA.write()` is held across `stage_source_impls` while a definition
-  // carries a `TypeRef` schema (value schema or `deftype` fn-schema alias).
-  let mut program_for_param = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("BoxFn", "deftype BoxFn $ Fn P (-> String)"),
-      ("use-alias", "defn use-alias (p) (impl-traits p P-Labeled-1)"),
-      ("mk-p", "defn mk-p () (%{} P :name |a)"),
-    ],
-    &[],
-  );
-  if let Some(app_m) = program_for_param.get_mut("app.m") {
-    if let Some(entry) = app_m.defs.get_mut("use-alias") {
-      entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("BoxFn"), Arc::new(vec![])));
-    }
-    if let Some(entry) = app_m.defs.get_mut("mk-p") {
-      entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("UnknownValue"), Arc::new(vec![])));
-    }
-  }
-
-  let mut program_for_return = impl_attach_program(
-    "defstruct P (:name String)",
-    &[
-      ("P-Labeled-1", "defimpl P t/Labeled (.label f)"),
-      ("P-Labeled-2", "defimpl P t/Labeled (.label g)"),
-      ("RetFn", "deftype RetFn $ Fn (-> P)"),
-      ("mk-p", "defn mk-p () (%{} P :name |a)"),
-      ("use-ret", "defn use-ret () (impl-traits (mk-p) P-Labeled-1)"),
-    ],
-    &[],
-  );
-  if let Some(app_m) = program_for_return.get_mut("app.m")
-    && let Some(entry) = app_m.defs.get_mut("mk-p")
-  {
-    entry.schema = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("RetFn"), Arc::new(vec![])));
-  }
-
-  let (param_non_coherent, return_non_coherent) = {
-    let mut guard = PROGRAM_CODE_DATA.write().expect("lock program code data");
-    let previous = std::mem::replace(&mut *guard, program_for_param);
-    let param_res = impl_attach::collect_non_coherent_nominal_defs(&guard);
-    *guard = program_for_return;
-    let return_res = impl_attach::collect_non_coherent_nominal_defs(&guard);
-    *guard = previous;
-    (param_res, return_res)
-  };
-  assert!(
-    param_non_coherent.contains("app.m/P"),
-    "lock-free fn-schema alias traversal must bind param nominal under write lock"
-  );
-  assert!(
-    return_non_coherent.contains("app.m/P"),
-    "lock-free fn-schema alias traversal must resolve call return nominal under write lock"
-  );
 }

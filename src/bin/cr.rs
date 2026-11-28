@@ -2294,7 +2294,7 @@ fn report_broad_type_errors(blocking: Vec<LocatedWarning>) -> Result<(), String>
     eprintln!("\n{} ({} legacy dynamic style errors)", "Errors:".red(), legacy_dynamic.len());
     LocatedWarning::print_list(&legacy_dynamic);
     summaries.push(format!(
-      "[{}] Found {} legacy dynamic style usage(s) (`%{{}} _` / `%::` / local `impl-traits`); declare top-level `defstruct`/`defenum` with `(:impls …)` + `defimpl`, use `(Dyn Trait)` / `dyn:box`, or `::` for anonymous enums",
+      "[{}] Found {} legacy dynamic style usage(s) (`%{{}} _`); declare top-level `defstruct`/`defenum` with `(:impls …)` + `defimpl`, use `(Dyn Trait)` / `dyn:box`, or `::` for anonymous enums",
       snapshot::LEGACY_DYNAMIC_STYLE_ERROR,
       legacy_dynamic.len()
     ));

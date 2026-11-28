@@ -809,6 +809,9 @@ const scenarios = [
       }
       const expected = [
         ["E_FN_RETURN_UNPROVEN", "fix-command.main/fixable"],
+        ["E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-enum"],
+        ["E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-enum-overlap"],
+        ["E_FN_RETURN_UNPROVEN", "fix-command.main/legacy-nested"],
         ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/option-struct-field"],
         ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"],
       ];

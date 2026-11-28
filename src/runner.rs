@@ -683,7 +683,7 @@ pub fn evaluate_symbol(
       } else if let Some(v) = scope.get_by_name(sym) {
         // although scope is detected first, it would trigger warning during preprocess
         Ok(v.to_owned())
-      } else if let Ok(p) = sym.parse::<CalcitProc>() {
+      } else if let Some(p) = CalcitProc::parse_source_proc(sym) {
         Ok(Calcit::Proc(p))
       } else if builtins::is_registered_proc(sym) {
         Ok(Calcit::Registered(sym.into()))
